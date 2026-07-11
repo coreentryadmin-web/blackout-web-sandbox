@@ -1,6 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { buildGreeksSnapshot, estimateOptionPnl } from "./playbook-option-pnl";
+import { parseOptionPremiumMid, buildGreeksSnapshot, estimateOptionPnl } from "./playbook-option-pnl";
+
+test("parseOptionPremiumMid: extracts first number from range", () => {
+  assert.equal(parseOptionPremiumMid("$2.50–$3.00"), 2.5);
+  assert.equal(parseOptionPremiumMid(null), null);
+});
 
 test("buildGreeksSnapshot: marks synthetic gamma when chain omits it", () => {
   const greeks = buildGreeksSnapshot({

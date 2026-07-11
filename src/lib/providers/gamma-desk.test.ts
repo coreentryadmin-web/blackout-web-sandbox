@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 // gamma-desk.ts has ZERO imports (no @/, no Next, no Redis) -> resolves cleanly
 // under tsx --test. Both functions are pure/deterministic.
-import { analyzeStrikeGexRows, computeGammaFlip, topGexWalls } from "./gamma-desk";
+import { analyzeStrikeGexRows, computeGammaFlip, gammaRegime, gammaRegimeWithHysteresis, topGexWalls } from "./gamma-desk";
 import type { GexStrikeLevel } from "./gamma-desk";
 
 test("balanced net-0 strike (callG=-putG) SURVIVES the filter", () => {
@@ -150,4 +150,13 @@ test("ladder is sorted descending by strike (calls above, puts below)", () => {
 test("empty levels or spot<=0 returns []", () => {
   assert.deepEqual(topGexWalls([], 5000, 10), []);
   assert.deepEqual(topGexWalls([lvl(5000, 100)], 0, 10), []);
+});
+
+test("gammaRegimeWithHysteresis: holds prior regime until buffer cleared", () => {
+  const flip = 6000;
+  assert.equal(gammaRegime(6001, flip), "mean_revert");
+  assert.equal(gammaRegimeWithHysteresis(6001, flip, "amplification"), "amplification");
+  assert.equal(gammaRegimeWithHysteresis(6003, flip, "amplification"), "mean_revert");
+  assert.equal(gammaRegimeWithHysteresis(5999, flip, "mean_revert"), "mean_revert");
+  assert.equal(gammaRegimeWithHysteresis(5997, flip, "mean_revert"), "amplification");
 });

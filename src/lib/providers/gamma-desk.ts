@@ -129,6 +129,25 @@ export function gammaRegime(spot: number, flip: number | null): string {
   return spot > flip ? "mean_revert" : "amplification";
 }
 
+/** Debounce flip churn — require spot to clear flip by bufferPts before regime changes. */
+export function gammaRegimeWithHysteresis(
+  spot: number,
+  flip: number | null,
+  previous: string,
+  bufferPts = 2
+): string {
+  const raw = gammaRegime(spot, flip);
+  if (flip == null || raw === "unknown" || previous === "unknown") return raw;
+  if (previous === raw) return raw;
+  if (previous === "mean_revert" && raw === "amplification") {
+    return spot <= flip - bufferPts ? "amplification" : "mean_revert";
+  }
+  if (previous === "amplification" && raw === "mean_revert") {
+    return spot >= flip + bufferPts ? "mean_revert" : "amplification";
+  }
+  return raw;
+}
+
 /**
  * Build the GEX-wall ladder shown on the SPX desk.
  *

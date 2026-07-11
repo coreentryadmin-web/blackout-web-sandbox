@@ -22,6 +22,7 @@ import { computeLitDarkRatio } from "@/lib/uw-lit-dark-ratio";
 import { resolveDeskGap } from "@/lib/providers/gap-proxy";
 import {
   gammaRegime,
+  gammaRegimeWithHysteresis,
   topGexWalls,
   type GexStrikeLevel,
   type GexWall,
@@ -170,7 +171,7 @@ function kingFromStrikeTotals(totals: Record<string, number>): number | null {
 
 function stickyDeskGexFallback(spot: number): CanonicalDeskGexSnapshot {
   const flip = lastGoodGammaFlip;
-  const gRegime = gammaRegime(spot, flip);
+  const gRegime = gammaRegimeWithHysteresis(spot, flip, lastGoodGammaRegime);
   const wallsFromLevels = lastGoodStrikeLevels.length
     ? topGexWalls(lastGoodStrikeLevels, spot, GEX_WALL_LADDER_LIMIT)
     : [];
@@ -294,7 +295,7 @@ async function resolveCanonicalDeskGex(spot: number): Promise<CanonicalDeskGexSn
   const levels = strikeTotalsToLevels(hm.gex.strike_totals);
   const king = kingFromStrikeTotals(hm.gex.strike_totals);
   const flip = pos.flip;
-  const regime = gammaRegime(spot, flip);
+  const regime = gammaRegimeWithHysteresis(spot, flip, lastGoodGammaRegime);
   const walls = levels.length ? topGexWalls(levels, spot, GEX_WALL_LADDER_LIMIT) : [];
 
   if (levels.length) {
@@ -1501,7 +1502,7 @@ function gexSnapshotForPrice(price: number) {
   const gammaFlip = lastGoodGammaFlip;
   const walls = topGexWalls(lastGoodStrikeLevels, price, GEX_WALL_LADDER_LIMIT);
   const finalWalls = walls.length ? walls : lastGoodGexWalls;
-  const gRegime = gammaRegime(price, gammaFlip);
+  const gRegime = gammaRegimeWithHysteresis(price, gammaFlip, lastGoodGammaRegime);
   return {
     gamma_flip: gammaFlip,
     above_gamma_flip: gammaFlip != null ? price > gammaFlip : false,

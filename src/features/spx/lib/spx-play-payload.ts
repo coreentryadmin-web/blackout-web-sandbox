@@ -60,6 +60,7 @@ export type SpxPlayPayload = {
     trim_done: boolean;
     option_label?: string | null;
     option_premium?: string | null;
+    option_pnl_est?: import("@/features/spx/lib/playbook-option-pnl").OptionPnlEstimate | null;
   } | null;
   confirmations: PlayConfirmationResult | null;
   technicals: {

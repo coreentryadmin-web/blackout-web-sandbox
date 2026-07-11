@@ -29,6 +29,14 @@ function num(v: number | null | undefined, fallback: number): number {
   return v != null && Number.isFinite(v) ? v : fallback;
 }
 
+/** Parse first numeric premium from a display range (e.g. "$2.50–$3.00"). */
+export function parseOptionPremiumMid(value: string | null | undefined): number | null {
+  if (!value) return null;
+  const m = value.match(/[\d.]+/);
+  const n = m ? Number(m[0]) : NaN;
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+
 /** Build greeks snapshot from option ticket at entry. */
 export function buildGreeksSnapshot(input: {
   direction: SpxPlayDirection;
