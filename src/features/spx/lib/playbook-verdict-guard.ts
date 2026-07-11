@@ -163,8 +163,9 @@ export function applyPlaybookVerdictGuards(
 }
 
 /**
- * Defense-in-depth: no trigger_fired without precondition_match and min armed polls.
- * Enable with PLAYBOOK_VERDICT_GUARD_ASSERT=1 (dev/staging audits).
+ * Defense-in-depth: persisted FSM state must allow trigger_fired + min armed polls.
+ * Uses durable snapshot rows (not resolver-derived state) to catch idle/arm desync.
+ * Enable with PLAYBOOK_VERDICT_GUARD_ASSERT=1 (dev/staging audits + CI unit tests).
  */
 export function assertPlaybookVerdictGuardInvariants(
   sessionDate: string,
@@ -179,15 +180,26 @@ export function assertPlaybookVerdictGuardInvariants(
     if (!v.precondition_match) {
       throw new Error(`${v.playbook_id}: trigger_fired without precondition_match`);
     }
+
     const resolved = resolveEpisodeInstance(sessionDate, v, snapshots, nowMs);
-    const prev = resolved.from_state;
-    if (isTerminalPlaybookState(prev) || isPostEntryPlaybookState(prev)) {
-      throw new Error(`${v.playbook_id}: trigger_fired in frozen state ${prev}`);
+    const persisted = snapshots.find((s) => s.instance_id === resolved.instance_id);
+    const persistedState = persisted?.state ?? resolved.from_state;
+
+    if (persistedState === "idle") {
+      throw new Error(
+        `${v.playbook_id}: trigger_fired while persisted FSM state is idle (instance=${resolved.instance_id})`
+      );
     }
+    if (isTerminalPlaybookState(persistedState) || isPostEntryPlaybookState(persistedState)) {
+      throw new Error(
+        `${v.playbook_id}: trigger_fired in frozen persisted state ${persistedState}`
+      );
+    }
+
     const armedPolls = armedPollCounts.get(resolved.instance_id) ?? 0;
     if (armedPolls < minArmed) {
       throw new Error(
-        `${v.playbook_id}: trigger_fired with armed_polls=${armedPolls} < ${minArmed} (prev=${prev})`
+        `${v.playbook_id}: trigger_fired with armed_polls=${armedPolls} < ${minArmed} (persisted=${persistedState})`
       );
     }
   }

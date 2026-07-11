@@ -30,27 +30,54 @@ function row(
     execution_sim: null,
     has_execution_sim: false,
     blocked_events: 0,
-    trigger_feature_snapshot: { vwap_volume_weighted: true },
+    trigger_feature_snapshot: goodSnap(),
+    ...overrides,
+  };
+}
+
+function goodSnap(overrides: Record<string, unknown> = {}) {
+  return {
+    desk_stale: false,
+    halt_channel_stale: false,
+    gex_missing: false,
+    vwap_volume_weighted: true,
+    vix: 18,
     ...overrides,
   };
 }
 
 test("sessionSnapshotDataQualityOk: PB-01 fails when vwap not volume-weighted", () => {
   assert.equal(
-    sessionSnapshotDataQualityOk({ vwap_volume_weighted: false }, "PB-01"),
+    sessionSnapshotDataQualityOk(goodSnap({ vwap_volume_weighted: false }), "PB-01"),
     false
   );
 });
 
 test("sessionSnapshotDataQualityOk: PB-03 ignores vwap_volume_weighted", () => {
   assert.equal(
-    sessionSnapshotDataQualityOk({ vwap_volume_weighted: false }, "PB-03"),
+    sessionSnapshotDataQualityOk(goodSnap({ vwap_volume_weighted: false }), "PB-03"),
     true
   );
 });
 
 test("sessionSnapshotDataQualityOk: desk_stale fails", () => {
-  assert.equal(sessionSnapshotDataQualityOk({ desk_stale: true }, "PB-01"), false);
+  assert.equal(sessionSnapshotDataQualityOk(goodSnap({ desk_stale: true }), "PB-01"), false);
+});
+
+test("sessionSnapshotDataQualityOk: PB-04 fails when gex_missing", () => {
+  assert.equal(sessionSnapshotDataQualityOk(goodSnap({ gex_missing: true }), "PB-04"), false);
+  assert.equal(sessionSnapshotDataQualityOk(goodSnap({ gex_missing: true }), "PB-01"), true);
+});
+
+test("sessionSnapshotDataQualityOk: PB-03 fails on stale halt feed", () => {
+  assert.equal(
+    sessionSnapshotDataQualityOk(goodSnap({ halt_channel_stale: true }), "PB-03"),
+    false
+  );
+});
+
+test("sessionSnapshotDataQualityOk: PB-08 fails when vix missing", () => {
+  assert.equal(sessionSnapshotDataQualityOk(goodSnap({ vix: null }), "PB-08"), false);
 });
 
 test("sessionSnapshotDataQualityOk: missing snapshot is null", () => {
@@ -60,8 +87,8 @@ test("sessionSnapshotDataQualityOk: missing snapshot is null", () => {
 test("dataQualitySessionFraction: all good sessions → 1", () => {
   const frac = dataQualitySessionFraction(
     [
-      row({ session_date: "2026-07-10", trigger_feature_snapshot: { vwap_volume_weighted: true } }),
-      row({ session_date: "2026-07-11", trigger_feature_snapshot: { vwap_volume_weighted: true } }),
+      row({ session_date: "2026-07-10", trigger_feature_snapshot: goodSnap() }),
+      row({ session_date: "2026-07-11", trigger_feature_snapshot: goodSnap() }),
     ],
     "PB-01"
   );
@@ -71,8 +98,11 @@ test("dataQualitySessionFraction: all good sessions → 1", () => {
 test("dataQualitySessionFraction: mixed sessions → 0.5", () => {
   const frac = dataQualitySessionFraction(
     [
-      row({ session_date: "2026-07-10", trigger_feature_snapshot: { vwap_volume_weighted: true } }),
-      row({ session_date: "2026-07-11", trigger_feature_snapshot: { vwap_volume_weighted: false } }),
+      row({ session_date: "2026-07-10", trigger_feature_snapshot: goodSnap() }),
+      row({
+        session_date: "2026-07-11",
+        trigger_feature_snapshot: goodSnap({ vwap_volume_weighted: false }),
+      }),
     ],
     "PB-01"
   );
@@ -93,12 +123,12 @@ test("dataQualitySessionFraction: same session requires all rows OK", () => {
       row({
         instance_id: "a",
         session_date: "2026-07-10",
-        trigger_feature_snapshot: { vwap_volume_weighted: true },
+        trigger_feature_snapshot: goodSnap(),
       }),
       row({
         instance_id: "b",
         session_date: "2026-07-10",
-        trigger_feature_snapshot: { vwap_volume_weighted: false },
+        trigger_feature_snapshot: goodSnap({ vwap_volume_weighted: false }),
       }),
     ],
     "PB-02"
