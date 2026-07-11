@@ -8,6 +8,19 @@ and required CI (`verify`) are green — no per-PR approval, no end-of-day hold.
 here and merge the PR in the same session. Supersedes all earlier "leave OPEN for review" notes
 in this file.
 
+## 🟢 P2 SHIPPED 2026-07-11 — Raise Polygon self-cap 40→150 rps (+ concurrency 24→48): drain heavy chain pulls faster
+
+**Surface:** `src/lib/providers/polygon-rate-limiter.ts` — `POLYGON_MAX_RPS` / `POLYGON_GLOBAL_MAX_RPS` default 40→150, `POLYGON_MAX_CONCURRENCY` default 24→48.
+
+**Rationale:** Polygon/Massive Advanced has no published RPS quota (effectively unlimited); the self-cap existed only to bound a runaway loop, not to respect a provider limit — but 40 rps / 24 in-flight was throttling the exact paths that need to render fast: the GEX-heatmap chain pagination and the new intraday reconstruction, which pulls **46 pages / 11k+ contracts** for a single SPX session (measured live). At 40 rps that pull serializes far slower than it needs to. 150 rps / 48 concurrent lets it drain ~3–4× faster → "all the data, quickly rendered at the earliest."
+
+**Safety:** unchanged. The consecutive-429 circuit breaker (`POLYGON_CIRCUIT_429_THRESHOLD`, cluster-broadcast via the breaker pub/sub channel) still trips and pauses the whole cluster if Polygon ever pushes back, so a higher ceiling can't run away — it just stops leaving throughput on the table when the provider is healthy. All three knobs remain env-tunable; only the defaults moved. The Redis global ceiling still divides across replicas on Redis loss (`DEGRADED_LOCAL_RPS`), so the fail-open cluster cap stays exact at the new number.
+
+**Evidence:** `tsc` clean; polygon breaker-merge tests 9/9; `@apply` guard clean. No test or doc pinned the old defaults.
+
+**Status:** SHIPPED (`fix/polygon-rps-150`).
+
+
 ## 🟢 P2 SHIPPED 2026-07-11 — Off-hours dense-rail backfill from honest intraday GEX reconstruction (no live recorder needed)
 
 **Surface:** `src/features/vector/lib/vector-gex-reconstruct-server.ts` (new), `vector-gex-reconstruct-map.ts` (new, pure), `src/app/(site)/vector/page.tsx` (off-hours seed). Builds on the merged pure engine (#147, `vector-gex-reconstruct.ts`).
@@ -23,7 +36,6 @@ in this file.
 **Tests:** `vector-gex-reconstruct-map.test.ts` (5) — chain filtering, ms→sec bucketing/cap, band padding; plus the engine's own 6. `tsc` clean; `@apply` guard clean.
 
 **Status:** SHIPPED (`fix/vector-reconstruct-server`). Follow-ups: same reconstruction feeds the strike×time heatmap (#14) and can extend the AH rail across the post-close gap (#12).
-
 
 ## 🟠 P1 FOUND+FIXED 2026-07-11 — Four UW provider calls hit non-existent routes → silent 404 → data MISSING (no error surfaced)
 
