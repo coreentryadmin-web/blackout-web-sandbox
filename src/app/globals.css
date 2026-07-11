@@ -15023,6 +15023,524 @@ body::before {
     @apply text-sky-200 bg-white/5;
   }
 
+  /* ── HELIX tape pro — table-first institutional desk ───────────────────── */
+
+  .helix-desk-terminal-grid--tape-max {
+    flex-direction: column;
+  }
+
+  .helix-desk-terminal-grid--tape-max .helix-desk-tape-col {
+    flex: 1 1 auto;
+    width: 100%;
+    max-width: none;
+  }
+
+  @media (min-width: 1280px) {
+    .helix-desk-terminal-grid--tape-max {
+      min-height: min(82vh, calc(100dvh - var(--nav-offset) - 10rem));
+      max-height: min(82vh, calc(100dvh - var(--nav-offset) - 10rem));
+    }
+  }
+
+  .helix-tape-bar {
+    @apply rounded-lg border border-white/10 bg-[rgba(5,6,11,0.94)] overflow-hidden;
+    box-shadow: inset 0 1px 0 rgba(125, 211, 252, 0.05);
+  }
+
+  .helix-tape-bar-primary {
+    @apply flex flex-wrap items-center gap-x-3 gap-y-2.5 px-3 py-2.5;
+  }
+
+  .helix-tape-bar-block {
+    @apply flex items-center gap-2 min-w-0;
+  }
+
+  .helix-tape-bar-label {
+    @apply font-mono text-[9px] uppercase tracking-[0.2em] text-sky-300/50 shrink-0;
+  }
+
+  .helix-tape-bar-search {
+    @apply flex-1 min-w-[7rem] max-w-[9rem];
+  }
+
+  @media (max-width: 1279px) {
+    .helix-tape-bar-search {
+      flex: 1 1 100%;
+      max-width: none;
+    }
+
+    .helix-tape-bar-chips {
+      flex: 1 1 100%;
+    }
+
+    .helix-tape-bar-spacer {
+      display: none;
+    }
+  }
+
+  .helix-tape-bar-chips .helix-tape-chips {
+    @apply flex flex-wrap gap-1;
+  }
+
+  .helix-tape-bar-spacer {
+    @apply flex-1 min-w-3 hidden lg:block;
+  }
+
+  .helix-tape-seg {
+    @apply inline-flex rounded-md border border-white/10 bg-black/50 p-0.5 gap-px;
+  }
+
+  .helix-tape-seg--compact .helix-tape-seg-btn {
+    @apply px-2;
+  }
+
+  .helix-tape-seg-btn {
+    @apply font-mono text-[10px] font-semibold uppercase tracking-wide px-2.5 py-1 rounded text-sky-300/75 transition-colors;
+  }
+
+  .helix-tape-seg-btn:hover {
+    @apply text-sky-100 bg-white/5;
+  }
+
+  .helix-tape-seg-btn--active {
+    @apply text-white bg-white/10;
+  }
+
+  .helix-tape-seg-btn--call.helix-tape-seg-btn--active {
+    @apply text-bull bg-bull/15;
+  }
+
+  .helix-tape-seg-btn--put.helix-tape-seg-btn--active {
+    @apply text-bear-text bg-bear/15;
+  }
+
+  .helix-tape-seg-count {
+    @apply ml-1 text-[9px] tabular-nums text-sky-300/55;
+  }
+
+  .helix-tape-seg-btn--active .helix-tape-seg-count {
+    @apply text-inherit opacity-80;
+  }
+
+  .helix-tape-chip {
+    @apply font-mono text-[9px] font-bold uppercase tracking-wider px-2 py-1 rounded-full border border-white/10 text-sky-300/70 transition-colors;
+  }
+
+  .helix-tape-chip:hover:not(:disabled) {
+    @apply border-white/20 text-sky-100;
+  }
+
+  .helix-tape-chip--active {
+    @apply text-white border-white/25 bg-white/10;
+  }
+
+  .helix-tape-chip--gold.helix-tape-chip--active {
+    @apply text-gold border-gold/45 bg-gold/10;
+  }
+
+  .helix-tape-chip--ember.helix-tape-chip--active {
+    @apply text-ember border-ember/45 bg-ember/10;
+  }
+
+  .helix-tape-chip--sky.helix-tape-chip--active {
+    @apply text-sky-200 border-sky-400/40 bg-sky-400/10;
+  }
+
+  .helix-tape-chip--purple.helix-tape-chip--active {
+    @apply text-purple-light border-purple/40 bg-purple/10;
+  }
+
+  .helix-tape-input-wrap {
+    @apply relative flex items-center;
+  }
+
+  .helix-tape-input {
+    @apply w-full font-mono text-[11px] font-semibold uppercase tracking-widest rounded-md border border-white/10 bg-black/60 px-2.5 py-1.5 text-sky-100 placeholder:text-sky-300/35 outline-none;
+  }
+
+  .helix-tape-input:focus {
+    @apply border-cyan-500/45 ring-1 ring-cyan-500/20;
+  }
+
+  .helix-tape-input-clear {
+    @apply absolute right-1.5 font-mono text-sm text-sky-300/50 hover:text-sky-100 px-1;
+  }
+
+  .helix-tape-tool-btn {
+    @apply font-mono text-[10px] font-semibold uppercase tracking-wide px-2.5 py-1.5 rounded-md border border-white/10 text-sky-300/80 transition-colors;
+  }
+
+  .helix-tape-tool-btn:hover:not(:disabled) {
+    @apply text-sky-100 border-white/20 bg-white/5;
+  }
+
+  .helix-tape-tool-btn--active {
+    @apply text-cyan-200 border-cyan-500/35 bg-cyan-500/10;
+  }
+
+  .helix-tape-bar-tools {
+    @apply flex flex-wrap gap-2 px-3 py-2 border-t border-white/10 bg-black/30;
+  }
+
+  .helix-tape-status {
+    @apply flex items-center gap-2 shrink-0 ml-auto;
+  }
+
+  .helix-tape-status-dot {
+    @apply w-2 h-2 rounded-full shrink-0;
+  }
+
+  .helix-tape-status-dot--live {
+    @apply bg-bull;
+    box-shadow: 0 0 8px rgba(0, 230, 118, 0.55);
+    animation: helix-pulse-live 2s ease-in-out infinite;
+  }
+
+  .helix-tape-status-dot--stale {
+    @apply bg-gold;
+  }
+
+  .helix-tape-status-dot--off {
+    @apply bg-white/25;
+  }
+
+  @keyframes helix-pulse-live {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.45; }
+  }
+
+  .helix-tape-status-copy {
+    @apply flex flex-col leading-tight;
+  }
+
+  .helix-tape-status-label {
+    @apply font-mono text-[10px] font-bold uppercase tracking-wider text-white;
+  }
+
+  .helix-tape-status-meta {
+    @apply font-mono text-[9px] text-sky-300/65 tabular-nums;
+  }
+
+  .helix-tape {
+    @apply flex flex-1 flex-col min-h-0 border border-white/10;
+    background: linear-gradient(180deg, rgba(7, 8, 14, 0.98) 0%, rgba(5, 6, 11, 0.96) 100%);
+    border-radius: 10px;
+    box-shadow:
+      inset 0 1px 0 rgba(125, 211, 252, 0.07),
+      0 12px 48px rgba(0, 0, 0, 0.35);
+    overflow: hidden;
+  }
+
+  .helix-tape-chrome {
+    @apply flex items-start justify-between gap-4 shrink-0 px-4 py-3 border-b border-white/10;
+    background: rgba(8, 9, 15, 0.88);
+  }
+
+  .helix-tape-kicker {
+    @apply font-mono text-[9px] uppercase tracking-[0.28em] text-cyan-400/70;
+  }
+
+  .helix-tape-heading {
+    @apply font-mono text-[15px] font-bold uppercase tracking-[0.16em] text-white mt-0.5;
+  }
+
+  .helix-tape-hint {
+    @apply font-mono text-[10px] text-sky-300/55 mt-1 hidden sm:block;
+  }
+
+  .helix-tape-chrome-meta {
+    @apply flex flex-col items-end gap-0.5 font-mono text-[10px] text-sky-300/75 shrink-0;
+  }
+
+  .helix-tape-meta-count {
+    @apply font-semibold text-white tabular-nums;
+  }
+
+  .helix-tape-meta-sub,
+  .helix-tape-meta-density {
+    @apply text-[9px] uppercase tracking-wider text-sky-300/50;
+  }
+
+  .helix-tape-alert {
+    @apply shrink-0 mx-3 mt-2 px-3 py-2 rounded-lg border border-gold/40 bg-gold/10 font-mono text-[10px] text-gold;
+  }
+
+  .helix-tape-scroll {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .helix-tape-grid {
+    width: 100%;
+    min-width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-size: 12px;
+    line-height: 1.35;
+    table-layout: auto;
+  }
+
+  .helix-tape-group-row th {
+    @apply px-2 py-1.5 text-center font-mono text-[8px] font-bold uppercase tracking-[0.24em] text-sky-300/45 border-b border-white/10;
+    background: rgba(6, 7, 12, 0.98);
+  }
+
+  .helix-tape-group-th--print {
+    border-left: 3px solid rgba(125, 211, 252, 0.25);
+  }
+
+  .helix-tape-group-th--contract {
+    border-left: 1px solid rgba(255, 255, 255, 0.08);
+  }
+
+  .helix-tape-group-th--notional {
+    border-left: 1px solid rgba(255, 255, 255, 0.08);
+  }
+
+  .helix-tape-group-th--chain {
+    border-left: 1px solid rgba(255, 255, 255, 0.08);
+  }
+
+  .helix-tape-group-th--intel {
+    border-left: 1px solid rgba(255, 255, 255, 0.08);
+  }
+
+  .helix-tape-grid thead {
+    position: sticky;
+    top: 0;
+    z-index: 5;
+  }
+
+  .helix-tape-col-row th {
+    @apply px-2.5 py-2 font-mono text-[9px] font-semibold uppercase tracking-[0.16em] text-sky-300/65 whitespace-nowrap border-b border-white/10;
+    background: rgba(8, 9, 14, 0.98);
+    box-shadow: 0 2px 0 rgba(0, 0, 0, 0.35);
+  }
+
+  .helix-tape-col-th--sticky {
+    position: sticky;
+    left: 0;
+    z-index: 6;
+    background: rgba(8, 9, 14, 0.99);
+    box-shadow: 2px 0 6px rgba(0, 0, 0, 0.35);
+  }
+
+  .helix-tape-col-th--sticky + .helix-tape-col-th--sticky {
+    left: 4.75rem;
+    z-index: 6;
+  }
+
+  .helix-tape-sort-btn {
+    @apply inline-flex items-center gap-1 border-0 bg-transparent p-0 font-inherit text-inherit uppercase tracking-inherit cursor-pointer;
+  }
+
+  .helix-tape-sort-btn:hover {
+    @apply text-sky-100;
+  }
+
+  .helix-tape-sort-ind {
+    @apply text-cyan-400 text-[8px];
+  }
+
+  .helix-tape-row {
+    border-bottom: 1px solid rgba(255, 255, 255, 0.035);
+    transition: background 0.1s ease, box-shadow 0.1s ease;
+    cursor: pointer;
+    position: relative;
+  }
+
+  .helix-tape-row::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 3px;
+    background: transparent;
+    pointer-events: none;
+  }
+
+  .helix-tape-row--call::before {
+    background: rgba(0, 230, 118, 0.55);
+  }
+
+  .helix-tape-row--put::before {
+    background: rgba(255, 45, 85, 0.55);
+  }
+
+  .helix-tape-row--stack {
+    background: rgba(255, 210, 63, 0.04);
+  }
+
+  .helix-tape-row--stack::before {
+    background: rgba(255, 210, 63, 0.85);
+  }
+
+  .helix-tape-row--whale {
+    background: rgba(191, 95, 255, 0.04);
+  }
+
+  .helix-tape-row--zebra {
+    background: rgba(255, 255, 255, 0.012);
+  }
+
+  .helix-tape-row--zebra.helix-tape-row--call {
+    background: rgba(0, 230, 118, 0.025);
+  }
+
+  .helix-tape-row--zebra.helix-tape-row--put {
+    background: rgba(255, 45, 85, 0.025);
+  }
+
+  .helix-tape-row:hover {
+    background: rgba(125, 211, 252, 0.07) !important;
+    box-shadow: inset 0 0 0 1px rgba(125, 211, 252, 0.12);
+  }
+
+  .helix-tape-row--flash {
+    animation: flow-alert-flash 1.2s ease-out;
+  }
+
+  .helix-tape-cell {
+    @apply px-2.5 py-2 align-middle whitespace-nowrap;
+  }
+
+  .helix-tape-cell--sticky {
+    position: sticky;
+    left: 0;
+    z-index: 2;
+    background: inherit;
+    box-shadow: 2px 0 6px rgba(0, 0, 0, 0.2);
+  }
+
+  .helix-tape-cell--ticker.helix-tape-cell--sticky {
+    left: 4.75rem;
+  }
+
+  .helix-tape-time {
+    @apply text-[11px] text-sky-300/80;
+  }
+
+  .helix-tape-symbol {
+    @apply flex items-center gap-1 min-w-0;
+  }
+
+  .helix-tape-symbol-text {
+    @apply text-[13px] font-bold tracking-wide text-white;
+  }
+
+  .helix-tape-symbol-text:hover {
+    @apply text-cyan-200;
+  }
+
+  .helix-tape-star {
+    @apply shrink-0 text-[11px] leading-none p-0 border-0 bg-transparent cursor-pointer text-sky-400/45;
+  }
+
+  .helix-tape-star--on {
+    @apply text-gold;
+  }
+
+  .helix-tape-side {
+    @apply inline-flex items-center font-mono text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded border;
+  }
+
+  .helix-tape-side--call {
+    @apply text-bull border-bull/35 bg-bull/10;
+  }
+
+  .helix-tape-side--put {
+    @apply text-bear-text border-bear/35 bg-bear/10;
+  }
+
+  .helix-tape-strike {
+    @apply text-[12px] font-semibold text-gold/95;
+  }
+
+  .helix-tape-strike-suffix {
+    @apply text-[10px] text-gold/60 ml-px;
+  }
+
+  .helix-tape-premium {
+    @apply text-[14px] font-bold;
+  }
+
+  .helix-tape-premium--call {
+    @apply text-bull;
+  }
+
+  .helix-tape-premium--put {
+    @apply text-bear-text;
+  }
+
+  .helix-tape-premium--whale {
+    text-shadow: 0 0 12px rgba(191, 95, 255, 0.35);
+  }
+
+  .helix-tape-muted {
+    @apply text-[11px] text-sky-300/72;
+  }
+
+  .helix-tape-dte-zero {
+    @apply text-[11px] font-bold text-ember;
+  }
+
+  .helix-tape-rule {
+    @apply font-mono text-[9px] uppercase tracking-wide text-cyan-300/85;
+  }
+
+  .helix-tape-score {
+    @apply text-[11px] text-purple-light/90 font-semibold;
+  }
+
+  .helix-tape-signals {
+    @apply flex flex-wrap gap-0.5;
+  }
+
+  .helix-tape-signal {
+    @apply inline-flex items-center font-mono text-[8px] font-bold uppercase tracking-wider px-1 py-px rounded border leading-none;
+  }
+
+  .helix-tape-signal--bull {
+    @apply text-bull border-bull/40 bg-bull/10;
+  }
+
+  .helix-tape-signal--bear {
+    @apply text-bear-text border-bear/40 bg-bear/10;
+  }
+
+  .helix-tape-signal--gold {
+    @apply text-gold border-gold/45 bg-gold/[0.12];
+  }
+
+  .helix-tape-signal--sky {
+    @apply text-sky-300 border-sky-400/35 bg-sky-400/10;
+  }
+
+  .helix-tape-signal--purple {
+    @apply text-purple-light border-purple/40 bg-purple/[0.12];
+  }
+
+  .helix-tape-signal--ember {
+    @apply text-ember border-ember/40 bg-ember/[0.12];
+  }
+
+  .helix-tape-signal--muted {
+    @apply text-sky-300/60 border-white/10 bg-white/5;
+  }
+
+  .helix-tape-load-more {
+    @apply w-full py-3 font-mono text-[10px] font-semibold uppercase tracking-[0.2em] text-cyan-400 border-t border-white/10 bg-black/45 transition-colors;
+  }
+
+  .helix-tape-load-more:hover {
+    @apply text-sky-100 bg-white/5;
+  }
+
   .ios-desk-shell.ios-native-page-helix,
   .helix-page-shell.ios-native-page-helix {
     display: flex;

@@ -5,6 +5,12 @@ import { clsx } from "clsx";
 import type { FlowAlert } from "@/lib/api";
 import { EmptyState, Skeleton } from "@/components/ui";
 import {
+  columnsForDensity,
+  groupHeaderSpans,
+  type HelixColumnDef,
+  type HelixTableDensity,
+} from "@/features/helix/lib/helix-table-columns";
+import {
   daysToExpiry,
   flowSignals,
   flowTimeMs,
@@ -26,53 +32,37 @@ import {
 const WHALE_PREMIUM = 1_000_000;
 const RENDER_LIMIT = 250;
 
-const COLUMNS: {
-  key: HelixFlowSortKey | null;
-  label: string;
-  align?: "left" | "right";
-  /** Hidden below 1536px — keeps tape readable on laptop / 1440px desks */
-  compactHidden?: boolean;
-}[] = [
-  { key: "time", label: "Time" },
-  { key: "ticker", label: "Ticker" },
-  { key: null, label: "C/P" },
-  { key: "expiry", label: "Exp" },
-  { key: "strike", label: "Strike", align: "right" },
-  { key: null, label: "Spot", align: "right", compactHidden: true },
-  { key: "premium", label: "Premium", align: "right" },
-  { key: null, label: "Fill", align: "right" },
-  { key: "dte", label: "DTE", align: "right" },
-  { key: null, label: "Ask", align: "right", compactHidden: true },
-  { key: null, label: "OI", align: "right" },
-  { key: null, label: "IV", align: "right", compactHidden: true },
-  { key: null, label: "OTM", align: "right", compactHidden: true },
-  { key: null, label: "Type", compactHidden: true },
-  { key: "score", label: "Sc", align: "right", compactHidden: true },
-  { key: null, label: "Signals" },
-];
-
-function colClass(col: (typeof COLUMNS)[number]) {
-  return clsx(col.align === "right" && "text-right", col.compactHidden && "helix-flow-col--aux");
-}
-
 type SignalTone = "bull" | "bear" | "gold" | "sky" | "purple" | "ember";
 
 function SignalPill({ label, tone }: { label: string; tone: SignalTone }) {
   return (
-    <span className={clsx("helix-flow-signal", `helix-flow-signal--${tone}`)} title={label}>
+    <span className={clsx("helix-tape-signal", `helix-tape-signal--${tone}`)} title={label}>
       {label}
     </span>
   );
 }
 
-function SkeletonRows() {
+function colTdClass(col: HelixColumnDef) {
+  return clsx(
+    "helix-tape-cell",
+    `helix-tape-cell--${col.id}`,
+    col.align === "right" && "text-right",
+    col.sticky && "helix-tape-cell--sticky"
+  );
+}
+
+function SkeletonRows({ cols }: { cols: HelixColumnDef[] }) {
   return (
     <tbody>
-      {Array.from({ length: 12 }).map((_, i) => (
-        <tr key={i} className="helix-flow-row">
-          {COLUMNS.map((col) => (
-            <td key={col.label} className={colClass(col)}>
-              <Skeleton width={col.key === "ticker" ? 48 : 36} height={12} rounded="sm" />
+      {Array.from({ length: 14 }).map((_, i) => (
+        <tr key={i} className={clsx("helix-tape-row", i % 2 === 1 && "helix-tape-row--zebra")}>
+          {cols.map((col) => (
+            <td key={col.id} className={colTdClass(col)}>
+              <Skeleton
+                width={col.id === "ticker" ? 52 : col.id === "premium" ? 64 : 40}
+                height={col.id === "premium" ? 14 : 12}
+                rounded="sm"
+              />
             </td>
           ))}
         </tr>
@@ -81,10 +71,145 @@ function SkeletonRows() {
   );
 }
 
+function renderCell(
+  col: HelixColumnDef,
+  flow: FlowAlert,
+  ctx: {
+    isCall: boolean;
+    isWhale: boolean;
+    dte: number;
+    is0dte: boolean;
+    signals: ReturnType<typeof flowSignals>;
+    isStarred: boolean;
+    onToggleStar?: (ticker: string) => void;
+    onTickerClick?: (ticker: string) => void;
+  }
+) {
+  const { isCall, isWhale, dte, is0dte, signals, isStarred, onToggleStar, onTickerClick } = ctx;
+  const visibleSignals = signals.slice(0, 3);
+  const extraSignals = signals.length - visibleSignals.length;
+
+  switch (col.id) {
+    case "time":
+      return (
+        <span className="helix-tape-time tabular-nums">
+          {flowTimeMs(flow) ? timeAgo(flow.alerted_at) : "—"}
+        </span>
+      );
+    case "ticker":
+      return (
+        <div className="helix-tape-symbol">
+          {onToggleStar && (
+            <button
+              type="button"
+              className={clsx("helix-tape-star", isStarred && "helix-tape-star--on")}
+              onClick={(e) => {
+                e.stopPropagation();
+                onToggleStar(flow.ticker);
+              }}
+              aria-pressed={isStarred}
+              aria-label={isStarred ? "Remove from watchlist" : "Add to watchlist"}
+            >
+              {isStarred ? "★" : "☆"}
+            </button>
+          )}
+          <span
+            className="helix-tape-symbol-text"
+            onClick={(e) => {
+              e.stopPropagation();
+              onTickerClick?.(flow.ticker);
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.stopPropagation();
+                onTickerClick?.(flow.ticker);
+              }
+            }}
+            role={onTickerClick ? "button" : undefined}
+            tabIndex={onTickerClick ? 0 : undefined}
+          >
+            {flow.ticker}
+          </span>
+        </div>
+      );
+    case "side":
+      return (
+        <span className={clsx("helix-tape-side", isCall ? "helix-tape-side--call" : "helix-tape-side--put")}>
+          {isCall ? "CALL" : "PUT"}
+        </span>
+      );
+    case "expiry":
+      return <span className="helix-tape-muted tabular-nums">{fmtExpiryShort(flow.expiry)}</span>;
+    case "strike":
+      return (
+        <span className="helix-tape-strike tabular-nums">
+          {flow.strike}
+          <span className="helix-tape-strike-suffix">{isCall ? "C" : "P"}</span>
+        </span>
+      );
+    case "premium":
+      return (
+        <span
+          className={clsx(
+            "helix-tape-premium tabular-nums",
+            isCall ? "helix-tape-premium--call" : "helix-tape-premium--put",
+            isWhale && "helix-tape-premium--whale"
+          )}
+        >
+          {premiumDisplay(flow)}
+        </span>
+      );
+    case "fill":
+      return <span className="helix-tape-muted tabular-nums">{fmtFill(flow.fill_price)}</span>;
+    case "dte":
+      return is0dte ? (
+        <span className="helix-tape-dte-zero tabular-nums">0</span>
+      ) : (
+        <span className="helix-tape-muted tabular-nums">{dte}</span>
+      );
+    case "spot":
+      return <span className="helix-tape-muted tabular-nums">{fmtSpot(flow.underlying_price)}</span>;
+    case "ask":
+      return <span className="helix-tape-muted tabular-nums">{fmtAskPct(flow.ask_pct)}</span>;
+    case "oi":
+      return <span className="helix-tape-muted tabular-nums">{fmtOi(flow.open_interest)}</span>;
+    case "iv":
+      return <span className="helix-tape-muted tabular-nums">{fmtIv(flow.implied_volatility)}</span>;
+    case "otm":
+      return <span className="helix-tape-muted tabular-nums">{fmtOtm(flow.otm_pct)}</span>;
+    case "rule":
+      return (
+        <span className="helix-tape-rule">
+          {flow.alert_rule ? ruleLabel(flow.alert_rule) : flow.route?.slice(0, 8) || "—"}
+        </span>
+      );
+    case "score":
+      return (
+        <span className="helix-tape-score tabular-nums">
+          {flow.score > 0 ? flow.score.toFixed(1) : "—"}
+        </span>
+      );
+    case "signals":
+      return (
+        <div className="helix-tape-signals">
+          {visibleSignals.map((s) => (
+            <SignalPill key={s.id} label={s.label} tone={s.tone} />
+          ))}
+          {extraSignals > 0 && (
+            <span className="helix-tape-signal helix-tape-signal--muted">+{extraSignals}</span>
+          )}
+        </div>
+      );
+    default:
+      return "—";
+  }
+}
+
 export function HelixFlowTable({
   flows,
   live,
   loading,
+  density = "standard",
   typeFilter = "ALL",
   tickerFilter,
   hasData = false,
@@ -99,10 +224,12 @@ export function HelixFlowTable({
   hawkTickers,
   watchlistTickers,
   onToggleStar,
+  filteredCount,
 }: {
   flows: FlowAlert[];
   live?: boolean;
   loading?: boolean;
+  density?: HelixTableDensity;
   typeFilter?: "ALL" | "CALL" | "PUT";
   tickerFilter?: string;
   hasData?: boolean;
@@ -117,7 +244,12 @@ export function HelixFlowTable({
   hawkTickers?: Set<string>;
   watchlistTickers?: Set<string>;
   onToggleStar?: (ticker: string) => void;
+  /** Total matching rows before render cap — shown in tape chrome */
+  filteredCount?: number;
 }) {
+  const cols = useMemo(() => columnsForDensity(density), [density]);
+  const groupSpans = useMemo(() => groupHeaderSpans(cols), [cols]);
+
   const [sortKey, setSortKey] = useState<HelixFlowSortKey>("time");
   const [sortDir, setSortDir] = useState<HelixFlowSortDir>("desc");
   const [renderLimit, setRenderLimit] = useState(RENDER_LIMIT);
@@ -142,6 +274,7 @@ export function HelixFlowTable({
   }, [typed, typeFilter, sortKey, sortDir]);
 
   const displayed = filtered.slice(0, renderLimit);
+  const total = filteredCount ?? filtered.length;
   const hasMore = filtered.length > renderLimit;
   const feedDown = !loading && !replayMode && !live;
 
@@ -155,74 +288,97 @@ export function HelixFlowTable({
   };
 
   return (
-    <div className="helix-flow-terminal desk-panel flex flex-1 flex-col min-h-0">
-      <div className="helix-flow-terminal-head">
-        <div className="helix-flow-terminal-title">
-          <span className="helix-pro-command-label">Live tape</span>
-          <h2 className="font-mono text-[13px] font-semibold uppercase tracking-[0.14em] text-white">
-            Institutional flow
-          </h2>
+    <div className="helix-tape desk-panel flex flex-1 flex-col min-h-0">
+      <div className="helix-tape-chrome">
+        <div className="helix-tape-chrome-main">
+          <div className="helix-tape-chrome-title">
+            <span className="helix-tape-kicker">Live institutional tape</span>
+            <h2 className="helix-tape-heading">Flow prints</h2>
+          </div>
+          <p className="helix-tape-hint">Click any row for contract drilldown · sort headers to re-rank</p>
         </div>
-        <div className="helix-flow-terminal-meta font-mono text-[10px] text-sky-300/80 tabular-nums">
+        <div className="helix-tape-chrome-meta tabular-nums">
           {!loading && (
-            <span>
-              {filtered.length} prints
-              {hasMore ? ` · showing ${renderLimit}` : ""}
-            </span>
+            <>
+              <span className="helix-tape-meta-count">{total.toLocaleString()} prints</span>
+              {hasMore && (
+                <span className="helix-tape-meta-sub">
+                  showing {renderLimit.toLocaleString()}
+                </span>
+              )}
+              <span className="helix-tape-meta-density">{density}</span>
+            </>
           )}
         </div>
       </div>
 
       {feedDown && (
-        <div className="helix-flow-feed-alert" role="alert">
+        <div className="helix-tape-alert" role="alert">
           Feed unavailable — retrying in background
         </div>
       )}
 
-      <div ref={scrollRef} className="helix-flow-table-scroll flow-scroll">
-        <table className="helix-flow-table" role="grid" aria-label="Live options flow table">
+      <div ref={scrollRef} className="helix-tape-scroll flow-scroll">
+        <table className="helix-tape-grid" role="grid" aria-label="Live options flow table">
           <thead>
-            <tr>
-              {COLUMNS.map((col) => (
+            <tr className="helix-tape-group-row">
+              {groupSpans.map((g) => (
                 <th
-                  key={col.label}
-                  className={clsx(colClass(col), col.key && "helix-flow-th-sortable")}
+                  key={g.group}
+                  colSpan={g.span}
+                  className={clsx("helix-tape-group-th", `helix-tape-group-th--${g.group}`)}
                 >
-                  {col.key ? (
+                  {g.label}
+                </th>
+              ))}
+            </tr>
+            <tr className="helix-tape-col-row">
+              {cols.map((col) => (
+                <th
+                  key={col.id}
+                  className={clsx(
+                    "helix-tape-col-th",
+                    col.align === "right" && "text-right",
+                    col.sticky && "helix-tape-col-th--sticky",
+                    col.sortKey && "helix-tape-col-th--sortable"
+                  )}
+                  title={col.hint}
+                >
+                  {col.sortKey ? (
                     <button
                       type="button"
-                      className="helix-flow-th-btn"
-                      onClick={() => toggleSort(col.key!)}
+                      className="helix-tape-sort-btn"
+                      onClick={() => toggleSort(col.sortKey!)}
                       aria-sort={
-                        sortKey === col.key
+                        sortKey === col.sortKey
                           ? sortDir === "asc"
                             ? "ascending"
                             : "descending"
                           : "none"
                       }
                     >
-                      {col.label}
-                      {sortKey === col.key && (
-                        <span className="helix-flow-sort-ind" aria-hidden>
+                      <span>{col.shortLabel ?? col.label}</span>
+                      {sortKey === col.sortKey && (
+                        <span className="helix-tape-sort-ind" aria-hidden>
                           {sortDir === "asc" ? "▲" : "▼"}
                         </span>
                       )}
                     </button>
                   ) : (
-                    col.label
+                    <span>{col.shortLabel ?? col.label}</span>
                   )}
                 </th>
               ))}
             </tr>
           </thead>
           {loading ? (
-            <SkeletonRows />
+            <SkeletonRows cols={cols} />
           ) : filtered.length === 0 ? (
             <tbody>
               <tr>
-                <td colSpan={COLUMNS.length}>
+                <td colSpan={cols.length}>
                   <EmptyState
-                    className="!border-transparent !bg-transparent !py-14"
+                    className="!border-transparent !bg-transparent !py-16"
                     title={
                       tickerFilter
                         ? `No prints for ${tickerFilter}`
@@ -232,7 +388,7 @@ export function HelixFlowTable({
                     }
                     description={
                       hasData
-                        ? "Tape live — waiting for the next print…"
+                        ? "Filters are active — widen floor or clear symbol to see more."
                         : live
                           ? "Acquiring flow…"
                           : "Reconnecting…"
@@ -260,8 +416,6 @@ export function HelixFlowTable({
                   isHawk: hawkTickers?.has(flow.ticker),
                   earnIn,
                 });
-                const visibleSignals = signals.slice(0, 3);
-                const extraSignals = signals.length - visibleSignals.length;
                 const isStarred = watchlistTickers?.has(flow.ticker) ?? false;
                 const isNew = i === 0 && sortKey === "time" && sortDir === "desc";
 
@@ -269,10 +423,12 @@ export function HelixFlowTable({
                   <tr
                     key={`${flow.ticker}-${flow.alerted_at}-${flow.strike}-${i}`}
                     className={clsx(
-                      "helix-flow-row",
-                      isCall ? "helix-flow-row--call" : "helix-flow-row--put",
-                      isCompound && "helix-flow-row--compound",
-                      isNew && "helix-flow-row--flash"
+                      "helix-tape-row",
+                      i % 2 === 1 && "helix-tape-row--zebra",
+                      isCall ? "helix-tape-row--call" : "helix-tape-row--put",
+                      isCompound && "helix-tape-row--stack",
+                      isWhale && "helix-tape-row--whale",
+                      isNew && "helix-tape-row--flash"
                     )}
                     onClick={() => {
                       if (onContractClick) onContractClick(flow);
@@ -292,110 +448,20 @@ export function HelixFlowTable({
                     role={onContractClick || onTickerClick ? "button" : undefined}
                     tabIndex={onContractClick || onTickerClick ? 0 : undefined}
                   >
-                    <td className={clsx(colClass(COLUMNS[0]), "helix-flow-cell-time tabular-nums text-sky-300/90")}>
-                      {flowTimeMs(flow) ? timeAgo(flow.alerted_at) : "—"}
-                    </td>
-                    <td className={clsx(colClass(COLUMNS[1]), "helix-flow-cell-ticker")}>
-                      <div className="flex items-center gap-1.5 min-w-0">
-                        {onToggleStar && (
-                          <button
-                            type="button"
-                            className={clsx(
-                              "helix-flow-star",
-                              isStarred ? "text-gold" : "text-cyan-500/50 hover:text-gold"
-                            )}
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              onToggleStar(flow.ticker);
-                            }}
-                            aria-pressed={isStarred}
-                            aria-label={isStarred ? "Remove from watchlist" : "Add to watchlist"}
-                          >
-                            {isStarred ? "★" : "☆"}
-                          </button>
-                        )}
-                        <span
-                          className="font-mono text-[12px] font-bold text-white tracking-wide hover:text-cyan-300"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            onTickerClick?.(flow.ticker);
-                          }}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter") {
-                              e.stopPropagation();
-                              onTickerClick?.(flow.ticker);
-                            }
-                          }}
-                          role={onTickerClick ? "button" : undefined}
-                          tabIndex={onTickerClick ? 0 : undefined}
-                        >
-                          {flow.ticker}
-                        </span>
-                      </div>
-                    </td>
-                    <td className={colClass(COLUMNS[2])}>
-                      <span
-                        className={clsx(
-                          "helix-flow-cp",
-                          isCall ? "helix-flow-cp--call" : "helix-flow-cp--put"
-                        )}
-                      >
-                        {isCall ? "C" : "P"}
-                      </span>
-                    </td>
-                    <td className={clsx(colClass(COLUMNS[3]), "tabular-nums text-sky-300/90")}>{fmtExpiryShort(flow.expiry)}</td>
-                    <td className={clsx(colClass(COLUMNS[4]), "text-right tabular-nums font-semibold text-gold/95")}>
-                      {flow.strike}
-                      {isCall ? "C" : "P"}
-                    </td>
-                    <td className={clsx(colClass(COLUMNS[5]), "text-right tabular-nums text-sky-200/90")}>
-                      {fmtSpot(flow.underlying_price)}
-                    </td>
-                    <td
-                      className={clsx(
-                        colClass(COLUMNS[6]),
-                        "text-right tabular-nums font-bold text-[13px]",
-                        isCall ? "text-bull" : "text-bear-text"
-                      )}
-                    >
-                      {premiumDisplay(flow)}
-                    </td>
-                    <td className={clsx(colClass(COLUMNS[7]), "text-right tabular-nums text-sky-200/85")}>
-                      {fmtFill(flow.fill_price)}
-                    </td>
-                    <td className={clsx(colClass(COLUMNS[8]), "text-right tabular-nums text-sky-300/80")}>
-                      {is0dte ? <span className="text-ember font-semibold">0</span> : dte}
-                    </td>
-                    <td className={clsx(colClass(COLUMNS[9]), "text-right tabular-nums text-sky-300/80")}>
-                      {fmtAskPct(flow.ask_pct)}
-                    </td>
-                    <td className={clsx(colClass(COLUMNS[10]), "text-right tabular-nums text-sky-300/80")}>
-                      {fmtOi(flow.open_interest)}
-                    </td>
-                    <td className={clsx(colClass(COLUMNS[11]), "text-right tabular-nums text-sky-300/80")}>
-                      {fmtIv(flow.implied_volatility)}
-                    </td>
-                    <td className={clsx(colClass(COLUMNS[12]), "text-right tabular-nums text-sky-300/80")}>
-                      {fmtOtm(flow.otm_pct)}
-                    </td>
-                    <td className={colClass(COLUMNS[13])}>
-                      <span className="helix-flow-type font-mono text-[10px] uppercase text-cyan-300/90">
-                        {flow.alert_rule ? ruleLabel(flow.alert_rule) : flow.route?.slice(0, 6) || "—"}
-                      </span>
-                    </td>
-                    <td className={clsx(colClass(COLUMNS[14]), "text-right tabular-nums text-purple-light/90")}>
-                      {flow.score > 0 ? flow.score.toFixed(1) : "—"}
-                    </td>
-                    <td className={colClass(COLUMNS[15])}>
-                      <div className="helix-flow-signals flex flex-wrap gap-0.5">
-                        {visibleSignals.map((s) => (
-                          <SignalPill key={s.id} label={s.label} tone={s.tone} />
-                        ))}
-                        {extraSignals > 0 && (
-                          <span className="helix-flow-signal helix-flow-signal--muted">+{extraSignals}</span>
-                        )}
-                      </div>
-                    </td>
+                    {cols.map((col) => (
+                      <td key={col.id} className={colTdClass(col)}>
+                        {renderCell(col, flow, {
+                          isCall,
+                          isWhale,
+                          dte,
+                          is0dte,
+                          signals,
+                          isStarred,
+                          onToggleStar,
+                          onTickerClick,
+                        })}
+                      </td>
+                    ))}
                   </tr>
                 );
               })}
@@ -405,11 +471,11 @@ export function HelixFlowTable({
         {hasMore && !loading && (
           <button
             type="button"
-            className="helix-flow-load-more"
+            className="helix-tape-load-more"
             onClick={() => setRenderLimit((r) => r + RENDER_LIMIT)}
           >
-            Load {Math.min(RENDER_LIMIT, filtered.length - renderLimit)} more ·{" "}
-            {filtered.length - renderLimit} remaining
+            Load {Math.min(RENDER_LIMIT, filtered.length - renderLimit).toLocaleString()} more ·{" "}
+            {(filtered.length - renderLimit).toLocaleString()} remaining
           </button>
         )}
       </div>

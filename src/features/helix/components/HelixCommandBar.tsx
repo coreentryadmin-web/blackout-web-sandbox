@@ -1,17 +1,56 @@
 "use client";
 
 import { useState } from "react";
+import type { ReactNode } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { clsx } from "clsx";
+import type { HelixDteFilter, HelixTableDensity } from "@/features/helix/lib/helix-table-columns";
 
 const PREMIUM_PRESETS = [200_000, 500_000, 1_000_000, 20_000_000] as const;
+const DTE_OPTIONS: { id: HelixDteFilter; label: string }[] = [
+  { id: "all", label: "All DTE" },
+  { id: "0dte", label: "0DTE" },
+  { id: "week", label: "≤7d" },
+  { id: "month+", label: ">7d" },
+];
+const DENSITY_OPTIONS: { id: HelixTableDensity; label: string }[] = [
+  { id: "essential", label: "Essential" },
+  { id: "standard", label: "Standard" },
+  { id: "full", label: "Full" },
+];
 
 export type HelixTypeFilter = "ALL" | "CALL" | "PUT";
-export type HelixTapeView = "table" | "cards";
+
+function ChipToggle({
+  active,
+  onClick,
+  disabled,
+  children,
+  tone,
+}: {
+  active: boolean;
+  onClick: () => void;
+  disabled?: boolean;
+  children: ReactNode;
+  tone?: "gold" | "ember" | "sky" | "purple";
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      className={clsx(
+        "helix-tape-chip",
+        active && "helix-tape-chip--active",
+        tone && active && `helix-tape-chip--${tone}`
+      )}
+    >
+      {children}
+    </button>
+  );
+}
 
 export function HelixCommandBar({
-  tapeView,
-  onTapeViewChange,
   minPremium,
   onMinPremiumChange,
   typeFilter,
@@ -21,9 +60,19 @@ export function HelixCommandBar({
   allCount,
   tickerFilter,
   onTickerFilterChange,
+  whalesOnly,
+  onWhalesOnlyChange,
+  dteFilter,
+  onDteFilterChange,
+  indicesOnly,
+  onIndicesOnlyChange,
   watchlistOnly,
   onWatchlistOnlyChange,
   watchlistCount,
+  density,
+  onDensityChange,
+  analyticsOpen,
+  onAnalyticsOpenChange,
   replayMode,
   onReplayToggle,
   replaySpeed,
@@ -39,8 +88,6 @@ export function HelixCommandBar({
   newestAgeLabel,
   replayDisabled,
 }: {
-  tapeView: HelixTapeView;
-  onTapeViewChange: (v: HelixTapeView) => void;
   minPremium: number;
   onMinPremiumChange: (v: number) => void;
   typeFilter: HelixTypeFilter;
@@ -50,9 +97,19 @@ export function HelixCommandBar({
   allCount: number;
   tickerFilter: string;
   onTickerFilterChange: (t: string) => void;
+  whalesOnly: boolean;
+  onWhalesOnlyChange: (v: boolean) => void;
+  dteFilter: HelixDteFilter;
+  onDteFilterChange: (v: HelixDteFilter) => void;
+  indicesOnly: boolean;
+  onIndicesOnlyChange: (v: boolean) => void;
   watchlistOnly: boolean;
   onWatchlistOnlyChange: (v: boolean) => void;
   watchlistCount: number;
+  density: HelixTableDensity;
+  onDensityChange: (d: HelixTableDensity) => void;
+  analyticsOpen: boolean;
+  onAnalyticsOpenChange: (v: boolean) => void;
   replayMode: boolean;
   onReplayToggle: () => void;
   replaySpeed: number;
@@ -71,33 +128,17 @@ export function HelixCommandBar({
   const [toolsOpen, setToolsOpen] = useState(false);
 
   return (
-    <div className="helix-pro-command">
-      <div className="helix-pro-command-primary">
-        <div className="helix-pro-command-group">
-          <span className="helix-pro-command-label">View</span>
-          <div className="helix-pro-seg">
-            {(["table", "cards"] as HelixTapeView[]).map((v) => (
-              <button
-                key={v}
-                type="button"
-                onClick={() => onTapeViewChange(v)}
-                className={clsx("helix-pro-seg-btn", tapeView === v && "helix-pro-seg-btn--active")}
-              >
-                {v === "table" ? "Table" : "Cards"}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <div className="helix-pro-command-group">
-          <span className="helix-pro-command-label">Floor</span>
-          <div className="helix-pro-seg">
+    <div className="helix-tape-bar">
+      <div className="helix-tape-bar-primary">
+        <div className="helix-tape-bar-block">
+          <span className="helix-tape-bar-label">Floor</span>
+          <div className="helix-tape-seg">
             {PREMIUM_PRESETS.map((v) => (
               <button
                 key={v}
                 type="button"
                 onClick={() => onMinPremiumChange(v)}
-                className={clsx("helix-pro-seg-btn", minPremium === v && "helix-pro-seg-btn--active")}
+                className={clsx("helix-tape-seg-btn", minPremium === v && "helix-tape-seg-btn--active")}
               >
                 {v >= 1_000_000 ? `$${v / 1_000_000}M` : `$${v / 1000}K`}
               </button>
@@ -105,23 +146,23 @@ export function HelixCommandBar({
           </div>
         </div>
 
-        <div className="helix-pro-command-group">
-          <span className="helix-pro-command-label">Side</span>
-          <div className="helix-pro-seg">
+        <div className="helix-tape-bar-block">
+          <span className="helix-tape-bar-label">Side</span>
+          <div className="helix-tape-seg">
             {(["ALL", "CALL", "PUT"] as HelixTypeFilter[]).map((t) => (
               <button
                 key={t}
                 type="button"
                 onClick={() => onTypeFilterChange(t)}
                 className={clsx(
-                  "helix-pro-seg-btn",
-                  typeFilter === t && "helix-pro-seg-btn--active",
-                  typeFilter === t && t === "CALL" && "helix-pro-seg-btn--call",
-                  typeFilter === t && t === "PUT" && "helix-pro-seg-btn--put"
+                  "helix-tape-seg-btn",
+                  typeFilter === t && "helix-tape-seg-btn--active",
+                  typeFilter === t && t === "CALL" && "helix-tape-seg-btn--call",
+                  typeFilter === t && t === "PUT" && "helix-tape-seg-btn--put"
                 )}
               >
                 {t}
-                <span className="helix-pro-count">
+                <span className="helix-tape-seg-count">
                   {t === "CALL" ? callCount : t === "PUT" ? putCount : allCount}
                 </span>
               </button>
@@ -129,11 +170,11 @@ export function HelixCommandBar({
           </div>
         </div>
 
-        <div className="helix-pro-command-group helix-pro-command-search">
-          <label className="helix-pro-command-label" htmlFor="helix-ticker-search">
+        <div className="helix-tape-bar-block helix-tape-bar-search">
+          <label className="helix-tape-bar-label" htmlFor="helix-ticker-search">
             Symbol
           </label>
-          <div className="helix-pro-input-wrap">
+          <div className="helix-tape-input-wrap">
             <input
               id="helix-ticker-search"
               value={tickerFilter}
@@ -141,16 +182,16 @@ export function HelixCommandBar({
                 const val = e.target.value.toUpperCase().replace(/[^A-Z]/g, "").slice(0, 6);
                 onTickerFilterChange(val);
               }}
-              placeholder="Filter"
+              placeholder="SPX"
               aria-label="Filter by ticker"
               maxLength={6}
-              className="helix-pro-input"
+              className="helix-tape-input"
             />
             {tickerFilter ? (
               <button
                 type="button"
                 onClick={() => onTickerFilterChange("")}
-                className="helix-pro-input-clear"
+                className="helix-tape-input-clear"
                 aria-label="Clear ticker filter"
               >
                 ×
@@ -159,32 +200,106 @@ export function HelixCommandBar({
           </div>
         </div>
 
-        <div className="helix-pro-command-spacer" />
+        <div className="helix-tape-bar-block helix-tape-bar-chips">
+          <span className="helix-tape-bar-label">Quick</span>
+          <div className="helix-tape-chips">
+            <ChipToggle active={whalesOnly} onClick={() => onWhalesOnlyChange(!whalesOnly)} tone="purple">
+              Whales
+            </ChipToggle>
+            <ChipToggle
+              active={dteFilter === "0dte"}
+              onClick={() => onDteFilterChange(dteFilter === "0dte" ? "all" : "0dte")}
+              tone="ember"
+            >
+              0DTE
+            </ChipToggle>
+            <ChipToggle active={indicesOnly} onClick={() => onIndicesOnlyChange(!indicesOnly)} tone="sky">
+              Indices
+            </ChipToggle>
+            <ChipToggle
+              active={watchlistOnly}
+              onClick={() => onWatchlistOnlyChange(!watchlistOnly)}
+              disabled={watchlistCount === 0}
+              tone="gold"
+            >
+              Watch{watchlistCount > 0 ? ` ${watchlistCount}` : ""}
+            </ChipToggle>
+          </div>
+        </div>
+
+        <div className="helix-tape-bar-spacer" />
+
+        <div className="helix-tape-bar-block">
+          <span className="helix-tape-bar-label">DTE</span>
+          <div className="helix-tape-seg helix-tape-seg--compact">
+            {DTE_OPTIONS.map((o) => (
+              <button
+                key={o.id}
+                type="button"
+                onClick={() => onDteFilterChange(o.id)}
+                className={clsx(
+                  "helix-tape-seg-btn helix-tape-seg-btn--compact",
+                  dteFilter === o.id && "helix-tape-seg-btn--active"
+                )}
+              >
+                {o.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="helix-tape-bar-block">
+          <span className="helix-tape-bar-label">Cols</span>
+          <div className="helix-tape-seg helix-tape-seg--compact">
+            {DENSITY_OPTIONS.map((o) => (
+              <button
+                key={o.id}
+                type="button"
+                onClick={() => onDensityChange(o.id)}
+                className={clsx(
+                  "helix-tape-seg-btn helix-tape-seg-btn--compact",
+                  density === o.id && "helix-tape-seg-btn--active"
+                )}
+              >
+                {o.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <button
+          type="button"
+          onClick={() => onAnalyticsOpenChange(!analyticsOpen)}
+          className={clsx("helix-tape-tool-btn", analyticsOpen && "helix-tape-tool-btn--active")}
+          aria-pressed={analyticsOpen}
+        >
+          {analyticsOpen ? "Hide analytics" : "Analytics"}
+        </button>
 
         <button
           type="button"
           onClick={() => setToolsOpen((v) => !v)}
-          className={clsx("helix-pro-tool-btn", toolsOpen && "helix-pro-tool-btn--active")}
+          className={clsx("helix-tape-tool-btn", toolsOpen && "helix-tape-tool-btn--active")}
           aria-expanded={toolsOpen}
         >
           Tools
         </button>
 
-        <div className="helix-pro-status" aria-live="polite">
+        <div className="helix-tape-status" aria-live="polite">
           <span
             className={clsx(
-              "helix-pro-status-dot",
-              !live && "helix-pro-status-dot--off",
-              live && dataStale && "helix-pro-status-dot--stale",
-              live && !dataStale && "helix-pro-status-dot--live"
+              "helix-tape-status-dot",
+              !live && "helix-tape-status-dot--off",
+              live && dataStale && "helix-tape-status-dot--stale",
+              live && !dataStale && "helix-tape-status-dot--live"
             )}
           />
-          <div className="helix-pro-status-copy">
-            <span className="helix-pro-status-label">
+          <div className="helix-tape-status-copy">
+            <span className="helix-tape-status-label">
               {!live ? "Offline" : dataStale ? "Stale" : "Live"}
             </span>
-            <span className="helix-pro-status-meta">
-              {loading ? "Scanning…" : `${displayCount} prints · ${newestAgeLabel}`}
+            <span className="helix-tape-status-meta">
+              {loading ? "Scanning…" : `${displayCount.toLocaleString()} · ${newestAgeLabel}`}
             </span>
           </div>
         </div>
@@ -197,13 +312,13 @@ export function HelixCommandBar({
             animate={{ height: "auto", opacity: 1 }}
             exit={{ height: 0, opacity: 0 }}
             transition={{ duration: 0.18 }}
-            className="helix-pro-command-tools overflow-hidden"
+            className="helix-tape-bar-tools overflow-hidden"
           >
             <button
               type="button"
               onClick={onReplayToggle}
               disabled={replayDisabled}
-              className={clsx("helix-pro-tool-btn", replayMode && "helix-pro-tool-btn--active")}
+              className={clsx("helix-tape-tool-btn", replayMode && "helix-tape-tool-btn--active")}
             >
               {replayMode ? "Stop replay" : "Replay"}
             </button>
@@ -213,7 +328,7 @@ export function HelixCommandBar({
                   key={s}
                   type="button"
                   onClick={() => onReplaySpeedChange(s)}
-                  className={clsx("helix-pro-tool-btn", replaySpeed === s && "helix-pro-tool-btn--active")}
+                  className={clsx("helix-tape-tool-btn", replaySpeed === s && "helix-tape-tool-btn--active")}
                 >
                   {s}×
                 </button>
@@ -221,23 +336,15 @@ export function HelixCommandBar({
             <button
               type="button"
               onClick={onAudioToggle}
-              className={clsx("helix-pro-tool-btn", audioEnabled && "helix-pro-tool-btn--active")}
+              className={clsx("helix-tape-tool-btn", audioEnabled && "helix-tape-tool-btn--active")}
             >
               {audioEnabled ? "Audio on" : "Audio"}
             </button>
             <button
               type="button"
-              onClick={() => onWatchlistOnlyChange(!watchlistOnly)}
-              disabled={watchlistCount === 0}
-              className={clsx("helix-pro-tool-btn", watchlistOnly && "helix-pro-tool-btn--active")}
-            >
-              Watchlist{watchlistCount > 0 ? ` (${watchlistCount})` : ""}
-            </button>
-            <button
-              type="button"
               onClick={onExportCsv}
               disabled={exportDisabled}
-              className="helix-pro-tool-btn"
+              className="helix-tape-tool-btn"
             >
               Export CSV
             </button>
