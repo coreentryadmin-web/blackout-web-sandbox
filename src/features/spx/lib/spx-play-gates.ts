@@ -47,7 +47,10 @@ import {
   type CategorizedGateBlocks,
   type GateBlockCategory,
 } from "@/features/spx/lib/playbook-gate-categories";
-import { evaluateTradeGovernor } from "@/features/spx/lib/trade-governor";
+import {
+  evaluateTradeGovernor,
+  type TradeGovernorResult,
+} from "@/features/spx/lib/trade-governor";
 import { isPastNoEntryCutoff, isBeforeCashOpen, cashOpenLabel, noEntryCutoffLabel } from "@/features/spx/lib/spx-play-session-guards";
 import { etClock, etMinutes, formatEtTime } from "@/features/spx/lib/spx-play-session-time";
 import { parseMacroEventTime, macroBlockWindow } from "@/features/spx/lib/spx-macro-window";
@@ -63,6 +66,8 @@ export type PlayGateResult = {
   play_idea: string | null;
   /** Staging lab degraded-size multiplier (1 = full size). */
   playbook_size_multiplier?: number;
+  /** Session-level governor from gates (option overlay applied later in engine). */
+  trade_governor?: TradeGovernorResult;
 };
 
 /**
@@ -204,6 +209,7 @@ export function evaluatePlayGates(
   }
 
   let playbookSizeMultiplier = 1;
+  let tradeGovernor: TradeGovernorResult | undefined;
 
   if (buyIntent) {
     const governor = evaluateTradeGovernor({
@@ -214,10 +220,9 @@ export function evaluatePlayGates(
       session,
       triggers_today_by_pb: opts?.triggers_today_by_pb,
       option: opts?.option_preview,
-      bypass_buy_cooldown:
-        opts?.bypass_buy_cooldown === true ||
-        (playBuyCooldownAplusBypass() && gradeRank(confluence.grade) >= gradeRank("A+")),
+      bypass_buy_cooldown: opts?.bypass_buy_cooldown === true,
     });
+    tradeGovernor = governor;
     blocks.push(...governor.blocks);
     warnings.push(...governor.warnings);
     playbookSizeMultiplier = governor.size_multiplier;
@@ -500,5 +505,6 @@ export function evaluatePlayGates(
     entry_mode,
     play_idea,
     playbook_size_multiplier: playbookSizeMultiplier,
+    trade_governor: tradeGovernor,
   };
 }

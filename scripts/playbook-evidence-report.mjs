@@ -4,11 +4,11 @@
  * Requires DATABASE_URL. Never uses pre-OOS_START training rows for promotion stats.
  */
 import { execSync } from "node:child_process";
-import { evaluatePlaybookPromotion, isCounterfactualComparableEval } from "../src/features/spx/lib/playbook-promotion-eval.ts";
-import { marketConditionBucket } from "../src/features/spx/lib/playbook-market-condition-bucket.ts";
-
-const OOS_START = process.env.PLAYBOOK_OOS_START_DATE ?? "2026-07-10";
-const TRAIN_CUTOFF = process.env.PLAYBOOK_TRAIN_CUTOFF_DATE ?? "2026-07-07";
+import {
+  PLAYBOOK_OOS_START_DATE,
+  PLAYBOOK_TRAIN_CUTOFF_DATE,
+} from "../src/features/spx/lib/playbook-evidence-config.ts";
+import { summarizePlaybookEvidence } from "../src/features/spx/lib/playbook-promotion-sample.ts";
 
 function loadDbUrl() {
   if (process.env.DATABASE_URL?.trim()) return process.env.DATABASE_URL.trim();
@@ -23,137 +23,6 @@ function loadDbUrl() {
     /* local / no aws */
   }
   return null;
-}
-
-function median(nums) {
-  if (!nums.length) return null;
-  const s = [...nums].sort((a, b) => a - b);
-  const m = Math.floor(s.length / 2);
-  return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
-}
-
-function snapshotFromTriggerEvent(row) {
-  const snap = row.trigger_feature_snapshot;
-  if (!snap || typeof snap !== "object") return null;
-  return snap;
-}
-
-function sessionSnapshotDataQualityOk(snap, playbookId) {
-  if (!snap || typeof snap !== "object") return null;
-  if (snap.desk_stale) return false;
-  if (
-    (playbookId === "PB-01" || playbookId === "PB-02") &&
-    snap.vwap_volume_weighted === false
-  ) {
-    return false;
-  }
-  return true;
-}
-
-/** Fraction of triggered sessions with satisfactory trigger-time data quality. */
-function dataQualitySessionFraction(pbRows, playbookId) {
-  const bySession = new Map();
-  for (const r of pbRows) {
-    if (!r.triggered_at) continue;
-    const snap = snapshotFromTriggerEvent(r);
-    const ok = sessionSnapshotDataQualityOk(snap, playbookId);
-    if (ok === null) continue;
-    const prev = bySession.get(r.session_date);
-    bySession.set(r.session_date, prev == null ? ok : prev && ok);
-  }
-  if (!bySession.size) return null;
-  const okCount = [...bySession.values()].filter(Boolean).length;
-  return okCount / bySession.size;
-}
-
-function buildPromotionSample(rows, playbookId) {
-  const pb = rows.filter((r) => r.playbook_id === playbookId);
-  const triggered = pb.filter((r) => r.triggered_at).length;
-  const simulated = pb.filter(
-    (r) => r.opened_at && (r.has_execution_sim || r.option_contract_candidate)
-  ).length;
-  const cfComparable = pb.filter((r) => isCounterfactualComparableEval(r.counterfactual_eval)).length;
-
-  const trades = pb
-    .filter((r) => r.pnl_pts != null && r.outcome && r.outcome !== "open")
-    .map((r) => {
-      const snap = snapshotFromTriggerEvent(r);
-      const sim = r.execution_sim && typeof r.execution_sim === "object" ? r.execution_sim : null;
-      const roundTrip =
-        sim?.round_trip_cost_pts != null ? Number(sim.round_trip_cost_pts) : null;
-      return {
-        session_date: r.session_date,
-        return_pts: Number(r.pnl_pts),
-        round_trip_cost_pts: roundTrip,
-        market_condition_bucket: snap
-          ? marketConditionBucket({
-              vix: snap.vix,
-              gamma_regime: snap.gamma_regime,
-              regime: snap.regime,
-            })
-          : null,
-        has_execution_sim: Boolean(sim),
-        counterfactual_comparable: isCounterfactualComparableEval(r.counterfactual_eval),
-      };
-    });
-
-  return {
-    playbook_id: playbookId,
-    triggers: triggered,
-    simulated_trades: simulated,
-    trades,
-    counterfactual_comparable_count: cfComparable,
-    data_quality_session_fraction: dataQualitySessionFraction(pb, playbookId),
-  };
-}
-
-function summarize(rows, playbookId) {
-  const pb = rows.filter((r) => r.playbook_id === playbookId);
-  const armed = pb.filter((r) => r.armed_at).length;
-  const triggered = pb.filter((r) => r.triggered_at).length;
-  const blocked = pb.filter((r) => r.reason_blocked || r.blocked_events > 0).length;
-  const opened = pb.filter((r) => r.opened_at).length;
-  const closed = pb.filter((r) => r.outcome && r.outcome !== "open" && r.pnl_pts != null);
-  const pnls = closed.map((r) => Number(r.pnl_pts));
-  const wins = pnls.filter((p) => p > 0);
-  const losses = pnls.filter((p) => p < 0);
-  const grossWin = wins.reduce((a, b) => a + b, 0);
-  const grossLoss = Math.abs(losses.reduce((a, b) => a + b, 0));
-
-  const cfComparable = pb.filter((r) => isCounterfactualComparableEval(r.counterfactual_eval));
-  const cfMfe = cfComparable
-    .map((r) => Number(r.counterfactual_mfe_pts ?? 0))
-    .filter((n) => n > 0);
-  const cfMae = cfComparable
-    .map((r) => Number(r.counterfactual_mae_pts ?? 0))
-    .filter((n) => n > 0);
-
-  const uniqueSessions = new Set(pb.map((r) => r.session_date)).size;
-  const promotion = evaluatePlaybookPromotion(buildPromotionSample(rows, playbookId));
-
-  return {
-    playbook_id: playbookId,
-    armed,
-    triggered,
-    blocked,
-    executable_proxy: triggered - blocked,
-    opened,
-    closed: closed.length,
-    unique_sessions: uniqueSessions,
-    win_rate: pnls.length ? wins.length / pnls.length : null,
-    mean_return_pts: pnls.length ? pnls.reduce((a, b) => a + b, 0) / pnls.length : null,
-    median_return_pts: median(pnls),
-    profit_factor: grossLoss > 0 ? grossWin / grossLoss : null,
-    expectancy_pts: pnls.length ? pnls.reduce((a, b) => a + b, 0) / pnls.length : null,
-    median_mae_pts: median(closed.map((r) => Number(r.mae_pts ?? 0))),
-    median_mfe_pts: median(closed.map((r) => Number(r.mfe_pts ?? 0))),
-    median_counterfactual_mfe: median(cfMfe),
-    median_counterfactual_mae: median(cfMae),
-    counterfactual_comparable_instances: cfComparable.length,
-    promotion_tier: promotion.tier,
-    promotion_stats: promotion.stats,
-    promotion_gates_failed: promotion.gates.filter((g) => !g.pass).map((g) => g.gate),
-  };
 }
 
 async function main() {
@@ -208,18 +77,32 @@ async function main() {
     WHERE i.session_date >= $1::date
     ORDER BY i.session_date, i.playbook_id
     `,
-    [OOS_START]
+    [PLAYBOOK_OOS_START_DATE]
   );
 
   const trainCount = await pool.query(
     `SELECT COUNT(*)::int AS n FROM spx_play_outcomes WHERE session_date <= $1::date AND playbook_id IS NOT NULL`,
-    [TRAIN_CUTOFF]
+    [PLAYBOOK_TRAIN_CUTOFF_DATE]
   );
 
   await pool.end();
 
   const rows = res.rows.map((r) => ({
-    ...r,
+    instance_id: String(r.instance_id),
+    session_date: String(r.session_date),
+    playbook_id: String(r.playbook_id),
+    armed_at: r.armed_at != null ? String(r.armed_at) : null,
+    triggered_at: r.triggered_at != null ? String(r.triggered_at) : null,
+    opened_at: r.opened_at != null ? String(r.opened_at) : null,
+    reason_blocked: r.reason_blocked != null ? String(r.reason_blocked) : null,
+    counterfactual_mfe_pts: r.counterfactual_mfe_pts != null ? Number(r.counterfactual_mfe_pts) : null,
+    counterfactual_mae_pts: r.counterfactual_mae_pts != null ? Number(r.counterfactual_mae_pts) : null,
+    counterfactual_eval: r.counterfactual_eval ?? null,
+    option_contract_candidate: r.option_contract_candidate ?? null,
+    pnl_pts: r.pnl_pts != null ? Number(r.pnl_pts) : null,
+    mfe_pts: r.mfe_pts != null ? Number(r.mfe_pts) : null,
+    mae_pts: r.mae_pts != null ? Number(r.mae_pts) : null,
+    outcome: r.outcome != null ? String(r.outcome) : null,
     execution_sim:
       r.option_ticket && typeof r.option_ticket === "object"
         ? r.option_ticket.execution_sim ?? null
@@ -229,11 +112,16 @@ async function main() {
         typeof r.option_ticket === "object" &&
         r.option_ticket.execution_sim
     ),
+    blocked_events: Number(r.blocked_events ?? 0),
+    trigger_feature_snapshot:
+      r.trigger_feature_snapshot && typeof r.trigger_feature_snapshot === "object"
+        ? r.trigger_feature_snapshot
+        : null,
   }));
 
   const playbooks = [...new Set(rows.map((r) => r.playbook_id))].sort();
 
-  console.log(`PLAYBOOK_EVIDENCE_REPORT oos_since=${OOS_START} train_cutoff=${TRAIN_CUTOFF}`);
+  console.log(`PLAYBOOK_EVIDENCE_REPORT oos_since=${PLAYBOOK_OOS_START_DATE} train_cutoff=${PLAYBOOK_TRAIN_CUTOFF_DATE}`);
   console.log(`train_labeled_outcomes_excluded=${trainCount.rows[0]?.n ?? 0} (not used below)`);
   console.log(`oos_instance_rows=${rows.length}`);
   console.log(
@@ -246,7 +134,7 @@ async function main() {
   }
 
   for (const pb of playbooks) {
-    const s = summarize(rows, pb);
+    const s = summarizePlaybookEvidence(rows, pb);
     console.log(JSON.stringify(s));
   }
 

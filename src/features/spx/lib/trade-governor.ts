@@ -169,16 +169,39 @@ export function evaluateTradeGovernor(input: TradeGovernorInput): TradeGovernorR
     if (tier === "normal") tier = "reduced";
   }
 
-  const opt = input.option;
-  if (opt?.blocked && opt.block_reason) {
-    blocks.push(`Option contract blocked — ${opt.block_reason}`);
-  }
-  if (opt?.spread_pct != null && opt.spread_pct > maxSpreadPct()) {
-    blocks.push(`Spread ${opt.spread_pct.toFixed(0)}% > governor max ${maxSpreadPct()}%`);
-  }
-  if (opt?.mid != null && opt.mid > maxPremiumUsd()) {
-    blocks.push(`Premium $${opt.mid.toFixed(2)} > governor max $${maxPremiumUsd()}`);
-  }
+  return mergeTradeGovernorWithOptionOverlay(
+    { blocks, warnings, size_multiplier, tier, emergency_shutdown },
+    input.option
+  );
+}
 
-  return { blocks, warnings, size_multiplier, tier, emergency_shutdown };
+/** Option-ticket overlay — spread/premium/contract blocks only (no session re-eval). */
+export function applyTradeGovernorOptionOverlay(
+  option: TradeGovernorInput["option"]
+): Pick<TradeGovernorResult, "blocks" | "warnings"> {
+  const blocks: string[] = [];
+  const warnings: string[] = [];
+  if (option?.blocked && option.block_reason) {
+    blocks.push(`Option contract blocked — ${option.block_reason}`);
+  }
+  if (option?.spread_pct != null && option.spread_pct > maxSpreadPct()) {
+    blocks.push(`Spread ${option.spread_pct.toFixed(0)}% > governor max ${maxSpreadPct()}%`);
+  }
+  if (option?.mid != null && option.mid > maxPremiumUsd()) {
+    blocks.push(`Premium $${option.mid.toFixed(2)} > governor max $${maxPremiumUsd()}`);
+  }
+  return { blocks, warnings };
+}
+
+/** Thread session-level governor once; apply option overlay after ticket is built. */
+export function mergeTradeGovernorWithOptionOverlay(
+  base: TradeGovernorResult,
+  option: TradeGovernorInput["option"]
+): TradeGovernorResult {
+  const overlay = applyTradeGovernorOptionOverlay(option);
+  return {
+    ...base,
+    blocks: [...base.blocks, ...overlay.blocks],
+    warnings: [...base.warnings, ...overlay.warnings],
+  };
 }
