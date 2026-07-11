@@ -20,6 +20,9 @@ export const CLEANUP_TARGETS: Readonly<Record<string, readonly string[]>> = {
   // High-write outcome tables — prune CLOSED/RESOLVED rows only (see route.ts guards).
   // Age column for spx is closed_at (NULL while open => open rows never match).
   spx_play_outcomes: ["closed_at"],
+  spx_playbook_shadow_observations: ["observed_at"],
+  spx_playbook_instance_events: ["observed_at"],
+  spx_playbook_instances: ["updated_at"],
   // Age column for nighthawk is created_at; pending/open rows excluded via status guard.
   nighthawk_play_outcomes: ["created_at"],
   // Operational snapshot tables — written frequently during RTH with no prior retention

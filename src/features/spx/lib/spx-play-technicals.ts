@@ -125,7 +125,7 @@ function rsi(bars: Bar[], period = 14): number | null {
     avgLoss = (avgLoss * (period - 1) + loss) / period;
   }
 
-  if (avgLoss === 0) return 100;
+  if (avgLoss === 0) return avgGain === 0 ? null : 100;
   const rs = avgGain / avgLoss;
   return 100 - 100 / (1 + rs);
 }
@@ -317,7 +317,7 @@ export async function buildPlayTechnicals(
   // 1.5-pt price step is tight enough to catch gap-open moves (which can gap 10+ pts
   // between minutes) while avoiding needless Polygon refetches on sub-tick noise.
   if (cached && now - cached.at < cacheMs && Math.abs(cached.data.price - price) < 1.5) {
-    return cached.data;
+    return { ...cached.data, price };
   }
 
   const today = todayEtYmd();
@@ -329,7 +329,13 @@ export async function buildPlayTechnicals(
   if (!bars.length) return empty;
 
   const norm: Bar[] = bars
-    .filter((b) => b.t != null && Number.isFinite(b.c))
+    .filter(
+      (b) =>
+        b.t != null &&
+        Number.isFinite(b.c) &&
+        Number.isFinite(b.h) &&
+        Number.isFinite(b.l)
+    )
     .map((b) => ({ t: b.t!, o: b.o, h: b.h, l: b.l, c: b.c, v: b.v }));
 
   const m3 = resampleBars(norm, 3);

@@ -390,8 +390,8 @@ export async function closeOpenPlay(
   }
 ): Promise<void> {
   const exitAction = outcome.close?.exit_action;
-  const meta = await loadPlaySessionMeta();
-  const newMeta: PlaySessionMeta = {
+
+  const buildCloseMeta = (meta: PlaySessionMeta): PlaySessionMeta => ({
     last_buy_at: meta.last_buy_at,
     last_sell_at: Date.now(),
     last_sell_was_loss: outcome.was_loss,
@@ -399,27 +399,15 @@ export async function closeOpenPlay(
     session_entries_today: meta.session_entries_today ?? 0,
     session_losses_today:
       (meta.session_losses_today ?? 0) + (outcome.was_loss ? 1 : 0),
-    // TRAIL exits do NOT trigger the 15-min stop cooldown by design — a trailing stop
-    // on a +8pt or +15pt MFE trade is a protected exit from a winning setup, not the
-    // chop/structure-break scenario the cooldown guards against. Exception: if the trail
-    // somehow fired at a loss (rare slippage), treat it like a hard stop.
     last_stop_at:
       exitAction === "STOP" ||
       (exitAction === "TRAIL" && (outcome.close?.pnl_pts ?? 0) < 0)
         ? Date.now()
         : meta.last_stop_at,
-    // C5: stamp today's ET date so the same-day re-entry lock (post-loss /
-    // post-stop / direction) survives subsequent reads. Without this the
-    // read-side date-boundary check (loadPlaySessionMeta) sees session_date
-    // undefined and immediately resets last_sell_was_loss/last_direction/
-    // last_stop_at, bypassing the lock until the ET date rolls.
     session_date: todayEt(),
-  };
+  });
 
   if (dbConfigured()) {
-    // Wrap all 4 writes (close outcome, close play row, meta save) in a single
-    // DB transaction so a crash cannot leave the play open while meta reflects
-    // it as closed (BUG-05 — post-loss re-entry protection bypass).
     const { dbClient } = await import("@/lib/db");
     const client = await dbClient();
     try {
@@ -431,35 +419,28 @@ export async function closeOpenPlay(
       }
 
       const { closeOpenSpxPlayRow } = await import("@/lib/db");
-      await closeOpenSpxPlayRow(id, client);
-
-      const metaPayload: PlaySessionMeta = {
-        ...newMeta,
-        version: (meta.version ?? 0) + 1,
-      };
-      const { setMeta: setMetaFn } = await import("@/lib/db");
-      await setMetaFn(SESSION_META_KEY, JSON.stringify(metaPayload), client);
+      const closedRows = await closeOpenSpxPlayRow(id, client);
+      if (closedRows === 0) {
+        throw new Error(`closeOpenSpxPlayRow matched 0 rows for open_play_id=${id}`);
+      }
 
       await client.query("COMMIT");
-
       MEMORY_OPEN.row = null;
-      const { version: _v, ...memoryMeta } = metaPayload;
-      void _v;
-      Object.assign(MEMORY_SESSION, memoryMeta);
     } catch (err) {
       await client.query("ROLLBACK");
       throw err;
     } finally {
       client.release();
     }
+
+    await savePlaySessionMeta(buildCloseMeta(await loadPlaySessionMeta()));
   } else {
-    // No DB — update in-memory state directly.
     if (outcome.close) {
       const { recordPlayClose } = await import("./spx-play-outcomes");
       await recordPlayClose(id, outcome.close);
     }
     MEMORY_OPEN.row = null;
-    await savePlaySessionMeta(newMeta);
+    await savePlaySessionMeta(buildCloseMeta(await loadPlaySessionMeta()));
   }
 }
 

@@ -1159,9 +1159,9 @@ export async function buildSpxDesk(): Promise<SpxDeskPayload> {
     newsRaw,
     intel,
   ] = await Promise.all([
-    fetchIndexSnapshots([SPX, VIX, VIX9D, VIX3M, TICK, TRIN, ADD]),
+    fetchIndexSnapshots([SPX, VIX, VIX9D, VIX3M, TICK, TRIN, ADD]).catch(() => ({})),
     fetchIndexMinuteBars(SPX, today, today).catch(() => []),
-    fetchIndexDailyBars(SPX, fromWeek, today),
+    fetchIndexDailyBars(SPX, fromWeek, today).catch(() => []),
     fetchIndexEma(SPX, 20, "day"),
     fetchIndexEma(SPX, 50, "day"),
     fetchIndexEma(SPX, 200, "day"),
@@ -1289,8 +1289,14 @@ export async function buildSpxDesk(): Promise<SpxDeskPayload> {
   const gammaFlip =
     (intel?.gamma_flip as number | null) ?? canonicalGex.gamma_flip ?? lastGoodGammaFlip ?? null;
   const aboveFlip = gammaFlip != null ? price > gammaFlip : false;
-  const gammaRegimeLabel =
-    canonicalGex.gamma_regime !== "unknown"
+  const intelFlipActive =
+    engineIntelOverlayEnabled() &&
+    intel != null &&
+    intel.gamma_flip != null &&
+    Number.isFinite(Number(intel.gamma_flip));
+  const gammaRegimeLabel = intelFlipActive
+    ? gammaRegimeWithHysteresis(price, gammaFlip, lastGoodGammaRegime)
+    : canonicalGex.gamma_regime !== "unknown"
       ? canonicalGex.gamma_regime
       : lastGoodGammaRegime;
   const finalWalls = canonicalGex.gex_walls;
@@ -1571,7 +1577,7 @@ export async function buildSpxDeskPulse(): Promise<SpxDeskPulse> {
 
   const today = todayEtYmd();
   const [snapsRaw, prior, structure] = await Promise.all([
-    fetchIndexSnapshots([SPX, VIX, VIX9D, VIX3M, TICK, TRIN, ADD]),
+    fetchIndexSnapshots([SPX, VIX, VIX9D, VIX3M, TICK, TRIN, ADD]).catch(() => ({})),
     fetchPriorDayCached(),
     refreshPulseStructureIfNeeded(today),
   ]);

@@ -63,6 +63,7 @@ export type SpxDeskBriefCross = {
     mode?: "shadow" | "live";
     primary_playbook_id: string | null;
     primary_name: string | null;
+    primary_direction?: "long" | "short" | "neutral" | null;
     fired_count: number;
   } | null;
   /** Full matrix greeks + heatmap levels (GEX/VEX/DEX/CHARM). */
@@ -229,13 +230,26 @@ function deltaLine(delta: string[]): string | null {
 
 function liveEngineConflict(cross: SpxDeskBriefCross | undefined, bias: SpxConfluence["bias"]): string | null {
   const op = cross?.openPlay;
-  if (!op || op.status !== "open") return null;
-  const engineBull = op.direction === "long";
-  const readBull = bias === "bullish";
-  const readBear = bias === "bearish";
-  if ((engineBull && readBear) || (!engineBull && readBull)) {
-    return `engine still ${op.direction} from ${n(op.entry_price, 0)} — read conflicts`;
+  if (op && op.status === "open") {
+    const engineBull = op.direction === "long";
+    const readBull = bias === "bullish";
+    const readBear = bias === "bearish";
+    if ((engineBull && readBear) || (!engineBull && readBull)) {
+      return `engine still ${op.direction} from ${n(op.entry_price, 0)} — read conflicts`;
+    }
   }
+
+  const pb = cross?.playbookShadow;
+  const pbDir = pb?.primary_direction;
+  if (pb && pb.fired_count > 0 && pbDir && pbDir !== "neutral") {
+    const pbBull = pbDir === "long";
+    const readBull = bias === "bullish";
+    const readBear = bias === "bearish";
+    if ((pbBull && readBear) || (!pbBull && readBull)) {
+      return `playbook ${pb.primary_playbook_id ?? "primary"} fired ${pbDir} — read conflicts`;
+    }
+  }
+
   return null;
 }
 

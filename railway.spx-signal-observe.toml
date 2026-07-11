@@ -19,8 +19,7 @@ watchPatterns = [
 
 [deploy]
 startCommand = "node scripts/hit-cron.mjs /api/cron/spx-signal-observe"
-# Every minute during the UTC band covering RTH in EDT and EST (11–21 UTC = 7AM–5PM ET).
-# Route self-skips outside isSpxEngineCronWindow to avoid off-hours DB writes.
-cronSchedule = "*/5 11-21 * * 1-5"
+# Staggered +2 min vs spx-evaluate/spx-issues-sync to avoid simultaneous DB bursts.
+cronSchedule = "4-59/5 11-21 * * 1-5"
 restartPolicyType = "never"
 numReplicas = 1

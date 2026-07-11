@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireAdminApi } from "@/lib/admin-access";
 import { dbConfigured, loadPlaybookInstanceStates } from "@/lib/db";
 import { todayEt } from "@/lib/et-date";
+import { parseAdminSessionDate } from "@/lib/admin-playbook-query";
 import { recordAdminRouteError } from "@/lib/admin-route-errors";
 
 export const dynamic = "force-dynamic";
@@ -16,13 +17,17 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ available: false, reason: "database not configured" });
   }
 
-  const sessionDate = req.nextUrl.searchParams.get("session") ?? todayEt();
+  const sessionParsed = parseAdminSessionDate(req.nextUrl.searchParams.get("session"), todayEt());
+  if (!sessionParsed.ok) {
+    return NextResponse.json({ error: sessionParsed.error }, { status: 400 });
+  }
+
   try {
-    const instances = await loadPlaybookInstanceStates(sessionDate);
+    const instances = await loadPlaybookInstanceStates(sessionParsed.value);
     return NextResponse.json(
       {
         available: true,
-        session_date: sessionDate,
+        session_date: sessionParsed.value,
         as_of: new Date().toISOString(),
         instance_count: instances.length,
         instances,

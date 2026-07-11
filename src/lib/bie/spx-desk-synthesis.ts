@@ -124,6 +124,19 @@ function crossToolAlignment(
     parts.push(aligned ? `LOTTO aligned` : `LOTTO diverges ({{${lp.phase}}})`);
   }
 
+  const pb = cross?.playbookShadow;
+  const pbDir = pb?.primary_direction;
+  if (pb && pb.fired_count > 0 && pbDir && pbDir !== "neutral") {
+    const pbBull = pbDir === "long";
+    const aligned =
+      (pbBull && readBias === "bullish") || (!pbBull && readBias === "bearish");
+    parts.push(
+      aligned
+        ? `PLAYBOOK aligned ({{${pb.primary_playbook_id ?? "primary"}}} {{${pbDir.toUpperCase()}}})`
+        : `PLAYBOOK conflicts ({{${pb.primary_playbook_id ?? "primary"}}} {{${pbDir.toUpperCase()}}} vs read)`
+    );
+  }
+
   if (parts.length <= 1) return null;
   return `ALIGNMENT  ${parts.join(" · ")}`;
 }

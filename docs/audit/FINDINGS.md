@@ -8,8 +8,6 @@ and required CI (`verify`) are green — no per-PR approval, no end-of-day hold.
 here and merge the PR in the same session. Supersedes all earlier "leave OPEN for review" notes
 in this file.
 
-**Status:** FIXED (`cursor/hod-break-fix-261c` on `blackout-web-sandbox`).
-
 ## 🔴 P0 FOUND+FIXED 2026-07-11 — `hod_break`/`lod_break` structurally impossible during RTH (deep sweep #1)
 
 **Surface:** `spx-play-technicals.ts` breakout flags → PB-03 fallback, desk breakout-continuation triggers, playbook matcher.
@@ -19,6 +17,14 @@ in this file.
 **Fix:** `sessionBreakoutExtremesFromBars` + `hodLodBreakoutFlags` — breakout uses completed minute-bar session extremes (excludes forming last bar), not spot-widened desk levels. `pdh_break`/`pdl_break` unchanged.
 
 **Status:** FIXED (`cursor/hod-break-fix-261c` on `blackout-web-sandbox`). See `docs/spx/PLAYBOOK-SYSTEM-DEEP-SWEEP-2026-07-11.md` finding #1.
+
+## 🟠 P1 FOUND+FIXED 2026-07-11 — Deep system sweep batch (BIE/commentary/persistence/gates)
+
+**Surface:** `PLAYBOOK-SYSTEM-DEEP-SWEEP-2026-07-11.md` findings #2–#37 (excl. #1/#17 already fixed).
+
+**Fix:** PR `cursor/deep-sweep-fixes-261c` — playbook alignment in BIE synthesis, commentary `.catch`, `closeOpenPlay` BUG-07 meta, Claude gate audit trail + cache key, playbook DB retention/lock/index, unified outcome classification, desk resilience, gamma NaN guard, admin route validation, cron stagger. Deferred: EMA dedup (#13), desk float rounding sweep (#21), useMergedDesk errors (#23), intel runtime validation (#20), DB FK (#38).
+
+**Status:** FIXED (`cursor/deep-sweep-fixes-261c` on `blackout-web-sandbox`).
 
 ## 🟠 P1 FOUND+FIXED 2026-07-11 — SPX playbook promotion sample used narrow data-quality check (F2 / #20b)
 

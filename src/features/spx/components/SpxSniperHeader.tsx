@@ -104,7 +104,7 @@ function DeskTopStatsRow({
         />
         <StatPill
           label="IV Rank"
-          value={showValues && desk?.uw_iv_rank != null ? String(desk.uw_iv_rank) : "—"}
+          value={showValues && desk?.uw_iv_rank != null ? fmtPrice(desk.uw_iv_rank, 0) : "—"}
           tone="gold"
         />
         {live && desk?.gex_stale && (

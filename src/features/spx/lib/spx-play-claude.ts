@@ -38,10 +38,14 @@ export type ClaudePlayVerdict = {
 const CACHE_KEY = "spx_bie_play_cache";
 const memoryCache = new Map<string, { at: number; verdict: ClaudePlayVerdict }>();
 
-function cacheKey(desk: SpxDeskPayload, c: SpxConfluence): string {
+function cacheKey(
+  desk: SpxDeskPayload,
+  c: SpxConfluence,
+  confirmations: PlayConfirmationResult
+): string {
   const step = Math.max(0.5, playClaudeCachePriceStepPts());
   const bucketedPrice = Math.round(desk.price / step) * step;
-  return `${c.direction}|${c.grade}|${Math.round(c.score)}|${bucketedPrice.toFixed(1)}`;
+  return `${c.direction}|${c.grade}|${Math.round(c.score)}|${confirmations.passed ? 1 : 0}|${bucketedPrice.toFixed(1)}`;
 }
 
 function bieSearchAvailable(): boolean {
@@ -208,9 +212,10 @@ function tallyPrecedentHits(
 function failClosedVerdict(
   c: SpxConfluence,
   headline: string,
-  thesis: string
+  thesis: string,
+  desk?: SpxDeskPayload
 ): ClaudePlayVerdict {
-  return {
+  const verdict: ClaudePlayVerdict = {
     verdict: "VETO",
     direction: c.direction,
     headline,
@@ -218,6 +223,10 @@ function failClosedVerdict(
     approved: false,
     source: "mechanical",
   };
+  if (desk) {
+    logPlayVerdict(desk, c, verdict, `fail-closed: ${headline}`);
+  }
+  return verdict;
 }
 
 /**
@@ -238,7 +247,7 @@ export async function evaluateClaudePlayApproval(
     return mechanicalVerdict(confluence, gates, confirmations);
   }
 
-  const key = cacheKey(desk, confluence);
+  const key = cacheKey(desk, confluence, confirmations);
   const cached = await readCache(key);
   if (cached) return cached;
 
@@ -250,9 +259,11 @@ export async function evaluateClaudePlayApproval(
       return failClosedVerdict(
         confluence,
         "BIE gate blocked — Voyage/DB not configured",
-        "SPX_CLAUDE_GATE requires BIE precedent search (VOYAGE_API_KEY + DATABASE_URL)."
+        "SPX_CLAUDE_GATE requires BIE precedent search (VOYAGE_API_KEY + DATABASE_URL).",
+        desk
       );
     }
+    logPlayVerdict(desk, confluence, mech, "bie-unavailable mechanical fallback");
     await writeCache(key, mech);
     return mech;
   }
@@ -274,9 +285,11 @@ export async function evaluateClaudePlayApproval(
       return failClosedVerdict(
         confluence,
         "BIE search failed — entry blocked",
-        "Voyage precedent search errored. Fail-closed while SPX_CLAUDE_GATE is enabled."
+        "Voyage precedent search errored. Fail-closed while SPX_CLAUDE_GATE is enabled.",
+        desk
       );
     }
+    logPlayVerdict(desk, confluence, mech, "bie-search-error mechanical fallback");
     await writeCache(key, mech);
     return mech;
   }
@@ -286,9 +299,10 @@ export async function evaluateClaudePlayApproval(
   if (tally.total < MIN_TOTAL_PRECEDENTS) {
     const note = `BIE: only ${tally.total}/${MIN_TOTAL_PRECEDENTS} similar precedents — corpus still thin.`;
     if (requireBie) {
-      return failClosedVerdict(confluence, "BIE corpus too thin — entry blocked", note);
+      return failClosedVerdict(confluence, "BIE corpus too thin — entry blocked", note, desk);
     }
     const fallback = mechanicalVerdict(confluence, gates, confirmations, note);
+    logPlayVerdict(desk, confluence, fallback, "bie-corpus-thin mechanical fallback");
     await writeCache(key, fallback);
     return fallback;
   }
@@ -296,9 +310,10 @@ export async function evaluateClaudePlayApproval(
   if (tally.usable < MIN_USABLE_PRECEDENTS) {
     const note = `BIE: ${tally.total} precedents returned but none cleanly resolved target/stop for this direction.`;
     if (requireBie) {
-      return failClosedVerdict(confluence, "BIE precedents inconclusive — entry blocked", note);
+      return failClosedVerdict(confluence, "BIE precedents inconclusive — entry blocked", note, desk);
     }
     const fallback = mechanicalVerdict(confluence, gates, confirmations, note);
+    logPlayVerdict(desk, confluence, fallback, "bie-inconclusive mechanical fallback");
     await writeCache(key, fallback);
     return fallback;
   }
@@ -321,6 +336,7 @@ export async function evaluateClaudePlayApproval(
   }
 
   if (!mech.approved) {
+    logPlayVerdict(desk, confluence, mech, "mechanical bar not met");
     await writeCache(key, mech);
     return mech;
   }
@@ -332,6 +348,7 @@ export async function evaluateClaudePlayApproval(
       confirmations,
       "BIE precedents split evenly — mechanical bar only."
     );
+    logPlayVerdict(desk, confluence, neutral, "bie-split mechanical only");
     await writeCache(key, neutral);
     return neutral;
   }
