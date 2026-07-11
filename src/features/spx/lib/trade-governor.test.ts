@@ -25,3 +25,40 @@ test("evaluateTradeGovernor: spread widening blocks", () => {
   });
   assert.ok(result.blocks.some((b) => b.includes("Spread")));
 });
+
+test("evaluateTradeGovernor: bypass_buy_cooldown skips post-exit cooldown (WATCH→ENTRY promote path)", () => {
+  const recentExit = Date.now() - 60_000;
+  const blocked = evaluateTradeGovernor({
+    buy_intent: true,
+    playbook_id: "PB-01",
+    direction: "long",
+    desk: { vix: 16 },
+    session: {
+      last_buy_at: null,
+      last_sell_at: recentExit,
+      last_sell_was_loss: false,
+      last_direction: "long",
+      last_stop_at: null,
+    },
+  });
+  assert.ok(blocked.blocks.some((b) => b.includes("Buy cooldown")));
+
+  const bypassed = evaluateTradeGovernor({
+    buy_intent: true,
+    playbook_id: "PB-01",
+    direction: "long",
+    desk: { vix: 16 },
+    session: {
+      last_buy_at: null,
+      last_sell_at: recentExit,
+      last_sell_was_loss: false,
+      last_direction: "long",
+      last_stop_at: null,
+    },
+    bypass_buy_cooldown: true,
+  });
+  assert.equal(
+    bypassed.blocks.some((b) => b.includes("Buy cooldown")),
+    false
+  );
+});
