@@ -7,6 +7,8 @@ import { EmptyState, Skeleton } from "@/components/ui";
 import {
   columnsForDensity,
   groupHeaderSpans,
+  groupStartIds,
+  tableMinWidth,
   type HelixColumnDef,
   type HelixTableDensity,
 } from "@/features/helix/lib/helix-table-columns";
@@ -42,22 +44,33 @@ function SignalPill({ label, tone }: { label: string; tone: SignalTone }) {
   );
 }
 
-function colTdClass(col: HelixColumnDef) {
+function colTdClass(col: HelixColumnDef, groupStarts: Set<string>) {
   return clsx(
     "helix-tape-cell",
     `helix-tape-cell--${col.id}`,
     col.align === "right" && "text-right",
-    col.sticky && "helix-tape-cell--sticky"
+    groupStarts.has(col.id) && col.id !== "time" && "helix-tape-cell--group-start",
+    col.id === "time" && "helix-tape-cell--group-print"
   );
 }
 
-function SkeletonRows({ cols }: { cols: HelixColumnDef[] }) {
+function colThClass(col: HelixColumnDef, groupStarts: Set<string>) {
+  return clsx(
+    "helix-tape-col-th",
+    col.align === "right" && "text-right",
+    groupStarts.has(col.id) && col.id !== "time" && "helix-tape-col-th--group-start",
+    col.id === "time" && "helix-tape-col-th--group-print",
+    col.sortKey && "helix-tape-col-th--sortable"
+  );
+}
+
+function SkeletonRows({ cols, groupStarts }: { cols: HelixColumnDef[]; groupStarts: Set<string> }) {
   return (
     <tbody>
       {Array.from({ length: 14 }).map((_, i) => (
         <tr key={i} className={clsx("helix-tape-row", i % 2 === 1 && "helix-tape-row--zebra")}>
           {cols.map((col) => (
-            <td key={col.id} className={colTdClass(col)}>
+            <td key={col.id} className={colTdClass(col, groupStarts)}>
               <Skeleton
                 width={col.id === "ticker" ? 52 : col.id === "premium" ? 64 : 40}
                 height={col.id === "premium" ? 14 : 12}
@@ -135,7 +148,7 @@ function renderCell(
     case "side":
       return (
         <span className={clsx("helix-tape-side", isCall ? "helix-tape-side--call" : "helix-tape-side--put")}>
-          {isCall ? "CALL" : "PUT"}
+          {isCall ? "C" : "P"}
         </span>
       );
     case "expiry":
@@ -249,6 +262,8 @@ export function HelixFlowTable({
 }) {
   const cols = useMemo(() => columnsForDensity(density), [density]);
   const groupSpans = useMemo(() => groupHeaderSpans(cols), [cols]);
+  const groupStarts = useMemo(() => groupStartIds(cols), [cols]);
+  const gridMinWidth = useMemo(() => tableMinWidth(cols), [cols]);
 
   const [sortKey, setSortKey] = useState<HelixFlowSortKey>("time");
   const [sortDir, setSortDir] = useState<HelixFlowSortDir>("desc");
@@ -319,7 +334,17 @@ export function HelixFlowTable({
       )}
 
       <div ref={scrollRef} className="helix-tape-scroll flow-scroll">
-        <table className="helix-tape-grid" role="grid" aria-label="Live options flow table">
+        <table
+          className="helix-tape-grid"
+          role="grid"
+          aria-label="Live options flow table"
+          style={{ minWidth: gridMinWidth }}
+        >
+          <colgroup>
+            {cols.map((col) => (
+              <col key={col.id} style={{ width: col.width }} />
+            ))}
+          </colgroup>
           <thead>
             <tr className="helix-tape-group-row">
               {groupSpans.map((g) => (
@@ -336,12 +361,7 @@ export function HelixFlowTable({
               {cols.map((col) => (
                 <th
                   key={col.id}
-                  className={clsx(
-                    "helix-tape-col-th",
-                    col.align === "right" && "text-right",
-                    col.sticky && "helix-tape-col-th--sticky",
-                    col.sortKey && "helix-tape-col-th--sortable"
-                  )}
+                  className={colThClass(col, groupStarts)}
                   title={col.hint}
                 >
                   {col.sortKey ? (
@@ -372,7 +392,7 @@ export function HelixFlowTable({
             </tr>
           </thead>
           {loading ? (
-            <SkeletonRows cols={cols} />
+            <SkeletonRows cols={cols} groupStarts={groupStarts} />
           ) : filtered.length === 0 ? (
             <tbody>
               <tr>
@@ -449,7 +469,7 @@ export function HelixFlowTable({
                     tabIndex={onContractClick || onTickerClick ? 0 : undefined}
                   >
                     {cols.map((col) => (
-                      <td key={col.id} className={colTdClass(col)}>
+                      <td key={col.id} className={colTdClass(col, groupStarts)}>
                         {renderCell(col, flow, {
                           isCall,
                           isWhale,

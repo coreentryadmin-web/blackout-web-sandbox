@@ -3,7 +3,9 @@ import assert from "node:assert/strict";
 import {
   columnsForDensity,
   groupHeaderSpans,
+  groupStartIds,
   matchesDteFilter,
+  tableMinWidth,
 } from "./helix-table-columns.ts";
 
 describe("columnsForDensity", () => {
@@ -34,6 +36,24 @@ describe("columnsForDensity", () => {
     assert.ok(ids.includes("spot"));
     assert.ok(ids.includes("iv"));
     assert.ok(ids.includes("score"));
+  });
+});
+
+describe("tableMinWidth", () => {
+  it("sums column widths for essential density", () => {
+    const cols = columnsForDensity("essential");
+    assert.equal(tableMinWidth(cols), `${cols.reduce((s, c) => s + parseFloat(c.width), 0)}rem`);
+  });
+});
+
+describe("groupStartIds", () => {
+  it("marks the first column in each group", () => {
+    const starts = groupStartIds(columnsForDensity("essential"));
+    assert.ok(starts.has("time"));
+    assert.ok(starts.has("side"));
+    assert.ok(starts.has("premium"));
+    assert.ok(starts.has("dte"));
+    assert.ok(starts.has("signals"));
   });
 });
 
