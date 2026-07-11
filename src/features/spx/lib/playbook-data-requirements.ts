@@ -9,6 +9,8 @@ export type PlaybookDataRequirements = {
   gex: boolean;
   vix: boolean;
   optionQuotes: boolean;
+  /** True when playbook thesis depends on true volume-weighted SPX VWAP (not typical-price fallback). */
+  volumeWeightedVwap: boolean;
 };
 
 export type PlaybookDataRequirementViolation = {
@@ -68,6 +70,7 @@ function defaultRequirements(
     gex: gexStructural,
     vix: id === "PB-03" || id === "PB-08",
     optionQuotes: true,
+    volumeWeightedVwap: id === "PB-01" || id === "PB-02",
   };
 }
 
@@ -100,11 +103,18 @@ export function allowsHaltStaleRestrictedEntry(id: PlaybookId): boolean {
 export function evaluatePlaybookDataSatisfaction(
   pbId: PlaybookId,
   flags: PlaybookDataQualityFlags,
-  desk?: Pick<SpxDeskPayload, "vix"> | null,
+  desk?: Pick<SpxDeskPayload, "vix" | "vwap_volume_weighted"> | null,
   opts?: { option_quotes_available?: boolean }
 ): PlaybookDataSatisfaction {
   const req = REQUIREMENTS_BY_PB[pbId];
   const violations: PlaybookDataRequirementViolation[] = [];
+
+  if (req.volumeWeightedVwap && desk?.vwap_volume_weighted === false) {
+    violations.push({
+      capability: "volumeWeightedVwap",
+      detail: "SPX VWAP not volume-weighted — index bars lack volume (ISSUE-16)",
+    });
+  }
 
   if (req.freshDesk && flags.desk_stale) {
     violations.push({
@@ -171,7 +181,7 @@ export function haltStaleEntryBlocked(
 export function playbookDataQualityBlockReason(
   pbId: PlaybookId,
   flags: PlaybookDataQualityFlags,
-  desk?: Pick<SpxDeskPayload, "vix"> | null,
+  desk?: Pick<SpxDeskPayload, "vix" | "vwap_volume_weighted"> | null,
   opts?: { option_quotes_available?: boolean }
 ): string | null {
   const halt = haltStaleEntryBlocked(pbId, flags, desk);

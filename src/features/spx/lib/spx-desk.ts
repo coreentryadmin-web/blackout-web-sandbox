@@ -1282,7 +1282,7 @@ export async function buildSpxDesk(): Promise<SpxDeskPayload> {
   let maxPain = canonicalGex.max_pain ?? uwMaxPain ?? null;
 
   const vwap = session.vwap ?? (intel?.vwap as number | null) ?? null;
-  const vwapVolumeWeighted = session.vwap_volume_weighted ?? true;
+  const vwapVolumeWeighted = session.vwap_volume_weighted ?? false;
   const lod = session.lod ?? (intel?.lod as number | null) ?? null;
   const hod = session.hod ?? (intel?.hod as number | null) ?? null;
 
