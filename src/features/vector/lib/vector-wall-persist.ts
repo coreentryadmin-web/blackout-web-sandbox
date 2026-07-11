@@ -1,5 +1,5 @@
 import { sharedCacheGet, sharedCacheSet } from "@/lib/shared-cache";
-import { recordWallSample, type WallHistorySample } from "./vector-wall-history";
+import { mergeWallHistory, type WallHistorySample } from "./vector-wall-history";
 
 const KEY_PREFIX = "vector:wall-history";
 /** Keep through the next session for off-hours review + replay groundwork. */
@@ -19,7 +19,17 @@ export async function loadSessionWallHistory(
   return hit ?? [];
 }
 
-/** Append/replace one bar sample into the session ring (best-effort). */
+/**
+ * Append/replace one bar sample into the session ring (best-effort).
+ *
+ * The write is a read-modify-write with no lock, so with 2+ replicas two
+ * writers can interleave — merging by time (union) instead of appending to
+ * the tail bounds the damage to "last write for the SAME bucket wins" rather
+ * than "whole array from the stale reader wins": a bucket written by replica
+ * B can no longer be dropped entirely by replica A writing from a pre-B read,
+ * because A's fresh read (immediately before the set) already contains B's
+ * bucket and the union preserves it.
+ */
 export async function appendSessionWallSample(
   sessionYmd: string,
   sample: WallHistorySample,
@@ -28,16 +38,22 @@ export async function appendSessionWallSample(
   if (!sessionYmd) return;
   try {
     const existing = await loadSessionWallHistory(sessionYmd, ticker);
-    const next = recordWallSample(existing, sample);
+    const next = mergeWallHistory(existing, [sample]);
+    if (next === existing) return; // no-op merge — nothing new to write
     await sharedCacheSet(redisKey(ticker, sessionYmd), next, TTL_SEC);
   } catch {
     /* supplementary visual — never block the live stream */
   }
 }
 
-/** Debounced Redis persist — one write per 15s bucket per replica (not per SSE connection). */
-let lastRedisPersistBucket = -1;
-let lastRedisPersistAt = 0;
+/**
+ * Debounced Redis persist — one write per 15s bucket per TICKER per replica.
+ * The debounce state was previously module-global: with two tickers streaming
+ * concurrently they shared one slot, so within each window only the first
+ * ticker's write went through and the others' buckets were permanently missing
+ * from persisted history (K tickers → each persists roughly every 2·K seconds).
+ */
+const lastPersistByTicker = new Map<string, { bucket: number; at: number }>();
 
 export function persistWallSampleDebounced(
   sessionYmd: string,
@@ -47,14 +63,13 @@ export function persistWallSampleDebounced(
   if (!sessionYmd) return;
   const now = Date.now();
   const bucket = sample.time;
-  if (bucket === lastRedisPersistBucket && now - lastRedisPersistAt < 2_000) return;
-  lastRedisPersistBucket = bucket;
-  lastRedisPersistAt = now;
+  const last = lastPersistByTicker.get(ticker);
+  if (last && last.bucket === bucket && now - last.at < 2_000) return;
+  lastPersistByTicker.set(ticker, { bucket, at: now });
   void appendSessionWallSample(sessionYmd, sample, ticker);
 }
 
 /** Test-only reset. */
 export function _resetWallPersistDebounceForTest(): void {
-  lastRedisPersistBucket = -1;
-  lastRedisPersistAt = 0;
+  lastPersistByTicker.clear();
 }

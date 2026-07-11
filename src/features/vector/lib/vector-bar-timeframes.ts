@@ -69,3 +69,28 @@ export function barsForVectorTimeframe<T extends VectorOhlcBar>(
 ): T[] {
   return aggregateVectorBars(minuteBars, intervalMinutes);
 }
+
+/**
+ * Union two 1m bar arrays by time, sorted ascending. Fetched (Polygon closed)
+ * bars are authoritative for OHLC — they replace live-built bars at the same
+ * minute — but a live-built bar's volume survives when the fetched row has
+ * none. Used by the SSE-reconnect backfill: bars that closed while the
+ * connection was down (reconnect, replay window, tab sleep) are filled in
+ * instead of remaining permanent session holes.
+ */
+export function mergeBarsByTime<T extends VectorOhlcBar & { volume?: number }>(
+  existing: T[],
+  fetched: T[]
+): T[] {
+  if (!fetched.length) return existing;
+  const byTime = new Map<number, T>();
+  for (const b of existing) byTime.set(b.time, b);
+  for (const b of fetched) {
+    const prev = byTime.get(b.time);
+    byTime.set(
+      b.time,
+      prev && b.volume == null && prev.volume != null ? { ...b, volume: prev.volume } : b
+    );
+  }
+  return [...byTime.values()].sort((a, b) => a.time - b.time);
+}

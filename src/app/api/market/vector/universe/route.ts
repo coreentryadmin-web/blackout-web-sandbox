@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { authorizeMarketDeskApi } from "@/lib/market-api-auth";
+import { authorizeMarketDeskApi, isCronAuthorized } from "@/lib/market-api-auth";
 import { requireToolApi } from "@/lib/tool-access-server";
 import { loadVectorUniverseSnapshot, refreshVectorUniverseSnapshot } from "@/features/vector";
 
@@ -16,7 +16,10 @@ export async function GET(req: NextRequest) {
   const locked = await requireToolApi("vector");
   if (locked) return locked;
 
-  const force = req.nextUrl.searchParams.get("force") === "1";
+  // force is a 21-ticker heatmap fan-out per request — a loopable cost lever
+  // if any authorized member can pull it. Cron/ops only; members always read
+  // the warmed snapshot (with an inline rebuild only on a genuine cache miss).
+  const force = req.nextUrl.searchParams.get("force") === "1" && isCronAuthorized(req);
   let snap = await loadVectorUniverseSnapshot();
   if (!snap || force) {
     snap = await refreshVectorUniverseSnapshot();
