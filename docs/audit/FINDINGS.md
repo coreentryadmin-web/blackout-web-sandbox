@@ -8,6 +8,18 @@ and required CI (`verify`) are green — no per-PR approval, no end-of-day hold.
 here and merge the PR in the same session. Supersedes all earlier "leave OPEN for review" notes
 in this file.
 
+## 🔴 P1 FOUND+FIXED 2026-07-11 — #117/#120 broke `next build` (invalid Tailwind opacity in @apply); #123 fixed 10 of 13, this closes the last 3
+
+**Surface:** `src/app/globals.css` helix `/flows` styles → `verify` CI build step + `ecr-push-staging` deploys.
+
+**Root cause:** 13 `@apply` uses of Tailwind color-opacity modifiers not on the default opacity scale (multiples of 5): `border-white/8` ×5, `border-white/12`, `border-white/18` ×2, `bg-{bull,bear,ember,gold,purple}/12` ×5. In markup an invalid modifier silently generates nothing; inside `@apply` it is a hard PostCSS error, so `next build` fails repo-wide. Landed because `automerge.yml` merges `cursor/*` PRs ~11s after opening — before their own `verify` completes — and the repo has no required status checks. Caught on an unrelated PR's `verify` (#118). **Third occurrence of this bug class** (`f7d56fb` fixed the same shape earlier).
+
+**Fix history:** Cursor's #123 rounded 10 of the 13 to scale tokens (`/8→/10`, `/12→/10`, `/18→/20`) but missed the three custom-color ones — `bg-ember/12`, `bg-gold/12`, `bg-purple/12` — so the build remained broken. This PR converts those three to `bg-*/[0.12]` (exact alpha, zero visual change). Full local `next build` now compiles cleanly; `tsc --noEmit` clean.
+
+**Process recommendation:** now that repo "Allow auto-merge" is enabled, add branch protection on `blackout-web-sandbox` with `verify` required and switch `automerge.yml` to GitHub native auto-merge — same latency when green, red builds can't land. A cheap `@apply` opacity grep (`/N` where N % 5 ≠ 0) in `verify` would catch this recurring class at the introducing PR.
+
+**Status:** FIXED (`fix/helix-invalid-tailwind-opacity`, PR #122).
+
 ## 🟢 INFO 2026-07-11 — Residual sweep: #27/#31-32/#38 + staging gate default
 
 **Fix:** PR `cursor/residual-sweep-261c` — ambiguity-safe `fetchSpxClaudePlayOutcomeForAudit`, `spx_claude_play` alert_type, labeled UW REST fetch, flow spot=0 guard, playbook FK constraints, `SPX_CLAUDE_GATE` default-on staging.

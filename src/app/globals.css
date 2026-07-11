@@ -14923,7 +14923,7 @@ body::before {
   }
 
   .helix-flow-signal--gold {
-    @apply text-gold border-gold/45 bg-gold/12;
+    @apply text-gold border-gold/45 bg-gold/[0.12];
   }
 
   .helix-flow-signal--sky {
@@ -14931,11 +14931,11 @@ body::before {
   }
 
   .helix-flow-signal--purple {
-    @apply text-purple-light border-purple/40 bg-purple/12;
+    @apply text-purple-light border-purple/40 bg-purple/[0.12];
   }
 
   .helix-flow-signal--ember {
-    @apply text-ember border-ember/40 bg-ember/12;
+    @apply text-ember border-ember/40 bg-ember/[0.12];
   }
 
   .helix-flow-signal--muted {
