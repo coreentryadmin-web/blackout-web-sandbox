@@ -15,7 +15,6 @@ import {
   mergeWallHistory,
   normalizeVectorTicker,
   primeVectorWallScope,
-  reconstructSessionRail,
   seedWallHistoryForDisplay,
   type WallHistorySample,
 } from "@/features/vector";
@@ -56,21 +55,20 @@ export default async function VectorPage({ searchParams }: PageProps) {
   const today = todayEt();
   const liveSession = sessionYmd === today && isEtCashRth();
 
-  // Off-hours dense-rail backfill (task #21). The live universe recorder only
-  // writes wall history during RTH for covered tickers, so an off-hours view of
-  // a session with no recorded rail (older date, un-covered ticker) would collapse
-  // to one seeded bead per strike. When history is sparse and the session is NOT
-  // live, reconstruct a REAL dense rail from Polygon's EOD chain + the session's
-  // observed spot path (closed-form BSM gamma along the true price path — no
-  // fabrication). Redis-cached, so only the first off-hours viewer pays the fetch.
-  let baseHistory = mergeWallHistory(getVectorWallHistory(ticker), persistedHistory);
-  const SPARSE_RAIL_SAMPLES = 8;
-  if (!liveSession && baseHistory.length < SPARSE_RAIL_SAMPLES) {
-    const reconstructed = await reconstructSessionRail({ ticker, sessionYmd }).catch(
-      () => [] as WallHistorySample[]
-    );
-    if (reconstructed.length) baseHistory = mergeWallHistory(reconstructed, baseHistory);
-  }
+  // Time-honest rail (product decision 2026-07-11). The rail shows ONLY what the
+  // live universe recorder actually captured point-in-time during RTH — genuinely
+  // dynamic walls that shift/build/fade with the tape. We deliberately do NOT
+  // back-project the closing chain across the whole session: intraday OI history
+  // is not published by any provider (UW/Polygon are EOD-only), so a reconstruction
+  // can only replay the CLOSING ladder against the spot path, which paints a flat,
+  // full-width rail on a range-bound day (every bucket shows the same strikes at the
+  // same strength — proven with a live probe: the 7600 wall read 5.3% at every
+  // bucket). That reads as "walls everywhere, all session," the opposite of the
+  // point-in-time dynamism the rail is meant to show. Where nothing was recorded,
+  // seedWallHistoryForDisplay drops a single honest as-of-close snapshot instead of
+  // a fabricated full-day rail. The reconstruction module is kept for the strike×time
+  // GEX heatmap (#14), where a dense back-projected grid is the correct primitive.
+  const baseHistory = mergeWallHistory(getVectorWallHistory(ticker), persistedHistory);
 
   const initialWallHistory = seedWallHistoryForDisplay(
     baseHistory,
