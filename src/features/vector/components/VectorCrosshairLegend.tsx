@@ -69,7 +69,7 @@ export function VectorCrosshairLegend({ state }: Props) {
         </div>
       )}
       {state.darkPoolLevels.length > 0 && (
-        <div className="text-[#00d4ff]">
+        <div className="text-[#ff8a3d]">
           DP{" "}
           {state.darkPoolLevels
             .slice(0, 3)
