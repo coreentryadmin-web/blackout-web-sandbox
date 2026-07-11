@@ -199,6 +199,8 @@ export interface FlowAlert {
   alert_rule?: string;
   ask_pct?: number;
   dte?: number;
+  /** Per-contract fill from UW alert payload (price paid per share). */
+  fill_price?: number;
   // Feature 5: options chain context at time of print
   underlying_price?: number;
   open_interest?: number;

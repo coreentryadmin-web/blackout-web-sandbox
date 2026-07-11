@@ -10,6 +10,7 @@ import {
   flowTimeMs,
   fmtAskPct,
   fmtExpiryShort,
+  fmtFill,
   fmtIv,
   fmtOi,
   fmtOtm,
@@ -33,6 +34,7 @@ const COLUMNS: { key: HelixFlowSortKey | null; label: string; align?: "left" | "
   { key: "strike", label: "Strike", align: "right" },
   { key: null, label: "Spot", align: "right" },
   { key: "premium", label: "Premium", align: "right" },
+  { key: null, label: "Fill", align: "right" },
   { key: "dte", label: "DTE", align: "right" },
   { key: null, label: "Ask", align: "right" },
   { key: null, label: "OI", align: "right" },
@@ -349,6 +351,9 @@ export function HelixFlowTable({
                       )}
                     >
                       {premiumDisplay(flow)}
+                    </td>
+                    <td className="text-right tabular-nums text-sky-200/85">
+                      {fmtFill(flow.fill_price)}
                     </td>
                     <td className="text-right tabular-nums text-sky-300/80">
                       {is0dte ? <span className="text-ember font-semibold">0</span> : dte}

@@ -63,6 +63,12 @@ export function fmtSpot(n: number | null | undefined): string {
   return n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
+export function fmtFill(n: number | null | undefined): string {
+  if (n == null || !Number.isFinite(n) || n <= 0) return "—";
+  if (n >= 100) return n.toFixed(1);
+  return n.toFixed(2);
+}
+
 export function fmtOi(n: number | null | undefined): string {
   if (n == null || !Number.isFinite(n) || n <= 0) return "—";
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
