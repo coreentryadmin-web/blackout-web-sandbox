@@ -15,6 +15,12 @@ export function composeSpxInvalidationLines(
   cross?: SpxDeskBriefCross
 ): string[] {
   const lines: string[] = ["**SPX — what flips / kills the read**", ""];
+
+  if (desk.gex_stale || desk.feed_stalled) {
+    lines.push(
+      "- **Data stale** — GEX/feed lagging; treat invalidation levels as soft until refresh."
+    );
+  }
   const { stop, target } = confluence.levels;
 
   if (stop != null) {

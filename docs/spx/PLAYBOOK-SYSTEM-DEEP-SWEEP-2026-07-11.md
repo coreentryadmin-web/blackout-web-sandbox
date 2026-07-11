@@ -112,3 +112,39 @@ Full adversarial pass on the two new admin routes (`fsm-today`, `promotion-repor
 6. Everything else in Medium/Low is real but not urgent — good material for a cleanup sprint, not a stop-the-line.
 
 None of this overturns the standing verdict that staging is correctly positioned as research, not trusted capital deployment — but #1 in particular means some of the "evidence" already being gathered from breakout-dependent playbooks (PB-03's fallback path, breakout-continuation triggers referenced from `spx-desk.ts`) has been collected against a signal that could never actually fire, which is worth factoring into how much that evidence should currently be trusted.
+
+---
+
+## Deep-sweep fix batch (2026-07-11, PR `cursor/deep-sweep-fixes-261c`)
+
+| # | Status | Notes |
+|---|--------|-------|
+| 1 | **FIXED #102** | hod_break/lod_break |
+| 2 | **FIXED** | Intel overlay regime label follows intel flip via `gammaRegimeWithHysteresis` |
+| 3 | **FIXED** | `.catch` on `fetchIndexSnapshots` / `fetchIndexDailyBars` in desk + pulse |
+| 4 | **FIXED** | Playbook in `crossToolAlignment` + `liveEngineConflict`; `primary_direction` threaded |
+| 5 | **FIXED** | Commentary playbook fetch try/catch |
+| 6 | **FIXED** | `closeOpenPlay` uses post-commit `savePlaySessionMeta` (BUG-07); row-count check |
+| 7 | **PARTIAL** | Audit trail on fail-closed + mechanical fallbacks; `SPX_CLAUDE_GATE` default still unset |
+| 8 | **FIXED** | `logPlayVerdict` on fail-closed + BIE fallback paths |
+| 9 | **FIXED** | Playbook tables in `db-cleanup-targets.ts` |
+| 10–11 | **FIXED** | Unified `classifyOutcome` P&L grading; STOP/TRAIL scratch = breakeven |
+| 12 | **FIXED** | `updateOpenSpxPlayRow` MFE/MAE `GREATEST` high-water |
+| 13 | **DEFERRED** | EMA dedup refactor |
+| 14 | **FIXED** | NaN guard on gamma OI fields |
+| 15 | **FIXED** | Prior-day OHLC uses dated bars subset |
+| 16 | **FIXED** | Cache key includes `confirmations.passed` |
+| 17 | **FIXED #100** | (see above) |
+| 18 | **FIXED** | Advisory lock on `insertPlaybookInstanceEvents` |
+| 19 | **FIXED** | Index `idx_spx_playbook_shadow_obs_session` |
+| 20 | **DEFERRED** | Runtime intel validation |
+| 21–23 | **PARTIAL/DEFERRED** | Desk rounding sweep; IV rank #22 fixed; useMergedDesk errors deferred |
+| 24–25 | **FIXED** | Bar h/l validation; technicals cache returns fresh `price` |
+| 26 | **DEFERRED** | `SPX_CLAUDE_DAILY_MAX_CALLS` still unused |
+| 27 | **OPEN** | alert-outcome-sync fuzzy join (documented residual) |
+| 28–32 | **DEFERRED** | Low/hygiene |
+| 33 | **FIXED** | Invalidation staleness note |
+| 34 | **FIXED** | spx-signal-observe docblock |
+| 35 | **FIXED** | Staggered cron TOMLs (+2 / +4 min) |
+| 36–37 | **FIXED** | Promotion query LIMIT 50k; admin date validation → 400 |
+| 38 | **OPEN** | No DB FK on playbook instance refs (schema change deferred) |

@@ -25,6 +25,6 @@ watchPatterns = [
 # a stale/silent engine on the same cadence they tick on, not slower. The route self-skips
 # outside isSpxEngineCronWindow, so the extra ticks are cheap no-ops.
 startCommand = "node scripts/hit-cron.mjs /api/cron/spx-issues-sync"
-cronSchedule = "*/5 11-21 * * 1-5"
+cronSchedule = "2-59/5 11-21 * * 1-5"
 restartPolicyType = "never"
 numReplicas = 1

@@ -103,22 +103,28 @@ export async function POST(req: NextRequest) {
           nighthawk,
         },
         playbookShadow: await (async () => {
-          const technicals = await buildPlayTechnicals(desk.price, {
-            vwap: desk.vwap,
-            pdh: desk.pdh,
-            pdl: desk.pdl,
-            hod: desk.hod,
-            lod: desk.lod,
-          });
-          const panel = buildPlaybookShadowPanel(desk, technicals);
-          if (!panel) return null;
-          const primary = panel.verdicts.find((v) => v.primary) ?? null;
-          return {
-            mode: panel.mode,
-            primary_playbook_id: panel.primary_playbook_id,
-            primary_name: primary?.name ?? null,
-            fired_count: panel.verdicts.filter((v) => v.trigger_fired).length,
-          };
+          try {
+            const technicals = await buildPlayTechnicals(desk.price, {
+              vwap: desk.vwap,
+              pdh: desk.pdh,
+              pdl: desk.pdl,
+              hod: desk.hod,
+              lod: desk.lod,
+            });
+            const panel = buildPlaybookShadowPanel(desk, technicals);
+            if (!panel) return null;
+            const primary = panel.verdicts.find((v) => v.primary) ?? null;
+            return {
+              mode: panel.mode,
+              primary_playbook_id: panel.primary_playbook_id,
+              primary_name: primary?.name ?? null,
+              primary_direction: primary?.direction ?? null,
+              fired_count: panel.verdicts.filter((v) => v.trigger_fired).length,
+            };
+          } catch (err) {
+            console.warn("[market/spx/commentary] playbook shadow unavailable:", err);
+            return null;
+          }
         })(),
       });
       if (!generated) throw new Error("spx-commentary: generation returned null");

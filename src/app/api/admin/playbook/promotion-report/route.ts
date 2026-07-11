@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAdminApi } from "@/lib/admin-access";
 import { fetchPlaybookPromotionReport } from "@/lib/admin-playbook-promotion";
+import { parseAdminSinceDate } from "@/lib/admin-playbook-query";
 import { recordAdminRouteError } from "@/lib/admin-route-errors";
 
 export const dynamic = "force-dynamic";
@@ -11,9 +12,14 @@ export async function GET(req: NextRequest) {
   const denied = await requireAdminApi();
   if (denied) return denied;
 
-  const since = req.nextUrl.searchParams.get("since") ?? undefined;
+  const sinceParam = req.nextUrl.searchParams.get("since");
+  const sinceParsed = parseAdminSinceDate(sinceParam);
+  if (!sinceParsed.ok) {
+    return NextResponse.json({ error: sinceParsed.error }, { status: 400 });
+  }
+
   try {
-    const report = await fetchPlaybookPromotionReport({ since_date: since });
+    const report = await fetchPlaybookPromotionReport({ since_date: sinceParsed.value });
     return NextResponse.json(report, {
       headers: { "Cache-Control": "no-store" },
     });

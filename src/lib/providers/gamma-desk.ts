@@ -28,6 +28,7 @@ export function analyzeStrikeGexRows(rows: Record<string, unknown>[]): {
     if (!Number.isFinite(strike)) continue;
     const callG = Number(row.call_gamma_oi ?? row.call_gex ?? 0);
     const putG = Number(row.put_gamma_oi ?? row.put_gex ?? 0);
+    if (!Number.isFinite(callG) || !Number.isFinite(putG)) continue;
     const net = callG + putG;
     // Drop ONLY genuinely empty (0/0) strikes. Since net = callG + putG, the test
     // (callG === 0 && putG === 0) already implies net === 0, so the old `net === 0 &&`

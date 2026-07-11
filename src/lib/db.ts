@@ -1051,6 +1051,8 @@ async function runMigrations(): Promise<void> {
       ON spx_playbook_shadow_observations (observed_at DESC);
     CREATE INDEX IF NOT EXISTS idx_spx_playbook_shadow_obs_primary
       ON spx_playbook_shadow_observations (primary_playbook_id, observed_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_spx_playbook_shadow_obs_session
+      ON spx_playbook_shadow_observations (session_date, observed_at DESC);
 
     ALTER TABLE spx_playbook_shadow_observations
       ADD COLUMN IF NOT EXISTS pipeline_audit JSONB,
@@ -2447,10 +2449,14 @@ export async function insertPlaybookInstanceEvents(
 ): Promise<void> {
   if (!rows.length) return;
   await ensureSchema();
+  const lockKey = `playbook-instance-events:${rows[0]!.session_date}`;
+  const locked = await tryAdvisoryLock(lockKey);
+  if (!locked) return;
   const pool = await getPool();
-  for (const row of rows) {
-    await pool.query(
-      `
+  try {
+    for (const row of rows) {
+      await pool.query(
+        `
       INSERT INTO spx_playbook_instance_events (
         session_date, instance_id, playbook_id, event_type, direction,
         price_at_event, reason, gate_blocks, feature_snapshot, engine_action,
@@ -2458,22 +2464,25 @@ export async function insertPlaybookInstanceEvents(
       )
       VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9::jsonb,$10,$11,$12,$13)
       `,
-      [
-        row.session_date,
-        row.instance_id,
-        row.playbook_id,
-        row.event_type,
-        row.direction,
-        row.price_at_event,
-        row.reason,
-        row.gate_blocks != null ? JSON.stringify(row.gate_blocks) : null,
-        JSON.stringify(row.feature_snapshot),
-        row.engine_action,
-        row.executable,
-        row.counterfactual_mfe_pts,
-        row.counterfactual_mae_pts,
-      ]
-    );
+        [
+          row.session_date,
+          row.instance_id,
+          row.playbook_id,
+          row.event_type,
+          row.direction,
+          row.price_at_event,
+          row.reason,
+          row.gate_blocks != null ? JSON.stringify(row.gate_blocks) : null,
+          JSON.stringify(row.feature_snapshot),
+          row.engine_action,
+          row.executable,
+          row.counterfactual_mfe_pts,
+          row.counterfactual_mae_pts,
+        ]
+      );
+    }
+  } finally {
+    await releaseAdvisoryLock(lockKey);
   }
 }
 
@@ -2797,6 +2806,7 @@ export async function fetchPlaybookPromotionEvidenceRows(opts?: {
      )
     WHERE ($1::boolean = false OR i.session_date >= $2::date)
     ORDER BY i.session_date, i.playbook_id
+    LIMIT 50000
     `,
     [oosOnly, since]
   );
@@ -3482,11 +3492,11 @@ export async function updateOpenSpxPlayRow(
     vals.push(patch.trim_done);
   }
   if (patch.mfe_pts !== undefined) {
-    sets.push(`mfe_pts = $${i++}`);
+    sets.push(`mfe_pts = GREATEST(mfe_pts, $${i++})`);
     vals.push(patch.mfe_pts);
   }
   if (patch.mae_pts !== undefined) {
-    sets.push(`mae_pts = $${i++}`);
+    sets.push(`mae_pts = GREATEST(mae_pts, $${i++})`);
     vals.push(patch.mae_pts);
   }
   if (!sets.length) return;
@@ -3497,12 +3507,13 @@ export async function updateOpenSpxPlayRow(
   );
 }
 
-export async function closeOpenSpxPlayRow(id: number, db?: Db): Promise<void> {
+export async function closeOpenSpxPlayRow(id: number, db?: Db): Promise<number> {
   await ensureSchema();
-  await (db ?? await getPool()).query(
+  const res = await (db ?? await getPool()).query(
     `UPDATE spx_open_play SET status = 'closed', closed_at = NOW() WHERE id = $1 AND status = 'open'`,
     [id]
   );
+  return res.rowCount ?? 0;
 }
 
 function mapPlayOutcomeRow(r: QueryResultRow): import("@/features/spx/lib/spx-play-outcomes").PlayOutcomeRow {

@@ -32,16 +32,17 @@ describe("classifyOutcome", () => {
     assert.equal(classifyOutcome(close("THESIS", 0, false)), "breakeven");
   });
 
-  it("STOP is always a loss; THETA/SESSION grade by P&L sign", () => {
+  it("STOP/SESSION grade by P&L; small scratch is breakeven", () => {
     assert.equal(classifyOutcome(close("STOP", -7.15, true)), "loss");
-    assert.equal(classifyOutcome(close("SESSION", -0.5)), "loss");
+    assert.equal(classifyOutcome(close("SESSION", -0.5)), "breakeven");
     assert.equal(classifyOutcome(close("THETA", 1.2)), "win");
     assert.equal(classifyOutcome(close("SESSION", 0)), "breakeven");
   });
 
   it("TARGET is a win; TRAIL scratch-or-better is a win, below-entry is a loss", () => {
     assert.equal(classifyOutcome(close("TARGET", 14)), "win");
-    assert.equal(classifyOutcome(close("TRAIL", 0)), "win");
+    assert.equal(classifyOutcome(close("TRAIL", 0)), "breakeven");
+    assert.equal(classifyOutcome(close("STOP", 0, false)), "breakeven");
     assert.equal(classifyOutcome(close("TRAIL", -2)), "loss");
   });
 

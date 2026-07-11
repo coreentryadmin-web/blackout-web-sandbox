@@ -111,14 +111,14 @@ export function priorDayFromDailyBars(
   // one full session stale — corrupting PDH/PDL/PDC and every derived level (the R1/R2/
   // S1/S2 pivots, PDH/PDL breakouts). This supersedes the old ISSUE-34 length<2 guard.
   if (bars.length === 0) return { pdh: null, pdl: null, pdc: null };
-  if (bars.every((b) => b.t != null)) {
-    for (let i = bars.length - 1; i >= 0; i -= 1) {
-      const b = bars[i];
+  const dated = bars.filter((b) => b.t != null);
+  if (dated.length > 0) {
+    for (let i = dated.length - 1; i >= 0; i -= 1) {
+      const b = dated[i]!;
       if (b.t != null && etYmdFromMs(b.t) < todayYmd) {
         return { pdh: b.h, pdl: b.l, pdc: b.c };
       }
     }
-    // Every bar is dated today (only a partial bar so far) — no completed prior session.
     return { pdh: null, pdl: null, pdc: null };
   }
   // Timestamps unavailable: fall back to the conservative assumption that the last bar

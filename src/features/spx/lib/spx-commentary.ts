@@ -572,6 +572,7 @@ export async function generateSpxCommentary(
       mode?: "shadow" | "live";
       primary_playbook_id: string | null;
       primary_name: string | null;
+      primary_direction?: "long" | "short" | "neutral" | null;
       fired_count: number;
     } | null;
   }
