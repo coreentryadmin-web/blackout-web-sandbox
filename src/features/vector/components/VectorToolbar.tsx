@@ -1,10 +1,12 @@
 "use client";
 
 import { VectorLensToggle } from "@/features/vector/components/VectorLensToggle";
+import { VectorDteToggle } from "@/features/vector/components/VectorDteToggle";
 import { VectorReplayControls } from "@/features/vector/components/VectorReplayControls";
 import { VectorTimeframeSelect } from "@/features/vector/components/VectorTimeframeSelect";
 import type { VectorWallLens } from "@/features/vector/lib/vector-wall-history";
 import type { VectorTimeframeMinutes } from "@/features/vector/lib/vector-bar-timeframes";
+import type { VectorDteHorizon } from "@/features/vector/lib/vector-dte-horizon";
 
 type Props = {
   interval: VectorTimeframeMinutes;
@@ -13,6 +15,9 @@ type Props = {
   lens: VectorWallLens;
   vexAvailable: boolean;
   onLens: (lens: VectorWallLens) => void;
+  dteHorizon: VectorDteHorizon;
+  onDteHorizon: (h: VectorDteHorizon) => void;
+  dteAvailable: boolean;
   gexAsOf?: number | null;
   vexAsOf?: number | null;
   liveSession?: boolean;
@@ -43,6 +48,9 @@ export function VectorToolbar(props: Props) {
     lens,
     vexAvailable,
     onLens,
+    dteHorizon,
+    onDteHorizon,
+    dteAvailable,
     gexAsOf,
     vexAsOf,
     liveSession,
@@ -99,6 +107,16 @@ export function VectorToolbar(props: Props) {
             vexAsOf={vexAsOf}
             liveSession={liveSession}
           />
+          {/* DTE horizon only re-scopes GEX walls (the per-expiry gamma ladder);
+              hidden in the VEX lens and for non-oracle tickers where it's a no-op. */}
+          {lens === "gex" && (
+            <VectorDteToggle
+              horizon={dteHorizon}
+              onHorizon={onDteHorizon}
+              available={dteAvailable}
+              disabled={replayMode}
+            />
+          )}
         </div>
       </div>
     </div>
