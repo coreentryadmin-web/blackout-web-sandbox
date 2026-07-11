@@ -67,6 +67,7 @@ import {
 } from "@/features/vector/lib/vector-replay";
 import {
   aggregateVectorBars,
+  mergeBarsByTime,
   type VectorTimeframeMinutes,
 } from "@/features/vector/lib/vector-bar-timeframes";
 import { mergeSpyVolumeRows } from "@/features/vector/lib/vector-spy-volume-merge";
@@ -602,6 +603,30 @@ export function VectorChart({
   const connectLive = useCallback(() => {
     if (!liveSessionRef.current) return;
     connRef.current?.close();
+
+    // Closed-bar backfill on every (re)connect: the SSE only carries the
+    // currently-forming candle, so bars that closed while disconnected
+    // (reconnect crossing a minute boundary, tab sleep) — and the bar Polygon
+    // hadn't published yet at SSR time — were permanent holes corrupting
+    // higher-timeframe aggregates. Fire-and-forget; merge is idempotent.
+    void fetch(`/api/market/vector/bars?ticker=${encodeURIComponent(ticker)}`)
+      .then(async (res) => {
+        if (!res.ok) return;
+        const data = (await res.json()) as { bars?: VectorBar[]; sessionYmd?: string };
+        if (!data.bars?.length || data.sessionYmd !== sessionYmd) return;
+        const merged = mergeBarsByTime(minuteBarsRef.current, data.bars);
+        if (merged === minuteBarsRef.current) return;
+        minuteBarsRef.current = merged;
+        setSessionBars(merged);
+        if (!replayModeRef.current && seriesRef.current) {
+          const display = displayBarsFromMinute(merged, timeframeRef.current);
+          displayBarTimeRef.current = display[display.length - 1]?.time ?? 0;
+          applyDisplayBars(seriesRef.current, volumeSeriesRef.current, display);
+        }
+      })
+      .catch(() => {
+        /* best-effort — live ticks keep flowing regardless */
+      });
 
     let lastMinuteBarTime = minuteBarsRef.current.length
       ? minuteBarsRef.current[minuteBarsRef.current.length - 1]!.time

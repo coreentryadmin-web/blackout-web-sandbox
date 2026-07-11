@@ -10,6 +10,8 @@ in this file.
 
 
 
+
+
 ## 🟠 P1 FOUND+FIXED 2026-07-11 — Vector ticker switch shows old ticker's chart/stream under new ticker's header
 
 **Surface:** `/vector?ticker=…` — `VectorPageShell.tsx` / `VectorChart.tsx` (Vector deep sweep; found independently by two audit agents).

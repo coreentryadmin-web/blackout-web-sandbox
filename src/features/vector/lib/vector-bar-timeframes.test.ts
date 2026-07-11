@@ -76,3 +76,18 @@ test("aggregateVectorBars: custom 10m interval buckets", () => {
   assert.equal(out[0]!.close, 2);
   assert.equal(out[1]!.close, 2.5);
 });
+
+test("mergeBarsByTime: fills reconnect holes, prefers fetched OHLC, preserves live volume", async () => {
+  const { mergeBarsByTime } = await import("./vector-bar-timeframes");
+  const mk = (t: number, px: number, volume?: number) => ({
+    time: t, open: px, high: px, low: px, close: px, ...(volume != null ? { volume } : {}),
+  });
+  const existing = [mk(60, 1, 500), mk(120, 2), mk(300, 5)]; // hole at 180/240
+  const fetched = [mk(60, 1.5), mk(120, 2.5, 900), mk(180, 3), mk(240, 4)];
+  const merged = mergeBarsByTime(existing, fetched);
+  assert.deepEqual(merged.map((b) => b.time), [60, 120, 180, 240, 300], "holes filled, sorted");
+  assert.equal(merged[0]!.close, 1.5, "fetched OHLC replaces live-built bar");
+  assert.equal(merged[0]!.volume, 500, "live volume survives a volumeless fetched row");
+  assert.equal(merged[1]!.volume, 900, "fetched volume wins when present");
+  assert.equal(merged[4]!.close, 5, "existing bars beyond the fetch window survive");
+});
