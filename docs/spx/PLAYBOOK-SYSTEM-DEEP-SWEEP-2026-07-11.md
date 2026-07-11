@@ -20,6 +20,8 @@
 
 **Fix direction:** compute `hod_break`/`lod_break` against the pre-widen session extreme (or the prior bar's high/low), not the spot-inclusive one that was widened specifically for a different purpose (structure-level display).
 
+**Status:** FIXED PR `cursor/hod-break-fix-261c` — `sessionBreakoutExtremesFromBars` in `spx-play-technicals.ts` (bar-derived extremes, excludes forming last bar).
+
 ---
 
 ## High
@@ -59,7 +61,7 @@
 14. **NaN can silently poison the gamma-flip calculation** (`gamma-desk.ts:26-42`, `87-124`) — `analyzeStrikeGexRows` validates `strike` for finiteness but not `call_gamma_oi`/`put_gamma_oi`; one malformed strike can make the cumulative-sum flip-detection read a fabricated (but plausible-looking) flip level instead of erroring.
 15. **`spx-session.ts`'s prior-day OHLC fallback can regress to the exact bug it says it already fixed** (`spx-session.ts:114`) — `bars.every(b => b.t != null)` is all-or-nothing; one bad timestamp among ~200 daily bars silently degrades the entire computation to the naive `bars[length-2]` approach the adjacent comment explicitly documents as previously corrupting every derived level off-hours.
 16. **Claude-gate verdict cache key omits `confirmations.passed`** (`spx-play-claude.ts:41-45`) — a stale approved verdict (up to 60s / 1.5pts old) can be served after confirmations have since failed, since the cache is checked before confirmations are consulted.
-17. **From the fifth-pass playbook review, cross-referenced here:** the promotion pipeline's data-quality check only covers `desk_stale`/VWAP, ignoring halt/GEX/VIX freshness that most of the other 12 playbooks actually require per their own `REQUIREMENTS_BY_PB` config — still open, tracked in `PLAYBOOK-BUG-AUDIT-2026-07-11.md`.
+17. **~~From the fifth-pass playbook review~~ FIXED #100:** ~~the promotion pipeline's data-quality check only covers `desk_stale`/VWAP~~ — `playbookDataQualityBlockReason` is wired in `playbook-promotion-sample.ts` as of PR #100.
 18. **No locking or uniqueness constraint on `spx_playbook_instance_events` inserts** across the cron path and the live member-polling path — unlike the lotto/power-hour path, which explicitly uses an advisory lock. Concurrent writers can produce duplicate event rows feeding the promotion-evidence pipeline.
 19. **Missing index for `spx_playbook_shadow_observations`'s actual read pattern** — `fetchPlaybookShadowObservationsForSession` filters by `session_date` with no index leading on that column; will worsen as the table's unbounded growth (finding #9) continues.
 20. **Untyped external "engine intel" data trusted via bare `as` casts with no runtime validation** (`spx-desk.ts:1284-1410`) — compounds finding #2; a malformed field from the external service flows straight into member-facing numeric comparisons unchecked.
