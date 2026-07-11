@@ -59,7 +59,9 @@ Three properties separate top-tier from mere:
 
 ### Tier 3 — breadth & navigation
 - **Real screener** *(task #18)* — sort/filter the universe by regime, distance-to-flip, wall
-  strength; "most pinned" / "most explosive" views.
+  strength; "most pinned" / "most explosive" views. *(SHIPPED: pure `screenUniverse` over the
+  scanner rows + preset chips — All / Nearest flip / Most pinned / Most explosive — null-data
+  names always sort last. Client-only, no new data.)*
 - **On-demand arbitrary tickers** *(task #11)* — any optionable name, not the ~21 allowlist (GEX
   data already returns for arbitrary tickers).
 - **Rail density + after-hours extension** *(task #12)* — carry the rails across the post-close gap

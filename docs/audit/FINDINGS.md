@@ -8,6 +8,19 @@ and required CI (`verify`) are green — no per-PR approval, no end-of-day hold.
 here and merge the PR in the same session. Supersedes all earlier "leave OPEN for review" notes
 in this file.
 
+## 🟢 P3 SHIPPED 2026-07-11 — Real universe screener — preset views over the scanner (Vector task #18)
+
+**Surface:** `src/features/vector/lib/vector-screener.ts` (new, pure) + `VectorScanner` controls + `globals.css` chip styles. Client-only over the rows the scanner already loads — no new data/endpoints.
+
+**What:** the flat 21-row scanner became a sortable/filterable desk view via preset chips: **All** (A–Z), **Nearest flip** (closest to a regime change — most actionable), **Most pinned** (above flip, strongest walls — mean-revert), **Most explosive** (below flip and near it — vol-expansion risk). Each preset is a curated regime-filter + sort + direction.
+
+**Honesty:** derived metrics (flip distance, wall strength, regime) return null on missing snapshot data, and the sort **always sends null-metric rows to the bottom** regardless of direction — a name with no flip data can never rank as "nearest to flip" just because null sorted small. Empty-filter state shows an honest "no names match" note rather than a blank table.
+
+**Evidence:** `vector-screener.test.ts` (6) — regime/flip-distance/strength derivations; each preset's ordering incl. null-row-last; regime-filter + strength-desc; default A–Z; empty input. `tsc` clean; `@apply` guard clean.
+
+**Status:** SHIPPED (`feat/vector-screener`).
+
+
 ## 🟢 P3 SHIPPED 2026-07-11 — Wall integrity/confidence score — "is this wall real?" (Vector task #17)
 
 **Surface:** `src/features/vector/lib/vector-wall-integrity.ts` (new, pure) → `VectorChart` emit → `VectorPageShell` state → `VectorDeskTerminal` readout. Pure/client-derived from data already on the page — no server plumbing.
