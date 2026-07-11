@@ -192,7 +192,7 @@ export function evaluatePromotionGates(
       : gate(
           "data_quality_session_coverage",
           true,
-          "pending sample-builder — evaluatePlaybookDataSatisfaction not wired (no production callers)",
+          "no trigger-time feature snapshots — data quality fraction unavailable",
           null,
           dataQualityMinFraction
         ),

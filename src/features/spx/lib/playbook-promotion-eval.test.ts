@@ -60,7 +60,7 @@ test("evaluatePlaybookPromotion: insufficient without sessions", () => {
   assert.ok(ev.gates.some((g) => g.gate === "min_triggers" && !g.pass));
   const dq = ev.gates.find((g) => g.gate === "data_quality_session_coverage");
   assert.ok(dq?.pass);
-  assert.match(dq?.detail ?? "", /pending sample-builder/);
+  assert.match(dq?.detail ?? "", /no trigger-time feature snapshots/);
 });
 
 test("evaluatePlaybookPromotion: data_quality_session_coverage enforces fraction when set", () => {

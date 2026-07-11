@@ -1,3 +1,5 @@
+import type { PlaybookDataQualityFlags } from "@/features/spx/lib/playbook-data-quality";
+import { playbookDataQualityBlockReason } from "@/features/spx/lib/playbook-data-requirements";
 import { marketConditionBucket } from "@/features/spx/lib/playbook-market-condition-bucket";
 import {
   evaluatePlaybookPromotion,
@@ -5,6 +7,7 @@ import {
   type PlaybookPromotionEval,
 } from "@/features/spx/lib/playbook-promotion-eval";
 import type { PlaybookId } from "@/features/spx/lib/playbook-registry";
+import type { SpxDeskPayload } from "@/features/spx/lib/spx-desk";
 
 export type PlaybookPromotionEvidenceRow = {
   instance_id: string;
@@ -41,20 +44,44 @@ function snapshotFromTriggerEvent(row: PlaybookPromotionEvidenceRow) {
   return snap;
 }
 
+function dataQualityFlagsFromSnapshot(
+  snap: Record<string, unknown>
+): PlaybookDataQualityFlags {
+  return {
+    halt_channel_stale: snap.halt_channel_stale === true,
+    desk_stale: snap.desk_stale === true,
+    gex_missing: snap.gex_missing === true,
+  };
+}
+
+function deskSliceFromSnapshot(
+  snap: Record<string, unknown>
+): Pick<SpxDeskPayload, "vix" | "vwap_volume_weighted"> {
+  const vix = snap.vix;
+  return {
+    vix: typeof vix === "number" && Number.isFinite(vix) ? vix : null,
+    vwap_volume_weighted: snap.vwap_volume_weighted === true,
+  };
+}
+
 /** Exported for unit tests — trigger-time snapshot data quality per playbook. */
 export function sessionSnapshotDataQualityOk(
   snap: Record<string, unknown> | null,
   playbookId: string
 ): boolean | null {
   if (!snap) return null;
-  if (snap.desk_stale) return false;
-  if (
-    (playbookId === "PB-01" || playbookId === "PB-02") &&
-    snap.vwap_volume_weighted === false
-  ) {
-    return false;
-  }
-  return true;
+  const pbId = playbookId as PlaybookId;
+  const opts =
+    snap.option_quotes_available === false
+      ? { option_quotes_available: false as const }
+      : undefined;
+  const blockReason = playbookDataQualityBlockReason(
+    pbId,
+    dataQualityFlagsFromSnapshot(snap),
+    deskSliceFromSnapshot(snap),
+    opts
+  );
+  return blockReason == null;
 }
 
 /** Fraction of triggered sessions with satisfactory trigger-time data quality. */

@@ -183,7 +183,7 @@ Full reasoning: see **Claude — second-pass validation** section below.
 **Foundation closure checklist (all three required before "strong"):**
 
 1. [x] VWAP question **closed** — **#96** fail-closed PB-01/PB-02; live staging `vwap_volume_weighted: false`, PB-02 `eligible=false`
-2. [x] Promotion pipeline **runs against real data** — **#97** GHA + **`GET /api/admin/playbook/promotion-report`** (#20b) + **#99** GHA fail signal on `data_quality` gate
+2. [x] Promotion pipeline **runs against real data** — **#97** GHA + **`GET /api/admin/playbook/promotion-report`** (#20b) + **#99** GHA fail signal; fifth-pass wired full `playbookDataQualityBlockReason` in sample builder
 3. [ ] At least **one RTH session** observed end-to-end — **next weekday** (`validate:staging-rth`); **`GET /api/admin/playbook/fsm-today`** enables proof from constrained sandboxes
 
 ---
@@ -447,6 +447,21 @@ Method: 6 independent agents re-read the ACTUAL current code for every "Done" cl
 | Split-brain OR memory in one `/play` response | **Agree — P0** | ✅ Unified OR upstream in `spx-service` (#81) |
 | Member polls mutate FSM evidence | **Agree — P1** | ✅ `persist_instances: false` on member reads (#81) |
 | Triple `resolveGuardedPlaybookMatch` | **Agree — P1** | ✅ Member path (#81); cron path **#90** |
+
+---
+
+## Fifth-pass review closure (2026-07-11)
+
+Claude fifth-pass (PR #87 doc) confirmed **#99** GHA fail signal holds; **F3** governor genuinely closed. Two gaps fixed in **`cursor/playbook-fifth-pass-fixes-261c`**:
+
+| Item | Fifth-pass finding | Fix |
+|------|-------------------|-----|
+| **F2 / #20b data-quality** | Promotion sample only checked `desk_stale` + VWAP | `sessionSnapshotDataQualityOk` now delegates to `playbookDataQualityBlockReason` (halt/GEX/VIX per playbook config) |
+| **Q4 verdict assert** | Did not catch idle FSM desync; unwired in CI | Assert uses persisted `snapshots[].state`; `PLAYBOOK_VERDICT_GUARD_ASSERT=1` in `npm test` + CI |
+
+**Still open:** **F4** RTH proof (market closed this session); live `playbook_shadow` block text not re-proven off-hours.
+
+**Foundation checklist update:** F1 ✅ · F3 ✅ · F2 ✅ (data-quality dimension now full) · F4 ⏳ · F5 deferred.
 
 ---
 

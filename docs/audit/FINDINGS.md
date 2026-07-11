@@ -8,6 +8,26 @@ and required CI (`verify`) are green — no per-PR approval, no end-of-day hold.
 here and merge the PR in the same session. Supersedes all earlier "leave OPEN for review" notes
 in this file.
 
+## 🟠 P1 FOUND+FIXED 2026-07-11 — SPX playbook promotion sample used narrow data-quality check (F2 / #20b)
+
+**Surface:** `playbook-promotion-sample.ts` → `data_quality_session_coverage` promotion gate + GHA evidence (`assessPlaybookEvidenceAlerts`).
+
+**Root cause:** Fifth-pass review found `sessionSnapshotDataQualityOk` only checked `desk_stale` + VWAP for PB-01/PB-02. The capability-aware `playbookDataQualityBlockReason` / `evaluatePlaybookDataSatisfaction` (halt feed, GEX, VIX per playbook config) was already tested but never called from the promotion sample builder.
+
+**Fix:** Map persisted `trigger_feature_snapshot` → `PlaybookDataQualityFlags` + desk slice; delegate to `playbookDataQualityBlockReason`. Promotion-eval pending message updated when no snapshots exist.
+
+**Status:** FIXED (`cursor/playbook-fifth-pass-fixes-261c` on `blackout-web-sandbox`).
+
+## 🟠 P1 FOUND+FIXED 2026-07-11 — Q4 verdict-guard assert did not catch idle FSM desync
+
+**Surface:** `assertPlaybookVerdictGuardInvariants` (`PLAYBOOK_VERDICT_GUARD_ASSERT=1`).
+
+**Root cause:** Fifth-pass review: assert re-used resolver `from_state` (same inputs as the guard), never flagged `idle` + `trigger_fired`, tests did not exercise failure branches, env var was unwired in CI/`npm test`, and no FINDINGS entry.
+
+**Fix:** Assert against persisted `snapshots[].state`; throw on `idle` + `trigger_fired`; add branch tests; enable `PLAYBOOK_VERDICT_GUARD_ASSERT=1` in `npm test` + CI verify job.
+
+**Status:** FIXED (`cursor/playbook-fifth-pass-fixes-261c` on `blackout-web-sandbox`).
+
 ## 🔴 P0 FOUND+FIXING 2026-07-07 — Tailwind purged `src/features/` CSS after folder migration (desktop desk broken)
 
 **Surface:** `/dashboard` and other tools moved to `src/features/*` in PR #684.

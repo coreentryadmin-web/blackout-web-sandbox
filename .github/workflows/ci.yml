@@ -28,6 +28,8 @@ jobs:
       - name: Unit tests
         # Node 20 does not expand globs in --test; expand in bash but keep module mocks.
         shell: bash
+        env:
+          PLAYBOOK_VERDICT_GUARD_ASSERT: "1"
         run: |
           shopt -s globstar nullglob
           files=(src/**/*.test.ts)
