@@ -6,7 +6,7 @@ import {
   persistWallSampleDebounced,
   _resetWallPersistDebounceForTest,
 } from "./vector-wall-persist";
-import type { GexWalls } from "./gex-wall-levels";
+import type { GexWalls } from "@/lib/providers/gex-wall-levels";
 
 const SESSION = "2099-01-02";
 

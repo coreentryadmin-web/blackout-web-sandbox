@@ -458,10 +458,13 @@ export function VectorChart({
   const [replayLoop, setReplayLoop] = useState(false);
   const [crosshair, setCrosshair] = useState<VectorCrosshairState | null>(null);
   const [lens, setLens] = useState<VectorWallLens>("gex");
-  const [wallEvents, setWallEvents] = useState<VectorWallEvent[]>(() => [
-    ...eventsFromWallHistory(initialWallHistory, "gex"),
-    ...eventsFromWallHistory(initialWallHistory, "vex"),
-  ]);
+  // appendVectorWallEvents enforces the display cap — a bare concat of both
+  // lenses' seeds could hold up to 2× the cap.
+  const [wallEvents, setWallEvents] = useState<VectorWallEvent[]>(() =>
+    appendVectorWallEvents(eventsFromWallHistory(initialWallHistory, "gex"), [
+      ...eventsFromWallHistory(initialWallHistory, "vex"),
+    ])
+  );
   const [vexAvailable, setVexAvailable] = useState(
     () =>
       Boolean(initialVexWalls?.callWalls?.length || initialVexWalls?.putWalls?.length) ||
@@ -473,18 +476,29 @@ export function VectorChart({
   const [chartReady, setChartReady] = useState(false);
 
   useEffect(() => {
+    // Replay honesty for the structure feed: while scrubbed to 9:35 the ticker
+    // must not display events that happened at 11:00 — filter to the cursor.
+    // Events keep accumulating in state (the SSE stays open in replay); only
+    // what consumers SEE is cursor-gated. cursorIndex is a dep so the feed
+    // advances as the member scrubs/plays.
+    if (replayMode) {
+      const cursor = timelineRef.current[cursorIndex] ?? 0;
+      onWallEventsChange?.(wallEvents.filter((e) => e.time <= cursor));
+      return;
+    }
     onWallEventsChange?.(wallEvents);
-  }, [wallEvents, onWallEventsChange]);
+  }, [wallEvents, onWallEventsChange, replayMode, cursorIndex]);
 
   useEffect(() => {
     onLensChange?.(lens);
   }, [lens, onLensChange]);
 
   useEffect(() => {
-    setWallEvents([
-      ...eventsFromWallHistory(initialWallHistory, "gex"),
-      ...eventsFromWallHistory(initialWallHistory, "vex"),
-    ]);
+    setWallEvents(
+      appendVectorWallEvents(eventsFromWallHistory(initialWallHistory, "gex"), [
+        ...eventsFromWallHistory(initialWallHistory, "vex"),
+      ])
+    );
   }, [ticker, initialWallHistory]);
 
   useEffect(() => {
@@ -643,6 +657,15 @@ export function VectorChart({
       if (snap.darkPoolLevels) {
         darkPoolRef.current = snap.darkPoolLevels;
       }
+      // Capture the PREVIOUS tick's structure before overwriting — spot-break
+      // detection requires the level to have been stable across the tick (a
+      // wall relocating across a flat spot is not a breakout).
+      const prevStruct = {
+        gexWalls: gexWallsRef.current,
+        vexWalls: vexWallsRef.current,
+        gammaFlip: gammaFlipRef.current,
+        vexFlip: vexFlipRef.current,
+      };
       if (snap.walls) {
         gexWallsRef.current = snap.walls;
       }
@@ -664,7 +687,9 @@ export function VectorChart({
             wallsForActiveLens(active, gexWallsRef.current, vexWallsRef.current),
             flipForActiveLens(active, gammaFlipRef.current, vexFlipRef.current),
             active,
-            snap.candle.time
+            snap.candle.time,
+            wallsForActiveLens(active, prevStruct.gexWalls, prevStruct.vexWalls),
+            flipForActiveLens(active, prevStruct.gammaFlip, prevStruct.vexFlip)
           );
           if (spotEvents.length) {
             setWallEvents((ev) => appendVectorWallEvents(ev, spotEvents));

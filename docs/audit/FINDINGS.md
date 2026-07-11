@@ -8,6 +8,23 @@ and required CI (`verify`) are green — no per-PR approval, no end-of-day hold.
 here and merge the PR in the same session. Supersedes all earlier "leave OPEN for review" notes
 in this file.
 
+## 🟠 P1 FOUND+FIXED 2026-07-11 — Vector wall-event integrity: phantom flip events, SHIFT flapping, fabricated breaks, cross-session stitching, replay-blind structure feed
+
+**Surface:** `/vector` structure events — `vector-wall-events.ts`, `vector-snapshot.ts`, `VectorChart.tsx` (Vector deep sweep, wall-pipeline slice).
+
+**Root causes (7, one batch — all event-fabrication/honesty in the wall pipeline):**
+1. **HIGH — phantom "Gamma flip moved 6,745 → 6,745" once per page load, deterministic.** `flip_shift` compared raw floats while the message rounds; the persisted/SSR history was raw but the SSE copy was wire-rounded, so the client's first merge replaced the same-time tail with a rounded copy whose precision delta "moved" the flip. Fixed both layers: samples are now rounded ONCE at creation (`roundFloats` in `buildVectorStreamPayload` before history/persist — repo round-at-data-layer policy), and the diff compares at display precision.
+2. **MEDIUM — SHIFT spam from rank-1/rank-2 near-ties.** Any change of the top strike emitted an event; near-ties flapped both ways every sample. New dominance rule: the new top must beat the old top's concentration (in the same new sample) by ≥5pct, or the old top must have left the board.
+3. **MEDIUM — fabricated breakouts from a wall relocating across a flat spot.** `detectSpotStructureEvents` now takes the previous tick's structure and requires the level to have been stable across the tick (`VectorChart` captures prev walls/flip before overwriting refs).
+4. **MEDIUM — same-bucket re-diffs** (`prev.time === next.time` allowed) and **no discontinuity guard** (a reconnect/tab-sleep gap diffed as one "shift" timestamped now): equal-time diffs now emit nothing; gaps >120s are treated as discontinuities.
+5. **MEDIUM — stale readings stamped as fresh observations.** The sample builder carried forward `prev?.walls`/`prev?.gammaFlip` under NEW bucket times when a provider lane returned null — history now records honest nulls (gap-honest trails already handle them); display continuity comes from the live client refs, not falsified history.
+6. **KNOWN #2 CLOSED — cross-session stitching.** `TickerState` now carries `sessionYmd` and resets `wallHistory` at the ET session boundary — a process surviving close→open no longer fabricates a "wall shifted" event at the next open, and replay timelines can't span two sessions.
+7. **KNOWN #1 CLOSED — replay-blind structure feed.** Events consumers see are now filtered to the replay cursor while scrubbed (accumulation continues; only display is gated — advances live as the member scrubs/plays). Also capped the initial two-lens event seed at the display max.
+
+**Evidence:** 9 new regression tests (same-bucket, discontinuity gap, precision phantom, genuine-move still emits, near-tie vs dominant shift, flat-spot fabricated break, stable-wall break, legacy-caller compatibility, flip stability) — 40/40 wall tests, 85/85 all Vector lib tests, `tsc` clean. Also fixed 3 test files importing a nonexistent `./gex-wall-levels` module for types (type-checked against nothing since a consolidation).
+
+**Status:** FIXED (`fix/vector-wall-event-integrity`).
+
 ## 🔴 P0 FOUND+FIXED 2026-07-11 — Vector replay leaks future bars AGAIN (SPY-volume backfill path) + replay drops live bars permanently + lens/DP frame desyncs
 
 **Surface:** `/vector` replay mode — `VectorChart.tsx` (Vector deep sweep, chart/replay slice).

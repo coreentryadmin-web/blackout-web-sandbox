@@ -17,7 +17,7 @@ import {
   hasVexInHistory,
   type WallHistorySample,
 } from "./vector-wall-history";
-import type { GexWalls } from "./gex-wall-levels";
+import type { GexWalls } from "@/lib/providers/gex-wall-levels";
 
 function walls(callStrikes: number[], putStrikes: number[]): GexWalls {
   return {

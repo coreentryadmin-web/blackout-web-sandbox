@@ -43,6 +43,8 @@ type TickerState = {
   cachedFlip: number | null;
   cachedFlipAt: number;
   wallHistory: WallHistorySample[];
+  /** ET session the in-memory history belongs to — see session reset in buildVectorStreamPayload. */
+  sessionYmd: string;
 };
 
 function freshState(): TickerState {
@@ -59,6 +61,7 @@ function freshState(): TickerState {
     cachedFlip: null,
     cachedFlipAt: 0,
     wallHistory: [],
+    sessionYmd: "",
   };
 }
 
@@ -223,16 +226,37 @@ export async function buildVectorStreamPayload(
   const darkPoolLevels = await getVectorDarkPoolLevels(t);
   const sessionYmd = todayEtYmd();
 
+  // Session boundary: a process surviving close→open (weekend, overnight viewer)
+  // must not stitch the previous session's tail next to today's first sample —
+  // that fabricated a "wall shifted" event at the open and made the replay
+  // timeline span two sessions. History is per-session; Redis persistence keys
+  // by ymd already, and the fresh day's page seed loads the fresh day's key.
+  if (s.sessionYmd !== sessionYmd) {
+    s.wallHistory = [];
+    s.sessionYmd = sessionYmd;
+  }
+
   if (walls || vexWalls) {
     const sampleTime = bucketWallSampleTime(Math.floor(Date.now() / 1000));
-    const prev = s.wallHistory[s.wallHistory.length - 1];
-    const sample: WallHistorySample = {
+    // Round ONCE at creation (repo policy: round at the data layer). The sample
+    // must be byte-identical everywhere it travels — in-memory history, Redis
+    // persist, SSR seed, SSE frame. Persisting raw while streaming rounded made
+    // the client's first SSE merge replace the same-time tail with a rounded
+    // copy, and the float-precision delta fabricated a phantom flip event on
+    // every page load.
+    //
+    // No carry-forward: a lens whose provider returned null this bucket records
+    // an honest gap (null), not a copy of the previous reading stamped with a
+    // new time — stale readings masquerading as fresh observations poisoned
+    // trails and event diffs. Display continuity is handled by the live refs on
+    // the client, not by falsifying history.
+    const sample: WallHistorySample = roundFloats({
       time: sampleTime,
-      walls: walls ?? prev?.walls ?? { callWalls: [], putWalls: [] },
-      gammaFlip: gammaFlip ?? prev?.gammaFlip ?? null,
-      vexWalls: vexWalls ?? prev?.vexWalls ?? null,
-      vexFlip: vexFlip ?? prev?.vexFlip ?? null,
-    };
+      walls: walls ?? { callWalls: [], putWalls: [] },
+      gammaFlip,
+      vexWalls,
+      vexFlip,
+    });
     const hasGex = sample.walls.callWalls.length > 0 || sample.walls.putWalls.length > 0;
     const hasVex =
       Boolean(sample.vexWalls?.callWalls?.length) || Boolean(sample.vexWalls?.putWalls?.length);
