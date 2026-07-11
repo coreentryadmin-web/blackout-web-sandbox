@@ -90,6 +90,34 @@ in this file.
 
 **F4:** Still requires weekday RTH — Monday 9:30 ET (`validate:staging-rth`).
 
+**Verification (2026-07-11, #112 post-merge review):** #31/#32/#38 confirmed genuinely fixed (incl. the FK↔retention CASCADE/SET NULL interaction, traced safe); gate default confirmed no-prod-change with the explicit-`0` override genuinely tested. #27 downgraded to PARTIAL — see entry below. Full trace in `docs/spx/PLAYBOOK-SYSTEM-DEEP-SWEEP-2026-07-11.md` → "#112 residual-sweep closure."
+
+## 🟡 P3 FOUND 2026-07-11 — #27 fuzzy join: open-candidate wrong-match class survives #112, and the SQL fix is untested
+
+**Surface:** `fetchSpxClaudePlayOutcomeForAudit` (`src/lib/db.ts:4751-4783`) ← `alert-outcome-sync` cron.
+
+**Root cause:** #112's CTE uniqueness gate counts *closed-only* candidates (`outcome NOT IN ('open','superseded')` inside the CTE, `COUNT(*) = 1` outside). If the TRUE match — opened seconds after the verdict — is still `open` at sync time while a same-direction/±0.01-price/same-grade decoy opened later in the 30-min window has already closed, the candidate set is {decoy}, count = 1, and the verdict is graded against the wrong play. The documented two-closed-candidates case IS genuinely fixed (refuse-to-match), which is why this is P3 not P2: the surviving class needs a same-direction, near-identical-price, same-grade pair racing within 30 min AND a sync tick landing in the open/closed skew window.
+
+**Also:** the only new test (`alert-outcome-sync.test.ts:172-189`) mocks the DB function with an argument-ignoring stub — the uniqueness SQL, grade filter, and −2min pre-window have zero coverage.
+
+**Fix needed:** count ALL direction/price/grade/window matches (open or closed) in the CTE; only grade when the unique match is also closed. Add a pg-mock or SQL-shape test covering: two closed candidates → null; one open true + one closed decoy → null (the new class); single closed match → graded.
+
+**Status:** OPEN — logged for Cursor. Sweep-table row corrected FIXED → PARTIAL.
+
+## 🟢 INFO 2026-07-11 — #32 fix trades away sticky flow data during Polygon outages (accepted risk, documenting)
+
+**Surface:** `buildSpxDeskFlow` (`spx-desk.ts:1757-1775`), post-#112.
+
+**What changed beyond the claim:** the `price <= 0` early-return that (correctly) kills the bogus spot-0 GEX/regime path also skips the entire UW pooled fetch and the Redis sticky publish. During a Polygon snapshot outage with live flow data still present, the flow lane now loses sticky `gex_walls`, `dark_pool`, `greek_exposure`, flow-by-expiry, and net-prem ticks — previously these still flowed alongside the (bogus) regime. Consumers gate on `available:false` so nothing renders wrong values; this is an availability regression, not a correctness one. Defensible trade — logging so it isn't rediscovered as a "bug" during the next Polygon outage.
+
+**Follow-up if it bites:** split the early return — skip only the GEX/regime computation at spot=0, keep the UW pooled fetch + sticky publish.
+
+## 🟢 INFO 2026-07-11 — Staging gate-on requires Voyage config or the staging engine is entry-dead
+
+**Surface:** `SPX_CLAUDE_GATE` staging default-on (#112) × `spx-play-claude.ts` fail-closed paths (`:296-303`, `:317-325`).
+
+With the gate on, `bieSearchAvailable()` false (missing `VOYAGE_API_KEY`/`DATABASE_URL`), the daily cap, or search errors now VETO all entries on staging by default. Presumably intended (staging exercises the full BIE precedent path), but **confirm staging's Secrets Manager env has `VOYAGE_API_KEY` set** before Monday's F4 run — otherwise zero entries will fire and F4 will look like a playbook failure instead of a config gap.
+
 ## 🟢 INFO 2026-07-11 — Sixth-pass + catch-up review: F2 closed, F3 clean, F4 pending
 
 **Surface:** `playbook-promotion-sample.ts` (F2), `playbook-verdict-guard.ts` (Q4), F3 rescan, catch-up #9/#3/#10–11.
