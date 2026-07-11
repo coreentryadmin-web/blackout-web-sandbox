@@ -102,5 +102,5 @@ Legend: ✅ fixed in PR · 🔧 partial · 📋 documented/deferred · ❌ disag
 1. ~~Single FSM writer + unified OR memory per request (P0)~~ — **done #81**
 2. ~~Pass pre-resolved match into shadow-log (P1)~~ — **done #81**
 3. ~~`instance_id` on `spx_play_outcomes` (P1)~~ — **done #82**
-4. Gamma regime hysteresis + PB-04 exit debounce (P2)
-5. Wire `estimateOptionPnl` into open-play evidence path (P2)
+4. ~~Gamma regime hysteresis + PB-04 exit debounce (P2)~~ — **done #83**
+5. ~~Wire `estimateOptionPnl` into open-play evidence path (P2)~~ — **done #83**
