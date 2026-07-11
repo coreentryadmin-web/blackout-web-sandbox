@@ -9,26 +9,27 @@ export const VECTOR_ORACLE_TICKERS = new Set(["SPX", "SPY", "QQQ"]);
 
 const TICKER_RE = /^[A-Z0-9.\-]{1,8}$/;
 
-/** Normalize and validate a user-facing Vector ticker key. Falls back to SPX on junk input. */
+/** Normalize and validate a user-facing Vector ticker key. Falls back to SPX on junk input.
+ *  Accepts Polygon-style index keys ("I:SPX" → "SPX") so deep links survive. */
 export function normalizeVectorTicker(raw: string | null | undefined): string {
-  const t = String(raw ?? VECTOR_DEFAULT_TICKER).trim().toUpperCase();
+  let t = String(raw ?? VECTOR_DEFAULT_TICKER).trim().toUpperCase();
+  if (t.startsWith("I:")) t = t.slice(2);
   if (!TICKER_RE.test(t)) return VECTOR_DEFAULT_TICKER;
   return t;
 }
 
 export function isVectorIndexTicker(ticker: string): boolean {
-  const t = normalizeVectorTicker(ticker);
-  return VECTOR_INDEX_TICKERS.has(t) || t.startsWith("I:");
+  // normalizeVectorTicker strips any "I:" prefix, so the set lookup is total.
+  return VECTOR_INDEX_TICKERS.has(normalizeVectorTicker(ticker));
 }
 
 /** Polygon aggregates symbol for minute-bar seed + live refresh. */
 export function vectorPolygonMinuteSymbol(ticker: string): string {
   const t = normalizeVectorTicker(ticker);
-  if (t === "SPX") return "I:SPX";
-  if (t === "NDX") return "I:NDX";
-  if (t === "RUT") return "I:RUT";
-  if (t === "VIX") return "I:VIX";
-  if (t.startsWith("I:")) return t;
+  // Every VECTOR_INDEX_TICKERS member maps to its Polygon I: key — DJI was
+  // missing, so ?ticker=DJI burned the 12-day walk-back with a bare "DJI"
+  // symbol Polygon's index endpoint doesn't recognize and seeded nothing.
+  if (VECTOR_INDEX_TICKERS.has(t)) return `I:${t}`;
   return t;
 }
 
