@@ -14535,6 +14535,227 @@ body::before {
     border-radius: 99px;
     transition: width 0.6s var(--ease-snap);
   }
+
+  /* ── HELIX terminal table (dense institutional tape) ───────────────────── */
+
+  .helix-page-shell .helix-page-inner {
+    display: flex;
+    flex-direction: column;
+    min-height: calc(100dvh - var(--nav-offset) - 10rem);
+  }
+
+  .helix-desk-terminal {
+    @apply flex flex-1 flex-col min-h-0 gap-3;
+  }
+
+  .helix-desk-terminal-grid {
+    display: flex;
+    flex: 1 1 auto;
+    min-height: 0;
+    gap: 0.75rem;
+    align-items: stretch;
+  }
+
+  @media (min-width: 1024px) {
+    .helix-desk-terminal-grid {
+      min-height: min(78vh, calc(100dvh - var(--nav-offset) - 11rem));
+    }
+  }
+
+  .helix-desk-tape-col {
+    flex: 1 1 auto;
+    min-width: 0;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .helix-desk-analytics-rail {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    min-height: 0;
+  }
+
+  @media (min-width: 1280px) {
+    .helix-desk-analytics-rail {
+      width: 17.5rem;
+      flex-shrink: 0;
+      overflow-y: auto;
+      max-height: min(78vh, calc(100dvh - var(--nav-offset) - 11rem));
+    }
+  }
+
+  .helix-flow-terminal {
+    @apply flex flex-1 flex-col min-h-0 border border-white/10;
+    background: rgba(6, 7, 12, 0.92);
+    border-radius: 10px;
+    box-shadow:
+      inset 0 1px 0 rgba(125, 211, 252, 0.06),
+      0 0 40px rgba(0, 0, 0, 0.35);
+  }
+
+  .helix-flow-terminal-head {
+    @apply flex items-center justify-between gap-3 shrink-0 px-3 py-2.5 border-b border-white/8;
+  }
+
+  .helix-flow-terminal-title {
+    @apply flex flex-col gap-0.5 min-w-0;
+  }
+
+  .helix-flow-feed-alert {
+    @apply shrink-0 mx-3 mt-2 px-3 py-2 rounded-lg border border-gold/40 bg-gold/10 font-mono text-[10px] text-gold;
+  }
+
+  .helix-flow-table-scroll {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .helix-flow-table {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+    font-family: ui-monospace, monospace;
+    font-size: 11px;
+    line-height: 1.35;
+  }
+
+  .helix-flow-table thead {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    background: rgba(8, 9, 14, 0.98);
+    box-shadow: 0 1px 0 rgba(255, 255, 255, 0.08);
+  }
+
+  .helix-flow-table th {
+    @apply px-2 py-2 text-left font-semibold uppercase tracking-[0.14em] text-sky-300/70 whitespace-nowrap;
+    font-size: 9px;
+  }
+
+  .helix-flow-th-sortable {
+    @apply p-0;
+  }
+
+  .helix-flow-th-btn {
+    @apply flex items-center gap-1 w-full px-2 py-2 text-left uppercase tracking-[0.14em] text-sky-300/70 transition-colors;
+    font-size: 9px;
+    font-weight: 600;
+    border: none;
+    background: transparent;
+    cursor: pointer;
+  }
+
+  .helix-flow-th-btn:hover {
+    @apply text-sky-200;
+  }
+
+  .helix-flow-sort-ind {
+    @apply text-cyan-400 text-[8px];
+  }
+
+  .helix-flow-row {
+    border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+    transition: background 0.12s ease;
+    cursor: pointer;
+  }
+
+  .helix-flow-row:hover {
+    background: rgba(125, 211, 252, 0.06);
+  }
+
+  .helix-flow-row--call {
+    background: rgba(0, 230, 118, 0.03);
+  }
+
+  .helix-flow-row--put {
+    background: rgba(255, 45, 85, 0.03);
+  }
+
+  .helix-flow-row--compound {
+    background: rgba(255, 210, 63, 0.06);
+    box-shadow: inset 3px 0 0 rgba(255, 210, 63, 0.55);
+  }
+
+  .helix-flow-row--flash {
+    animation: flow-alert-flash 1.2s ease-out;
+  }
+
+  .helix-flow-table td {
+    @apply px-2 py-1.5 align-middle whitespace-nowrap;
+  }
+
+  .helix-flow-cp {
+    @apply inline-flex items-center justify-center w-5 h-5 rounded font-bold text-[10px];
+  }
+
+  .helix-flow-cp--call {
+    @apply text-bull bg-bull/15 border border-bull/35;
+  }
+
+  .helix-flow-cp--put {
+    @apply text-bear-text bg-bear/15 border border-bear/35;
+  }
+
+  .helix-flow-star {
+    @apply shrink-0 text-[12px] leading-none p-0 border-0 bg-transparent cursor-pointer;
+  }
+
+  .helix-flow-signal {
+    @apply inline-flex items-center font-mono text-[8px] font-bold uppercase tracking-wider px-1 py-px rounded border leading-none;
+  }
+
+  .helix-flow-signal--bull {
+    @apply text-bull border-bull/40 bg-bull/10;
+  }
+
+  .helix-flow-signal--bear {
+    @apply text-bear-text border-bear/40 bg-bear/10;
+  }
+
+  .helix-flow-signal--gold {
+    @apply text-gold border-gold/45 bg-gold/12;
+  }
+
+  .helix-flow-signal--sky {
+    @apply text-sky-300 border-sky-400/35 bg-sky-400/10;
+  }
+
+  .helix-flow-signal--purple {
+    @apply text-purple-light border-purple/40 bg-purple/12;
+  }
+
+  .helix-flow-signal--ember {
+    @apply text-ember border-ember/40 bg-ember/12;
+  }
+
+  .helix-flow-signal--muted {
+    @apply text-sky-300/60 border-white/10 bg-white/5;
+  }
+
+  .helix-flow-load-more {
+    @apply w-full py-2.5 font-mono text-[10px] font-semibold uppercase tracking-widest text-cyan-400 border-t border-white/8 bg-black/40 transition-colors;
+  }
+
+  .helix-flow-load-more:hover {
+    @apply text-sky-200 bg-white/5;
+  }
+
+  .ios-desk-shell.ios-native-page-helix,
+  .helix-page-shell.ios-native-page-helix {
+    display: flex;
+    flex-direction: column;
+    min-height: calc(100dvh - var(--nav-offset));
+  }
+
+  .ios-desk-shell.ios-native-page-helix .helix-desk-terminal,
+  .helix-page-shell.ios-native-page-helix .helix-desk-terminal {
+    flex: 1 1 auto;
+    min-height: 0;
+  }
 }
 
 /* ===== Footer artwork ===== */
