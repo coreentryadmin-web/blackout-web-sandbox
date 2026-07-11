@@ -14793,11 +14793,13 @@ body::before {
 
     .helix-desk-analytics-rail {
       width: 100%;
-      max-height: none;
-      overflow: visible;
+      max-height: min(42vh, 420px);
+      overflow-x: hidden;
+      overflow-y: auto;
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
       gap: 0.75rem;
+      -webkit-overflow-scrolling: touch;
     }
   }
 
@@ -14859,11 +14861,13 @@ body::before {
     flex: 1 1 auto;
     min-height: 0;
     overflow: auto;
+    overscroll-behavior: contain;
     -webkit-overflow-scrolling: touch;
   }
 
   .helix-flow-table {
     width: 100%;
+    min-width: 52rem;
     border-collapse: separate;
     border-spacing: 0;
     font-family: ui-monospace, monospace;
@@ -14872,9 +14876,29 @@ body::before {
     table-layout: auto;
   }
 
-  @media (max-width: 1279px) {
+  /* Laptop / 1440px: hide Spot, Ask, IV, OTM, Type, Sc — 10 core cols stay aligned */
+  .helix-flow-table th:nth-child(1),
+  .helix-flow-table td:nth-child(1) {
+    width: 4.25rem;
+  }
+
+  .helix-flow-table th:nth-child(2),
+  .helix-flow-table td:nth-child(2) {
+    width: 5.25rem;
+  }
+
+  .helix-flow-table th:nth-child(16),
+  .helix-flow-table td:nth-child(16) {
+    min-width: 6.5rem;
+  }
+
+  @media (max-width: 1535px) {
     .helix-flow-col--aux {
       display: none;
+    }
+
+    .helix-flow-table {
+      min-width: 44rem;
     }
   }
 

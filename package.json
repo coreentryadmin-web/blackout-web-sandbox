@@ -82,6 +82,7 @@
     "docs:playbook": "node scripts/generate-spx-playbook-docx.mjs",
     "probe:docs": "node scripts/analyze-api-usage.mjs && node scripts/probe-docs-endpoints.mjs",
     "probe:helix-apis": "node scripts/helix-live-api-survey.mjs",
+    "validate:helix-ui": "node scripts/helix-ui-audit.mjs",
     "analyze:api": "node scripts/analyze-api-usage.mjs"
   },
   "dependencies": {
