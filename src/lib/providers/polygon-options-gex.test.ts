@@ -5,6 +5,7 @@ import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   resolveHeatmapPageGuard,
+  resolveChainBandPageGuard,
   computeGexEvents,
   computeMaxPainFromChain,
   resolveExpiryAxis,
@@ -46,6 +47,15 @@ test("floors at 40 — the OLD cap already proven insufficient for SPX — even 
 
 test("an explicit 0 env value is falsy, so it's treated as unset (defaults to 200, not floored at 40)", () => {
   assert.equal(resolveHeatmapPageGuard("0"), 200);
+});
+
+test("resolveChainBandPageGuard: default 40, honors override, floors at the old cap of 8", () => {
+  assert.equal(resolveChainBandPageGuard(undefined), 40);
+  assert.equal(resolveChainBandPageGuard(""), 40);
+  assert.equal(resolveChainBandPageGuard("not-a-number"), 40);
+  assert.equal(resolveChainBandPageGuard("120"), 120); // wide/deep band needs more
+  assert.equal(resolveChainBandPageGuard("3"), 8); // never below the old bare cap
+  assert.equal(resolveChainBandPageGuard("0"), 40); // falsy → treated as unset
 });
 
 test("fetchGexHeatmap keeps stale-while-revalidate during preset fast-move (no blocking guard)", () => {
