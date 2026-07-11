@@ -466,11 +466,12 @@ export function playbookLiveAllowlist(): ReadonlySet<PlaybookId> | null {
 
 export function isPlaybookLiveAllowlisted(id: PlaybookId | null | undefined): boolean {
   if (!id) return false;
+  const def = playbookDef(id);
   const allowlist = playbookLiveAllowlist();
   if (allowlist == null) {
-    return executionModeMeets(playbookDef(id).execution_mode, "paper_executable");
+    return executionModeMeets(def.execution_mode, "paper_executable");
   }
-  return allowlist.has(id);
+  return allowlist.has(id) && executionModeMeets(def.execution_mode, "paper_executable");
 }
 
 /** Minimum |0DTE net flow| for playbook trigger materiality (PB-02 v2). */

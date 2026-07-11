@@ -122,11 +122,13 @@ function matchPb01(
   const longTrigger =
     regimeEligible &&
     windowOpen &&
+    longPrecondition &&
     (m3Above || technicals.breakout.vwap_reclaim === true) &&
     flow !== "bearish";
   const shortTrigger =
     regimeEligible &&
     windowOpen &&
+    shortPrecondition &&
     (m3Below || technicals.breakout.vwap_lost === true) &&
     flow !== "bullish";
 
@@ -260,9 +262,21 @@ function matchPb03(
   }
 
   const longTrigger =
-    regimeEligible && windowOpen && !feedDegraded && brokeHigh && desk.above_gamma_flip === true && flow !== "bearish";
+    regimeEligible &&
+    windowOpen &&
+    preconditionMatch &&
+    !feedDegraded &&
+    brokeHigh &&
+    desk.above_gamma_flip === true &&
+    flow !== "bearish";
   const shortTrigger =
-    regimeEligible && windowOpen && !feedDegraded && brokeLow && desk.above_gamma_flip === false && flow !== "bullish";
+    regimeEligible &&
+    windowOpen &&
+    preconditionMatch &&
+    !feedDegraded &&
+    brokeLow &&
+    desk.above_gamma_flip === false &&
+    flow !== "bullish";
 
   const orLabel = orReady
     ? `OR ${technicals.or_low!.toFixed(0)}–${technicals.or_high!.toFixed(0)}`
@@ -1049,7 +1063,8 @@ export function matchPlaybooksShadow(
   const breakMemory = opts?.or_break_memory ?? null;
   const verdicts = PLAYBOOK_REGISTRY.map((pb) => {
     const eligible = isPlaybookEligible(pb.id, desk, now);
-    switch (pb.id) {
+    try {
+      switch (pb.id) {
       case "PB-01":
         return matchPb01(desk, technicals, etMins, eligible);
       case "PB-02":
@@ -1080,6 +1095,18 @@ export function matchPlaybooksShadow(
         return matchPb14(desk, technicals, etMins, eligible, breakMemory);
       default:
         throw new Error(`unhandled playbook ${pb.id}`);
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      return {
+        playbook_id: pb.id,
+        session_window_open: false,
+        regime_eligible: eligible,
+        precondition_match: false,
+        trigger_fired: false,
+        direction: null,
+        detail: `Matcher error — ${msg}`,
+      };
     }
   });
 

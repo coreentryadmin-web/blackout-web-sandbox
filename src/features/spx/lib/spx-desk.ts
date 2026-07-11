@@ -619,6 +619,8 @@ export type SpxDeskPayload = {
   lod: number | null;
   hod: number | null;
   vwap: number | null;
+  /** False when SPX index bars lack volume — desk VWAP is typical-price average, not true VWAP. */
+  vwap_volume_weighted?: boolean;
   pdh: number | null;
   pdl: number | null;
   prior_close: number | null;
@@ -1279,6 +1281,7 @@ export async function buildSpxDesk(): Promise<SpxDeskPayload> {
   let maxPain = canonicalGex.max_pain ?? uwMaxPain ?? null;
 
   const vwap = session.vwap ?? (intel?.vwap as number | null) ?? null;
+  const vwapVolumeWeighted = session.vwap_volume_weighted ?? true;
   const lod = session.lod ?? (intel?.lod as number | null) ?? null;
   const hod = session.hod ?? (intel?.hod as number | null) ?? null;
 
@@ -1370,6 +1373,7 @@ export async function buildSpxDesk(): Promise<SpxDeskPayload> {
     lod,
     hod,
     vwap,
+    vwap_volume_weighted: vwapVolumeWeighted,
     pdh: prior.pdh,
     pdl: prior.pdl,
     prior_close: prior.pdc,

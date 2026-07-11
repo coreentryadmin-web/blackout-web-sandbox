@@ -125,20 +125,16 @@ export function evaluateTradeGovernor(input: TradeGovernorInput): TradeGovernorR
     }
   }
 
-  if (input.session.last_buy_at && now - input.session.last_buy_at < playBuyCooldownSec() * 1000) {
+  if (input.session.last_sell_at && now - input.session.last_sell_at < playBuyCooldownSec() * 1000) {
+    if (!input.bypass_buy_cooldown) {
+      blocks.push(
+        `Buy cooldown (${Math.round(playBuyCooldownSec() / 60)}m after exit)`
+      );
+    }
+  } else if (input.session.last_buy_at && now - input.session.last_buy_at < playBuyCooldownSec() * 1000) {
     if (!input.bypass_buy_cooldown) {
       blocks.push(`Buy cooldown (${playBuyCooldownSec()}s)`);
     }
-  }
-
-  if (
-    input.session.last_sell_at &&
-    now - input.session.last_sell_at < playBuyCooldownSec() * 1000 &&
-    !input.bypass_buy_cooldown
-  ) {
-    blocks.push(
-      `Buy cooldown (${Math.round(playBuyCooldownSec() / 60)}m after exit)`
-    );
   }
 
   if (input.playbook_id) {

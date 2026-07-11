@@ -43,8 +43,21 @@ export function updateOrBreakMemory(
 
   let brokeAbove = prev.broke_above_or_high;
   let brokeBelow = prev.broke_below_or_low;
-  if (price > orHigh) brokeAbove = true;
-  if (price < orLow) brokeBelow = true;
+  let reenteredHigh = prev.reentered_after_high_break;
+  let reenteredLow = prev.reentered_after_low_break;
+
+  // Fresh break wave clears stale re-entry latch (prevents hours-later PB-14 re-arm).
+  if (price > orHigh) {
+    if (!brokeAbove) reenteredHigh = false;
+    brokeAbove = true;
+  }
+  if (price < orLow) {
+    if (!brokeBelow) reenteredLow = false;
+    brokeBelow = true;
+  }
+
+  if (insideOr && brokeAbove) reenteredHigh = true;
+  if (insideOr && brokeBelow) reenteredLow = true;
 
   return {
     session_date: prev.session_date,
@@ -52,8 +65,8 @@ export function updateOrBreakMemory(
     or_low: orLow,
     broke_above_or_high: brokeAbove,
     broke_below_or_low: brokeBelow,
-    reentered_after_high_break: prev.reentered_after_high_break || (insideOr && brokeAbove),
-    reentered_after_low_break: prev.reentered_after_low_break || (insideOr && brokeBelow),
+    reentered_after_high_break: reenteredHigh,
+    reentered_after_low_break: reenteredLow,
     updated_at: new Date().toISOString(),
   };
 }

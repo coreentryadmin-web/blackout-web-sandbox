@@ -9,6 +9,8 @@ export type OptionGreeksSnapshot = {
   theta_per_hour: number | null;
   entry_premium: number;
   entry_spot: number;
+  /** Fields filled with model defaults because chain/API omitted them. */
+  synthetic_fields: readonly string[];
 };
 
 export type OptionPnlEstimate = {
@@ -37,22 +39,36 @@ export function buildGreeksSnapshot(input: {
   iv?: number | null;
   execution_sim?: PlaybookOptionExecutionSim | null;
 }): OptionGreeksSnapshot {
+  const synthetic: string[] = [];
   const signedDelta =
     input.delta != null
       ? input.direction === "long"
         ? Math.abs(input.delta)
         : -Math.abs(input.delta)
-      : input.direction === "long"
-        ? 0.35
-        : -0.35;
+      : (() => {
+          synthetic.push("delta");
+          return input.direction === "long" ? 0.35 : -0.35;
+        })();
+
+  const gamma =
+    input.gamma != null
+      ? input.gamma
+      : (() => {
+          synthetic.push("gamma");
+          return 0.02;
+        })();
+
+  const thetaPerHour = -(input.option_mid * DEFAULT_THETA_PCT_PER_HOUR);
+  if (input.iv == null) synthetic.push("iv");
 
   return {
     delta: signedDelta,
-    gamma: input.gamma ?? 0.02,
+    gamma,
     iv: input.iv ?? null,
-    theta_per_hour: -(input.option_mid * DEFAULT_THETA_PCT_PER_HOUR),
+    theta_per_hour: thetaPerHour,
     entry_premium: input.execution_sim?.assumed_fill ?? input.option_mid,
     entry_spot: input.entry_spot,
+    synthetic_fields: synthetic,
   };
 }
 
@@ -76,14 +92,16 @@ export function estimateOptionPnl(input: {
   const gammaPnl = 0.5 * gamma * ds * ds;
   const thetaPnl = thetaPerHour * hours;
   const spreadCost = input.round_trip_cost_pts ?? 0;
+  const maxThetaLoss = -input.greeks.entry_premium;
+  const cappedThetaPnl = Math.max(maxThetaLoss, thetaPnl);
 
   return {
     spot_move_pts: ds,
     delta_pnl: deltaPnl,
     gamma_pnl: gammaPnl,
-    theta_pnl: thetaPnl,
+    theta_pnl: cappedThetaPnl,
     spread_cost: spreadCost,
-    net_premium_pnl: deltaPnl + gammaPnl + thetaPnl - spreadCost,
+    net_premium_pnl: deltaPnl + gammaPnl + cappedThetaPnl - spreadCost,
     model: "delta_gamma_theta_lite",
   };
 }
