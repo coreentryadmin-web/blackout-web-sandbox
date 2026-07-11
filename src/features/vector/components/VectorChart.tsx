@@ -33,6 +33,11 @@ import {
   type VectorWallEvent,
 } from "@/features/vector/lib/vector-wall-events";
 import { VECTOR_CHART_LOCALE } from "@/features/vector/lib/vector-chart-config";
+import { vectorHasWsOracle } from "@/features/vector/lib/vector-ticker";
+import {
+  normalizeDteHorizon,
+  type VectorDteHorizon,
+} from "@/features/vector/lib/vector-dte-horizon";
 import {
   alphaForPct,
   glowAlphaForPct,
@@ -434,6 +439,12 @@ export function VectorChart({
   const darkPoolRef = useRef<VectorDarkPoolLevel[]>(initialDarkPoolLevels);
   const gexWallsRef = useRef<VectorWalls | null>(initialWalls);
   const vexWallsRef = useRef<VectorWalls | null>(initialVexWalls);
+  // DTE-horizon override: when the member picks a horizon other than "all", the
+  // displayed GEX walls come from an on-demand fetch of /api/market/vector/walls
+  // (the per-second SSE stream keeps carrying the full near-term walls into
+  // gexWallsRef untouched). null = follow the live stream. See liveGexWalls().
+  const horizonWallsRef = useRef<VectorWalls | null>(null);
+  const dteHorizonRef = useRef<VectorDteHorizon>("all");
   const lensRef = useRef<VectorWallLens>("gex");
   const spotRef = useRef<number | null>(
     initialBars.length ? initialBars[initialBars.length - 1]!.close : null
@@ -460,6 +471,9 @@ export function VectorChart({
   const [replayLoop, setReplayLoop] = useState(false);
   const [crosshair, setCrosshair] = useState<VectorCrosshairState | null>(null);
   const [lens, setLens] = useState<VectorWallLens>("gex");
+  const [dteHorizon, setDteHorizon] = useState<VectorDteHorizon>("all");
+  // Only oracle tickers carry the per-expiry gamma ladder the horizon re-scopes.
+  const dteAvailable = vectorHasWsOracle(ticker);
   // appendVectorWallEvents enforces the display cap — a bare concat of both
   // lenses' seeds could hold up to 2× the cap.
   const [wallEvents, setWallEvents] = useState<VectorWallEvent[]>(() =>
@@ -601,6 +615,66 @@ export function VectorChart({
     }
   }, []);
 
+  // GEX walls to DRAW right now: the horizon-scoped fetch when the member has
+  // narrowed the DTE, else the live stream walls. Replay/history paths bypass
+  // this — they use the time-sliced recorded walls (which were recorded at the
+  // full near-term scope), so the horizon override is a live-view concern only.
+  const liveGexWalls = useCallback(
+    (): VectorWalls | null =>
+      dteHorizonRef.current !== "all" && horizonWallsRef.current
+        ? horizonWallsRef.current
+        : gexWallsRef.current,
+    []
+  );
+
+  // DTE horizon → repaint GEX walls. "all" follows the live stream; a narrower
+  // horizon fetches expiry-scoped walls on demand (keeping the shared per-second
+  // SSE stream untouched) and repaints, refreshing on an interval while live.
+  useEffect(() => {
+    dteHorizonRef.current = dteHorizon;
+    let cancelled = false;
+
+    const repaintLive = () => {
+      if (replayModeRef.current || !seriesRef.current) return;
+      refreshOverlays(
+        lensRef.current,
+        liveGexWalls(),
+        vexWallsRef.current,
+        gammaFlipRef.current,
+        vexFlipRef.current,
+        darkPoolRef.current
+      );
+    };
+
+    if (dteHorizon === "all") {
+      horizonWallsRef.current = null;
+      repaintLive();
+      return;
+    }
+
+    const fetchScoped = async () => {
+      try {
+        const res = await fetch(
+          `/api/market/vector/walls?ticker=${encodeURIComponent(ticker)}&dte=${dteHorizon}`
+        );
+        if (!res.ok || cancelled) return;
+        const data = (await res.json()) as { walls?: VectorWalls | null };
+        if (cancelled || dteHorizonRef.current !== dteHorizon) return;
+        horizonWallsRef.current = data.walls ?? null;
+        repaintLive();
+      } catch {
+        /* keep last-known scoped walls; the stream walls still draw if none */
+      }
+    };
+
+    void fetchScoped();
+    const id = liveSession ? setInterval(fetchScoped, 15_000) : null;
+    return () => {
+      cancelled = true;
+      if (id) clearInterval(id);
+    };
+  }, [dteHorizon, ticker, liveSession, refreshOverlays, liveGexWalls]);
+
   const connectLive = useCallback(() => {
     if (!liveSessionRef.current) return;
     connRef.current?.close();
@@ -740,7 +814,7 @@ export function VectorChart({
       if (!inReplay) {
         refreshOverlays(
           lensRef.current,
-          gexWallsRef.current,
+          liveGexWalls(),
           vexWallsRef.current,
           gammaFlipRef.current,
           vexFlipRef.current,
@@ -748,7 +822,7 @@ export function VectorChart({
         );
       }
     });
-  }, [sessionYmd, refreshTrails, refreshOverlays, onFreshness, ticker]);
+  }, [sessionYmd, refreshTrails, refreshOverlays, onFreshness, ticker, liveGexWalls]);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -1090,13 +1164,13 @@ export function VectorChart({
     refreshTrails(lens);
     refreshOverlays(
       lens,
-      gexWallsRef.current,
+      liveGexWalls(),
       vexWallsRef.current,
       gammaFlipRef.current,
       vexFlipRef.current,
       darkPoolRef.current
     );
-  }, [lens, replayMode, refreshTrails, refreshOverlays, applyFrame]);
+  }, [lens, replayMode, refreshTrails, refreshOverlays, applyFrame, liveGexWalls]);
 
   useEffect(() => {
     const series = seriesRef.current;
@@ -1148,6 +1222,9 @@ export function VectorChart({
         lens={lens}
         vexAvailable={vexAvailable}
         onLens={handleLens}
+        dteHorizon={dteHorizon}
+        onDteHorizon={(h) => setDteHorizon(normalizeDteHorizon(h))}
+        dteAvailable={dteAvailable}
         gexAsOf={gexAsOf}
         vexAsOf={vexAsOf}
         liveSession={liveSession && !replayMode}
