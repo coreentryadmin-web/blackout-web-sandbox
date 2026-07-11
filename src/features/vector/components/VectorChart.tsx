@@ -32,6 +32,7 @@ import {
   eventsFromWallHistory,
   type VectorWallEvent,
 } from "@/features/vector/lib/vector-wall-events";
+import { VECTOR_CHART_LOCALE } from "@/features/vector/lib/vector-chart-config";
 import {
   alphaForPct,
   glowAlphaForPct,
@@ -755,6 +756,10 @@ export function VectorChart({
 
     const chart = createChart(container, {
       autoSize: true,
+      // Pin the axis locale instead of inheriting navigator.language — a rejected default
+      // tag (e.g. "en-US@posix") throws inside the chart's Intl-based time-axis formatting
+      // and blanks the whole canvas. See vector-chart-config.ts for the full write-up.
+      localization: { locale: VECTOR_CHART_LOCALE },
       layout: {
         background: { type: ColorType.Solid, color: "transparent" },
         textColor: "#9fb4d4",
