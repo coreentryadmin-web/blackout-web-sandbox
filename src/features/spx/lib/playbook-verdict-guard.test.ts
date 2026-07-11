@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { playbookInstanceId } from "./playbook-instance-episode";
 import {
   applyPlaybookVerdictGuards,
+  assertPlaybookVerdictGuardInvariants,
   nextArmedPollCounts,
   playbookExitProfile,
 } from "./playbook-verdict-guard";
@@ -77,4 +78,26 @@ test("playbookExitProfile: returns default for unknown id", () => {
   const p = playbookExitProfile(null);
   assert.equal(p.label, "default");
   assert.equal(p.trim_mfe_mult, 1);
+});
+
+test("assertPlaybookVerdictGuardInvariants: passes after guards strip premature trigger", () => {
+  const session = "2026-07-10";
+  const armedAt = NOW - 10_000;
+  const instanceId = playbookInstanceId(session, "PB-01", "long", armedAt);
+  const snapshots = [
+    {
+      instance_id: instanceId,
+      playbook_id: "PB-01",
+      direction: "long",
+      state: "armed",
+      episode_direction: "long",
+      episode_start_ms: armedAt,
+      triggered_at_ms: null,
+      armed_at_ms: armedAt,
+      invalidated_at_ms: null,
+      trigger_count: 0,
+    },
+  ];
+  const guarded = applyPlaybookVerdictGuards(session, [verdict("PB-01")], snapshots, new Map(), NOW);
+  assertPlaybookVerdictGuardInvariants(session, guarded, snapshots, new Map(), NOW);
 });

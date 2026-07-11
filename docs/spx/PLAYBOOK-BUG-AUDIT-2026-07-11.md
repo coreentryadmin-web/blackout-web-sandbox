@@ -182,9 +182,9 @@ Full reasoning: see **Claude — second-pass validation** section below.
 
 **Foundation closure checklist (all three required before "strong"):**
 
-1. [ ] VWAP question **closed** (fixed or formally gated off) — **in progress #96** fail-closed PB-01/PB-02
-2. [ ] Promotion pipeline **runs against real data** at least once in production/staging cron — **in progress** GHA + `data_quality_session_fraction` (#97)
-3. [ ] At least **one RTH session** observed end-to-end with real open trade + FSM evidence — **next weekday** (`validate:staging-rth`)
+1. [x] VWAP question **closed** — **#96** fail-closed PB-01/PB-02; live staging `vwap_volume_weighted: false`, PB-02 `eligible=false`
+2. [x] Promotion pipeline **runs against real data** — **#97** GHA + **`GET /api/admin/playbook/promotion-report`** (#20b)
+3. [ ] At least **one RTH session** observed end-to-end — **next weekday** (`validate:staging-rth`); **`GET /api/admin/playbook/fsm-today`** enables proof from constrained sandboxes
 
 ---
 
@@ -196,8 +196,9 @@ Full reasoning: see **Claude — second-pass validation** section below.
 |----------|--------|-------|-----|
 | **P0** | F1 — fail-closed VWAP playbooks until feed fixed | Cursor | **#96** |
 | **P0** | F4 — RTH observation on next weekday open | Cursor + GHA | `validate:staging-rth` (existing) |
-| **P1** | F2 — wire `playbook:evidence-report` into staging GHA + enrich sample | Cursor | **#97** |
-| **P1** | F3 — dual-evaluation audit (`evaluateTradeGovernor` call sites) | Deferred 1 sprint | — |
+| **P1** | F2 / **#20b** — promotion sample-builder + admin route | Cursor | **this PR** |
+| **P1** | F3 — single governor thread + option overlay (no dual `evaluateTradeGovernor`) | Cursor | **this PR** |
+| **P1** | Q4 — `assertPlaybookVerdictGuardInvariants` (`PLAYBOOK_VERDICT_GUARD_ASSERT=1`) | Cursor | **this PR** |
 | **P2** | F5 — delete dead exit-policy, unify readiness SSOT | Deferred | #13, #9 |
 
 **What we are NOT doing this sprint:**
@@ -221,6 +222,106 @@ Read **Foundation assessment** above first. These are the open questions for the
 6. **F5:** Rank the deduplication items (#9, #13, #33, temporal vs matcher windows) by **risk of next F3-class bug** if left alone one more sprint.
 
 **Before reviewing live behavior:** read `docs/ops/STAGING-CONNECT.md` (AWS profile, Cognito, CRON bearer, validation commands).
+
+---
+
+## Claude — third-pass answers (2026-07-11, foundation-focused)
+
+Method: 3 independent agents doing exhaustive full-file reads (not sampling) against the current code, plus my own direct read of `playbook-verdict-guard.ts` for Q4. Cross-checked against live staging (`market_open` confirmed closed at review time — RTH proof, Q5, could not be executed this session; see below). No files edited during investigation.
+
+### Q1 (F1 / #4) — Which playbooks are structurally invalid vs merely degraded by `vwap_volume_weighted: false`? Fail-closed?
+
+Read all 14 matchers in full. Result:
+
+| Verdict | Playbooks | Basis |
+|---|---|---|
+| **Structurally invalid** | **PB-01 (VWAP Reclaim), PB-02 (VWAP Reject)** | VWAP *is* the thesis — entry level, dwell-time, reclaim/reject trigger all derive directly from `desk.vwap`/`minutes_above_vwap`/`minutes_below_vwap`/`breakout.vwap_reclaim`/`vwap_lost` |
+| **Degraded, not invalid** | PB-08 (Power Hour), PB-10 (EMA Stack Pullback) | VWAP is a secondary AND-condition; primary trigger (HOD/LOD break + flow for PB-08; independent EMA9/20/SMA50 stack for PB-10) is unaffected |
+| **Unaffected** | PB-03, 04, 05, 06, 07, 09, 11, 12, 13, 14 | Zero VWAP field reads, confirmed by grep, not inferred from name |
+
+**No blast radius beyond direct readers** — `gamma-desk.ts` has zero VWAP references (gamma flip/regime/GEX walls are independently computed), and there is no `market_breadth.pct_above_vwap` aggregate anywhere in this codebase to contaminate.
+
+**This is not theoretical — PB-01 is on staging's default live allowlist today** (`PLAYBOOK_LIVE_ALLOWLIST` default = PB-01–03).
+
+**Fail-closed recommendation — small, reuses an existing pattern, no new call sites:** extend the existing `PlaybookDataRequirements`/`PlaybookDataQualityFlags` capability-flag mechanism (already wired into the one gate call site at `spx-play-gates.ts:250`) rather than inventing new plumbing:
+1. `playbook-data-requirements.ts`: add `vwapVolumeWeighted: boolean`, `true` only for PB-01/PB-02.
+2. `playbook-data-quality.ts`: add `vwap_not_volume_weighted` flag, derived from `desk.vwap_volume_weighted === false`.
+3. No change needed at the gate call site — it already passes `desk` through.
+4. Deliberately **exclude** this from the global severe-veto kill switch (`shouldFailClosedLiveOnDataQuality`) — only 2 of 14 playbooks are actually invalidated; a global veto would over-block PB-03/04/05/etc. for no reason.
+5. PB-08/PB-10: leave degraded-but-live, add a visibility note to their shadow `detail` string rather than gating — their independent trigger conditions still hold.
+
+~30-40 lines, 4 files (2 source + 2 test), zero new call sites.
+
+### Q2 (F2 / #20b) — Minimal sample-builder query + where should the first production caller live?
+
+`buildPromotionSample`/`summarize` already exist and are ~95% correct in `scripts/playbook-evidence-report.mjs` — this isn't a from-scratch build, it's a hoist-and-wire job. No new DB column needed.
+
+**Query:** extend the existing `fetchPlaybookEvidenceRows` (`db.ts:2633`) with two things it's currently missing versus the script's inline version: a `spx_playbook_instance_events` subquery for the trigger-time `feature_snapshot` (needed for `market_condition_bucket` computed at *trigger* time, not latest state — using latest state would leak look-ahead), and `option_ticket` (for `execution_sim`/`round_trip_cost_pts`). The join itself (`spx_playbook_instances` LEFT JOIN `spx_play_outcomes` on `playbook_instance_id` with the legacy fallback) is already correct.
+
+**`data_quality_satisfied` — zero new I/O:** the trigger-time `feature_snapshot` JSONB (already persisted per-trigger via `playbook-instance-events.ts`) already carries `halt_channel_stale`/`desk_stale`/`gex_missing`/`vix` — the same subquery row serves both the market-condition bucket and the data-quality flag. Rows from before this snapshot existed get `data_quality_satisfied: undefined` (excluded from the denominator, not counted as a failure) — a forward-only concern, no backfill needed.
+
+**Where the caller lives:** an on-demand admin route (`/api/admin/spx/promotion-report`), mirroring the existing `admin/bie-report` pattern (read-only, `requireAdminApi()`, cheap single join, `no-store`) — **not** a weekly cron. A cron would need a new persistence table for zero current benefit (nobody's diffing promotion status week-over-week yet); the query is cheap enough to run on-request, which is also when it's actually needed (someone deciding whether to promote a playbook).
+
+**Size:** ~5 files, roughly +250/-90 lines — one PR: new `playbook-evidence-sample.ts` (pure, unit-testable, no DB import) with the moved logic; `db.ts` extended by ~15 lines; the CLI script becomes a thin wrapper around the same shared function instead of duplicating it; new admin route ~40 lines.
+
+### Q3 (F3) — Audit for other dual-evaluation instances like #12
+
+**PR #90 (cron OR-memory/match-resolve): fully closed, not just half.** Confirmed via diff — both `refreshOrBreakMemory` and `resolveGuardedPlaybookMatch` now execute exactly once per cron tick, threaded from `runSpxEvaluator` into both `evaluateSpxPlay` and `syncPlaybookTelemetryAfterEvaluate`. Matches the member-read path's existing single-compute pattern.
+
+**PR #88 (governor fix): did not remove the second call site — it aligned the bypass formula.** `evaluateTradeGovernor` is still called twice per flat-path evaluation (`spx-play-gates.ts:209` inside `gatesBuy`, and `spx-play-engine.ts:1131` as `optionGovernor`), but both now read the *same* shared `buyCooldownBypass` variable instead of two independently-derived formulas — so today's disagreement bug is genuinely fixed. **The architecture is still fragile**: the second call site exists solely to add option-chain-derived checks (spread/mid/blocked — additive only, can't silently override the first call's result today) after an intervening async Claude-approval step. The next person who adds a new context-dependent flag to `evaluateTradeGovernor` and updates only one call site would silently reintroduce a bug-#12-shaped disagreement. Recommend collapsing to one call (thread the option preview into the existing `gatesBuy` call) rather than leaving two synchronized-by-convention call sites.
+
+**New instances found, ranked:**
+1. `evaluateTradeGovernor` dual call site (above) — **Low-Medium**, latent fragility, not an active bug today.
+2. `evaluateMtfHybrid`/`keyLevelForDirection` computed identically in two places (`evaluateSpxPlayCore` and `evaluateFlatPlay`) — **harmless**, both pure/deterministic with byte-identical inputs, one copy (`evaluateSpxPlayCore`'s) is entirely unused on the flat path. Wasted computation, not a correctness risk. Worth threading through like the OR-memory pattern, but no rush.
+3. A third `evaluateMtfHybrid` call via `mtfHardPass` with deliberately synthetic grade/score for the WATCH→ENTRY hard-pass check — **not risky**, explicitly commented, serves a genuinely distinct purpose, doesn't compete with the other two calls.
+4. `evaluatePlayGates` called twice (watch-intent, buy-intent) — **not risky**, deliberately different intents feeding different UI states, not the same-evaluation-twice shape.
+
+**Negative-result confidence:** full reads of `spx-play-engine.ts` (1691 lines both halves), `spx-play-gates.ts`, `playbook-verdict-guard.ts`, `spx-service.ts`, `spx-evaluator.ts`, `playbook-engine-telemetry.ts`, the cron route, `playbook-match-resolver.ts`, `playbook-shadow-panel.ts`; every significant exported function name grepped for all call sites across the entire `src/features/spx` and `src/app` trees, not just the priority files. No other pure function is invoked 2+ times within one request's call graph with divergent, consequential arguments beyond the governor case.
+
+### Q4 (F3 / #16) — Should `armed_polls >= min` incorporate `prev` FSM state?
+
+Re-read `playbook-verdict-guard.ts`'s current `applyPlaybookVerdictGuards` directly. The "prev doesn't matter" framing from the prior review is **accurate for one specific line, but overstated as a description of the function**: `prev` already gates two things upstream of the final check — (1) the terminal/post-entry freeze (`isTerminalPlaybookState(prev) || isPostEntryPlaybookState(prev)` strips any trigger outright), and (2) indirectly, via `nextArmedPollCounts`, which resets the counter to 1 whenever `resolved.spawned || resolved.from_state === "idle"` — so in practice the counter can only accumulate to `minArmed` through consecutive polls where the instance was *not* freshly spawned/idle. The literal final line (`armedPolls >= minArmed`) doesn't re-check `prev`, but the counter feeding it is already `prev`-gated one step back.
+
+**Recommendation: add an explicit `prev === "armed"` check at the final line anyway — cheap (~2 lines), not because today's logic is wrong in the common case, but as defense-in-depth against exactly the class of bug this whole document is about.** The in-memory `armedPollCounts` map and the persisted FSM `state` field are two separate pieces of state that are *supposed* to move in lockstep but aren't structurally forced to (this is the same "state tracked in two places without cross-check" shape as the dual-FSM-writer and cron-staleness issues already found and fixed elsewhere in this system). A redundant assertion here costs nothing and closes the theoretical gap if the counter and the persisted state ever desync (e.g., a `persist_instances:false` read observing a stale `armedPollCounts` value against a state row the cron hasn't caught up to yet). Also: update the function's doc comment to stop claiming "trigger requires prior armed state" as if the current single-line check enforces it — say precisely what's true (frozen-state check uses `prev` directly; the poll-count check uses `prev` only via the counter's reset rule) or add the explicit check so the comment becomes true again.
+
+### Q5 (F4) — Minimum RTH observation checklist
+
+Could not execute live this session — confirmed via direct staging health/desk check that `market_open`/`session_phase` are both null right now (off-hours). This sandbox also has no AWS CLI configured, so the Cognito/Secrets-Manager-dependent scripts (`validate:staging-rth`, `validate:staging-live`) can't run from here either — only the `CRON_SECRET`-bearer path against public API routes works. Concrete checklist for whoever has AWS CLI access during 09:30–16:00 ET on a weekday:
+
+1. `npm run validate:staging-rth` — confirms `spx-evaluate` ran in the last 20 min, `market_regime` writes present, `data-correctness`/`provider-health-reconcile` latest runs OK.
+2. Poll `/api/market/spx/play` (CRON_SECRET bearer, no Cognito needed) every 30s through at least one full playbook lifecycle; watch `playbook_shadow.verdicts[].trigger_fired`/`primary_playbook_id` for an actual `armed→triggered→open` progression on a real playbook, not just static shape.
+3. **The part that actually needs DB/AWS access** (this sandbox can't do it): confirm a real `spx_playbook_instances` row transitions `armed→triggered→open` with real timestamps, and that the resulting `spx_play_outcomes` row gets `playbook_instance_id` stamped when the trade closes. Either run from an AWS-CLI-equipped environment, or — cheaper long-term — add a lightweight read-only admin JSON endpoint exposing today's `spx_playbook_instances`/`spx_playbook_instance_events` rows, so this proof is repeatable from a sandbox like this one without needing Postgres/AWS access at all. Worth doing given how many of these review sessions run from environments with the same access constraints.
+4. Specifically watch `gamma_regime` on the live desk payload across 3+ consecutive polls during a regime flip and confirm PB-04's SELL only fires on the 3rd non-`mean_revert` poll, not the 1st (debounce proof).
+5. Confirm `open_play.option_pnl_est` is present and sane (not null, not absurd) on an actual held position.
+
+This is the minimum; none of it has been executed yet, so F4 remains genuinely open, not just "not re-proven this session" as a formality.
+
+### Q6 (F5) — Rank dedup items by risk of the next F3-class bug if left one more sprint
+
+1. **God-files (#33)** — highest. This isn't itself a bug, it's the generative cause: every dual-evaluation/duplicate-logic instance found across all three review rounds (governor, OR-memory, mtf-hybrid, the original precondition-wiring bugs) lived inside `spx-play-engine.ts`'s or `playbook-shadow-matcher.ts`'s largest functions. Splitting these reduces the rate of new F3-shaped bugs more than any single point fix.
+2. **Two readiness status systems (#9)** — high, and rising. Once #20b ships (Q2 above), there will be a real, computed promotion signal that `PLAYBOOK_SURFACE_STATUS` doesn't read from. That's a live version of exactly the "two sources of truth that can disagree" pattern — currently harmless because #20b doesn't exist yet, but the risk activates the moment it does.
+3. **Temporal-contract vs matcher-hardcoded session windows** — medium-high, and not hypothetical: this exact split already caused the PB-03 09:35-vs-09:50 doc-drift incident from the prior review round. Same shape, already has one incident on record.
+4. **Dead `playbook-exit-policy.ts` (#13)** — lower risk, contained blast radius (only exit-tuning, not entry/promotion decisions), and it's the cheapest win on this list — delete or merge it in under an hour.
+
+---
+
+## Claude — fourth-pass validation (2026-07-11, PRs #96/#97, staging live-checked)
+
+Method: 2 independent agents adversarially re-verifying #96 (F1 VWAP fail-closed) and #97 (F2 promotion evidence GHA wiring) against actual current code, cross-checked against **live staging data** (`market_open` still closed this session). Plus a direct local run: `tsc --noEmit` clean, `node --test "src/features/spx/**/*.test.ts"` → **408/408 pass**. Read-only.
+
+### #96 (F1) — VWAP fail-closed: holds up cleanly, confirmed live
+
+Genuinely two independent enforcement points, not one: a `volumeWeightedVwapBlock()` guard at the top of `matchPb01`/`matchPb02` in the matcher (blocks `precondition_match` **and** `trigger_fired` together — no leak path into shadow/promotion telemetry), plus the existing `playbook-data-requirements.ts`/`spx-play-gates.ts:250` capability-flag path independently blocking live/paper order entry. `spx-desk.ts`'s `vwap_volume_weighted` default flipped from `?? true` to `?? false` — correctly fails closed if the volume-detection logic itself ever breaks, rather than silently un-gating PB-01/PB-02. Confirmed PB-08/PB-10/the other 10 playbooks are untouched (no shared call path). **Live staging right now**: `/api/market/spx/desk` shows `vwap_volume_weighted: false`, and `/api/market/spx/play`'s `playbook_shadow.verdicts` shows PB-01/PB-02 with `trigger_fired: false` and the exact `"requires volume-weighted SPX VWAP — index bars lack volume (ISSUE-16)"` detail string from the merged source — this is the real fix running in production, not a stale cache. 35/35 new+existing tests pass. No new bugs found. **F1 can be marked closed** (checklist item 1).
+
+### #97 (F2) — promotion evidence GHA wiring: real, with two flagged gaps
+
+The commit title ("wire promotion evidence into staging GHA") slightly overstates the diff — `evaluatePlaybookPromotion`/`buildPromotionSample` already existed and were already called from the CLI script before this PR (from earlier #67/#77 work); what #97 actually adds is (1) a real weekday-scheduled GHA step invoking that existing call chain against live staging Postgres, and (2) genuinely wiring `data_quality_session_fraction` — traced end-to-end from `spx-desk.ts`'s live `vwap_volume_weighted` computation, through the persisted trigger-time feature snapshot, into the script's new fraction calculation, into `evaluatePromotionGates`'s `data_quality_session_coverage` gate, which actually changes the computed promotion tier. So: **the "zero production callers" gap is genuinely closed** — this is a real, scheduled, credentialed (AWS creds already configured earlier in the same GHA job) production execution against real data, not a stub.
+
+Two real gaps, not blocking but worth tracking:
+1. **`continue-on-error: true` creates a silent-failure blind spot.** No alert on either a hard crash (query/credential failure) or a bad *content* result (a failed promotion gate or `insufficient` tier is only `console.log`'d, never causes a non-zero exit) — an operator has to manually read raw GHA logs to know whether playbooks are promotable. This is why the foundation checklist correctly still marks this "in progress," not closed.
+2. **Zero test coverage on the new ~29 lines** (`sessionSnapshotDataQualityOk`/`dataQualitySessionFraction` in the script) — no correctness bug found in the logic itself, but it ships without a unit test, which is a gap against this repo's own standing test-with-every-fix policy.
+
+**Recommendation for the next small PR:** replace `continue-on-error` with a real signal — either `process.exit(1)` on a hard failure plus a Slack/Discord notify step on gate-fail/insufficient-tier content (reusing whatever alerting pattern other crons in this repo already use), and add a unit test for the fraction computation. Both are small, contained follow-ups, not a redesign.
 
 ---
 

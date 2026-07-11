@@ -155,7 +155,46 @@ export function applyPlaybookVerdictGuards(
     };
   });
 
-  return applyTemporalVerdictGuards(sessionDate, pollGuarded, snapshots, nowMs);
+  const guarded = applyTemporalVerdictGuards(sessionDate, pollGuarded, snapshots, nowMs);
+  if (verdictGuardAssertEnabled()) {
+    assertPlaybookVerdictGuardInvariants(sessionDate, guarded, snapshots, armedPollCounts, nowMs);
+  }
+  return guarded;
+}
+
+/**
+ * Defense-in-depth: no trigger_fired without precondition_match and min armed polls.
+ * Enable with PLAYBOOK_VERDICT_GUARD_ASSERT=1 (dev/staging audits).
+ */
+export function assertPlaybookVerdictGuardInvariants(
+  sessionDate: string,
+  verdicts: readonly PlaybookMatchVerdict[],
+  snapshots: readonly PlaybookInstanceSnapshot[],
+  armedPollCounts: PlaybookArmedPollCounts,
+  nowMs: number = Date.now()
+): void {
+  const minArmed = playbookMinArmedPolls();
+  for (const v of verdicts) {
+    if (!v.trigger_fired) continue;
+    if (!v.precondition_match) {
+      throw new Error(`${v.playbook_id}: trigger_fired without precondition_match`);
+    }
+    const resolved = resolveEpisodeInstance(sessionDate, v, snapshots, nowMs);
+    const prev = resolved.from_state;
+    if (isTerminalPlaybookState(prev) || isPostEntryPlaybookState(prev)) {
+      throw new Error(`${v.playbook_id}: trigger_fired in frozen state ${prev}`);
+    }
+    const armedPolls = armedPollCounts.get(resolved.instance_id) ?? 0;
+    if (armedPolls < minArmed) {
+      throw new Error(
+        `${v.playbook_id}: trigger_fired with armed_polls=${armedPolls} < ${minArmed} (prev=${prev})`
+      );
+    }
+  }
+}
+
+function verdictGuardAssertEnabled(): boolean {
+  return process.env.PLAYBOOK_VERDICT_GUARD_ASSERT === "1";
 }
 
 /** Increment armed poll counter for instances with precondition_match this tick. */

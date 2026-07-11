@@ -159,6 +159,18 @@ async function main() {
       row("admin", "launch_status", "PASS", `open=${ls.open_count}/${ls.total_count} locked=${ls.locked_keys?.join(",") || "none"}`);
     }
     await probe("admin", "/api/admin/bie-report", { headers: cookieH }, (s, b) => s === 200 && b?.available !== false);
+    await probe(
+      "admin",
+      "/api/admin/playbook/promotion-report",
+      { headers: cookieH },
+      (s, b) => s === 200 && (b?.available === false || Array.isArray(b?.playbooks))
+    );
+    await probe(
+      "admin",
+      "/api/admin/playbook/fsm-today",
+      { headers: cookieH },
+      (s, b) => s === 200 && (b?.available === false || Array.isArray(b?.instances))
+    );
     if (health.body) {
       const emb = health.body?.bie?.embeddings ?? health.body?.ops_config;
       row("admin", "bie-embeddings", health.body?.bie ? "PASS" : "WARN", JSON.stringify(health.body?.bie ?? {}).slice(0, 120));

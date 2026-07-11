@@ -94,7 +94,7 @@ import {
   estimateOptionPnl,
   parseOptionPremiumMid,
 } from "@/features/spx/lib/playbook-option-pnl";
-import { evaluateTradeGovernor } from "@/features/spx/lib/trade-governor";
+import { mergeTradeGovernorWithOptionOverlay } from "@/features/spx/lib/trade-governor";
 import {
   evaluatePlaybookExitPlan,
   strongestPlaybookExitSignal,
@@ -1128,20 +1128,18 @@ async function evaluateFlatPlay(
       }
     : optionTicketRaw;
 
-  const optionGovernor = evaluateTradeGovernor({
-    buy_intent: true,
-    playbook_id: playbookPrimaryId,
-    direction: dir,
-    desk,
-    session,
-    triggers_today_by_pb: playbookResolved.triggers_today_by_pb,
-    option: {
-      mid: optionTicket.mid,
-      spread_pct: optionTicket.spread_pct,
-      blocked: optionTicket.blocked,
-      block_reason: optionTicket.block_reason,
-    },
-    bypass_buy_cooldown: buyCooldownBypass,
+  const sessionGovernor = entryGatesRaw.trade_governor ?? {
+    blocks: [],
+    warnings: [],
+    size_multiplier: 1,
+    tier: "normal" as const,
+    emergency_shutdown: false,
+  };
+  const optionGovernor = mergeTradeGovernorWithOptionOverlay(sessionGovernor, {
+    mid: optionTicket.mid,
+    spread_pct: optionTicket.spread_pct,
+    blocked: optionTicket.blocked,
+    block_reason: optionTicket.block_reason,
   });
   if (optionGovernor.blocks.length) {
     if (mutate && playbookLabActive && playbookPrimaryId && dir) {

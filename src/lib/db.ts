@@ -2729,6 +2729,116 @@ export async function fetchPlaybookEvidenceRows(opts?: {
   }));
 }
 
+/** Full promotion-evidence rows — mirrors CLI sample-builder query (#20b). */
+export async function fetchPlaybookPromotionEvidenceRows(opts?: {
+  oos_only?: boolean;
+  since_date?: string;
+}): Promise<
+  Array<{
+    instance_id: string;
+    session_date: string;
+    playbook_id: string;
+    armed_at: string | null;
+    triggered_at: string | null;
+    opened_at: string | null;
+    reason_blocked: string | null;
+    counterfactual_mfe_pts: number | null;
+    counterfactual_mae_pts: number | null;
+    counterfactual_eval: unknown;
+    option_contract_candidate: unknown;
+    pnl_pts: number | null;
+    mfe_pts: number | null;
+    mae_pts: number | null;
+    outcome: string | null;
+    execution_sim: { round_trip_cost_pts?: number | null } | null;
+    has_execution_sim: boolean;
+    blocked_events: number;
+    trigger_feature_snapshot: Record<string, unknown> | null;
+  }>
+> {
+  await ensureSchema();
+  const oosOnly = opts?.oos_only !== false;
+  const since = opts?.since_date ?? "2026-07-10";
+  const res = await (await getPool()).query(
+    `
+    SELECT
+      i.instance_id,
+      i.session_date::text,
+      i.playbook_id,
+      i.armed_at,
+      i.triggered_at,
+      i.opened_at,
+      i.reason_blocked,
+      i.counterfactual_mfe_pts,
+      i.counterfactual_mae_pts,
+      i.counterfactual_eval,
+      i.option_contract_candidate,
+      o.pnl_pts,
+      o.mfe_pts,
+      o.mae_pts,
+      o.outcome,
+      o.option_ticket,
+      (SELECT COUNT(*)::int FROM spx_playbook_instance_events e
+        WHERE e.instance_id = i.instance_id AND e.event_type = 'blocked') AS blocked_events,
+      (SELECT e.feature_snapshot FROM spx_playbook_instance_events e
+        WHERE e.instance_id = i.instance_id AND e.event_type = 'triggered'
+        ORDER BY e.observed_at ASC LIMIT 1) AS trigger_feature_snapshot
+    FROM spx_playbook_instances i
+    LEFT JOIN spx_play_outcomes o
+      ON o.outcome <> 'open'
+     AND (
+       o.playbook_instance_id = i.instance_id
+       OR (
+         o.playbook_instance_id IS NULL
+         AND o.playbook_id = i.playbook_id
+         AND o.session_date = i.session_date
+         AND o.direction IS NOT DISTINCT FROM i.direction
+       )
+     )
+    WHERE ($1::boolean = false OR i.session_date >= $2::date)
+    ORDER BY i.session_date, i.playbook_id
+    `,
+    [oosOnly, since]
+  );
+  return res.rows.map((r) => {
+    const optionTicket =
+      r.option_ticket && typeof r.option_ticket === "object"
+        ? (r.option_ticket as Record<string, unknown>)
+        : null;
+    const executionSim =
+      optionTicket?.execution_sim && typeof optionTicket.execution_sim === "object"
+        ? (optionTicket.execution_sim as { round_trip_cost_pts?: number | null })
+        : null;
+    const triggerSnap =
+      r.trigger_feature_snapshot && typeof r.trigger_feature_snapshot === "object"
+        ? (r.trigger_feature_snapshot as Record<string, unknown>)
+        : null;
+    return {
+      instance_id: String(r.instance_id),
+      session_date: String(r.session_date),
+      playbook_id: String(r.playbook_id),
+      armed_at: r.armed_at != null ? String(r.armed_at) : null,
+      triggered_at: r.triggered_at != null ? String(r.triggered_at) : null,
+      opened_at: r.opened_at != null ? String(r.opened_at) : null,
+      reason_blocked: r.reason_blocked != null ? String(r.reason_blocked) : null,
+      counterfactual_mfe_pts:
+        r.counterfactual_mfe_pts != null ? Number(r.counterfactual_mfe_pts) : null,
+      counterfactual_mae_pts:
+        r.counterfactual_mae_pts != null ? Number(r.counterfactual_mae_pts) : null,
+      counterfactual_eval: r.counterfactual_eval ?? null,
+      option_contract_candidate: r.option_contract_candidate ?? null,
+      pnl_pts: r.pnl_pts != null ? Number(r.pnl_pts) : null,
+      mfe_pts: r.mfe_pts != null ? Number(r.mfe_pts) : null,
+      mae_pts: r.mae_pts != null ? Number(r.mae_pts) : null,
+      outcome: r.outcome != null ? String(r.outcome) : null,
+      execution_sim: executionSim,
+      has_execution_sim: Boolean(executionSim),
+      blocked_events: Number(r.blocked_events ?? 0),
+      trigger_feature_snapshot: triggerSnap,
+    };
+  });
+}
+
 export async function fetchPlaybookShadowObservationsForSession(
   sessionDate: string,
   limit = 200
