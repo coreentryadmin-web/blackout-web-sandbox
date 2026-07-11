@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { authorizeMarketDeskApi } from "@/lib/market-api-auth";
 import { requireToolApi } from "@/lib/tool-access-server";
-import { normalizeVectorTicker } from "@/features/vector";
-import { vectorUniverseTickers } from "@/lib/heatmap-allowlist";
+import { normalizeVectorTicker, isVectorTickerAllowed } from "@/features/vector";
 import {
   attachVectorStreamSubscriber,
   detachVectorStreamSubscriber,
@@ -27,15 +26,17 @@ export async function GET(req: NextRequest) {
   const locked = await requireToolApi("vector");
   if (locked) return locked;
 
-  const ticker = normalizeVectorTicker(req.nextUrl.searchParams.get("ticker"));
-  // Universe-gate the symbol: any 8-char string used to spin a dedicated 1 Hz
-  // poller whose payload build fetched a full day of Polygon minute bars every
-  // second — one member with invented tickers could drive ~N provider calls/s
-  // and grow per-ticker server state without bound. The page only offers
-  // universe tickers, so anything else is a hand-crafted request.
-  if (!vectorUniverseTickers().includes(ticker)) {
-    return NextResponse.json({ error: `Unknown Vector ticker: ${ticker}` }, { status: 400 });
+  const rawTicker = req.nextUrl.searchParams.get("ticker");
+  // Any optionable symbol is allowed on demand (Vector is a search-any-stock
+  // desk, not a fixed universe) — but only WELL-FORMED symbols: a junk/oversized
+  // string is refused before it can spin a poller. The two amplification vectors
+  // the old universe gate guarded are now bounded directly: concurrent pollers by
+  // tryAcquireVectorStreamConnection's cap, and per-ticker server state by the
+  // LRU eviction in vector-snapshot's state() map.
+  if (!isVectorTickerAllowed(rawTicker)) {
+    return NextResponse.json({ error: `Invalid ticker` }, { status: 400 });
   }
+  const ticker = normalizeVectorTicker(rawTicker);
 
   // Claim the slot atomically — the old read-then-increment spanned the stream
   // construction and let concurrent connects overshoot the cap.

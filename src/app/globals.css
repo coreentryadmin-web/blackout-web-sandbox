@@ -8468,6 +8468,36 @@ body::before {
     }
   }
 
+  /* ── Ticker search combobox — type any optionable symbol ── */
+  .vector-ticker-search {
+    @apply relative flex items-center gap-1.5 rounded-md border border-cyan-500/30 bg-black/60 px-2 py-1;
+  }
+  .vector-ticker-search-icon {
+    @apply text-sm text-cyan-300;
+  }
+  .vector-ticker-search-input {
+    @apply w-24 bg-transparent text-sm font-semibold uppercase tracking-wide text-white outline-none;
+  }
+  .vector-ticker-search-input::placeholder {
+    @apply text-white/50;
+  }
+  .vector-ticker-search-menu {
+    @apply absolute left-0 top-full z-30 mt-1 max-h-72 w-44 overflow-auto rounded-lg border border-white/10 bg-[#07070c] p-1 shadow-xl;
+  }
+  .vector-ticker-search-opt {
+    @apply flex w-full items-center justify-between gap-2 rounded-md px-2.5 py-1.5 text-left text-sm text-cyan-100 transition-colors;
+  }
+  .vector-ticker-search-opt.is-active,
+  .vector-ticker-search-opt:hover {
+    @apply bg-cyan-400/15 text-white;
+  }
+  .vector-ticker-search-opt-sym {
+    @apply font-mono font-bold tracking-wide;
+  }
+  .vector-ticker-search-opt-hint {
+    @apply font-mono text-[10px] uppercase tracking-wide text-white/40;
+  }
+
   /* ── Universe scanner: collapsible secondary panel below the chart ── */
   .vector-scanner-panel {
     @apply rounded-2xl border border-white/10 bg-[#07070c] overflow-hidden;

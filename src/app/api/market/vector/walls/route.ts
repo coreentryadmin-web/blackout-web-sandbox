@@ -1,10 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { authorizeMarketDeskApi } from "@/lib/market-api-auth";
 import { requireToolApi } from "@/lib/tool-access-server";
-import { normalizeVectorTicker } from "@/features/vector/lib/vector-ticker";
+import { normalizeVectorTicker, isVectorTickerAllowed } from "@/features/vector/lib/vector-ticker";
 import { getVectorGexWallsForHorizon } from "@/features/vector/lib/vector-snapshot";
 import { normalizeDteHorizon } from "@/features/vector/lib/vector-dte-horizon";
-import { vectorUniverseTickers } from "@/lib/heatmap-allowlist";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -24,10 +23,11 @@ export async function GET(req: NextRequest) {
   const locked = await requireToolApi("vector");
   if (locked) return locked;
 
-  const ticker = normalizeVectorTicker(req.nextUrl.searchParams.get("ticker"));
-  if (!vectorUniverseTickers().includes(ticker)) {
-    return NextResponse.json({ error: `Unknown Vector ticker: ${ticker}` }, { status: 400 });
+  const rawTicker = req.nextUrl.searchParams.get("ticker");
+  if (!isVectorTickerAllowed(rawTicker)) {
+    return NextResponse.json({ error: `Invalid ticker` }, { status: 400 });
   }
+  const ticker = normalizeVectorTicker(rawTicker);
 
   const horizon = normalizeDteHorizon(req.nextUrl.searchParams.get("dte"));
   const walls = await getVectorGexWallsForHorizon(ticker, horizon);

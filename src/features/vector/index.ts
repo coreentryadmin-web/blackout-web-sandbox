@@ -7,7 +7,7 @@ export { VectorPageShell } from "./components/VectorPageShell";
 export type { VectorBar } from "./components/VectorChart";
 
 export { fetchVectorSeedBars } from "./lib/vector-seed-bars";
-export { normalizeVectorTicker, VECTOR_DEFAULT_TICKER } from "./lib/vector-ticker";
+export { normalizeVectorTicker, isVectorTickerAllowed, VECTOR_DEFAULT_TICKER } from "./lib/vector-ticker";
 export {
   buildVectorStreamPayload,
   getVectorDarkPoolLevels,

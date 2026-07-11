@@ -70,13 +70,33 @@ function freshState(): TickerState {
 }
 
 const stateByTicker = new Map<string, TickerState>();
+/**
+ * Cap on distinct per-ticker states kept in memory. Vector now serves ANY
+ * optionable symbol on demand (not just the ~21 preset universe), so without a
+ * bound a client cycling invented-but-well-formed tickers could grow this map
+ * without limit — the exact concern the stream route's old universe gate cited.
+ * 64 comfortably holds the preset universe plus every symbol under active view
+ * with headroom; least-recently-used entries beyond it are evicted (their walls
+ * simply re-fetch on next access). The concurrent-poller count is separately
+ * capped by tryAcquireVectorStreamConnection.
+ */
+const MAX_TICKER_STATES = 64;
 
 function state(ticker: string): TickerState {
   const t = normalizeVectorTicker(ticker);
-  let s = stateByTicker.get(t);
-  if (!s) {
-    s = freshState();
-    stateByTicker.set(t, s);
+  const existing = stateByTicker.get(t);
+  if (existing) {
+    // LRU touch: re-insert so this ticker moves to the newest slot and the
+    // eviction below drops genuinely cold tickers, not one just being viewed.
+    stateByTicker.delete(t);
+    stateByTicker.set(t, existing);
+    return existing;
+  }
+  const s = freshState();
+  stateByTicker.set(t, s);
+  if (stateByTicker.size > MAX_TICKER_STATES) {
+    const oldest = stateByTicker.keys().next().value; // Map preserves insertion order → front is LRU
+    if (oldest !== undefined) stateByTicker.delete(oldest);
   }
   return s;
 }
