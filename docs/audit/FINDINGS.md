@@ -8,6 +8,14 @@ and required CI (`verify`) are green — no per-PR approval, no end-of-day hold.
 here and merge the PR in the same session. Supersedes all earlier "leave OPEN for review" notes
 in this file.
 
+## 🟢 INFO 2026-07-11 — Sixth-pass review (PR #103): F2 confirmed closed, F3 clean, F4 pending
+
+**Surface:** `playbook-promotion-sample.ts` (F2), `playbook-verdict-guard.ts` (Q4), F3 rescan of play engine/gates/matcher.
+
+**Sixth-pass verdict:** F2 data-quality wiring genuinely closed (4 playbook profiles + low-sample control). F3 no new dual-evaluation risks. F4 RTH proof not verified (Saturday, market closed). Q4 narrowly reopened in #103, then **partially closed by #105** (production DB re-read + honest self-consistency labeling).
+
+**Status:** Documented in `PLAYBOOK-BUG-AUDIT-2026-07-11.md` sixth-pass section + FINDINGS tail entry.
+
 ## 🔴 P0 FOUND+FIXED 2026-07-11 — `hod_break`/`lod_break` structurally impossible during RTH (deep sweep #1)
 
 **Surface:** `spx-play-technicals.ts` breakout flags → PB-03 fallback, desk breakout-continuation triggers, playbook matcher.
