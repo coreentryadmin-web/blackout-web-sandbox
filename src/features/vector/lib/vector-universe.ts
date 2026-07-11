@@ -7,6 +7,21 @@ import {
 import { vectorUniverseTickers } from "@/lib/heatmap-allowlist";
 import { normalizeVectorTicker } from "./vector-ticker";
 import { roundFloats } from "@/lib/round-floats";
+import { bucketWallSampleTime, buildWallHistorySample } from "./vector-wall-sample";
+import { appendSessionWallSample } from "./vector-wall-persist";
+
+/**
+ * Options for the universe build. `recordWallHistory` makes the build ALSO
+ * persist a per-ticker wall-history sample (the bead-rail source the chart
+ * reads) — see the recorder note on {@link buildVectorUniverseSnapshot}. Only
+ * the RTH-gated cron passes it; the inline scanner-poll rebuild must not, or it
+ * would stamp off-hours/weekend samples onto the session rail.
+ */
+export type VectorUniverseBuildOpts = {
+  recordWallHistory?: boolean;
+  /** ET session date (YYYY-MM-DD) the recorded samples are filed under. */
+  sessionYmd?: string;
+};
 
 export type VectorUniverseRow = {
   ticker: string;
@@ -36,9 +51,33 @@ const REDIS_KEY = "vector:universe:snapshot";
  */
 const TTL_SEC = 48 * 60 * 60;
 
-export async function buildVectorUniverseSnapshot(): Promise<VectorUniverseSnapshot> {
+/**
+ * Build the universe scanner rows — and, when `recordWallHistory` is set,
+ * persist a full per-ticker wall-history sample as a SIDE EFFECT of the same
+ * heatmap fetch.
+ *
+ * Why here: the chart's bead rails ("strength per time" dots) are drawn from
+ * `vector:wall-history:{ticker}:{ymd}`, but the ONLY writer of that key was the
+ * live SSE hub (`buildVectorSnapshot`). So a rail existed only for a ticker a
+ * member happened to be watching live during RTH — every other ticker, and the
+ * whole session after close, collapsed to the single seeded bead. This build
+ * already fetches the full GEX/VEX walls for every universe ticker every 5 min
+ * and then throws all but the top strike away; recording a sample from that
+ * same data (near-zero extra cost) makes the rails accumulate server-side,
+ * independent of viewers, so they persist after-hours and exist for every
+ * covered ticker. Kept out of the inline scanner-poll path (opts default off)
+ * so off-hours polls can't append stale samples onto the session rail.
+ */
+export async function buildVectorUniverseSnapshot(
+  opts: VectorUniverseBuildOpts = {}
+): Promise<VectorUniverseSnapshot> {
   const tickers = vectorUniverseTickers();
   const rows: VectorUniverseRow[] = [];
+  const { recordWallHistory = false, sessionYmd } = opts;
+  // Snap every ticker's sample to ONE shared bucket for this build so a run
+  // produces a single aligned column of beads across strikes (matches the live
+  // path's 15s bucketing), not 21 slightly-staggered timestamps.
+  const sampleTime = bucketWallSampleTime(Math.floor(Date.now() / 1000));
 
   const results = await Promise.allSettled(
     tickers.map(async (raw) => {
@@ -48,6 +87,23 @@ export async function buildVectorUniverseSnapshot(): Promise<VectorUniverseSnaps
       const gexWalls = hm?.gex?.strike_totals
         ? computeGexWalls(mapFromStrikeTotalsRecord(hm.gex.strike_totals))
         : { callWalls: [], putWalls: [] };
+      const vexWalls = hm?.vex?.strike_totals
+        ? computeGexWalls(mapFromStrikeTotalsRecord(hm.vex.strike_totals))
+        : { callWalls: [], putWalls: [] };
+
+      if (recordWallHistory && sessionYmd) {
+        const sample = buildWallHistorySample({
+          time: sampleTime,
+          gexWalls,
+          gammaFlip: hm?.gex?.flip ?? null,
+          vexWalls,
+          vexFlip: hm?.vex?.flip ?? null,
+        });
+        // Await so the cron only reports success once the rail is durable;
+        // append is idempotent (union-by-time) and self-catching.
+        if (sample) await appendSessionWallSample(sessionYmd, sample, ticker);
+      }
+
       const asOfMs = hm?.asof ? Date.parse(hm.asof) : NaN;
       return {
         ticker,
@@ -82,17 +138,27 @@ export async function loadVectorUniverseSnapshot(): Promise<VectorUniverseSnapsh
 }
 
 // In-flight dedup: a cache miss with N concurrent scanner polls must not fan
-// out N × 21 heatmap builds.
-let refreshInFlight: Promise<VectorUniverseSnapshot> | null = null;
+// out N × 21 heatmap builds. Keyed by build kind ("plain" | "record") so the
+// non-recording scanner build and the recording cron build dedup separately.
+const refreshInFlight = new Map<string, Promise<VectorUniverseSnapshot>>();
 
-export async function refreshVectorUniverseSnapshot(): Promise<VectorUniverseSnapshot> {
-  if (refreshInFlight) return refreshInFlight;
-  refreshInFlight = (async () => {
-    const snap = await buildVectorUniverseSnapshot();
+export async function refreshVectorUniverseSnapshot(
+  opts: VectorUniverseBuildOpts = {}
+): Promise<VectorUniverseSnapshot> {
+  // In-flight dedup keys on the recorder intent: a scanner poll (no recording)
+  // must not be able to satisfy — and thereby cancel the side effect of — the
+  // cron's recording build by winning the race. Distinct keys keep at most one
+  // build of each kind in flight.
+  const key = opts.recordWallHistory ? "record" : "plain";
+  const existing = refreshInFlight.get(key);
+  if (existing) return existing;
+  const p = (async () => {
+    const snap = await buildVectorUniverseSnapshot(opts);
     await persistVectorUniverseSnapshot(snap);
     return snap;
   })().finally(() => {
-    refreshInFlight = null;
+    refreshInFlight.delete(key);
   });
-  return refreshInFlight;
+  refreshInFlight.set(key, p);
+  return p;
 }

@@ -13,7 +13,7 @@ import {
 } from "@/lib/providers/gex-wall-levels";
 import { todayEtYmd } from "@/lib/providers/spx-session";
 import { persistWallSampleDebounced } from "./vector-wall-persist";
-import { bucketWallSampleTime } from "./vector-wall-sample";
+import { bucketWallSampleTime, buildWallHistorySample } from "./vector-wall-sample";
 import { recordWallSample, type WallHistorySample } from "./vector-wall-history";
 import { roundFloats } from "@/lib/round-floats";
 import { getCachedVectorDarkPool, getCachedVectorDarkPoolWithAge } from "./vector-dark-pool-cache";
@@ -257,30 +257,19 @@ export async function buildVectorStreamPayload(
   const vexRecordable = vexWalls != null && nowMs - s.cachedVexWallsAt <= STALE_RECORD_MAX_MS;
 
   if (gexRecordable || vexRecordable) {
-    const sampleTime = bucketWallSampleTime(Math.floor(nowMs / 1000));
-    // Round ONCE at creation (repo policy: round at the data layer). The sample
-    // must be byte-identical everywhere it travels — in-memory history, Redis
-    // persist, SSR seed, SSE frame. Persisting raw while streaming rounded made
-    // the client's first SSE merge replace the same-time tail with a rounded
-    // copy, and the float-precision delta fabricated a phantom flip event on
-    // every page load.
-    //
-    // No carry-forward: a lens whose provider returned null this bucket records
-    // an honest gap (null), not a copy of the previous reading stamped with a
-    // new time — stale readings masquerading as fresh observations poisoned
-    // trails and event diffs. Display continuity is handled by the live refs on
-    // the client, not by falsifying history.
-    const sample: WallHistorySample = roundFloats({
-      time: sampleTime,
-      walls: gexRecordable && walls ? walls : { callWalls: [], putWalls: [] },
+    // Same sample builder the server-side universe recorder uses, so the two
+    // writers of vector:wall-history produce byte-identical rows (rounding +
+    // honest-gap semantics documented on buildWallHistorySample). Freshness
+    // gating stays here: a lens whose cache is stale contributes nothing this
+    // bucket (passed as null), recording an honest gap rather than a stale copy.
+    const sample = buildWallHistorySample({
+      time: bucketWallSampleTime(Math.floor(nowMs / 1000)),
+      gexWalls: gexRecordable ? walls : null,
       gammaFlip: gexRecordable ? gammaFlip : null,
       vexWalls: vexRecordable ? vexWalls : null,
       vexFlip: vexRecordable ? vexFlip : null,
     });
-    const hasGex = sample.walls.callWalls.length > 0 || sample.walls.putWalls.length > 0;
-    const hasVex =
-      Boolean(sample.vexWalls?.callWalls?.length) || Boolean(sample.vexWalls?.putWalls?.length);
-    if (hasGex || hasVex) {
+    if (sample) {
       s.wallHistory = recordWallSample(s.wallHistory, sample);
       persistWallSampleDebounced(sessionYmd, sample, t);
     }

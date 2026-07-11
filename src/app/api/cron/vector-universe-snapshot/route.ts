@@ -3,6 +3,7 @@ import { isCronAuthorized } from "@/lib/market-api-auth";
 import { logCronRun } from "@/lib/cron-run";
 import { refreshVectorUniverseSnapshot } from "@/features/vector";
 import { isEtCashRth } from "@/lib/et-market-hours";
+import { todayEt } from "@/features/nighthawk/lib/session";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -22,7 +23,14 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    const snap = await refreshVectorUniverseSnapshot();
+    // Record wall-history samples for the whole universe on every RTH run — the
+    // server-side source for the chart's bead rails, so they persist after-hours
+    // and exist for every covered ticker (not just ones with a live viewer).
+    // Only this RTH-gated cron records; inline scanner polls must not.
+    const snap = await refreshVectorUniverseSnapshot({
+      recordWallHistory: true,
+      sessionYmd: todayEt(),
+    });
     const payload = { ok: true, rows: snap.rows.length, updatedAt: snap.updatedAt };
     await logCronRun("vector-universe-snapshot", started, payload);
     return NextResponse.json(payload);

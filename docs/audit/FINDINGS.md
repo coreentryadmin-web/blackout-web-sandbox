@@ -8,6 +8,23 @@ and required CI (`verify`) are green — no per-PR approval, no end-of-day hold.
 here and merge the PR in the same session. Supersedes all earlier "leave OPEN for review" notes
 in this file.
 
+## 🟠 P1 FOUND+FIXED 2026-07-11 — Vector wall bead rails are viewer-driven: no live viewer → no rails; after-hours collapses to a single seeded bead
+
+**Surface:** `vector-universe.ts`, `vector-snapshot.ts`, `vector-wall-sample.ts`, `cron/vector-universe-snapshot/route.ts`. The yellow/purple wall "rails" (strength-per-time bead trails) the member sees on the chart.
+
+**Root cause:** the ONLY writer of `vector:wall-history:{ticker}:{ymd}` — the Redis key the chart reads for its bead rails — was `buildVectorSnapshot` inside the live SSE stream hub. That runs only while a member has that ticker's stream open during RTH. So a rail existed *only* for a ticker someone was actively watching live; every un-watched ticker, and the whole session after the close, fell back to `seedWallHistoryForDisplay`'s single synthetic sample → one bead per strike instead of a rail. No cron recorded wall history: `vector-universe-snapshot` builds the scanner table only (top wall per ticker) and discards the full walls it computes.
+
+**Evidence:** live GEX pull (after close) returns full walls for the whole universe — SPX 171 strikes (7575/7600/7550), AAPL/TSLA/NVDA/AMD/PLTR/HOOD/SMCI/IWM/GLD all populated — so the data always existed; only the *recording* was missing. Member's own before/after screenshots show dense rails when watched vs single beads when not.
+
+**Fix (Phase 1 of the Vector wall roadmap):** the universe-snapshot cron already fetches the full GEX/VEX walls for every ticker every 5 min — now it also persists a wall-history sample per ticker (`recordWallHistory` opt, RTH-gated, `sessionYmd = todayEt()`) into the same key the chart reads, via the shared `buildWallHistorySample` builder. Rails now accumulate server-side independent of viewers → persist after-hours (48h TTL) and exist for every covered ticker. Sample construction extracted to `buildWallHistorySample` and adopted by BOTH writers (live SSE + recorder) so their rows stay byte-identical (a same-bucket float delta is what fabricated phantom flips). In-flight dedup re-keyed by build kind so a non-recording scanner poll can't cancel the cron's recording side effect. Inline scanner rebuilds deliberately do NOT record (would stamp off-hours samples onto the session rail).
+
+**Blast radius:** both wall-history writers unified on one builder; scanner inline path (`universe/route.ts`) left non-recording; live SSE freshness gating preserved (stale lens → honest gap, not carry-forward).
+
+**Tests:** `vector-wall-sample.test.ts` extended — sample build rounds the float tail, returns null when neither lens has walls, and records honest gaps (no stale carry-forward). 93/93 Vector lib tests + `tsc` clean. Live multi-ticker proof: recorder builds real rail rows (SPX/AAPL/TSLA/NVDA/HOOD) with per-strike strength.
+
+**Status:** FIXED (`fix/vector-wall-history-recorder`). Follow-ups tracked: timeframe/DTE-aware walls (P2), on-demand arbitrary tickers (P3), AH rail extension across the post-close gap + denser cadence (P4).
+
+
 ## 🟠 P1 FOUND+FIXED 2026-07-11 — Vector chart renders BLANK (no candles/axes) under any locale Intl rejects, e.g. `en-US@posix`
 
 **Surface:** `VectorChart.tsx` `createChart(...)` options (no `localization.locale` set) — the whole candle canvas.
