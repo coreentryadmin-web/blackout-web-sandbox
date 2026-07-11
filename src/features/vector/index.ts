@@ -13,11 +13,20 @@ export {
   getVectorDarkPoolLevels,
   getVectorGammaFlip,
   getVectorGexWalls,
+  getVectorGexWallsForHorizon,
   getVectorVexFlip,
   getVectorVexWalls,
   getVectorWallHistory,
   primeVectorWallScope,
 } from "./lib/vector-snapshot";
+export {
+  type VectorDteHorizon,
+  VECTOR_DTE_HORIZONS,
+  VECTOR_DEFAULT_DTE_HORIZON,
+  dteHorizonLabel,
+  normalizeDteHorizon,
+  expiriesForHorizon,
+} from "./lib/vector-dte-horizon";
 export {
   loadVectorUniverseSnapshot,
   refreshVectorUniverseSnapshot,
