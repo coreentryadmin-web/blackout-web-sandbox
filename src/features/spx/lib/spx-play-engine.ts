@@ -106,6 +106,8 @@ import {
 } from "@/features/spx/lib/playbook-fsm-sync";
 import { resolveGuardedPlaybookMatch } from "@/features/spx/lib/playbook-match-resolver";
 import { refreshOrBreakMemory } from "@/features/spx/lib/playbook-break-memory-store";
+import type { OrBreakMemory } from "@/features/spx/lib/playbook-break-memory";
+import type { ResolvedPlaybookMatch } from "@/features/spx/lib/playbook-match-resolver";
 import { parseSpxContractLabel } from "@/features/spx/lib/spx-play-contract-label";
 import type { PlayExitAction } from "@/features/spx/lib/spx-play-outcomes";
 import {
@@ -130,7 +132,13 @@ import {
   technicalsSummary,
 } from "@/features/spx/lib/spx-play-payload";
 
-export type EvaluateSpxPlayOptions = { mutate?: boolean };
+export type EvaluateSpxPlayOptions = {
+  mutate?: boolean;
+  /** Shared OR memory from caller — avoids split-brain vs playbook panel on member reads. */
+  or_break_memory?: OrBreakMemory | null;
+  /** Pre-resolved playbook match — skips redundant resolver when set. */
+  playbook_resolved?: ResolvedPlaybookMatch | null;
+};
 
 /**
  * Read the most recent Night Hawk edition and extract a signed confluence bonus
@@ -774,7 +782,8 @@ async function evaluateFlatPlay(
   confluence: SpxConfluence,
   technicals: PlayTechnicals,
   confirmations: PlayConfirmationResult,
-  mutate = false
+  mutate = false,
+  playbookOpts?: Pick<EvaluateSpxPlayOptions, "or_break_memory" | "playbook_resolved">
 ): Promise<SpxPlayPayload> {
   const session = await loadPlaySessionMeta();
   const adaptive = await loadAdaptivePlayGates();
@@ -792,11 +801,16 @@ async function evaluateFlatPlay(
       : null;
 
   const sessionDate = todayEt();
-  const orBreakMemory = await refreshOrBreakMemory(sessionDate, desk, technicals, mutate);
+  const orBreakMemory =
+    playbookOpts?.or_break_memory != null
+      ? playbookOpts.or_break_memory
+      : await refreshOrBreakMemory(sessionDate, desk, technicals, mutate);
 
-  const playbookResolved = await resolveGuardedPlaybookMatch(sessionDate, desk, technicals, {
-    or_break_memory: orBreakMemory,
-  });
+  const playbookResolved =
+    playbookOpts?.playbook_resolved ??
+    (await resolveGuardedPlaybookMatch(sessionDate, desk, technicals, {
+      or_break_memory: orBreakMemory,
+    }));
   const playbookMatch = playbookResolved;
   const playbookPrimaryId: PlaybookId | null = playbookMatch.primary_playbook_id;
   const primaryVerdict = playbookPrimaryId
@@ -1416,7 +1430,7 @@ async function evaluateFlatPlay(
 export async function evaluateSpxPlay(
   desk: SpxDeskPayload,
   prefetchedTechnicals?: PlayTechnicals | null,
-  options?: { mutate?: boolean }
+  options?: EvaluateSpxPlayOptions
 ): Promise<SpxPlayPayload> {
   const payload = await evaluateSpxPlayCore(desk, prefetchedTechnicals, options);
   if (options?.mutate === true) {
@@ -1440,7 +1454,7 @@ export async function evaluateSpxPlay(
 async function evaluateSpxPlayCore(
   desk: SpxDeskPayload,
   prefetchedTechnicals?: PlayTechnicals | null,
-  options?: { mutate?: boolean }
+  options?: EvaluateSpxPlayOptions
 ): Promise<SpxPlayPayload> {
   const mutate = options?.mutate === true;
   const premarket = isPremarketPlanningWindow();
@@ -1624,5 +1638,8 @@ async function evaluateSpxPlayCore(
     return evaluateOpenPlay(desk, confluence, open, technicals, confirmations, mtf, telemetry, mutate);
   }
 
-  return evaluateFlatPlay(desk, confluence, technicals, confirmations, mutate);
+  return evaluateFlatPlay(desk, confluence, technicals, confirmations, mutate, {
+    or_break_memory: options?.or_break_memory,
+    playbook_resolved: options?.playbook_resolved,
+  });
 }

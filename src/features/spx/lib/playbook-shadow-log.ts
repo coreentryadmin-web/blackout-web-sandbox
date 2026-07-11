@@ -30,8 +30,7 @@ import {
   computeCounterfactualExcursion,
 } from "@/features/spx/lib/playbook-instance-events";
 import { computePlaybookPipelineAudit } from "@/features/spx/lib/playbook-pipeline-audit";
-import { resolveGuardedPlaybookMatch } from "@/features/spx/lib/playbook-match-resolver";
-import { refreshOrBreakMemory } from "@/features/spx/lib/playbook-break-memory-store";
+import type { ResolvedPlaybookMatch } from "@/features/spx/lib/playbook-match-resolver";
 import type { PlaybookShadowPanel } from "@/features/spx/lib/playbook-shadow-panel";
 import { snapshotFromInstanceRow } from "@/features/spx/lib/playbook-instance-episode";
 import {
@@ -69,6 +68,10 @@ export type PlaybookShadowLogOpts = {
   first_block_category?: string | null;
   hypothetical_stop?: number | null;
   hypothetical_target?: number | null;
+  /** Pre-resolved match — skips redundant resolver + DB loads when set. */
+  resolved?: ResolvedPlaybookMatch | null;
+  /** When false, shadow observations only — no instance FSM upserts (cron owns writes). */
+  persist_instances?: boolean;
 };
 
 /**
@@ -89,13 +92,7 @@ export async function maybeLogPlaybookShadowMatch(
   const stateChanged = prev !== key;
 
   const sessionDate = todayEtYmd();
-  const orBreakMemory = await refreshOrBreakMemory(sessionDate, desk, opts?.technicals, false);
-  const resolved =
-    opts?.technicals?.available
-      ? await resolveGuardedPlaybookMatch(sessionDate, desk, opts.technicals, {
-          or_break_memory: orBreakMemory,
-        })
-      : null;
+  const resolved = opts?.resolved ?? null;
   const rawVerdicts = resolved
     ? resolved.verdicts
     : panel.verdicts.map((v) => ({
@@ -107,6 +104,8 @@ export async function maybeLogPlaybookShadowMatch(
         direction: v.direction === "neutral" ? null : v.direction,
         detail: v.detail,
       }));
+
+  const persistInstances = opts?.persist_instances !== false;
 
   const featureSnapshot = buildPlaybookFeatureSnapshot(desk, opts?.technicals);
   const pipelineAudit = computePlaybookPipelineAudit(rawVerdicts, {
@@ -142,7 +141,7 @@ export async function maybeLogPlaybookShadowMatch(
 
   const armedPollByInstance = resolved?.next_armed_poll_counts;
 
-  if (transitions.length > 0) {
+  if (persistInstances && transitions.length > 0) {
     await upsertPlaybookInstances(
       sessionDate,
       transitions.map((t) => ({
@@ -216,7 +215,7 @@ export async function maybeLogPlaybookShadowMatch(
     }
   }
 
-  if (primaryBlocked && primaryId) {
+  if (persistInstances && primaryBlocked && primaryId) {
     const instanceId =
       findActiveEpisodeInstanceId(snapshots, primaryId, opts?.primary_direction ?? null) ??
       transitions.find((t) => t.playbook_id === primaryId)?.instance_id;
@@ -261,7 +260,7 @@ export async function maybeLogPlaybookShadowMatch(
     }
   }
 
-  if (opts?.opened_direction && primaryId) {
+  if (persistInstances && opts?.opened_direction && primaryId) {
     const openInstanceId =
       findActiveEpisodeInstanceId(snapshots, primaryId, opts.opened_direction) ??
       transitions.find((t) => t.playbook_id === primaryId)?.instance_id;
@@ -291,7 +290,7 @@ export async function maybeLogPlaybookShadowMatch(
     }
   }
 
-  if (desk.price != null) {
+  if (persistInstances && desk.price != null) {
     const nowMs = Date.now();
     const triggered = await loadTriggeredPlaybookInstances(sessionDate);
     for (const row of triggered) {

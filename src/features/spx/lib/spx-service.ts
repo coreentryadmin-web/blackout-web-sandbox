@@ -87,7 +87,6 @@ async function evaluateSpxPlayState() {
     hod: merged.hod,
     lod: merged.lod,
   });
-  const play = await readSpxPlaySnapshot(merged, technicals);
   const sessionDate = todayEtYmd();
   const orBreakMemory = await refreshOrBreakMemory(sessionDate, merged, technicals, true);
   const playbookMatch = technicals.available
@@ -95,6 +94,10 @@ async function evaluateSpxPlayState() {
         or_break_memory: orBreakMemory,
       })
     : null;
+  const play = await readSpxPlaySnapshot(merged, technicals, {
+    or_break_memory: orBreakMemory,
+    playbook_resolved: playbookMatch,
+  });
   const playbook_shadow = buildPlaybookShadowPanel(merged, technicals, {
     or_break_memory: orBreakMemory,
     match: playbookMatch,
@@ -109,6 +112,8 @@ async function evaluateSpxPlayState() {
     },
     {
       technicals,
+      resolved: playbookMatch,
+      persist_instances: false,
       gate_blocks: play.gates.blocks,
       first_block_category: play.gates.first_block_category,
       primary_playbook_id: playbook_shadow?.primary_playbook_id ?? null,

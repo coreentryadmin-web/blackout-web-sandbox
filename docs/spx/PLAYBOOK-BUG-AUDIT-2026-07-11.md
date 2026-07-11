@@ -2,7 +2,8 @@
 
 **Date:** 2026-07-11  
 **Repos:** `blackout-web-sandbox` (staging)  
-**PR:** `cursor/playbook-bugfix-stack-261c` → `blackout-web-sandbox`
+**PR:** `cursor/playbook-bugfix-stack-261c` → `blackout-web-sandbox` (#80)  
+**Follow-up:** `cursor/playbook-lifecycle-hygiene-261c` → `blackout-web-sandbox` (#81)
 
 This document merges Claude’s two review rounds with Cursor’s CTO deep-dive. Each item: **status**, **agree/disagree**, **action**.
 
@@ -45,7 +46,7 @@ Legend: ✅ fixed in PR · 🔧 partial · 📋 documented/deferred · ❌ disag
 | **15** | Primary ranking static family table | 📋 | **Agree** — by design for OOS priors, not live stats | Deferred (not a bug; document in promotion roadmap) |
 | **16** | Verdict-guard `hadArmed` tautological | ✅ | **Agree** — `prev===triggered` bypassed poll count | Require `precondition_match` + `armed_polls >= min` only |
 | **17** | Outcome join on `(pb, session)` not trade id | 🔧 | **Agree** | Evidence report join adds `direction`; full `instance_id` join needs schema |
-| **18** | `upsertPlaybookInstances` last-write-wins | 📋 | **Agree** — dual FSM writers remain P0 | **Deferred to follow-up PR** (single-writer) |
+| **18** | `upsertPlaybookInstances` last-write-wins | ✅ | **Agree** — dual FSM writers remain P0 | Member reads: `persist_instances: false`; cron owns FSM (#81) |
 | **19** | Blocked counters primary-only | 📋 | **Agree** | Deferred |
 | **20** | Data-quality gate not in promotion-eval | 📋 | **Agree** | Deferred |
 | **21** | Simulated-trade gate OR-fallback | 📋 | **Agree** | Deferred |
@@ -55,7 +56,7 @@ Legend: ✅ fixed in PR · 🔧 partial · 📋 documented/deferred · ❌ disag
 | **25** | `rolling_30m` no min-session guard | 📋 | **Agree** | Deferred |
 | **26** | Gate A17 miscategorized in telemetry | 📋 | **Agree** | Deferred |
 | **27** | Mixed-tape threshold inversion | 📋 | **Agree** — env edge case | Deferred |
-| **28** | Shadow-log dual call sites race counterfactual | 📋 | **Agree** — Cursor P0 from prior audit | Deferred (pass-through match + cron-only FSM) |
+| **28** | Shadow-log dual call sites race counterfactual | ✅ | **Agree** — Cursor P0 from prior audit | `persist_instances` gate + pass-through `resolved` (#81) |
 | **29** | Fragile string match on exit/re-entry lock | 📋 | **Agree** | Deferred |
 
 ---
@@ -78,10 +79,10 @@ Legend: ✅ fixed in PR · 🔧 partial · 📋 documented/deferred · ❌ disag
 
 | Finding | Verdict | Action |
 |---------|---------|--------|
-| Dual FSM writers (matcher + engine) | **Agree — P0** | Deferred follow-up |
-| Split-brain OR memory in one `/play` response | **Agree — P0** | Deferred follow-up |
-| Member polls mutate FSM evidence | **Agree — P1** | Deferred follow-up |
-| Triple `resolveGuardedPlaybookMatch` | **Agree — P1** | Deferred follow-up |
+| Dual FSM writers (matcher + engine) | **Agree — P0** | ✅ Member path observations-only (#81) |
+| Split-brain OR memory in one `/play` response | **Agree — P0** | ✅ Unified OR upstream in `spx-service` (#81) |
+| Member polls mutate FSM evidence | **Agree — P1** | ✅ `persist_instances: false` on member reads (#81) |
+| Triple `resolveGuardedPlaybookMatch` | **Agree — P1** | ✅ Single resolve + pass-through `resolved` (#81) |
 
 ---
 
@@ -90,7 +91,7 @@ Legend: ✅ fixed in PR · 🔧 partial · 📋 documented/deferred · ❌ disag
 | Claim | Cursor |
 |-------|--------|
 | 394/394 tests | **Disagree count** — repo has **2040** tests; all green after fixes |
-| No dual-FSM drift risk | **Disagree** — dual writers still exist; state guard helps post-entry only |
+| No dual-FSM drift risk | **Disagree** — member polls no longer mutate FSM; cron is sole writer (#81) |
 | Clean FSM state guard | **Agree** — #72 transition table is solid |
 | No bypass around gates/governor | **Agree** for BUY path; shadow telemetry had PB-01/03 precondition hole (fixed) |
 
@@ -98,8 +99,8 @@ Legend: ✅ fixed in PR · 🔧 partial · 📋 documented/deferred · ❌ disag
 
 ## Fix order (remaining)
 
-1. Single FSM writer + unified OR memory per request (P0)
-2. Pass pre-resolved match into shadow-log (P1)
+1. ~~Single FSM writer + unified OR memory per request (P0)~~ — **done #81**
+2. ~~Pass pre-resolved match into shadow-log (P1)~~ — **done #81**
 3. `instance_id` on `spx_play_outcomes` (P1)
 4. Gamma regime hysteresis + PB-04 exit debounce (P2)
 5. Wire `estimateOptionPnl` into open-play evidence path (P2)

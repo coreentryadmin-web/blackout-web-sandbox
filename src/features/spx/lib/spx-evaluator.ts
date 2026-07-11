@@ -61,7 +61,15 @@ export async function runSpxEvaluator(
 /** Read-only play snapshot — no DB writes, Discord, or signal side effects. */
 export async function readSpxPlaySnapshot(
   desk: SpxDeskPayload,
-  technicals?: PlayTechnicals | null
+  technicals?: PlayTechnicals | null,
+  opts?: {
+    or_break_memory?: import("@/features/spx/lib/playbook-break-memory").OrBreakMemory | null;
+    playbook_resolved?: import("@/features/spx/lib/playbook-match-resolver").ResolvedPlaybookMatch | null;
+  }
 ): Promise<SpxPlayPayload> {
-  return evaluateSpxPlay(desk, technicals, { mutate: false });
+  return evaluateSpxPlay(desk, technicals, {
+    mutate: false,
+    or_break_memory: opts?.or_break_memory,
+    playbook_resolved: opts?.playbook_resolved,
+  });
 }
