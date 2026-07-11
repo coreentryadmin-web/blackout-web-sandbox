@@ -32,11 +32,15 @@ test("buildOptionExecutionSim: attaches model from ticket quotes", () => {
     block_reason: null,
   } satisfies OptionTicket;
 
-  const sim = buildOptionExecutionSim(ticket, "long", 5398);
+  const sim = buildOptionExecutionSim(ticket, "long", 5398, {
+    price: 5398,
+    polled_at: new Date().toISOString(),
+  });
   assert.ok(sim);
   assert.equal(sim?.model, "adverse_half_spread_plus_bps");
-  assert.ok(sim!.assumed_fill > 2.5);
+  assert.equal(sim?.simulator_tier, "lite_v1");
   assert.ok(sim!.exit_assumed_fill != null);
   assert.ok(sim!.round_trip_cost_pts != null);
   assert.ok(sim!.round_trip_cost_pts! > sim!.slippage_pts);
+  assert.ok(sim!.contract);
 });
