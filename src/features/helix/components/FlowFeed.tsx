@@ -1,7 +1,6 @@
 ﻿"use client";
 
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
-import { motion, AnimatePresence } from "framer-motion";
 import { clsx } from "clsx";
 import {
   fetchFlows, fetchEarningsCalendar, fetchDarkPoolPrints,
@@ -12,6 +11,7 @@ import { computeFlowStrikeStacks } from "@/lib/largo/flow-strike-stacks";
 import { getSector } from "@/lib/sector-map";
 import { FlowAlertStream } from "@/features/helix/components/FlowAlertStream";
 import { HelixFlowTable } from "@/features/helix/components/HelixFlowTable";
+import { HelixCommandBar } from "@/features/helix/components/HelixCommandBar";
 import { FlowBrief } from "@/features/helix/components/FlowBrief";
 import { NetPremiumLeaderboard } from "@/features/helix/components/NetPremiumLeaderboard";
 import { StrikeStackDetector } from "@/features/helix/components/StrikeStackDetector";
@@ -611,12 +611,12 @@ export function FlowFeed() {
           }}
         />
       ) : (
-        <div className="flex items-center justify-between gap-2 px-1">
-          <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-mute">Analytics</span>
+        <div className="flex items-center justify-between gap-2">
+          <span className="helix-pro-rail-section-label">Analytics</span>
           <button
             type="button"
             onClick={() => setShowMorePanels((v) => !v)}
-            className="font-mono text-[10px] font-semibold text-secondary transition-colors hover:text-white"
+            className="helix-pro-tool-btn"
           >
             {showMorePanels ? "Fewer panels" : "More panels"}
           </button>
@@ -642,9 +642,9 @@ export function FlowFeed() {
   );
 
   return (
-    <div className={clsx("desk-layout helix-desk", terminalMode && "helix-desk-terminal")}>
-      {/* ── AI Brief — collapsed in terminal mode to maximize tape height ── */}
-      {!nativeShell && !terminalMode && <FlowBrief />}
+    <div className={clsx("desk-layout helix-desk helix-pro-desk", terminalMode && "helix-desk-terminal")}>
+      {/* AI brief hidden on web — keeps the desk clean; cards view only on native if needed later */}
+      {nativeShell && !terminalMode && <FlowBrief />}
 
       {/* ── Watchlist rail (P2) ─────────────────────────────────────────── */}
       {!nativeShell && (
@@ -821,213 +821,36 @@ export function FlowFeed() {
           ) : null}
         </div>
       ) : (
-      <div className={clsx("helix-ios-toolbar flex flex-wrap items-center gap-2", nativeShell && iosView !== "tape" && "ios-native-panel-hidden")}>
-        {/* Tape view toggle */}
-        <div className="flow-seg-group">
-          {(["table", "cards"] as TapeView[]).map((v) => (
-            <button
-              key={v}
-              type="button"
-              onClick={() => setTapeView(v)}
-              className={clsx("flow-seg-btn", tapeView === v && "flow-seg-btn-active-all")}
-            >
-              {v === "table" ? "TABLE" : "CARDS"}
-            </button>
-          ))}
-        </div>
-
-        {/* Premium presets */}
-        <span className="font-mono text-[10px] tracking-[0.3em] uppercase font-bold text-bull hidden sm:block">MIN</span>
-        <div className="flow-seg-group">
-          {PREMIUM_PRESETS.map((v) => (
-            <button
-              key={v}
-              type="button"
-              onClick={() => setMinPremium(v)}
-              className={clsx("flow-seg-btn", minPremium === v && "flow-seg-btn-active-all")}
-            >
-              {v >= 1_000_000 ? `$${v / 1_000_000}M+` : `$${v / 1000}K+`}
-            </button>
-          ))}
-        </div>
-
-        {/* Type filter */}
-        <div className="flow-seg-group">
-          {(["ALL", "CALL", "PUT"] as TypeFilter[]).map((t) => (
-            <button
-              key={t}
-              type="button"
-              onClick={() => setTypeFilter(t)}
-              className={clsx(
-                "flow-seg-btn",
-                typeFilter === t && (
-                  t === "CALL" ? "flow-seg-btn-active-call" :
-                  t === "PUT"  ? "flow-seg-btn-active-put"  :
-                                 "flow-seg-btn-active-all"
-                )
-              )}
-            >
-              {t}
-              {t === "CALL" && <span className="flow-count-pill">{callCount}</span>}
-              {t === "PUT"  && <span className="flow-count-pill">{putCount}</span>}
-              {t === "ALL"  && <span className="flow-count-pill">{allCount}</span>}
-            </button>
-          ))}
-        </div>
-
-        {/* Bug 18: ticker input — sanitized to uppercase letters only, max 6 chars */}
-        <div className="relative">
-          <input
-            value={tickerFilter}
-            onChange={(e) => {
-              const val = e.target.value.toUpperCase().replace(/[^A-Z]/g, "").slice(0, 6);
-              setTickerFilter(val);
-            }}
-            placeholder="TICKER"
-            aria-label="Search ticker"
-            maxLength={6}
-            className={clsx(
-              "font-mono text-[13px] font-bold px-4 py-2 rounded-lg border bg-[rgba(8,9,14,0.85)] outline-none w-32 tracking-widest uppercase",
-              "border-[rgba(0,230,118,0.35)] text-[#00e676] placeholder:text-[rgba(0,230,118,0.35)]",
-              "focus:border-[rgba(0,230,118,0.8)] focus:ring-2 focus:ring-[rgba(0,230,118,0.15)] transition-all"
-            )}
-          />
-          <AnimatePresence>
-            {tickerFilter && (
-              <motion.button
-                initial={{ opacity: 0, scale: 0.8 }}
-                animate={{ opacity: 1, scale: 1 }}
-                exit={{ opacity: 0, scale: 0.8 }}
-                type="button"
-                onClick={() => setTickerFilter("")}
-                aria-label="Close"
-                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-cyan-400 hover:text-sky-200 font-mono text-sm font-bold"
-              >
-                ×
-              </motion.button>
-            )}
-          </AnimatePresence>
-        </div>
-
-        {/* Replay button */}
-        <button
-          type="button"
-          onClick={replayMode ? stopReplay : startReplay}
-          disabled={!replayMode && alerts.length === 0}
-          className={clsx(
-            "font-mono text-[10px] font-semibold px-3 py-[5px] rounded-lg border transition-all",
-            replayMode
-              ? "border-gold/70 text-gold bg-gold/15 hover:bg-gold/25"
-              : "border-[rgba(0,230,118,0.3)] text-[#00e676] hover:text-[#34d399] hover:border-[rgba(0,230,118,0.6)] disabled:opacity-30 disabled:cursor-not-allowed"
-          )}
-        >
-          {replayMode ? "■ Stop" : "▶ Replay"}
-        </button>
-
-        {/* Bug 12: replay speed control — only visible during replay */}
-        <AnimatePresence>
-          {replayMode && (
-            <motion.div
-              initial={{ opacity: 0, width: 0 }}
-              animate={{ opacity: 1, width: "auto" }}
-              exit={{ opacity: 0, width: 0 }}
-              className="flex gap-0.5 overflow-hidden"
-            >
-              {[0.5, 1, 2].map((s) => (
-                <button
-                  key={s}
-                  type="button"
-                  onClick={() => setReplaySpeed(s)}
-                  className={clsx(
-                    "font-mono text-[10px] px-1.5 py-[3px] rounded transition-colors whitespace-nowrap",
-                    replaySpeed === s
-                      ? "bg-gold/20 text-gold border border-gold/60"
-                      : "text-cyan-400 hover:text-sky-300 bg-white/[0.04] border border-white/10"
-                  )}
-                >
-                  {s}×
-                </button>
-              ))}
-            </motion.div>
-          )}
-        </AnimatePresence>
-
-        {/* Bug 14: audio alert toggle */}
-        <button
-          type="button"
-          onClick={() => setAudioEnabled((v) => !v)}
-          title="Toggle audio alert for whale prints (>$1M)"
-          className={clsx(
-            "font-mono text-[10px] font-semibold px-2 py-[5px] rounded-lg border transition-all",
-            audioEnabled
-              ? "border-purple/60 text-purple-light bg-purple/15"
-              : "border-white/10 text-cyan-400 hover:text-sky-300 hover:border-white/20"
-          )}
-        >
-          {audioEnabled ? "AUDIO ON" : "AUDIO"}
-        </button>
-
-        {/* P2: watchlist-only filter toggle */}
-        <button
-          type="button"
-          onClick={() => setWatchlistOnly((v) => !v)}
-          disabled={watchlist.watchlist.length === 0}
-          title="Show only starred (watchlist) tickers"
-          className={clsx(
-            "font-mono text-[10px] font-semibold px-2 py-[5px] rounded-lg border transition-all disabled:opacity-30 disabled:cursor-not-allowed",
-            watchlistOnly
-              ? "border-gold/70 text-gold bg-gold/15"
-              : "border-cyan-800/40 text-cyan-400 hover:text-white hover:border-cyan-600/60"
-          )}
-        >
-          ★ {watchlist.watchlist.length > 0 ? watchlist.watchlist.length : "WATCH"}
-        </button>
-
-        {/* Bug 15: CSV export */}
-        <button
-          type="button"
-          onClick={() => exportCSV(displayAlerts)}
-          disabled={displayAlerts.length === 0}
-          className="font-mono text-[10px] font-semibold px-2 py-[5px] rounded-lg border border-white/10 text-cyan-400 hover:text-sky-300 hover:border-white/20 transition-all disabled:opacity-30 disabled:cursor-not-allowed"
-          title="Export current tape to CSV"
-        >
-          CSV
-        </button>
-
-        {/* Right: stats + live indicator */}
-        <div className="ml-auto flex items-center gap-4">
-          <AnimatePresence mode="wait">
-            <motion.span
-              key={`${alerts.length}-${loading}`}
-              initial={{ opacity: 0, y: 4 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -4 }}
-              transition={{ duration: 0.2 }}
-              className="font-mono text-[10px] text-sky-200 hidden sm:block"
-            >
-              {loading ? "Scanning…" : `${displayAlerts.length} alerts · newest ${newestAgeLabel}`}
-            </motion.span>
-          </AnimatePresence>
-
-          {/* Live indicator — green only when connected AND data is fresh; amber
-              "Stale" when the newest print is >5 min old so a frozen tape can't
-              masquerade as live. */}
-          <div className="flex items-center gap-2">
-            <div className="flow-live-dot">
-              <span className={clsx(
-                "w-1.5 h-1.5 rounded-full block relative z-10",
-                !live ? "bg-sky-300/40" : dataStale ? "bg-gold" : "bg-bull"
-              )} />
-            </div>
-            <span className={clsx(
-              "font-mono text-[10px] tracking-widest uppercase",
-              !live ? "text-cyan-500" : dataStale ? "text-gold" : "text-bull"
-            )}>
-              {!live ? "Offline" : dataStale ? `Stale ${newestAgeLabel}` : "Live"}
-            </span>
-          </div>
-        </div>
-      </div>
+        <HelixCommandBar
+          tapeView={tapeView}
+          onTapeViewChange={setTapeView}
+          minPremium={minPremium}
+          onMinPremiumChange={setMinPremium}
+          typeFilter={typeFilter}
+          onTypeFilterChange={setTypeFilter}
+          callCount={callCount}
+          putCount={putCount}
+          allCount={allCount}
+          tickerFilter={tickerFilter}
+          onTickerFilterChange={setTickerFilter}
+          watchlistOnly={watchlistOnly}
+          onWatchlistOnlyChange={setWatchlistOnly}
+          watchlistCount={watchlist.watchlist.length}
+          replayMode={replayMode}
+          onReplayToggle={replayMode ? stopReplay : startReplay}
+          replaySpeed={replaySpeed}
+          onReplaySpeedChange={setReplaySpeed}
+          audioEnabled={audioEnabled}
+          onAudioToggle={() => setAudioEnabled((v) => !v)}
+          onExportCsv={() => exportCSV(displayAlerts)}
+          exportDisabled={displayAlerts.length === 0}
+          loading={loading}
+          live={live}
+          dataStale={dataStale}
+          displayCount={displayAlerts.length}
+          newestAgeLabel={newestAgeLabel}
+          replayDisabled={!replayMode && alerts.length === 0}
+        />
       )}
 
       {/* ── Main grid ───────────────────────────────────────────────────── */}
@@ -1035,6 +858,7 @@ export function FlowFeed() {
         <div
           className={clsx(
             "helix-desk-terminal-grid",
+            !nativeShell && "mt-0",
             nativeShell && iosView !== "tape" && "ios-native-panel-hidden",
             nativeShell && iosView === "tape" && "ios-native-panel-visible"
           )}
@@ -1048,7 +872,7 @@ export function FlowFeed() {
           <div
             key={nativeShell ? iosView : "analytics"}
             className={clsx(
-              "helix-desk-analytics-rail helix-ios-analytics-col",
+              "helix-desk-analytics-rail helix-ios-analytics-col helix-pro-rail",
               nativeShell && iosView !== "analytics" && "ios-native-panel-hidden",
               nativeShell && iosView === "analytics" && "ios-native-panel-visible"
             )}
@@ -1074,7 +898,7 @@ export function FlowFeed() {
         <div
           key={nativeShell ? iosView : "analytics"}
           className={clsx(
-            "lg:col-span-4 xl:col-span-4 flex flex-col gap-3 helix-ios-analytics-col",
+            "lg:col-span-4 xl:col-span-4 flex flex-col gap-3 helix-ios-analytics-col helix-pro-rail",
             nativeShell && iosView !== "analytics" && "ios-native-panel-hidden",
             nativeShell && iosView === "analytics" && "ios-native-panel-visible"
           )}
@@ -1104,7 +928,7 @@ export function FlowFeed() {
       />
 
       {/* Persistent compliance disclaimer (matches SPX / GEX wording) */}
-      <p className="font-mono text-[10px] text-sky-300/60 text-center pt-1">
+      <p className="helix-pro-disclaimer">
         Educational. Not advice. You decide.
       </p>
     </div>

@@ -146,10 +146,10 @@ export function HelixFlowTable({
     <div className="helix-flow-terminal desk-panel">
       <div className="helix-flow-terminal-head">
         <div className="helix-flow-terminal-title">
-          <span className="font-mono text-[10px] uppercase tracking-[0.22em] text-cyan-400/80">
-            Live options flow
-          </span>
-          <h2 className="t-label text-[15px] uppercase text-white">Institutional tape</h2>
+          <span className="helix-pro-command-label">Live tape</span>
+          <h2 className="font-mono text-[13px] font-semibold uppercase tracking-[0.14em] text-white">
+            Institutional flow
+          </h2>
         </div>
         <div className="helix-flow-terminal-meta font-mono text-[10px] text-sky-300/80 tabular-nums">
           {!loading && (

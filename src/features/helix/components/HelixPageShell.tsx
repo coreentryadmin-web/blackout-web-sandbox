@@ -1,7 +1,7 @@
 "use client";
 
 import { clsx } from "clsx";
-import { PageShell, PageHeader } from "@/components/ui";
+import { PageShell } from "@/components/ui";
 import { ProductMark } from "@/components/marks/ProductMark";
 import { FlowFeed } from "@/features/helix/components/FlowFeed";
 import { FlowAnomalyBanner } from "@/components/FlowAnomalyBanner";
@@ -16,22 +16,24 @@ export function HelixPageShell() {
     <PageShell
       fullBleed
       className={clsx(
-        "ios-native-page ios-native-page-helix helix-page-shell",
+        "ios-native-page ios-native-page-helix helix-page-shell helix-pro-shell",
         nativeShell && "helix-page-shell-native"
       )}
       contentClassName={clsx(nativeShell ? "helix-page-content-native !py-0" : undefined)}
     >
       {!nativeShell && (
-        <div className="content-rail">
-          <PageHeader
-            kicker="Institutional flow"
-            title="HELIX"
-            subtitle="Whale and dark-pool alerts on a single live tape."
-            badge={<ProductMark product="helix" size={44} animated={false} />}
-          />
-          <div className="mt-3">
-            <HelixTideBar />
+        <div className="content-rail helix-pro-header">
+          <div className="helix-pro-header-copy">
+            <p className="helix-pro-kicker">Institutional flow intelligence</p>
+            <div className="helix-pro-title-row">
+              <ProductMark product="helix" size={36} animated={false} />
+              <h1 className="helix-pro-title">HELIX</h1>
+            </div>
+            <p className="helix-pro-subtitle">
+              Live options tape, contract drilldown, and flow analytics on one desk.
+            </p>
           </div>
+          <HelixTideBar className="helix-pro-tide lg:mb-1" />
         </div>
       )}
       <div

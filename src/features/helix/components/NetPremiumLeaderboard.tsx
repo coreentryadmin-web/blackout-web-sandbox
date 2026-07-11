@@ -38,7 +38,9 @@ export function NetPremiumLeaderboard({ alerts, loading = false }: { alerts: Flo
     <Panel
       accent="bull"
       title="Net Premium"
-      bodyClassName="!px-4 !py-3.5"
+      strip={false}
+      className="helix-pro-rail-panel"
+      bodyClassName="!px-3 !py-2.5"
       actions={
         rows.length > 0 ? (
           <span className="font-mono text-[10px] text-sky-300 font-semibold">
@@ -74,7 +76,7 @@ export function NetPremiumLeaderboard({ alerts, loading = false }: { alerts: Flo
               >
                 <div className="flex items-center justify-between mb-1">
                   <div className="flex items-center gap-2">
-                    <span className="font-anton text-[24px] text-gold leading-none tracking-wide">{row.ticker}</span>
+                    <span className="helix-pro-rail-leader-ticker">{row.ticker}</span>
                     <span className={clsx(
                       "font-mono text-[10px] font-bold tracking-wider",
                       isBull ? "text-bull" : "text-bear-text"

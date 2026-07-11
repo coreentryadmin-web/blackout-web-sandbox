@@ -35,7 +35,9 @@ export function StrikeStackDetector({
     <Panel
       accent="sky"
       title="Strike Stacks"
-      bodyClassName="!px-4 !py-3.5"
+      strip={false}
+      className="helix-pro-rail-panel"
+      bodyClassName="!px-3 !py-2.5"
       actions={
         stacks.length > 0 ? (
           <Badge tone="neutral" size="sm">{stacks.length} active</Badge>

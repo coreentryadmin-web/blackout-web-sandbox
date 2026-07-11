@@ -196,14 +196,16 @@ export function DarkPoolPanel() {
   return (
     <Panel
       accent="sky"
-      bodyClassName="!px-4 !py-3.5"
+      strip={false}
+      className="helix-pro-rail-panel"
+      bodyClassName="!px-3 !py-2.5"
       header={
-        <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border-b border-white/10 px-5 py-4 md:px-6">
+        <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 border-b border-white/10 px-3 py-2">
           <div className="flex items-center gap-2 flex-shrink-0">
-            <motion.span {...pulse} className="text-[11px] text-purple-light">
+            <motion.span {...pulse} className="text-[10px] text-purple-light/80">
               ⬡
             </motion.span>
-            <h3 className="t-label text-[15px] uppercase leading-tight text-white">Dark Pool</h3>
+            <h3 className="font-mono text-[11px] uppercase tracking-[0.2em] text-white">Dark Pool</h3>
           </div>
 
           {/* Ticker search */}

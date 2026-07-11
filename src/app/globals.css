@@ -14536,6 +14536,212 @@ body::before {
     transition: width 0.6s var(--ease-snap);
   }
 
+  /* ── HELIX Pro — professional desk chrome ─────────────────────────────── */
+
+  .helix-pro-header {
+    @apply flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between;
+  }
+
+  .helix-pro-header-copy {
+    @apply min-w-0;
+  }
+
+  .helix-pro-kicker {
+    @apply font-mono text-[10px] uppercase tracking-[0.28em] text-cyan-400/75;
+  }
+
+  .helix-pro-title-row {
+    @apply flex items-center gap-3 mt-1;
+  }
+
+  .helix-pro-title {
+    @apply font-mono text-2xl font-bold uppercase tracking-[0.12em] text-white;
+  }
+
+  .helix-pro-subtitle {
+    @apply font-mono text-[11px] text-sky-300/70 mt-1 max-w-xl;
+  }
+
+  .helix-pro-tide {
+    @apply flex items-center gap-3 rounded-lg border border-white/8 bg-[rgba(6,7,12,0.72)] px-3 py-2 shrink-0;
+  }
+
+  .helix-pro-desk {
+    @apply flex flex-col gap-3;
+  }
+
+  .helix-pro-command {
+    @apply rounded-lg border border-white/10 bg-[rgba(6,7,12,0.88)] overflow-hidden;
+  }
+
+  .helix-pro-command-primary {
+    @apply flex flex-wrap items-center gap-x-4 gap-y-2 px-3 py-2.5;
+  }
+
+  .helix-pro-command-group {
+    @apply flex items-center gap-2 min-w-0;
+  }
+
+  .helix-pro-command-search {
+    @apply flex-1 min-w-[8rem] max-w-[10rem];
+  }
+
+  .helix-pro-command-label {
+    @apply font-mono text-[9px] uppercase tracking-[0.18em] text-sky-300/55 shrink-0;
+  }
+
+  .helix-pro-command-spacer {
+    @apply flex-1 min-w-2 hidden md:block;
+  }
+
+  .helix-pro-seg {
+    @apply inline-flex rounded-md border border-white/10 bg-black/40 p-0.5 gap-px;
+  }
+
+  .helix-pro-seg-btn {
+    @apply font-mono text-[10px] font-semibold uppercase tracking-wide px-2.5 py-1 rounded-[5px] border-0 bg-transparent text-sky-300/80 transition-colors cursor-pointer;
+  }
+
+  .helix-pro-seg-btn:hover {
+    @apply text-sky-100 bg-white/5;
+  }
+
+  .helix-pro-seg-btn--active {
+    @apply text-white bg-white/10;
+  }
+
+  .helix-pro-seg-btn--call.helix-pro-seg-btn--active {
+    @apply text-bull bg-bull/12;
+  }
+
+  .helix-pro-seg-btn--put.helix-pro-seg-btn--active {
+    @apply text-bear-text bg-bear/12;
+  }
+
+  .helix-pro-count {
+    @apply ml-1 text-[9px] tabular-nums text-sky-300/50;
+  }
+
+  .helix-pro-seg-btn--active .helix-pro-count {
+    @apply text-sky-200/80;
+  }
+
+  .helix-pro-input-wrap {
+    @apply relative flex-1 min-w-0;
+  }
+
+  .helix-pro-input {
+    @apply w-full font-mono text-[11px] font-semibold uppercase tracking-widest rounded-md border border-white/12 bg-black/50 px-2.5 py-1.5 text-sky-100 outline-none placeholder:text-sky-300/35;
+  }
+
+  .helix-pro-input:focus {
+    @apply border-cyan-400/40 ring-1 ring-cyan-400/15;
+  }
+
+  .helix-pro-input-clear {
+    @apply absolute right-1.5 top-1/2 -translate-y-1/2 font-mono text-sm text-sky-300/60 hover:text-white bg-transparent border-0 cursor-pointer;
+  }
+
+  .helix-pro-tool-btn {
+    @apply font-mono text-[10px] font-semibold uppercase tracking-wide px-2.5 py-1.5 rounded-md border border-white/10 bg-black/30 text-sky-300/85 transition-colors cursor-pointer disabled:opacity-35 disabled:cursor-not-allowed;
+  }
+
+  .helix-pro-tool-btn:hover:not(:disabled) {
+    @apply text-white border-white/18 bg-white/5;
+  }
+
+  .helix-pro-tool-btn--active {
+    @apply text-cyan-200 border-cyan-400/35 bg-cyan-400/10;
+  }
+
+  .helix-pro-command-tools {
+    @apply flex flex-wrap items-center gap-2 px-3 py-2 border-t border-white/8 bg-black/25;
+  }
+
+  .helix-pro-status {
+    @apply flex items-center gap-2 shrink-0;
+  }
+
+  .helix-pro-status-dot {
+    @apply w-2 h-2 rounded-full shrink-0;
+  }
+
+  .helix-pro-status-dot--live {
+    @apply bg-bull;
+    box-shadow: 0 0 8px rgba(0, 230, 118, 0.45);
+  }
+
+  .helix-pro-status-dot--stale {
+    @apply bg-gold;
+  }
+
+  .helix-pro-status-dot--off {
+    @apply bg-sky-300/35;
+  }
+
+  .helix-pro-status-copy {
+    @apply flex flex-col leading-tight;
+  }
+
+  .helix-pro-status-label {
+    @apply font-mono text-[10px] font-bold uppercase tracking-widest text-sky-200;
+  }
+
+  .helix-pro-status-meta {
+    @apply font-mono text-[9px] tabular-nums text-sky-300/60;
+  }
+
+  .helix-pro-watchlist {
+    @apply flex flex-wrap items-center gap-1.5 px-3 py-2 rounded-lg border border-white/8 bg-black/30;
+  }
+
+  .helix-pro-watchlist-chip {
+    @apply flex items-center gap-1 rounded-md border px-2 py-0.5 font-mono text-[10px] font-semibold transition-colors;
+  }
+
+  .helix-pro-watchlist-chip--active {
+    @apply border-gold/50 bg-gold/10 text-gold;
+  }
+
+  .helix-pro-watchlist-chip--idle {
+    @apply border-white/10 bg-white/[0.03] text-sky-300/85 hover:text-white hover:border-white/18;
+  }
+
+  .helix-pro-rail .desk-panel {
+    border-radius: 8px;
+    border-color: rgba(255, 255, 255, 0.08);
+    background: rgba(6, 7, 12, 0.82);
+  }
+
+  .helix-pro-rail .desk-panel > span[aria-hidden] {
+    display: none;
+  }
+
+  .helix-pro-rail .desk-panel h3 {
+    font-size: 11px;
+    letter-spacing: 0.2em;
+  }
+
+  .helix-pro-rail .desk-panel .border-b {
+    padding: 0.5rem 0.75rem;
+  }
+
+  .helix-pro-rail .desk-panel > div:last-child {
+    padding: 0.625rem 0.75rem;
+  }
+
+  .helix-pro-rail-leader-ticker {
+    @apply font-mono text-[12px] font-bold tracking-wide text-gold;
+  }
+
+  .helix-pro-rail-section-label {
+    @apply font-mono text-[9px] uppercase tracking-[0.2em] text-sky-300/55 px-0.5;
+  }
+
+  .helix-pro-disclaimer {
+    @apply font-mono text-[9px] text-sky-300/45 text-center pt-1;
+  }
+
   /* ── HELIX terminal table (dense institutional tape) ───────────────────── */
 
   .helix-page-shell .helix-page-inner {
@@ -14668,11 +14874,11 @@ body::before {
   }
 
   .helix-flow-row--call {
-    background: rgba(0, 230, 118, 0.03);
+    background: rgba(0, 230, 118, 0.018);
   }
 
   .helix-flow-row--put {
-    background: rgba(255, 45, 85, 0.03);
+    background: rgba(255, 45, 85, 0.018);
   }
 
   .helix-flow-row--compound {
