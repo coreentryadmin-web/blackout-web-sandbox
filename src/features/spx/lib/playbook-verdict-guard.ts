@@ -3,8 +3,11 @@ import {
   resolveEpisodeInstance,
   type PlaybookInstanceSnapshot,
 } from "@/features/spx/lib/playbook-instance-episode";
-import type { PlaybookLifecycleState } from "@/features/spx/lib/playbook-state";
-import { isPostEntryPlaybookState, isTerminalPlaybookState } from "@/features/spx/lib/playbook-state-machine";
+import type { PlaybookLifecycleState } from "@/features/spx/lib/playbook-trade-fsm";
+import {
+  isPostEntryPlaybookState,
+  isTerminalPlaybookState,
+} from "@/features/spx/lib/playbook-trade-fsm";
 import type { PlaybookMatchVerdict } from "@/features/spx/lib/playbook-shadow-matcher";
 
 /** Minimum armed polls before a trigger can commit (≈4–6s at 2s play poll). */
@@ -45,7 +48,12 @@ export function applyPlaybookVerdictGuards(
 
     if (!v.trigger_fired) return v;
     const armedPolls = armedPollCounts.get(resolved.instance_id) ?? 0;
-    const hadArmed = prev === "armed" || prev === "triggered" || armedPolls >= minArmed;
+    const hadArmed =
+      prev === "armed" ||
+      prev === "triggered" ||
+      prev === "blocked" ||
+      prev === "entry_pending" ||
+      armedPolls >= minArmed;
 
     if (hadArmed && armedPolls >= minArmed) return v;
 

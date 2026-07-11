@@ -1,14 +1,19 @@
 import type { PlaybookFeatureSnapshot } from "@/features/spx/lib/playbook-feature-snapshot";
 import type { PlaybookId } from "@/features/spx/lib/playbook-registry";
 import type { PlaybookInstanceTransition } from "@/features/spx/lib/playbook-state";
+import type { PlaybookLifecycleState } from "@/features/spx/lib/playbook-trade-fsm";
 
 export type PlaybookInstanceEventType =
   | "armed"
   | "triggered"
-  | "invalidated"
   | "blocked"
+  | "entry_pending"
+  | "invalidated"
+  | "expired"
+  | "cancelled"
   | "opened"
   | "managing"
+  | "exit_pending"
   | "closed"
   | "counterfactual_tick";
 
@@ -28,16 +33,29 @@ export type PlaybookInstanceEventRow = {
   counterfactual_mae_pts: number | null;
 };
 
+export function lifecycleStateToEventType(
+  state: PlaybookLifecycleState
+): PlaybookInstanceEventType | null {
+  const map: Partial<Record<PlaybookLifecycleState, PlaybookInstanceEventType>> = {
+    armed: "armed",
+    triggered: "triggered",
+    blocked: "blocked",
+    entry_pending: "entry_pending",
+    invalidated: "invalidated",
+    expired: "expired",
+    cancelled: "cancelled",
+    open: "opened",
+    managing: "managing",
+    exit_pending: "exit_pending",
+    closed: "closed",
+  };
+  return map[state] ?? null;
+}
+
 export function transitionToEventType(
   toState: PlaybookInstanceTransition["to_state"]
 ): PlaybookInstanceEventType | null {
-  if (toState === "armed") return "armed";
-  if (toState === "triggered") return "triggered";
-  if (toState === "invalidated") return "invalidated";
-  if (toState === "open") return "opened";
-  if (toState === "managing") return "managing";
-  if (toState === "closed") return "closed";
-  return null;
+  return lifecycleStateToEventType(toState);
 }
 
 export function buildTransitionEvents(
@@ -62,7 +80,14 @@ export function buildTransitionEvents(
       gate_blocks: null,
       feature_snapshot: snapshot,
       engine_action: engineAction,
-      executable: eventType === "triggered" ? null : null,
+      executable:
+        eventType === "triggered" || eventType === "entry_pending"
+          ? null
+          : eventType === "opened"
+            ? true
+            : eventType === "blocked" || eventType === "cancelled"
+              ? false
+              : null,
       counterfactual_mfe_pts: null,
       counterfactual_mae_pts: null,
     });

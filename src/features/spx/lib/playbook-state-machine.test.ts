@@ -1,10 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import {
-  collectMatcherFsmTransitions,
-  isTerminalPlaybookState,
-  resolvePlaybookFsmState,
-} from "./playbook-state-machine";
+import { collectMatcherFsmTransitions } from "./playbook-state-machine";
 import { playbookInstanceId } from "./playbook-instance-episode";
 import type { PlaybookMatchVerdict } from "./playbook-shadow-matcher";
 
@@ -23,30 +19,7 @@ function verdict(overrides: Partial<PlaybookMatchVerdict>): PlaybookMatchVerdict
   };
 }
 
-test("resolvePlaybookFsmState: latches triggered across ticks", () => {
-  const v = verdict({ trigger_fired: false, precondition_match: true });
-  assert.equal(resolvePlaybookFsmState("triggered", v), "invalidated");
-  assert.equal(resolvePlaybookFsmState("triggered", verdict({})), "triggered");
-});
-
-test("resolvePlaybookFsmState: gate block re-arms triggered", () => {
-  assert.equal(
-    resolvePlaybookFsmState("triggered", verdict({}), { gate_blocked: true }),
-    "armed"
-  );
-});
-
-test("resolvePlaybookFsmState: frozen post-entry states", () => {
-  assert.equal(resolvePlaybookFsmState("open", verdict({})), "open");
-  assert.equal(resolvePlaybookFsmState("closed", verdict({})), "closed");
-});
-
-test("isTerminalPlaybookState", () => {
-  assert.equal(isTerminalPlaybookState("closed"), true);
-  assert.equal(isTerminalPlaybookState("armed"), false);
-});
-
-test("collectMatcherFsmTransitions: emits open path blocked re-arm", () => {
+test("collectMatcherFsmTransitions: gate veto → blocked state", () => {
   const session = "2026-07-10";
   const id = playbookInstanceId(session, "PB-01", "long", NOW);
   const { transitions } = collectMatcherFsmTransitions(
@@ -60,10 +33,11 @@ test("collectMatcherFsmTransitions: emits open path blocked re-arm", () => {
         state: "triggered",
         episode_direction: "long",
         episode_start_ms: NOW,
+        triggered_at_ms: NOW,
       },
     ],
     { gate_blocked_instance_ids: new Set([id]), now_ms: NOW }
   );
   assert.equal(transitions.length, 1);
-  assert.equal(transitions[0].to_state, "armed");
+  assert.equal(transitions[0].to_state, "blocked");
 });

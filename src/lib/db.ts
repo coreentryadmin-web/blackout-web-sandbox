@@ -2210,14 +2210,29 @@ export async function loadPlaybookInstanceStates(
     instance_id: string;
     playbook_id: string;
     direction: "long" | "short" | null;
-    state: "idle" | "armed" | "triggered" | "invalidated" | "open" | "managing" | "closed";
+    state:
+      | "idle"
+      | "armed"
+      | "triggered"
+      | "blocked"
+      | "entry_pending"
+      | "open"
+      | "managing"
+      | "exit_pending"
+      | "closed"
+      | "invalidated"
+      | "expired"
+      | "cancelled";
     armed_poll_count: number;
+    triggered_at_ms: number | null;
   }>
 > {
   await ensureSchema();
   const res = await (await getPool()).query(
     `
-    SELECT instance_id, playbook_id, direction, state, COALESCE(armed_poll_count, 0) AS armed_poll_count
+    SELECT instance_id, playbook_id, direction, state,
+           COALESCE(armed_poll_count, 0) AS armed_poll_count,
+           (EXTRACT(EPOCH FROM triggered_at) * 1000)::bigint AS triggered_at_ms
     FROM spx_playbook_instances
     WHERE session_date = $1
     `,
@@ -2234,11 +2249,20 @@ export async function loadPlaybookInstanceStates(
       | "idle"
       | "armed"
       | "triggered"
-      | "invalidated"
+      | "blocked"
+      | "entry_pending"
       | "open"
       | "managing"
-      | "closed",
+      | "exit_pending"
+      | "closed"
+      | "invalidated"
+      | "expired"
+      | "cancelled",
     armed_poll_count: Number(r.armed_poll_count ?? 0),
+    triggered_at_ms:
+      r.triggered_at_ms != null && Number.isFinite(Number(r.triggered_at_ms))
+        ? Number(r.triggered_at_ms)
+        : null,
   }));
 }
 
@@ -2285,11 +2309,24 @@ export async function upsertPlaybookInstances(
     instance_id: string;
     playbook_id: string;
     direction: "long" | "short" | null;
-    state: "idle" | "armed" | "triggered" | "invalidated" | "open" | "managing" | "closed";
+    state:
+      | "idle"
+      | "armed"
+      | "triggered"
+      | "blocked"
+      | "entry_pending"
+      | "open"
+      | "managing"
+      | "exit_pending"
+      | "closed"
+      | "invalidated"
+      | "expired"
+      | "cancelled";
     feature_snapshot: unknown;
     detail: string;
     trigger_price?: number | null;
     reason_invalidated?: string | null;
+    reason_blocked?: string | null;
     armed_poll_count?: number | null;
   }>
 ): Promise<void> {
@@ -2303,23 +2340,23 @@ export async function upsertPlaybookInstances(
         instance_id, session_date, playbook_id, direction, state,
         armed_at, triggered_at, invalidated_at, opened_at, closed_at,
         feature_snapshot, detail,
-        trigger_price, reason_invalidated, armed_poll_count, updated_at
+        trigger_price, reason_invalidated, reason_blocked, armed_poll_count, updated_at
       )
       VALUES ($1,$2,$3,$4,$5,
         CASE WHEN $5 = 'armed' THEN NOW() ELSE NULL END,
-        CASE WHEN $5 = 'triggered' THEN NOW() ELSE NULL END,
+        CASE WHEN $5 IN ('triggered', 'blocked', 'entry_pending') THEN NOW() ELSE NULL END,
         CASE WHEN $5 = 'invalidated' THEN NOW() ELSE NULL END,
         CASE WHEN $5 = 'open' THEN NOW() ELSE NULL END,
         CASE WHEN $5 = 'closed' THEN NOW() ELSE NULL END,
         $6::jsonb, $7,
-        $8, $9, COALESCE($10, 0), NOW())
+        $8, $9, $10, COALESCE($11, 0), NOW())
       ON CONFLICT (instance_id) DO UPDATE SET
         direction = EXCLUDED.direction,
         state = EXCLUDED.state,
         armed_at = COALESCE(spx_playbook_instances.armed_at,
           CASE WHEN EXCLUDED.state = 'armed' THEN NOW() ELSE NULL END),
         triggered_at = COALESCE(spx_playbook_instances.triggered_at,
-          CASE WHEN EXCLUDED.state = 'triggered' THEN NOW() ELSE NULL END),
+          CASE WHEN EXCLUDED.state IN ('triggered', 'blocked', 'entry_pending') THEN NOW() ELSE NULL END),
         invalidated_at = COALESCE(spx_playbook_instances.invalidated_at,
           CASE WHEN EXCLUDED.state = 'invalidated' THEN NOW() ELSE NULL END),
         opened_at = COALESCE(spx_playbook_instances.opened_at,
@@ -2330,6 +2367,7 @@ export async function upsertPlaybookInstances(
         detail = EXCLUDED.detail,
         trigger_price = COALESCE(spx_playbook_instances.trigger_price, EXCLUDED.trigger_price),
         reason_invalidated = COALESCE(EXCLUDED.reason_invalidated, spx_playbook_instances.reason_invalidated),
+        reason_blocked = COALESCE(EXCLUDED.reason_blocked, spx_playbook_instances.reason_blocked),
         armed_poll_count = GREATEST(COALESCE(spx_playbook_instances.armed_poll_count, 0), COALESCE(EXCLUDED.armed_poll_count, 0)),
         updated_at = NOW()
       `,
@@ -2343,6 +2381,7 @@ export async function upsertPlaybookInstances(
         row.detail,
         row.trigger_price ?? null,
         row.reason_invalidated ?? null,
+        row.reason_blocked ?? null,
         row.armed_poll_count ?? null,
       ]
     );
@@ -2459,7 +2498,7 @@ export async function loadTriggeredPlaybookInstances(sessionDate: string): Promi
            opened_at
     FROM spx_playbook_instances
     WHERE session_date = $1
-      AND state IN ('triggered', 'invalidated')
+      AND state IN ('triggered', 'blocked', 'entry_pending')
       AND triggered_at IS NOT NULL
       AND opened_at IS NULL
     `,

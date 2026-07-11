@@ -5,7 +5,7 @@ import {
   isTerminalPlaybookState,
   verdictCandidateState,
   type PlaybookLifecycleState,
-} from "@/features/spx/lib/playbook-state-machine";
+} from "@/features/spx/lib/playbook-trade-fsm";
 
 /** Direction bucket embedded in durable instance_id. */
 export type EpisodeDirectionKey = "long" | "short" | "undirected";
@@ -17,6 +17,7 @@ export type PlaybookInstanceSnapshot = {
   state: PlaybookLifecycleState;
   episode_direction: EpisodeDirectionKey;
   episode_start_ms: number;
+  triggered_at_ms: number | null;
 };
 
 export function episodeDirectionKey(direction: "long" | "short" | null): EpisodeDirectionKey {
@@ -87,6 +88,7 @@ export function snapshotFromInstanceRow(row: {
   playbook_id: string;
   direction: "long" | "short" | null;
   state: PlaybookLifecycleState;
+  triggered_at_ms?: number | null;
 }): PlaybookInstanceSnapshot {
   const parsed = parsePlaybookInstanceId(row.instance_id);
   return {
@@ -96,6 +98,7 @@ export function snapshotFromInstanceRow(row: {
     state: row.state,
     episode_direction: parsed.episode_direction,
     episode_start_ms: parsed.episode_start_ms,
+    triggered_at_ms: row.triggered_at_ms ?? null,
   };
 }
 
@@ -188,7 +191,7 @@ export function resolveEpisodeInstance(
   };
 }
 
-/** Active triggered/open episode for primary playbook + direction (engine + blocked paths). */
+/** Active episode for primary playbook + direction (engine + blocked paths). */
 export function findActiveEpisodeInstanceId(
   snapshots: readonly PlaybookInstanceSnapshot[],
   playbookId: PlaybookId,

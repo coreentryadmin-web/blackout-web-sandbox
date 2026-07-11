@@ -3,11 +3,9 @@ import type { PlaybookId } from "@/features/spx/lib/playbook-registry";
 import type { PlaybookFeatureSnapshot } from "@/features/spx/lib/playbook-feature-snapshot";
 import {
   collectMatcherFsmTransitions,
-  resolvePlaybookFsmState,
-  verdictCandidateState,
   type PlaybookFsmTransition,
-  type PlaybookLifecycleState,
 } from "@/features/spx/lib/playbook-state-machine";
+import type { PlaybookLifecycleState } from "@/features/spx/lib/playbook-trade-fsm";
 import {
   findActiveEpisodeInstanceId,
   playbookInstanceId,
@@ -29,8 +27,10 @@ export {
   snapshotFromInstanceRow,
 } from "@/features/spx/lib/playbook-instance-episode";
 
-export { verdictCandidateState as verdictLifecycleState };
-export { resolvePlaybookFsmState as resolvePlaybookLifecycleState };
+export { verdictCandidateState as verdictLifecycleState } from "@/features/spx/lib/playbook-trade-fsm";
+export {
+  resolvePlaybookFsmState as resolvePlaybookLifecycleState,
+} from "@/features/spx/lib/playbook-trade-fsm";
 
 export type PlaybookInstanceTransition = {
   instance_id: string;

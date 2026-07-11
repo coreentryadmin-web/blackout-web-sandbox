@@ -11,7 +11,7 @@ import {
   type PlaybookMatchVerdict,
   type PlaybookShadowMatchResult,
 } from "@/features/spx/lib/playbook-shadow-matcher";
-import type { PlaybookLifecycleState } from "@/features/spx/lib/playbook-state";
+import type { PlaybookLifecycleState } from "@/features/spx/lib/playbook-trade-fsm";
 import type { PlaybookInstanceSnapshot } from "@/features/spx/lib/playbook-instance-episode";
 import type { SpxDeskPayload } from "@/features/spx/lib/spx-desk";
 import type { PlayTechnicals } from "@/features/spx/lib/spx-play-technicals";

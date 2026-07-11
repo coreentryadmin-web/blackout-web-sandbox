@@ -143,6 +143,7 @@ export async function maybeLogPlaybookShadowMatch(
         trigger_price:
           t.to_state === "triggered" && desk.price != null ? desk.price : null,
         reason_invalidated: t.to_state === "invalidated" ? t.detail : null,
+        reason_blocked: t.to_state === "blocked" ? t.detail : null,
         armed_poll_count: armedPollByInstance?.get(t.instance_id) ?? null,
       }))
     );

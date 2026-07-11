@@ -1,8 +1,6 @@
 import { buildPlaybookFeatureSnapshot } from "@/features/spx/lib/playbook-feature-snapshot";
-import {
-  buildTransitionEvents,
-  type PlaybookInstanceEventType,
-} from "@/features/spx/lib/playbook-instance-events";
+import { lifecycleStateToEventType } from "@/features/spx/lib/playbook-instance-events";
+import type { PlaybookInstanceEventType } from "@/features/spx/lib/playbook-instance-events";
 import {
   findActiveEpisodeInstanceId,
   parsePlaybookInstanceId,
@@ -10,6 +8,7 @@ import {
 } from "@/features/spx/lib/playbook-instance-episode";
 import type { PlaybookId } from "@/features/spx/lib/playbook-registry";
 import {
+  canEngineTransition,
   engineFsmTransition,
   type PlaybookFsmTransition,
   type PlaybookLifecycleState,
@@ -24,13 +23,7 @@ import {
 } from "@/lib/db";
 
 function fsmEventType(state: PlaybookLifecycleState): PlaybookInstanceEventType | null {
-  if (state === "armed") return "armed";
-  if (state === "triggered") return "triggered";
-  if (state === "invalidated") return "invalidated";
-  if (state === "open") return "opened";
-  if (state === "managing") return "managing";
-  if (state === "closed") return "closed";
-  return null;
+  return lifecycleStateToEventType(state);
 }
 
 async function persistFsmTransitions(
@@ -53,8 +46,12 @@ async function persistFsmTransitions(
       state: t.to_state,
       feature_snapshot: snapshot,
       detail: t.detail,
-      trigger_price: t.to_state === "triggered" && desk.price != null ? desk.price : null,
+      trigger_price:
+        (t.to_state === "triggered" || t.to_state === "blocked") && desk.price != null
+          ? desk.price
+          : null,
       reason_invalidated: t.to_state === "invalidated" ? t.detail : null,
+      reason_blocked: t.to_state === "blocked" ? t.detail : null,
     }))
   );
 
@@ -70,10 +67,15 @@ async function persistFsmTransitions(
         direction: t.direction,
         price_at_event: desk.price ?? null,
         reason: `${t.from_state}→${t.to_state}: ${t.detail}`,
-        gate_blocks: null,
+        gate_blocks: t.to_state === "blocked" ? [t.detail] : null,
         feature_snapshot: snapshot,
         engine_action: engineAction,
-        executable: t.to_state === "open" ? true : t.to_state === "triggered" ? null : null,
+        executable:
+          t.to_state === "open"
+            ? true
+            : t.to_state === "blocked" || t.to_state === "cancelled"
+              ? false
+              : null,
         counterfactual_mfe_pts: null,
         counterfactual_mae_pts: null,
       },
@@ -102,7 +104,78 @@ async function loadActiveInstanceState(
   };
 }
 
-/** Engine: TRIGGERED/ARMED → OPEN when play commits. */
+async function commitEngineTransition(input: {
+  session_date: string;
+  playbook_id: PlaybookId;
+  direction: "long" | "short";
+  desk: SpxDeskPayload;
+  technicals: PlayTechnicals | null;
+  to_state: PlaybookLifecycleState;
+  detail: string;
+  engine_action: string;
+  fallback_from?: PlaybookLifecycleState;
+}): Promise<void> {
+  const active = await loadActiveInstanceState(
+    input.session_date,
+    input.playbook_id,
+    input.direction
+  );
+  const from = active?.state ?? input.fallback_from ?? "triggered";
+  if (!canEngineTransition(from, input.to_state)) return;
+  const episodeMs = active?.episode_start_ms ?? Date.now();
+  const transition = engineFsmTransition(
+    input.session_date,
+    input.playbook_id,
+    from,
+    input.to_state,
+    input.direction,
+    input.detail,
+    episodeMs
+  );
+  await persistFsmTransitions(
+    input.session_date,
+    [transition],
+    input.desk,
+    input.technicals,
+    input.engine_action
+  );
+}
+
+/** Engine: ticket generated — awaiting fill confirmation. */
+export async function commitPlaybookInstanceEntryPending(input: {
+  session_date: string;
+  playbook_id: PlaybookId;
+  direction: "long" | "short";
+  desk: SpxDeskPayload;
+  technicals: PlayTechnicals | null;
+  detail?: string;
+}): Promise<void> {
+  await commitEngineTransition({
+    ...input,
+    to_state: "entry_pending",
+    detail: input.detail ?? "option ticket generated",
+    engine_action: "ENTRY_PENDING",
+  });
+}
+
+/** Engine: entry aborted — illiquid contract, governor, or risk rejection. */
+export async function commitPlaybookInstanceCancelled(input: {
+  session_date: string;
+  playbook_id: PlaybookId;
+  direction: "long" | "short";
+  desk: SpxDeskPayload;
+  technicals: PlayTechnicals | null;
+  reason: string;
+}): Promise<void> {
+  await commitEngineTransition({
+    ...input,
+    to_state: "cancelled",
+    detail: input.reason,
+    engine_action: "CANCELLED",
+  });
+}
+
+/** Engine: TRIGGERED/ENTRY_PENDING → OPEN when play commits. */
 export async function commitPlaybookInstanceOpen(input: {
   session_date: string;
   playbook_id: PlaybookId;
@@ -111,29 +184,30 @@ export async function commitPlaybookInstanceOpen(input: {
   technicals: PlayTechnicals | null;
   detail?: string;
 }): Promise<void> {
-  const active = await loadActiveInstanceState(
-    input.session_date,
-    input.playbook_id,
-    input.direction
-  );
-  const from = active?.state ?? "triggered";
-  const episodeMs = active?.episode_start_ms ?? Date.now();
-  const transition = engineFsmTransition(
-    input.session_date,
-    input.playbook_id,
-    from,
-    "open",
-    input.direction,
-    input.detail ?? "engine openPlay",
-    episodeMs
-  );
-  await persistFsmTransitions(
-    input.session_date,
-    [transition],
-    input.desk,
-    input.technicals,
-    "BUY"
-  );
+  await commitEngineTransition({
+    ...input,
+    to_state: "open",
+    detail: input.detail ?? "engine openPlay",
+    engine_action: "BUY",
+    fallback_from: "entry_pending",
+  });
+}
+
+/** Engine: setup invalidated while position open — exit required. */
+export async function commitPlaybookInstanceExitPending(input: {
+  session_date: string;
+  playbook_id: PlaybookId;
+  direction: "long" | "short";
+  desk: SpxDeskPayload;
+  technicals: PlayTechnicals | null;
+  reason: string;
+}): Promise<void> {
+  await commitEngineTransition({
+    ...input,
+    to_state: "exit_pending",
+    detail: input.reason,
+    engine_action: "EXIT_PENDING",
+  });
 }
 
 /** Engine: OPEN → MANAGING on trim / active management. */
@@ -145,25 +219,15 @@ export async function commitPlaybookInstanceManaging(input: {
   technicals: PlayTechnicals | null;
   detail: string;
 }): Promise<void> {
-  const active = await loadActiveInstanceState(
-    input.session_date,
-    input.playbook_id,
-    input.direction
-  );
-  if (!active || active.state !== "open") return;
-  const transition = engineFsmTransition(
-    input.session_date,
-    input.playbook_id,
-    active.state,
-    "managing",
-    input.direction,
-    input.detail,
-    active.episode_start_ms
-  );
-  await persistFsmTransitions(input.session_date, [transition], input.desk, input.technicals, "TRIM");
+  await commitEngineTransition({
+    ...input,
+    to_state: "managing",
+    detail: input.detail,
+    engine_action: "TRIM",
+  });
 }
 
-/** Engine: OPEN/MANAGING → CLOSED on exit. */
+/** Engine: OPEN/MANAGING/EXIT_PENDING → CLOSED on exit. */
 export async function commitPlaybookInstanceClosed(input: {
   session_date: string;
   playbook_id: PlaybookId;
@@ -173,28 +237,16 @@ export async function commitPlaybookInstanceClosed(input: {
   exit_reason: string;
   exit_action: string;
 }): Promise<void> {
-  const active = await loadActiveInstanceState(
-    input.session_date,
-    input.playbook_id,
-    input.direction
-  );
-  if (!active || (active.state !== "open" && active.state !== "managing")) return;
-  const transition = engineFsmTransition(
-    input.session_date,
-    input.playbook_id,
-    active.state,
-    "closed",
-    input.direction,
-    input.exit_reason,
-    active.episode_start_ms
-  );
-  await persistFsmTransitions(
-    input.session_date,
-    [transition],
-    input.desk,
-    input.technicals,
-    input.exit_action
-  );
+  await commitEngineTransition({
+    session_date: input.session_date,
+    playbook_id: input.playbook_id,
+    direction: input.direction,
+    desk: input.desk,
+    technicals: input.technicals,
+    to_state: "closed",
+    detail: input.exit_reason,
+    engine_action: input.exit_action,
+  });
 }
 
 export { persistFsmTransitions };

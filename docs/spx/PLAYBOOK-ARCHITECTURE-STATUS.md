@@ -1,7 +1,7 @@
 # SPX Playbook — Architecture & Status (Single Source of Truth)
 
 **Repo:** `coreentryadmin-web/blackout-web-sandbox` → `https://staging.blackouttrades.com`  
-**Last updated:** 2026-07-11  
+**Last updated:** 2026-07-11 (trade FSM #72)  
 **Scope:** Staging playbook lab only — do **not** merge to Railway prod `blackout-web` `main` unless explicitly requested.
 
 This document consolidates architecture, implementation status, per-playbook fidelity, four setup families, what is fixed, what remains, validation tiers, and code map. Older docs (`PLAYBOOK-ARCHITECTURE-DEEP-DIVE.md`, `PLAYBOOK-IMPLEMENTATION-ROADMAP.md`, etc.) remain as detail appendices; **start here** for current truth.
@@ -169,21 +169,34 @@ Every ~2s play poll on staging:
 6. `maybeLogPlaybookShadowMatch()` → Postgres + instance transitions
 7. If gates pass + lab path → `openPlay()` with `playbook_id`, `execution_sim` on option ticket
 
-### State machine (stub → P1)
+### Trade lifecycle state machine (full model — #72)
 
-| State | Meaning |
-|-------|---------|
-| `idle` | Window closed, regime ineligible, or no precondition |
-| `armed` | `precondition_match` true |
-| `triggered` | `trigger_fired` true |
-| `invalidated` | Lost precondition after armed, or trigger dropped after fired |
+Canonical module: `playbook-trade-fsm.ts`. Matcher + engine + expiry layers persist every transition to `spx_playbook_instances` and `spx_playbook_instance_events`.
 
-`collectPlaybookInstanceTransitions()` uses `resolvePlaybookLifecycleState()` — persisted to `spx_playbook_instances` / shadow row `instance_transitions`.
+| State | Layer | Meaning |
+|-------|-------|---------|
+| `idle` | Matcher | Window closed, ineligible, or no precondition |
+| `armed` | Matcher | `precondition_match` true |
+| `triggered` | Matcher | `trigger_fired` true — setup live |
+| `blocked` | Gate | Trigger valid but gate/governor vetoed — **not** setup invalidation |
+| `entry_pending` | Engine | Option ticket generated, awaiting fill commit |
+| `open` | Engine | Position opened (`openPlay`) |
+| `managing` | Engine | Trim / active management |
+| `exit_pending` | Matcher+Engine | Original setup invalidated while position open — exit required |
+| `closed` | Engine | Position flat — terminal |
+| `invalidated` | Matcher | Setup failed before entry — terminal |
+| `expired` | Expiry | Triggered/blocked/entry_pending exceeded TTL (default **90s**, `PLAYBOOK_TRIGGER_TTL_MS`) — terminal |
+| `cancelled` | Engine | Entry aborted — illiquid contract, governor, risk rejection — terminal |
 
-**Episode-scoped identity (P0 fix):** each distinct setup opportunity gets its own durable row — not one row per playbook per session.  
-`instance_id = {session}:{playbook_id}:{direction_key}:{first_armed_ms}` where `direction_key` is `long`, `short`, or `undirected` at spawn. A **new episode** spawns after invalidation/close, opposite-direction trigger, or re-arm following a terminal state. Legacy `{session}:{playbook_id}` rows remain parseable for pre-fix history.
+**Episode-scoped identity (#71):** `instance_id = {session}:{playbook_id}:{direction_key}:{first_armed_ms}` — one row per **episode**, not per session.
 
-**Still tick-recomputed:** matchers do not require prior armed duration or blocked-while-armed ordering beyond `PLAYBOOK_MIN_ARMED_POLLS` (phase 2).
+**Key distinctions now enforced:**
+- Gate `blocked` ≠ matcher `invalidated`
+- `entry_pending` ≠ `open` (ticket generated vs fill committed)
+- `expired` retires stale triggers instead of leaving them logically active
+- `exit_pending` precedes thesis/setup-driven closes on open positions
+
+**Still tick-recomputed (matcher):** pre-arm ordering beyond `PLAYBOOK_MIN_ARMED_POLLS`; layered gate short-circuit evaluation (phase 2).
 
 ---
 
@@ -222,6 +235,7 @@ Every ~2s play poll on staging:
 | **#69** (phase 2) | VIX/OR scaled buffers, armed-poll guards, session risk governor, playbook exit profiles, option exit sim, ECS auto-roll |
 | **#70** (phase 3) | Full FSM open/managing/closed, Trade Governor, PB-01–04 exit engines, options P/L model, VolatilityContext, cron FSM sync |
 | **#71** (episode id) | Episode-scoped `instance_id` — multiple distinct setups per PB per session; spawn after invalidation/close/opposite direction |
+| **#72** (trade FSM) | Full trade lifecycle — `blocked`, `entry_pending`, `exit_pending`, `expired`, `cancelled`; 90s trigger TTL; gate≠invalidation |
 
 ---
 
@@ -276,6 +290,7 @@ Market Data → Feature Engine → Regime Engine → Playbook Matcher
 | Options P/L lite model | ✅ Shipped | `playbook-option-pnl.ts` — delta/gamma/theta + `greeks_snapshot` |
 | VolatilityContext | ✅ Shipped | `playbook-volatility-context.ts` — scaled distance thresholds |
 | Episode-scoped instance identity | ✅ Shipped | `playbook-instance-episode.ts` — `{session}:{pb}:{dir}:{armed_ms}` |
+| Full trade lifecycle FSM | ✅ Shipped | `playbook-trade-fsm.ts` — 12 states incl. blocked/entry_pending/exit_pending/expired/cancelled |
 
 ### P1 — Phase 2 shipped (staging)
 
@@ -589,7 +604,8 @@ Implemented in `playbook-evidence-config.ts` + `npm run playbook:param-sweep`. *
 | `playbook-pipeline-audit.ts` | Long/short funnel + `family_audit` |
 | `playbook-state.ts` | Lifecycle + invalidation transitions |
 | `playbook-instance-episode.ts` | Episode-scoped `instance_id` + spawn rules |
-| `playbook-state-machine.ts` | Full FSM + matcher/engine transitions |
+| `playbook-trade-fsm.ts` | Full trade lifecycle states + transition rules + trigger TTL |
+| `playbook-state-machine.ts` | Matcher FSM collector + expiry pass + engine transition helper |
 | `playbook-data-quality.ts` | Flags + `liveDataQualityMode` |
 | `playbook-break-memory.ts` | PB-14 OR break memory |
 | `playbook-option-sim.ts` | `execution_sim` on option ticket |
