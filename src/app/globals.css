@@ -8468,6 +8468,40 @@ body::before {
     }
   }
 
+  /* ── Gamma regime banner — plain-English positioning read above the chart ── */
+  .vector-regime-banner {
+    @apply flex flex-wrap items-center gap-x-3 gap-y-1 rounded-xl border px-3 py-2 text-sm;
+  }
+  .vector-regime-chip {
+    @apply inline-flex items-center gap-1.5 whitespace-nowrap font-mono text-[11px] font-bold uppercase tracking-[0.14em];
+  }
+  .vector-regime-dot {
+    @apply h-2 w-2 rounded-full;
+    box-shadow: 0 0 8px currentColor;
+    background: currentColor;
+  }
+  .vector-regime-read {
+    @apply min-w-0 text-cyan-100/90;
+  }
+  .vector-regime-calm {
+    @apply border-cyan-400/30 bg-cyan-400/10;
+  }
+  .vector-regime-calm .vector-regime-chip {
+    @apply text-cyan-300;
+  }
+  .vector-regime-volatile {
+    @apply border-amber-400/30 bg-amber-400/10;
+  }
+  .vector-regime-volatile .vector-regime-chip {
+    @apply text-amber-300;
+  }
+  .vector-regime-neutral {
+    @apply border-white/10 bg-white/5;
+  }
+  .vector-regime-neutral .vector-regime-chip {
+    @apply text-white/70;
+  }
+
   /* ── Ticker search combobox — type any optionable symbol ── */
   .vector-ticker-search {
     @apply relative flex items-center gap-1.5 rounded-md border border-cyan-500/30 bg-black/60 px-2 py-1;

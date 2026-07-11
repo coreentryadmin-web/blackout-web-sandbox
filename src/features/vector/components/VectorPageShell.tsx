@@ -11,6 +11,8 @@ import type { WallHistorySample, VectorWallLens } from "@/features/vector/lib/ve
 import { VectorTickerSelect } from "@/features/vector/components/VectorTickerSelect";
 import { VectorScanner } from "@/features/vector/components/VectorScanner";
 import { VectorDeskTerminal } from "@/features/vector/components/VectorDeskTerminal";
+import { VectorRegimeBanner } from "@/features/vector/components/VectorRegimeBanner";
+import { deriveVectorRegime, type VectorRegime } from "@/features/vector/lib/vector-regime";
 import type { VectorWallEvent } from "@/features/vector/lib/vector-wall-events";
 import { VECTOR_DEFAULT_TICKER } from "@/features/vector/lib/vector-ticker";
 
@@ -77,6 +79,17 @@ export function VectorPageShell({
   const [scannerOpen, setScannerOpen] = useState(false);
   const activeTicker = ticker || VECTOR_DEFAULT_TICKER;
 
+  // Seed the regime from the SSR snapshot so the banner is right on first paint;
+  // VectorChart streams live updates via onRegimeChange during a session.
+  const [regime, setRegime] = useState<VectorRegime>(() =>
+    deriveVectorRegime({
+      spot: initialBars.length ? initialBars[initialBars.length - 1]!.close : null,
+      gammaFlip: initialGammaFlip,
+      topCallWall: initialWalls?.callWalls?.[0]?.strike ?? null,
+      topPutWall: initialWalls?.putWalls?.[0]?.strike ?? null,
+    })
+  );
+
   useEffect(() => {
     if (!liveSession) return;
     setNow(Date.now());
@@ -117,6 +130,11 @@ export function VectorPageShell({
             </div>
           }
         />
+        {/* Gamma regime read — the plain-English "what this positioning means"
+            strip. Leads the chart so the member frames the walls correctly. */}
+        <div className="mt-3">
+          <VectorRegimeBanner regime={regime} />
+        </div>
         {/* Chart is the hero — it leads the page. The universe scanner is a
             secondary, collapsible panel below (it used to occupy the entire
             first viewport, pushing the actual chart below the fold). */}
@@ -143,6 +161,7 @@ export function VectorPageShell({
               onFreshness={liveSession ? setStreamUpdatedAt : undefined}
               onWallEventsChange={setWallEvents}
               onLensChange={setLens}
+              onRegimeChange={setRegime}
             />
           </div>
           <VectorDeskTerminal

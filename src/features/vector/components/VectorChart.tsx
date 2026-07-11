@@ -38,6 +38,7 @@ import {
   normalizeDteHorizon,
   type VectorDteHorizon,
 } from "@/features/vector/lib/vector-dte-horizon";
+import { deriveVectorRegime, type VectorRegime } from "@/features/vector/lib/vector-regime";
 import {
   alphaForPct,
   glowAlphaForPct,
@@ -129,6 +130,7 @@ type Props = {
   onFreshness?: (updatedAt: number) => void;
   onWallEventsChange?: (events: VectorWallEvent[]) => void;
   onLensChange?: (lens: VectorWallLens) => void;
+  onRegimeChange?: (regime: VectorRegime) => void;
 };
 
 function lensVisuals(lens: VectorWallLens) {
@@ -417,6 +419,7 @@ export function VectorChart({
   liveSession,
   onFreshness,
   onWallEventsChange,
+  onRegimeChange,
   onLensChange,
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -445,6 +448,10 @@ export function VectorChart({
   // gexWallsRef untouched). null = follow the live stream. See liveGexWalls().
   const horizonWallsRef = useRef<VectorWalls | null>(null);
   const dteHorizonRef = useRef<VectorDteHorizon>("all");
+  // Dedupe regime emissions — the read only changes when posture/flip/levels
+  // shift, not every tick, so we skip identical reads to avoid re-rendering the
+  // banner on every SSE frame.
+  const lastRegimeReadRef = useRef<string>("");
   const lensRef = useRef<VectorWallLens>("gex");
   const spotRef = useRef<number | null>(
     initialBars.length ? initialBars[initialBars.length - 1]!.close : null
@@ -626,6 +633,24 @@ export function VectorChart({
         : gexWallsRef.current,
     []
   );
+
+  // Compute the gamma regime from the current spot / flip / near-term walls and
+  // emit it up to the page banner. Uses the canonical near-term walls (not the
+  // DTE-scoped view) since the gamma flip is itself a near-term measure — regime
+  // is about the market's actual hedging posture, independent of the DTE lens.
+  const emitRegime = useCallback(() => {
+    if (!onRegimeChange) return;
+    const walls = gexWallsRef.current;
+    const regime = deriveVectorRegime({
+      spot: spotRef.current,
+      gammaFlip: gammaFlipRef.current,
+      topCallWall: walls?.callWalls?.[0]?.strike ?? null,
+      topPutWall: walls?.putWalls?.[0]?.strike ?? null,
+    });
+    if (regime.read === lastRegimeReadRef.current) return;
+    lastRegimeReadRef.current = regime.read;
+    onRegimeChange(regime);
+  }, [onRegimeChange]);
 
   // DTE horizon → repaint GEX walls. "all" follows the live stream; a narrower
   // horizon fetches expiry-scoped walls on demand (keeping the shared per-second
@@ -820,9 +845,10 @@ export function VectorChart({
           vexFlipRef.current,
           darkPoolRef.current
         );
+        emitRegime();
       }
     });
-  }, [sessionYmd, refreshTrails, refreshOverlays, onFreshness, ticker, liveGexWalls]);
+  }, [sessionYmd, refreshTrails, refreshOverlays, onFreshness, ticker, liveGexWalls, emitRegime]);
 
   useEffect(() => {
     const container = containerRef.current;
