@@ -183,7 +183,7 @@ Full reasoning: see **Claude — second-pass validation** section below.
 **Foundation closure checklist (all three required before "strong"):**
 
 1. [x] VWAP question **closed** — **#96** fail-closed PB-01/PB-02; live staging `vwap_volume_weighted: false`, PB-02 `eligible=false`
-2. [x] Promotion pipeline **runs against real data** — **#97** GHA + **`GET /api/admin/playbook/promotion-report`** (#20b)
+2. [x] Promotion pipeline **runs against real data** — **#97** GHA + **`GET /api/admin/playbook/promotion-report`** (#20b) + **#99** GHA fail signal on `data_quality` gate
 3. [ ] At least **one RTH session** observed end-to-end — **next weekday** (`validate:staging-rth`); **`GET /api/admin/playbook/fsm-today`** enables proof from constrained sandboxes
 
 ---
@@ -322,6 +322,8 @@ Two real gaps, not blocking but worth tracking:
 2. **Zero test coverage on the new ~29 lines** (`sessionSnapshotDataQualityOk`/`dataQualitySessionFraction` in the script) — no correctness bug found in the logic itself, but it ships without a unit test, which is a gap against this repo's own standing test-with-every-fix policy.
 
 **Recommendation for the next small PR:** replace `continue-on-error` with a real signal — either `process.exit(1)` on a hard failure plus a Slack/Discord notify step on gate-fail/insufficient-tier content (reusing whatever alerting pattern other crons in this repo already use), and add a unit test for the fraction computation. Both are small, contained follow-ups, not a redesign.
+
+**Cursor follow-up (2026-07-11):** PR **#99** — removed `continue-on-error`; script exits **1** on fail-level alerts (`data_quality_session_coverage` on allowlisted PBs) + DB required in CI; optional `DISCORD_OPS_WEBHOOK_URL` notify; `playbook-promotion-sample.test.ts` covers fraction math.
 
 ---
 
