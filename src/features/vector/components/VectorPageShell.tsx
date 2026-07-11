@@ -15,6 +15,7 @@ import { VectorRegimeBanner } from "@/features/vector/components/VectorRegimeBan
 import { deriveVectorRegime, type VectorRegime } from "@/features/vector/lib/vector-regime";
 import { deriveWallProximity, type WallProximity } from "@/features/vector/lib/vector-wall-proximity";
 import { deriveGammaMagnet, type GammaMagnet } from "@/features/vector/lib/vector-gamma-magnet";
+import { scoreTopWalls, type WallIntegrity } from "@/features/vector/lib/vector-wall-integrity";
 import type { VectorWallEvent } from "@/features/vector/lib/vector-wall-events";
 import { VECTOR_DEFAULT_TICKER } from "@/features/vector/lib/vector-ticker";
 
@@ -110,6 +111,10 @@ export function VectorPageShell({
       }).posture,
     })
   );
+  const [wallIntegrity, setWallIntegrity] = useState<{
+    call: WallIntegrity | null;
+    put: WallIntegrity | null;
+  }>(() => scoreTopWalls(initialWalls, initialWallHistory));
 
   useEffect(() => {
     if (!liveSession) return;
@@ -185,6 +190,7 @@ export function VectorPageShell({
               onRegimeChange={setRegime}
               onProximityChange={setProximity}
               onMagnetChange={setMagnet}
+              onWallIntegrityChange={setWallIntegrity}
             />
           </div>
           <VectorDeskTerminal
@@ -195,6 +201,7 @@ export function VectorPageShell({
             streamUpdatedAt={streamUpdatedAt}
             proximity={proximity}
             magnet={magnet}
+            wallIntegrity={wallIntegrity}
           />
         </div>
 

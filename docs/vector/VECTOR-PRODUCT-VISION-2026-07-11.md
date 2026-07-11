@@ -46,7 +46,9 @@ Three properties separate top-tier from mere:
   that accelerates in short gamma — surfaced in the desk terminal. Expected-move cone is the paired
   follow-up: it needs ATM IV surfaced from the server, then a shaded ±1σ band on the chart.)*
 - **Wall integrity/confidence score** *(task #17)* — "is this wall real?" from OI concentration +
-  flow reinforcement + persistence. Stops members over-trusting a thin wall.
+  flow reinforcement + persistence. Stops members over-trusting a thin wall. *(SHIPPED: strength ×
+  session-persistence (from the history rail) × isolation → 0–100 score + firm/moderate/thin tier
+  on the top call & put wall, desk-terminal readout, tone by tier. Pure/client-derived.)*
 
 ### Tier 2 — the desk watches for you
 - **Wall-proximity intelligence** *(task #16)* — chart highlight + desk-terminal callout when spot

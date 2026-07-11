@@ -10,6 +10,7 @@ import type { VectorWallEvent } from "@/features/vector/lib/vector-wall-events";
 import type { VectorWallLens } from "@/features/vector/lib/vector-wall-history";
 import type { WallProximity } from "@/features/vector/lib/vector-wall-proximity";
 import type { GammaMagnet } from "@/features/vector/lib/vector-gamma-magnet";
+import type { WallIntegrity } from "@/features/vector/lib/vector-wall-integrity";
 import type { PlayTerminalLine } from "@/features/spx/lib/spx-play-terminal-lines";
 import { normalizeVectorTicker } from "@/features/vector/lib/vector-ticker";
 
@@ -21,6 +22,7 @@ type Props = {
   streamUpdatedAt?: number | null;
   proximity?: WallProximity | null;
   magnet?: GammaMagnet | null;
+  wallIntegrity?: { call: WallIntegrity | null; put: WallIntegrity | null };
 };
 
 /**
@@ -34,6 +36,7 @@ export function VectorDeskTerminal({
   streamUpdatedAt,
   proximity,
   magnet,
+  wallIntegrity,
 }: Props) {
   const normalized = normalizeVectorTicker(ticker);
   const isSpx = normalized === "SPX";
@@ -90,9 +93,23 @@ export function VectorDeskTerminal({
         indent: 1,
       });
     }
+    // Wall-integrity confidence for the two levels the desk reads first. A "thin"
+    // wall is a warning (don't over-trust it); "firm" is confirmation. Only shown
+    // on the GEX lens (integrity is a gamma-wall measure, not a vanna one).
+    if (lens === "gex" && wallIntegrity) {
+      for (const wi of [wallIntegrity.call, wallIntegrity.put]) {
+        if (!wi) continue;
+        intel.push({
+          icon: "level",
+          tone: wi.tier === "thin" ? "warn" : wi.tier === "firm" ? "bull" : "neutral",
+          text: `${wi.note} · ${wi.score}/100`,
+          indent: 1,
+        });
+      }
+    }
     if (intel.length) return [base[0]!, ...intel, ...base.slice(1)];
     return base;
-  }, [isSpx, spxPlay, spxPlayError, liveSession, normalized, lens, wallEvents, proximity, magnet]);
+  }, [isSpx, spxPlay, spxPlayError, liveSession, normalized, lens, wallEvents, proximity, magnet, wallIntegrity]);
 
   const cmd = isSpx ? "playbook --spx --vector-desk" : `vector --ticker ${normalized} --structure`;
 
