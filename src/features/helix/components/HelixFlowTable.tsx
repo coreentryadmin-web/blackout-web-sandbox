@@ -30,7 +30,7 @@ const COLUMNS: {
   key: HelixFlowSortKey | null;
   label: string;
   align?: "left" | "right";
-  /** Hidden below 1280px — keeps tape readable on laptop widths */
+  /** Hidden below 1536px — keeps tape readable on laptop / 1440px desks */
   compactHidden?: boolean;
 }[] = [
   { key: "time", label: "Time" },
@@ -71,7 +71,7 @@ function SkeletonRows() {
       {Array.from({ length: 12 }).map((_, i) => (
         <tr key={i} className="helix-flow-row">
           {COLUMNS.map((col) => (
-            <td key={col.label}>
+            <td key={col.label} className={colClass(col)}>
               <Skeleton width={col.key === "ticker" ? 48 : 36} height={12} rounded="sm" />
             </td>
           ))}
