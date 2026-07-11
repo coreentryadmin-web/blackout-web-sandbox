@@ -88,7 +88,7 @@ const VEX_POS_COLOR = "#7dd3fc";
 const VEX_NEG_COLOR = "#fb7185";
 const GAMMA_FLIP_COLOR = "#22d3ee";
 const VANNA_FLIP_COLOR = "#38bdf8";
-const DARK_POOL_COLOR = "#00d4ff";
+const DARK_POOL_COLOR = "#ff8a3d"; // orange, not cyan — dark-pool cyan #00d4ff failed CVD separation vs gamma-flip cyan #22d3ee (worst-pair ΔE 6.9); orange lifts it to 36.7 (validated via dataviz palette checker)
 const REPLAY_STEP_MS = 350;
 const MAX_WALL_GUIDES = 6;
 const MAX_DP_GUIDES = 6;
@@ -1169,6 +1169,19 @@ export function VectorChart({
         <p className="pointer-events-none absolute bottom-2 left-2 z-10 font-mono text-[10px] uppercase tracking-wide text-sky-300">
           SPY vol
         </p>
+        {/* Off-hours the candles are the last close's and the chart can read as
+            empty. A quiet corner affordance names the state and points at the
+            one useful off-hours action — replay the session. */}
+        {!liveSession && !replayMode && canReplay && (
+          <button
+            type="button"
+            className="vector-chart-closed-hint"
+            onClick={toggleReplay}
+          >
+            <span className="vector-chart-closed-dot" aria-hidden="true" />
+            Session closed — last-close structure. Replay the day ▸
+          </button>
+        )}
         <div
           ref={containerRef}
           className="vector-chart-canvas"

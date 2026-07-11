@@ -74,6 +74,7 @@ export function VectorPageShell({
   const [wallEvents, setWallEvents] = useState<VectorWallEvent[]>([]);
   const [lens, setLens] = useState<VectorWallLens>("gex");
   const [now, setNow] = useState<number | null>(null);
+  const [scannerOpen, setScannerOpen] = useState(false);
   const activeTicker = ticker || VECTOR_DEFAULT_TICKER;
 
   useEffect(() => {
@@ -116,15 +117,10 @@ export function VectorPageShell({
             </div>
           }
         />
-        <div className="mt-3 mb-4">
-          <VectorScanner
-            activeTicker={activeTicker}
-            onSelect={(t) =>
-              router.push(t === VECTOR_DEFAULT_TICKER ? "/vector" : `/vector?ticker=${encodeURIComponent(t)}`)
-            }
-          />
-        </div>
-        <div className="mt-2 vector-chart-terminal-grid">
+        {/* Chart is the hero — it leads the page. The universe scanner is a
+            secondary, collapsible panel below (it used to occupy the entire
+            first viewport, pushing the actual chart below the fold). */}
+        <div className="mt-3 vector-chart-terminal-grid">
           <div className="vector-chart-terminal-chart min-w-0">
             <VectorChart
               // Ticker switches are client-side searchParams navigations — they
@@ -157,6 +153,29 @@ export function VectorPageShell({
             streamUpdatedAt={streamUpdatedAt}
           />
         </div>
+
+        <details className="vector-scanner-panel" open={scannerOpen}>
+          <summary
+            className="vector-scanner-summary"
+            onClick={(e) => {
+              e.preventDefault();
+              setScannerOpen((v) => !v);
+            }}
+          >
+            <span className="vector-scanner-summary-label">Universe scanner</span>
+            <span className="vector-scanner-summary-hint">
+              {scannerOpen ? "Hide" : "Gamma structure across the liquid universe"}
+            </span>
+          </summary>
+          <div className="vector-scanner-body">
+            <VectorScanner
+              activeTicker={activeTicker}
+              onSelect={(t) =>
+                router.push(t === VECTOR_DEFAULT_TICKER ? "/vector" : `/vector?ticker=${encodeURIComponent(t)}`)
+              }
+            />
+          </div>
+        </details>
       </div>
     </PageShell>
   );
