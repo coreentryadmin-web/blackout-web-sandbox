@@ -133,7 +133,7 @@ export function SpxDashboard() {
           className="flex items-center gap-2 rounded border border-amber-400/40 bg-amber-400/10 px-4 py-2 text-xs font-mono text-amber-400"
           role="alert"
         >
-          <span>Halt feed degraded — proceeding fail-open; verify no active halts before entering</span>
+          <span>Halt feed degraded — restricted entry mode; verify no active halts before entering</span>
         </div>
       )}
       <SpxPanelErrorBoundary>

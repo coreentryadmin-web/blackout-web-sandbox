@@ -14,6 +14,18 @@ import {
   defaultTemporalContract,
   type PlaybookTemporalContract,
 } from "@/features/spx/lib/playbook-temporal-contract";
+import {
+  defaultExecutionMode,
+  type PlaybookExecutionMode,
+} from "@/features/spx/lib/playbook-execution-mode";
+import {
+  defaultExitPolicy,
+  type PlaybookExitPolicy,
+} from "@/features/spx/lib/playbook-exit-policy";
+import {
+  defaultDataRequirementsFor,
+  type PlaybookDataRequirements,
+} from "@/features/spx/lib/playbook-data-requirements";
 
 /** Stable per-playbook identity, used as `factor_name`/`playbook_id` in telemetry. */
 export type PlaybookId =
@@ -44,6 +56,10 @@ export type PlaybookSetupFamily =
 /** Matcher fidelity — high = recent review hardening; mvp = shadow-only approximations. */
 export type PlaybookFidelity = "mvp" | "high";
 
+export type { PlaybookExecutionMode } from "@/features/spx/lib/playbook-execution-mode";
+export type { PlaybookDataRequirements } from "@/features/spx/lib/playbook-data-requirements";
+export type { PlaybookExitPolicy } from "@/features/spx/lib/playbook-exit-policy";
+
 /** Flow/event modifiers — never eligible as primary playbook. */
 export const PLAYBOOK_FLOW_MODIFIER_IDS = new Set<PlaybookId>(["PB-09"]);
 
@@ -68,16 +84,31 @@ export type PlaybookDefinition = {
   sessionWindow: PlaybookSessionWindow;
   /** Temporal sequence contract — enforced via persisted episode timestamps. */
   temporal: PlaybookTemporalContract;
+  /** shadow | paper_executable | limited_live | production */
+  execution_mode: PlaybookExecutionMode;
+  /** Feed capabilities required for live/paper entry on this thesis. */
+  requires: PlaybookDataRequirements;
+  /** Named exit management contract (replaces shared legacy trim/trail for this PB). */
+  exit_policy: PlaybookExitPolicy;
 };
 
-type PlaybookDefinitionInput = Omit<PlaybookDefinition, "temporal"> & {
+type PlaybookDefinitionInput = Omit<
+  PlaybookDefinition,
+  "temporal" | "execution_mode" | "requires" | "exit_policy"
+> & {
   temporal?: PlaybookTemporalContract;
+  execution_mode?: PlaybookExecutionMode;
+  requires?: PlaybookDataRequirements;
+  exit_policy?: PlaybookExitPolicy;
 };
 
 function definePlaybook(entry: PlaybookDefinitionInput): PlaybookDefinition {
   return {
     ...entry,
     temporal: entry.temporal ?? defaultTemporalContract(entry.fidelity, entry.id),
+    execution_mode: entry.execution_mode ?? defaultExecutionMode(entry.fidelity, entry.id),
+    requires: entry.requires ?? defaultDataRequirementsFor(entry.setup_family, entry.id),
+    exit_policy: entry.exit_policy ?? defaultExitPolicy(entry.id),
   };
 }
 

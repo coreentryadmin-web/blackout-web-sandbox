@@ -1,5 +1,10 @@
 /** Play engine thresholds — quality over quantity. */
 import type { PlaybookId } from "@/features/spx/lib/playbook-registry";
+import { playbookDef } from "@/features/spx/lib/playbook-registry";
+import {
+  PLAYBOOK_PAPER_EXECUTABLE_DEFAULT,
+  executionModeMeets,
+} from "@/features/spx/lib/playbook-execution-mode";
 import { isStagingDeploy } from "@/lib/clerk-env";
 
 function num(env: string | undefined, fallback: number): number {
@@ -410,13 +415,9 @@ export function playbookLiveGateEnabled(): boolean {
   return flag(process.env.PLAYBOOK_LIVE_GATE, false);
 }
 
-/** Default staging launch set — PB-14 joins after state machine ships. */
-export const PLAYBOOK_LIVE_ALLOWLIST_DEFAULT_STAGING: readonly PlaybookId[] = [
-  "PB-01",
-  "PB-02",
-  "PB-03",
-  "PB-04",
-];
+/** Default staging paper-executable set — high-fidelity only (PB-04 mvp stays shadow). */
+export const PLAYBOOK_LIVE_ALLOWLIST_DEFAULT_STAGING: readonly PlaybookId[] =
+  PLAYBOOK_PAPER_EXECUTABLE_DEFAULT;
 
 const VALID_PLAYBOOK_IDS = new Set<PlaybookId>([
   "PB-01",
@@ -466,7 +467,9 @@ export function playbookLiveAllowlist(): ReadonlySet<PlaybookId> | null {
 export function isPlaybookLiveAllowlisted(id: PlaybookId | null | undefined): boolean {
   if (!id) return false;
   const allowlist = playbookLiveAllowlist();
-  if (allowlist == null) return true;
+  if (allowlist == null) {
+    return executionModeMeets(playbookDef(id).execution_mode, "paper_executable");
+  }
   return allowlist.has(id);
 }
 

@@ -88,16 +88,29 @@ const passingConfirmations = {
   checks: [{ label: "VWAP", required: true, passed: true, detail: "above" }],
 };
 
-test("evaluatePlayGates: stale halt channel warns but does not block", () => {
+test("evaluatePlayGates: stale halt channel restricts playbook event entries", () => {
   mockHaltBlock = { block: false, reason: null };
   const result = evaluatePlayGates(
     baseDesk({ halt_channel_stale: true }),
     baseConfluence(),
     emptySession,
-    passingConfirmations
+    passingConfirmations,
+    { entry_intent: "buy", playbook_primary_id: "PB-03", playbook_primary_direction: "long" }
   );
-  assert.equal(result.blocks.some((b) => b.includes("halt")), false);
-  assert.match(result.warnings.join(" "), /fail-open/i);
+  assert.match(result.blocks.join(" "), /halt feed/i);
+});
+
+test("evaluatePlayGates: stale halt channel warns for restricted low-velocity PB-01", () => {
+  mockHaltBlock = { block: false, reason: null };
+  const result = evaluatePlayGates(
+    baseDesk({ halt_channel_stale: true }),
+    baseConfluence(),
+    emptySession,
+    passingConfirmations,
+    { entry_intent: "buy", playbook_primary_id: "PB-01", playbook_primary_direction: "long" }
+  );
+  assert.equal(result.blocks.some((b) => b.includes("halt feed")), false);
+  assert.match(result.warnings.join(" "), /restricted mode/i);
 });
 
 test("evaluatePlayGates: confirmed trading halt blocks entry", () => {

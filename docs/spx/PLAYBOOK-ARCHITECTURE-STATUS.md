@@ -38,9 +38,10 @@ This document consolidates architecture, implementation status, per-playbook fid
 |-----------|--------|
 | **Model** | Playbook-first BUY on staging (14 named setups PB-01…PB-14) replacing opaque confluence score |
 | **Staging deploy** | Playbook lab **hardwired** via `isStagingDeploy()` — live gate always on |
-| **Live allowlist** | PB-01, PB-02, PB-03, PB-04 only (`PLAYBOOK_LIVE_ALLOWLIST`) |
+| **Paper-executable (staging)** | PB-01, PB-02, PB-03 only — high-fidelity; PB-04 mvp stays **shadow** |
+| **Execution modes** | `shadow` → `paper_executable` → `limited_live` → `production` per registry |
 | **Prod Railway** | Legacy confluence BUY unless `PLAYBOOK_LIVE_GATE=1` (off) |
-| **Primary selection** | FULL-SPEC §5 order minus PB-09 (HELIX modifier only) |
+| **Primary selection** | Evidence-aware composite score (#74); static priority tie-break only |
 | **State machine** | Per-instance transitions with **invalidation**; still tick-recomputed matchers |
 | **Evidence** | n=19 prod outcomes mined; autonomous prod BUY frozen until tier thresholds |
 
@@ -78,7 +79,7 @@ flowchart TD
   end
 
   subgraph L4["Layer 4 — Management"]
-    X[evaluateOpenPlay — legacy exits]
+    X[evaluateOpenPlay — legacy exits + per-PB exit_policy stub]
   end
 
   D --> SM
@@ -222,7 +223,7 @@ Each `PlaybookDefinition` carries a `temporal` contract enforced by `applyTempor
 | PB-01 | VWAP Reclaim | reversal_failure | **high** | Strict `minutes_below_vwap >= 15` | ✅ allowlist | #61 |
 | PB-02 | VWAP Reject | mean_reversion | **high** | Flow materiality ≥100k | ✅ allowlist | Not z-score/persistence yet |
 | PB-03 | OR Breakout | trend_continuation | **high** | OR break + flow; static MTF buffer | ✅ allowlist | Buffer not VIX/OR-normalized |
-| PB-04 | Gamma Pin Fade | mean_reversion | mvp | Wall proximity proxy | ✅ allowlist | Shadow-quality matcher |
+| PB-04 | Gamma Pin Fade | mean_reversion | mvp | Wall proximity proxy | ❌ **shadow** | MVP matcher — removed from paper-executable set |
 | PB-05 | Wall Break Cont. | trend_continuation | mvp | Wall break, no VEX streak | ❌ shadow | Degraded-feed block on live |
 | PB-06 | Flip Level Ride | trend_continuation | mvp | Flip break + EMA stack proxy | ❌ shadow | |
 | PB-07 | Max Pain Gravitation | mean_reversion | mvp | Time + distance proxy | ❌ shadow | |
@@ -253,6 +254,7 @@ Each `PlaybookDefinition` carries a `temporal` contract enforced by `applyTempor
 | **#72** (trade FSM) | Full trade lifecycle — `blocked`, `entry_pending`, `exit_pending`, `expired`, `cancelled`; 90s trigger TTL; gate≠invalidation |
 | **#73** (temporal) | Typed registry temporal contracts — min/max arm, grace, rearm cooldown, max triggers; enforced vs `armed_at` |
 | **#74** (primary score) | Evidence-aware primary ranking — multi-factor composite; static `PLAYBOOK_PRIMARY_PRIORITY` tie-break only; no win-rate weights |
+| **#75** (policy align) | PB-04 off paper-executable set; execution modes; capability-based data requirements; halt-stale restricted mode; `exit_policy` registry stub |
 
 ---
 
@@ -327,7 +329,7 @@ Market Data → Feature Engine → Regime Engine → Playbook Matcher
 | Layered gate short-circuit evaluation | 🟡 Partial | `first_block_category` shipped; still flat AND |
 | Dedicated Regime Engine object | 🟡 Partial | Still embedded in matcher eligibility |
 | Full options path simulator (IV surface) | 🟡 Partial | Lite delta/gamma/theta only |
-| Per-PB exit engines PB-05+ | ⏳ Blocked | PB-01–04 only until evidence tiers |
+| Per-PB exit engines PB-05+ | ⏳ Blocked | PB-01–04 only; `exit_policy` on registry — wire management off legacy confluence |
 | PB-02 z-score / persistence | ⏳ Planned | Materiality only |
 | PB-10 real EMA stack fields | ⏳ Planned | VWAP minutes proxy |
 | MVP matcher hardening PB-04–08,10,12,13 | ⏳ Planned | Shadow-only until OOS evidence |
@@ -353,23 +355,47 @@ Market Data → Feature Engine → Regime Engine → Playbook Matcher
 
 ---
 
-## 9. Gates, flags, and live allowlist
+## 9. Gates, flags, and execution modes
+
+### Execution modes (registry)
+
+| Mode | Meaning |
+|------|---------|
+| `shadow` | Matcher + telemetry only — no paper BUY via gate A17 |
+| `paper_executable` | Staging lab BUY permitted when primary + gates pass |
+| `limited_live` | Future prod min-size tier |
+| `production` | Future full autonomous tier |
+
+Default staging paper-executable: **PB-01, PB-02, PB-03** (`execution_mode=paper_executable`, `fidelity=high`). PB-04 (mvp wall proxy) and PB-14 (memory shipped, evidence pending) remain `shadow`.
 
 ### Staging (always on)
 
 - `playbookStagingLabEnabled()` → `isStagingDeploy()` at Docker build
 - `playbookLiveGateEnabled()` → true on staging
-- Default allowlist: `PB-01,PB-02,PB-03,PB-04` (`PLAYBOOK_LIVE_ALLOWLIST_DEFAULT_STAGING`)
+- Default allowlist: `PB-01,PB-02,PB-03` (`PLAYBOOK_LIVE_ALLOWLIST_DEFAULT_STAGING`)
 - Infra: `blackout-infra` `apply-staging-env-overrides.mjs` sets `PLAYBOOK_LIVE_ALLOWLIST`
 
-### Gate A17 checklist (live BUY)
+### Gate A17 checklist (paper-executable BUY)
 
 1. `playbook_primary_id` not null (fired primary, PB-09 excluded)
-2. Primary in `PLAYBOOK_LIVE_ALLOWLIST`
+2. Primary `execution_mode` ≥ `paper_executable` and in `PLAYBOOK_LIVE_ALLOWLIST` when set
 3. Not `isUnknownPlaybookRegime(desk)`
-4. Not `severe` data quality mode
-5. Not `isDegradedForLivePlaybook(pbId, flags)` for event PBs
+4. Not `severe` data quality mode (2+ feed issues)
+5. `playbookDataQualityBlockReason(pbId, flags)` — capability-based, not hand-maintained PB list
 6. Direction aligns with staging lab path when applicable
+
+### Data-quality policy (capability-based)
+
+Each playbook declares `requires: { freshDesk, freshHaltFeed, gex, vix, optionQuotes }` on `PlaybookDefinition`. Gate evaluates generically via `playbook-data-requirements.ts`:
+
+| Feed issue | Policy |
+|------------|--------|
+| **Desk stale** | Blocks any playbook with `freshDesk: true` (all entries today) |
+| **GEX missing** | Blocks only playbooks with `gex: true` (ORB, pin, wall thesis) |
+| **Halt stale** | Event/breakout PBs (`freshHaltFeed: true`) blocked; **restricted mode** permits PB-01/PB-02 low-velocity only; elevated VIX (default ≥24) blocks all new entries |
+| **Severe (2+ issues)** | Global fail-closed on live BUY |
+
+Halt stale is **no longer fail-open** on playbook BUY path — confirmed live halts still block via `shouldBlockForTradingHalt`.
 
 ### Prod
 
@@ -612,6 +638,9 @@ Implemented in `playbook-evidence-config.ts` + `npm run playbook:param-sweep`. *
 | `playbook-temporal-contract.ts` | Temporal guard evaluation vs persisted episode timestamps |
 | `playbook-primary-rank.ts` | `pickPrimaryPlaybook`, `PLAYBOOK_PRIMARY_PRIORITY` (tie-break only) |
 | `playbook-primary-score.ts` | Multi-factor primary composite + `rankPrimaryCandidates` breakdown |
+| `playbook-execution-mode.ts` | `shadow` / `paper_executable` / `limited_live` / `production` |
+| `playbook-data-requirements.ts` | Per-PB `requires` capabilities + halt-stale restricted mode |
+| `playbook-exit-policy.ts` | Named `exit_policy` contract per PB (management wiring pending) |
 | `playbook-regime-router.ts` | Regime eligibility + `isUnknownPlaybookRegime` |
 | `playbook-shadow-matcher.ts` | 14 matchers → verdicts (VIX/OR scaled distances) |
 | `playbook-match-resolver.ts` | Guarded match + armed polls + trigger counts |
