@@ -33,6 +33,8 @@ export async function syncPlaybookTelemetryAfterEvaluate(
     { action: play.action, score: play.score },
     {
       technicals,
+      resolved: match,
+      persist_instances: true,
       gate_blocks: play.gates.blocks,
       first_block_category: play.gates.first_block_category,
       primary_playbook_id: panel.primary_playbook_id,
