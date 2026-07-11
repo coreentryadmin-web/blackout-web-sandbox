@@ -15327,7 +15327,11 @@ body::before {
   }
 
   .helix-tape-sort-btn {
-    @apply inline-flex items-center gap-1 border-0 bg-transparent p-0 font-inherit text-inherit uppercase tracking-inherit cursor-pointer;
+    @apply inline-flex items-center gap-1 border-0 bg-transparent p-0 text-inherit uppercase cursor-pointer;
+    /* font-inherit / tracking-inherit are not Tailwind utilities — plain CSS inherits */
+    font: inherit;
+    letter-spacing: inherit;
+    text-transform: uppercase;
   }
 
   .helix-tape-sort-btn:hover {
