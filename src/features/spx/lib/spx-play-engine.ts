@@ -103,6 +103,7 @@ import {
   commitPlaybookInstanceExitPending,
   commitPlaybookInstanceManaging,
   commitPlaybookInstanceOpen,
+  resolveActivePlaybookInstanceId,
 } from "@/features/spx/lib/playbook-fsm-sync";
 import { resolveGuardedPlaybookMatch } from "@/features/spx/lib/playbook-match-resolver";
 import { refreshOrBreakMemory } from "@/features/spx/lib/playbook-break-memory-store";
@@ -1243,6 +1244,31 @@ async function evaluateFlatPlay(
   });
 
   const openedAt = new Date().toISOString();
+  let playbookInstanceId: string | null = null;
+  if (playbookPrimaryId) {
+    await commitPlaybookInstanceEntryPending({
+      session_date: sessionDate,
+      playbook_id: playbookPrimaryId,
+      direction: dir,
+      desk,
+      technicals,
+      detail: `ticket ${optionTicket.contract_label ?? "generated"}`,
+    });
+    await commitPlaybookInstanceOpen({
+      session_date: sessionDate,
+      playbook_id: playbookPrimaryId,
+      direction: dir,
+      desk,
+      technicals,
+      detail: `openPlay ${entryPath}`,
+    });
+    playbookInstanceId = await resolveActivePlaybookInstanceId(
+      sessionDate,
+      playbookPrimaryId,
+      dir
+    );
+  }
+
   const { row: opened, created } = await openPlay(
     {
       session_date: sessionDate,
@@ -1278,6 +1304,7 @@ async function evaluateFlatPlay(
       option_ticket: optionTicket,
       opened_at: openedAt,
       playbook_id: playbookPrimaryId,
+      playbook_instance_id: playbookInstanceId,
     }
   );
 
@@ -1311,24 +1338,6 @@ async function evaluateFlatPlay(
   if (mutate) {
     await recordBuy(dir);
     if (promoteEligible) await consumeWatchRecord();
-    if (playbookPrimaryId) {
-      await commitPlaybookInstanceEntryPending({
-        session_date: sessionDate,
-        playbook_id: playbookPrimaryId,
-        direction: dir,
-        desk,
-        technicals,
-        detail: `ticket ${optionTicket.contract_label ?? "generated"}`,
-      });
-      await commitPlaybookInstanceOpen({
-        session_date: sessionDate,
-        playbook_id: playbookPrimaryId,
-        direction: dir,
-        desk,
-        technicals,
-        detail: `openPlay ${entryPath}`,
-      });
-    }
   }
 
   if (mutate) {

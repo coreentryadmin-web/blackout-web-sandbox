@@ -368,8 +368,17 @@ async function runMigrations(): Promise<void> {
     ADD COLUMN IF NOT EXISTS playbook_id TEXT;
   `);
   await p.query(`
+    ALTER TABLE spx_play_outcomes
+    ADD COLUMN IF NOT EXISTS playbook_instance_id TEXT;
+  `);
+  await p.query(`
     CREATE INDEX IF NOT EXISTS idx_spx_play_outcomes_playbook
     ON spx_play_outcomes(playbook_id, outcome);
+  `);
+  await p.query(`
+    CREATE INDEX IF NOT EXISTS idx_spx_play_outcomes_playbook_instance
+    ON spx_play_outcomes(playbook_instance_id)
+    WHERE playbook_instance_id IS NOT NULL;
   `);
   await p.query(`
     CREATE TABLE IF NOT EXISTS spx_play_outcomes (
@@ -2679,9 +2688,16 @@ export async function fetchPlaybookEvidenceRows(opts?: {
       ) AS blocked_events
     FROM spx_playbook_instances i
     LEFT JOIN spx_play_outcomes o
-      ON o.playbook_id = i.playbook_id
-     AND o.session_date = i.session_date
-     AND o.outcome <> 'open'
+      ON o.outcome <> 'open'
+     AND (
+       o.playbook_instance_id = i.instance_id
+       OR (
+         o.playbook_instance_id IS NULL
+         AND o.playbook_id = i.playbook_id
+         AND o.session_date = i.session_date
+         AND o.direction IS NOT DISTINCT FROM i.direction
+       )
+     )
     WHERE ($1::boolean = false OR i.session_date >= $2::date)
     ORDER BY i.session_date DESC, i.playbook_id
     `,
@@ -3209,6 +3225,7 @@ export async function insertOpenSpxPlay(
     option_label?: string | null;
     option_premium?: string | null;
     playbook_id?: string | null;
+    playbook_instance_id?: string | null;
   },
   outcome?: {
     entry_path: string;
@@ -3220,6 +3237,7 @@ export async function insertOpenSpxPlay(
     claude: unknown;
     option_ticket: unknown;
     playbook_id?: string | null;
+    playbook_instance_id?: string | null;
   }
 ): Promise<{ id: number; created: boolean }> {
   await ensureSchema();
@@ -3277,9 +3295,9 @@ export async function insertOpenSpxPlay(
     INSERT INTO spx_play_outcomes (
       open_play_id, session_date, direction, entry_path, grade, score, confidence,
       entry_price, stop, target, headline, factors, confirmations, mtf, claude,
-      option_ticket, opened_at, outcome, playbook_id
+      option_ticket, opened_at, outcome, playbook_id, playbook_instance_id
     )
-    VALUES ($1,$2::date,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12::jsonb,$13::jsonb,$14::jsonb,$15::jsonb,$16::jsonb,$17,'open',$18)
+    VALUES ($1,$2::date,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12::jsonb,$13::jsonb,$14::jsonb,$15::jsonb,$16::jsonb,$17,'open',$18,$19)
     ON CONFLICT (open_play_id) WHERE outcome = 'open' DO NOTHING
     RETURNING id
     `,
@@ -3302,6 +3320,7 @@ export async function insertOpenSpxPlay(
             JSON.stringify(outcome.option_ticket ?? null),
             row.opened_at,
             outcome.playbook_id ?? row.playbook_id ?? null,
+            outcome.playbook_instance_id ?? row.playbook_instance_id ?? null,
           ]
         );
         if (!outcomeRes.rows[0]?.id) {
@@ -3421,6 +3440,7 @@ export async function insertPlayOutcomeEntry(row: {
   claude: unknown;
   option_ticket: unknown;
   opened_at: string;
+  playbook_instance_id?: string | null;
 }): Promise<number> {
   await ensureSchema();
   const res = await (await getPool()).query<{ id: string }>(
@@ -3428,9 +3448,9 @@ export async function insertPlayOutcomeEntry(row: {
     INSERT INTO spx_play_outcomes (
       open_play_id, session_date, direction, entry_path, grade, score, confidence,
       entry_price, stop, target, headline, factors, confirmations, mtf, claude,
-      option_ticket, opened_at, outcome
+      option_ticket, opened_at, outcome, playbook_instance_id
     )
-    VALUES ($1,$2::date,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12::jsonb,$13::jsonb,$14::jsonb,$15::jsonb,$16::jsonb,$17,'open')
+    VALUES ($1,$2::date,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12::jsonb,$13::jsonb,$14::jsonb,$15::jsonb,$16::jsonb,$17,'open',$18)
     ON CONFLICT (open_play_id) WHERE outcome = 'open' DO NOTHING
     RETURNING id
     `,
@@ -3452,6 +3472,7 @@ export async function insertPlayOutcomeEntry(row: {
       JSON.stringify(row.claude ?? null),
       JSON.stringify(row.option_ticket ?? null),
       row.opened_at,
+      row.playbook_instance_id ?? null,
     ]
   );
   return Number(res.rows[0]?.id ?? 0);

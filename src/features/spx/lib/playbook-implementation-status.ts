@@ -220,9 +220,9 @@ export const INSTANCE_SCHEMA_FIELD_STATUS: readonly InstanceSchemaFieldStatus[] 
   { field: "counterfactual_mfe_mae", status: "implemented", where: "counterfactual_*_pts + counterfactual_eval" },
   {
     field: "actual_outcome",
-    status: "partial",
-    where: "spx_play_outcomes join when opened",
-    gap: "absent when triggered-but-not-opened (by design)",
+    status: "implemented",
+    where: "spx_play_outcomes.playbook_instance_id join",
+    gap: "absent when triggered-but-not-opened (by design); legacy rows fall back to pb+session+direction",
   },
 ];
 

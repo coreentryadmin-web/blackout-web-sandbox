@@ -360,6 +360,7 @@ export async function openPlay(
         claude: outcome.claude,
         option_ticket: outcome.option_ticket,
         playbook_id: outcome.playbook_id ?? null,
+        playbook_instance_id: outcome.playbook_instance_id ?? null,
       }
     : undefined;
   const { id, created } = await insertOpenSpxPlay(full, outcomePayload);

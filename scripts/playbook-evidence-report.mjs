@@ -166,10 +166,16 @@ async function main() {
         ORDER BY e.observed_at ASC LIMIT 1) AS trigger_feature_snapshot
     FROM spx_playbook_instances i
     LEFT JOIN spx_play_outcomes o
-      ON o.playbook_id = i.playbook_id
-      AND o.session_date = i.session_date
-      AND o.direction = i.direction
-      AND o.outcome <> 'open'
+      ON o.outcome <> 'open'
+     AND (
+       o.playbook_instance_id = i.instance_id
+       OR (
+         o.playbook_instance_id IS NULL
+         AND o.playbook_id = i.playbook_id
+         AND o.session_date = i.session_date
+         AND o.direction IS NOT DISTINCT FROM i.direction
+       )
+     )
     WHERE i.session_date >= $1::date
     ORDER BY i.session_date, i.playbook_id
     `,

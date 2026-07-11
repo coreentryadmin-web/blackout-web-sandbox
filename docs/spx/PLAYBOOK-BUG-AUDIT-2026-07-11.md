@@ -45,7 +45,7 @@ Legend: ✅ fixed in PR · 🔧 partial · 📋 documented/deferred · ❌ disag
 |---|---------|--------|----------------|--------|
 | **15** | Primary ranking static family table | 📋 | **Agree** — by design for OOS priors, not live stats | Deferred (not a bug; document in promotion roadmap) |
 | **16** | Verdict-guard `hadArmed` tautological | ✅ | **Agree** — `prev===triggered` bypassed poll count | Require `precondition_match` + `armed_polls >= min` only |
-| **17** | Outcome join on `(pb, session)` not trade id | 🔧 | **Agree** | Evidence report join adds `direction`; full `instance_id` join needs schema |
+| **17** | Outcome join on `(pb, session)` not trade id | ✅ | **Agree** | `playbook_instance_id` on `spx_play_outcomes` + instance join (#82) |
 | **18** | `upsertPlaybookInstances` last-write-wins | ✅ | **Agree** — dual FSM writers remain P0 | Member reads: `persist_instances: false`; cron owns FSM (#81) |
 | **19** | Blocked counters primary-only | 📋 | **Agree** | Deferred |
 | **20** | Data-quality gate not in promotion-eval | 📋 | **Agree** | Deferred |
@@ -101,6 +101,6 @@ Legend: ✅ fixed in PR · 🔧 partial · 📋 documented/deferred · ❌ disag
 
 1. ~~Single FSM writer + unified OR memory per request (P0)~~ — **done #81**
 2. ~~Pass pre-resolved match into shadow-log (P1)~~ — **done #81**
-3. `instance_id` on `spx_play_outcomes` (P1)
+3. ~~`instance_id` on `spx_play_outcomes` (P1)~~ — **done #82**
 4. Gamma regime hysteresis + PB-04 exit debounce (P2)
 5. Wire `estimateOptionPnl` into open-play evidence path (P2)
