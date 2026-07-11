@@ -15275,13 +15275,19 @@ body::before {
 
   .helix-tape-grid {
     width: 100%;
-    min-width: 100%;
-    border-collapse: separate;
+    border-collapse: collapse;
     border-spacing: 0;
     font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
     font-size: 12px;
     line-height: 1.35;
-    table-layout: auto;
+    table-layout: fixed;
+  }
+
+  .helix-tape-grid th,
+  .helix-tape-grid td {
+    box-sizing: border-box;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
   .helix-tape-group-row th {
@@ -15290,23 +15296,7 @@ body::before {
   }
 
   .helix-tape-group-th--print {
-    border-left: 3px solid rgba(125, 211, 252, 0.25);
-  }
-
-  .helix-tape-group-th--contract {
-    border-left: 1px solid rgba(255, 255, 255, 0.08);
-  }
-
-  .helix-tape-group-th--notional {
-    border-left: 1px solid rgba(255, 255, 255, 0.08);
-  }
-
-  .helix-tape-group-th--chain {
-    border-left: 1px solid rgba(255, 255, 255, 0.08);
-  }
-
-  .helix-tape-group-th--intel {
-    border-left: 1px solid rgba(255, 255, 255, 0.08);
+    border-left: none;
   }
 
   .helix-tape-grid thead {
@@ -15316,22 +15306,24 @@ body::before {
   }
 
   .helix-tape-col-row th {
-    @apply px-2.5 py-2 font-mono text-[9px] font-semibold uppercase tracking-[0.16em] text-sky-300/65 whitespace-nowrap border-b border-white/10;
+    @apply px-2 py-2 font-mono text-[9px] font-semibold uppercase tracking-[0.16em] text-sky-300/65 whitespace-nowrap border-b border-white/10;
     background: rgba(8, 9, 14, 0.98);
     box-shadow: 0 2px 0 rgba(0, 0, 0, 0.35);
   }
 
-  .helix-tape-col-th--sticky {
-    position: sticky;
-    left: 0;
-    z-index: 6;
-    background: rgba(8, 9, 14, 0.99);
-    box-shadow: 2px 0 6px rgba(0, 0, 0, 0.35);
+  .helix-tape-col-th--group-print,
+  .helix-tape-cell--group-print {
+    box-shadow: inset 3px 0 0 rgba(125, 211, 252, 0.28);
   }
 
-  .helix-tape-col-th--sticky + .helix-tape-col-th--sticky {
-    left: 4.75rem;
-    z-index: 6;
+  .helix-tape-col-th--group-start,
+  .helix-tape-cell--group-start {
+    box-shadow: inset 1px 0 0 rgba(255, 255, 255, 0.1);
+  }
+
+  .helix-tape-col-th--group-print.helix-tape-col-th--group-start,
+  .helix-tape-cell--group-print.helix-tape-cell--group-start {
+    box-shadow: inset 3px 0 0 rgba(125, 211, 252, 0.28);
   }
 
   .helix-tape-sort-btn {
@@ -15406,19 +15398,7 @@ body::before {
   }
 
   .helix-tape-cell {
-    @apply px-2.5 py-2 align-middle whitespace-nowrap;
-  }
-
-  .helix-tape-cell--sticky {
-    position: sticky;
-    left: 0;
-    z-index: 2;
-    background: inherit;
-    box-shadow: 2px 0 6px rgba(0, 0, 0, 0.2);
-  }
-
-  .helix-tape-cell--ticker.helix-tape-cell--sticky {
-    left: 4.75rem;
+    @apply px-2 py-2 align-middle whitespace-nowrap;
   }
 
   .helix-tape-time {
@@ -15446,7 +15426,7 @@ body::before {
   }
 
   .helix-tape-side {
-    @apply inline-flex items-center font-mono text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded border;
+    @apply inline-flex items-center justify-center font-mono text-[10px] font-bold uppercase w-5 h-5 rounded border;
   }
 
   .helix-tape-side--call {
@@ -15498,7 +15478,7 @@ body::before {
   }
 
   .helix-tape-signals {
-    @apply flex flex-wrap gap-0.5;
+    @apply flex flex-nowrap gap-0.5 overflow-hidden;
   }
 
   .helix-tape-signal {

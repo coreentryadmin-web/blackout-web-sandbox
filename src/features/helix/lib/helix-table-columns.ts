@@ -15,7 +15,8 @@ export type HelixColumnDef = {
   sortKey?: HelixFlowSortKey;
   align?: "left" | "right";
   density: HelixTableDensity;
-  sticky?: boolean;
+  /** Fixed width — keeps header/body columns aligned (table-layout: fixed) */
+  width: string;
 };
 
 const GROUP_LABELS: Record<HelixColumnGroup, string> = {
@@ -35,7 +36,7 @@ export const HELIX_TABLE_COLUMNS: HelixColumnDef[] = [
     group: "print",
     sortKey: "time",
     density: "essential",
-    sticky: true,
+    width: "3.25rem",
   },
   {
     id: "ticker",
@@ -45,7 +46,7 @@ export const HELIX_TABLE_COLUMNS: HelixColumnDef[] = [
     group: "print",
     sortKey: "ticker",
     density: "essential",
-    sticky: true,
+    width: "4.5rem",
   },
   {
     id: "side",
@@ -53,6 +54,7 @@ export const HELIX_TABLE_COLUMNS: HelixColumnDef[] = [
     hint: "Call or put leg",
     group: "contract",
     density: "essential",
+    width: "3rem",
   },
   {
     id: "expiry",
@@ -61,6 +63,7 @@ export const HELIX_TABLE_COLUMNS: HelixColumnDef[] = [
     group: "contract",
     sortKey: "expiry",
     density: "essential",
+    width: "5rem",
   },
   {
     id: "strike",
@@ -70,6 +73,7 @@ export const HELIX_TABLE_COLUMNS: HelixColumnDef[] = [
     sortKey: "strike",
     align: "right",
     density: "essential",
+    width: "5.25rem",
   },
   {
     id: "premium",
@@ -80,6 +84,7 @@ export const HELIX_TABLE_COLUMNS: HelixColumnDef[] = [
     sortKey: "premium",
     align: "right",
     density: "essential",
+    width: "6.5rem",
   },
   {
     id: "fill",
@@ -88,6 +93,7 @@ export const HELIX_TABLE_COLUMNS: HelixColumnDef[] = [
     group: "notional",
     align: "right",
     density: "standard",
+    width: "4rem",
   },
   {
     id: "dte",
@@ -97,6 +103,7 @@ export const HELIX_TABLE_COLUMNS: HelixColumnDef[] = [
     sortKey: "dte",
     align: "right",
     density: "essential",
+    width: "2.75rem",
   },
   {
     id: "spot",
@@ -105,6 +112,7 @@ export const HELIX_TABLE_COLUMNS: HelixColumnDef[] = [
     group: "chain",
     align: "right",
     density: "full",
+    width: "5.5rem",
   },
   {
     id: "ask",
@@ -113,6 +121,7 @@ export const HELIX_TABLE_COLUMNS: HelixColumnDef[] = [
     group: "chain",
     align: "right",
     density: "full",
+    width: "3.5rem",
   },
   {
     id: "oi",
@@ -121,6 +130,7 @@ export const HELIX_TABLE_COLUMNS: HelixColumnDef[] = [
     group: "chain",
     align: "right",
     density: "standard",
+    width: "4rem",
   },
   {
     id: "iv",
@@ -129,6 +139,7 @@ export const HELIX_TABLE_COLUMNS: HelixColumnDef[] = [
     group: "chain",
     align: "right",
     density: "full",
+    width: "3.25rem",
   },
   {
     id: "otm",
@@ -137,6 +148,7 @@ export const HELIX_TABLE_COLUMNS: HelixColumnDef[] = [
     group: "chain",
     align: "right",
     density: "full",
+    width: "4.5rem",
   },
   {
     id: "rule",
@@ -144,6 +156,7 @@ export const HELIX_TABLE_COLUMNS: HelixColumnDef[] = [
     hint: "UW alert rule that flagged the print",
     group: "intel",
     density: "standard",
+    width: "5rem",
   },
   {
     id: "score",
@@ -154,6 +167,7 @@ export const HELIX_TABLE_COLUMNS: HelixColumnDef[] = [
     sortKey: "score",
     align: "right",
     density: "full",
+    width: "3.25rem",
   },
   {
     id: "signals",
@@ -161,6 +175,7 @@ export const HELIX_TABLE_COLUMNS: HelixColumnDef[] = [
     hint: "Stack, whale, 0DTE, GEX proximity, and more",
     group: "intel",
     density: "essential",
+    width: "8.5rem",
   },
 ];
 
@@ -175,6 +190,21 @@ export function columnsForDensity(density: HelixTableDensity): HelixColumnDef[] 
   return HELIX_TABLE_COLUMNS.filter((c) => DENSITY_RANK[c.density] <= max);
 }
 
+export function tableMinWidth(cols: HelixColumnDef[]): string {
+  const rem = cols.reduce((sum, c) => sum + parseFloat(c.width), 0);
+  return `${rem}rem`;
+}
+
+/** First column id in each group — used for vertical group dividers. */
+export function groupStartIds(cols: HelixColumnDef[]): Set<string> {
+  const starts = new Set<string>();
+  let prev: HelixColumnGroup | null = null;
+  for (const col of cols) {
+    if (col.group !== prev) starts.add(col.id);
+    prev = col.group;
+  }
+  return starts;
+}
 export function groupHeaderSpans(cols: HelixColumnDef[]): { group: HelixColumnGroup; label: string; span: number }[] {
   const spans: { group: HelixColumnGroup; label: string; span: number }[] = [];
   for (const col of cols) {
