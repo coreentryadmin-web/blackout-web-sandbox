@@ -8,6 +8,16 @@ and required CI (`verify`) are green — no per-PR approval, no end-of-day hold.
 here and merge the PR in the same session. Supersedes all earlier "leave OPEN for review" notes
 in this file.
 
+## 🟠 P1 FOUND+FIXED 2026-07-11 — Vector ticker switch shows old ticker's chart/stream under new ticker's header
+
+**Surface:** `/vector?ticker=…` — `VectorPageShell.tsx` / `VectorChart.tsx` (Vector deep sweep; found independently by two audit agents).
+
+**Root cause:** ticker switches (`VectorScanner`, `VectorTickerSelect`) navigate via `router.push` with new searchParams — App Router re-renders in place and does NOT remount unkeyed client components. `VectorChart` seeds all bar/wall plumbing from initial props via `useRef`/`useState` initializers and its mount-only `[]` effect owns the SSE connection, so nothing responds to the `ticker` prop changing: header/kicker/terminal switch to NVDA while the chart keeps SPX candles and the EventSource keeps streaming SPX. The per-ticker `wallEvents` reset effect proves in-place switches were anticipated — the chart itself just never reset. The repo's recurring "stale value masquerading as current" shape at component granularity.
+
+**Fix:** `key={activeTicker}` on `VectorChart` — searchParams navigation re-runs the server component, so the remount receives the new ticker's fresh SSR seed. Also surfaced the silently-swallowed SWR error in `VectorDeskTerminal` (persistent playbook-fetch failure now renders "playbook feed unavailable — retrying" instead of quietly degrading to the structure view — same shape as the fixed `useMergedDesk` bug).
+
+**Status:** FIXED (`fix/vector-ticker-remount`).
+
 ## 🟠 P1 FOUND+FIXED 2026-07-11 — Vector wall-event integrity: phantom flip events, SHIFT flapping, fabricated breaks, cross-session stitching, replay-blind structure feed
 
 **Surface:** `/vector` structure events — `vector-wall-events.ts`, `vector-snapshot.ts`, `VectorChart.tsx` (Vector deep sweep, wall-pipeline slice).

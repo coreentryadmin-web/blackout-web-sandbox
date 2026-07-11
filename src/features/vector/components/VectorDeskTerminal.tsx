@@ -25,13 +25,26 @@ export function VectorDeskTerminal({ ticker, lens, wallEvents, liveSession, stre
   const normalized = normalizeVectorTicker(ticker);
   const isSpx = normalized === "SPX";
 
-  const { data: spxPlay } = useSWR(isSpx && liveSession ? "vector-spx-playbook" : null, fetchSpxPlay, {
-    refreshInterval: liveSession ? 3_000 : 0,
-    revalidateOnFocus: false,
-    revalidateOnReconnect: false,
-  });
+  const { data: spxPlay, error: spxPlayError } = useSWR(
+    isSpx && liveSession ? "vector-spx-playbook" : null,
+    fetchSpxPlay,
+    {
+      refreshInterval: liveSession ? 3_000 : 0,
+      revalidateOnFocus: false,
+      revalidateOnReconnect: false,
+    }
+  );
 
   const lines = useMemo(() => {
+    // A persistently failing playbook fetch must not silently degrade to the
+    // structure-events view looking like "no playbook activity" — surface it.
+    if (isSpx && liveSession && spxPlayError && !spxPlay) {
+      return [
+        { icon: "section" as const, tone: "accent" as const, text: "VECTOR · SPX — linked playbook monitor" },
+        { icon: "no" as const, tone: "warn" as const, text: "playbook feed unavailable — retrying", indent: 1 },
+        ...buildVectorTerminalLines(normalized, lens, wallEvents, liveSession).slice(1),
+      ];
+    }
     if (isSpx && spxPlay?.playbook_shadow) {
       const pb = buildPlaybookTerminalLines(spxPlay.playbook_shadow, liveSession);
       const header: typeof pb = [
@@ -44,7 +57,7 @@ export function VectorDeskTerminal({ ticker, lens, wallEvents, liveSession, stre
       return [...header, ...pb.slice(1)];
     }
     return buildVectorTerminalLines(normalized, lens, wallEvents, liveSession);
-  }, [isSpx, spxPlay?.playbook_shadow, liveSession, normalized, lens, wallEvents]);
+  }, [isSpx, spxPlay, spxPlayError, liveSession, normalized, lens, wallEvents]);
 
   const cmd = isSpx ? "playbook --spx --vector-desk" : `vector --ticker ${normalized} --structure`;
 
