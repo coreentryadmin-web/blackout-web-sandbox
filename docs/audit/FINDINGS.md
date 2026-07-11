@@ -8,6 +8,21 @@ and required CI (`verify`) are green — no per-PR approval, no end-of-day hold.
 here and merge the PR in the same session. Supersedes all earlier "leave OPEN for review" notes
 in this file.
 
+## 🔴 P0 FOUND+FIXED 2026-07-11 — Vector replay leaks future bars AGAIN (SPY-volume backfill path) + replay drops live bars permanently + lens/DP frame desyncs
+
+**Surface:** `/vector` replay mode — `VectorChart.tsx` (Vector deep sweep, chart/replay slice).
+
+**Root causes (5, one batch — all replay-frame integrity in one file):**
+1. **CRITICAL — the 2026-07-07 future-leak bug re-entered through a new call site.** The 60s SPY-volume backfill effect called `applyDisplayBars(displayBarsFromMinute(merged, timeframe))` with **no cursorTime and no replay gate** — pause replay at 9:42 and within ≤60s the chart silently repaints every bar through "now" while the transport still reads 9:42. Lib-level slicing was correct; the component call site bypassed it (exactly how the first occurrence happened — the lib tests structurally cannot catch call-site bypasses).
+2. **HIGH — bars closed during replay were permanently lost.** `enterReplay()` closed the SSE and nothing backfills bars on reconnect: a 10-minute replay left a 10-bar hole for the rest of the session, silently corrupting higher-timeframe OHLC aggregates spanning the window.
+3. **MEDIUM — lens switch during replay left the frame drawn for the OLD lens** (legend said VEX, chart showed gamma walls) until the next scrub.
+4. **LOW — live dark-pool ladder drawn/labelled under historical timestamps** in replay frames and historical crosshair hovers (walls/flip were time-honest; DP wasn't).
+5. **LOW — `applyFrame` side effects inside `setCursorIndex` updater callbacks** (impure updaters; StrictMode double-invoke hazard).
+
+**Fix (`fix/vector-replay-integrity`):** SSE stays open during replay and every branch accumulates into refs/state; **paints** are gated on `replayModeRef` (set synchronously in enter/exit to close the schedule-vs-effect race). Backfill merges but never paints in replay. Lens effect redraws the current frame via `applyFrame` under the new lens. Replay frames and historical hovers pass empty DP levels. Cursor updates go through a `cursorIndexRef` with pure state setters.
+
+**Evidence/tests:** new `slice-then-aggregate` regression in `vector-replay.test.ts` pinning that post-cursor minutes can never reach a >1m replay paint (fails against the buggy composition); 10/10 replay tests pass; `tsc` clean.
+
 ## 🔴 P1 FOUND+FIXED 2026-07-11 — #117/#120 broke `next build` (invalid Tailwind opacity in @apply); #123 fixed 10 of 13, this closes the last 3
 
 **Surface:** `src/app/globals.css` helix `/flows` styles → `verify` CI build step + `ecr-push-staging` deploys.
