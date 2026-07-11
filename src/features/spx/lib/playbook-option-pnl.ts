@@ -67,6 +67,7 @@ export function buildGreeksSnapshot(input: {
         })();
 
   const thetaPerHour = -(input.option_mid * DEFAULT_THETA_PCT_PER_HOUR);
+  synthetic.push("theta");
   if (input.iv == null) synthetic.push("iv");
 
   return {
@@ -102,6 +103,8 @@ export function estimateOptionPnl(input: {
   const spreadCost = input.round_trip_cost_pts ?? 0;
   const maxThetaLoss = -input.greeks.entry_premium;
   const cappedThetaPnl = Math.max(maxThetaLoss, thetaPnl);
+  const rawNet = deltaPnl + gammaPnl + cappedThetaPnl - spreadCost;
+  const netPremiumPnl = Math.max(maxThetaLoss, rawNet);
 
   return {
     spot_move_pts: ds,
@@ -109,7 +112,7 @@ export function estimateOptionPnl(input: {
     gamma_pnl: gammaPnl,
     theta_pnl: cappedThetaPnl,
     spread_cost: spreadCost,
-    net_premium_pnl: deltaPnl + gammaPnl + cappedThetaPnl - spreadCost,
+    net_premium_pnl: netPremiumPnl,
     model: "delta_gamma_theta_lite",
   };
 }
