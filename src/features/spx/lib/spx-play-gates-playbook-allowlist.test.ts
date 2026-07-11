@@ -49,9 +49,9 @@ mock.module("./spx-play-config", {
     playWeightedConflictBlockMin: () => 2,
     playbookLiveGateEnabled: () => true,
     playbookStagingLabEnabled: () => true,
-    playbookLiveAllowlist: () => new Set(["PB-01", "PB-02", "PB-03", "PB-04"]),
+    playbookLiveAllowlist: () => new Set(["PB-01", "PB-02", "PB-03"]),
     isPlaybookLiveAllowlisted: (id: string | null | undefined) =>
-      id != null && new Set(["PB-01", "PB-02", "PB-03", "PB-04"]).has(id),
+      id != null && new Set(["PB-01", "PB-02", "PB-03"]).has(id),
   },
 });
 
@@ -110,16 +110,16 @@ test("evaluatePlayGates: gate A17 blocks primary not in live allowlist", () => {
     playbook_primary_id: "PB-12",
     playbook_primary_direction: "long",
   });
-  assert.match(blocked.blocks.join(" "), /not in live allowlist/i);
+  assert.match(blocked.blocks.join(" "), /not paper-executable/i);
   assert.match(blocked.blocks.join(" "), /PB-12/);
 
   const allowed = evaluatePlayGates(desk, confluence, session, confirmations, {
     entry_intent: "buy",
-    playbook_primary_id: "PB-04",
+    playbook_primary_id: "PB-01",
     playbook_primary_direction: "long",
   });
   assert.equal(
-    allowed.blocks.some((b) => b.includes("not in live allowlist")),
+    allowed.blocks.some((b) => b.includes("not paper-executable")),
     false
   );
 });
@@ -171,7 +171,7 @@ test("evaluatePlayGates: unknown regime blocks live playbook BUY", () => {
 
   const result = evaluatePlayGates(desk, confluence, session, confirmations, {
     entry_intent: "buy",
-    playbook_primary_id: "PB-04",
+    playbook_primary_id: "PB-01",
     playbook_primary_direction: "long",
   });
   assert.match(result.blocks.join(" "), /Unknown EMA regime/i);
@@ -228,14 +228,14 @@ test("evaluatePlayGates: degraded feed blocks event playbook on live gate", () =
     playbook_primary_id: "PB-03",
     playbook_primary_direction: "long",
   });
-  assert.match(orb.blocks.join(" "), /degraded feed/i);
+  assert.match(orb.blocks.join(" "), /halt feed|required data capabilities/i);
 
   const vwap = evaluatePlayGates(desk, confluence, session, confirmations, {
     entry_intent: "buy",
     playbook_primary_id: "PB-01",
     playbook_primary_direction: "long",
   });
-  assert.equal(vwap.blocks.some((b) => b.includes("degraded feed")), false);
+  assert.equal(vwap.blocks.some((b) => b.includes("halt feed") || b.includes("degraded feed")), false);
 });
 
 test("evaluatePlayGates: returns blocks_by_category buckets", () => {

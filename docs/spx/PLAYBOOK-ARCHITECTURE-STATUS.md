@@ -43,9 +43,10 @@ This document consolidates architecture, implementation status, per-playbook fid
 |-----------|--------|
 | **Model** | Playbook-first BUY on staging (14 named setups PB-01…PB-14) replacing opaque confluence score |
 | **Staging deploy** | Playbook lab **hardwired** via `isStagingDeploy()` — live gate always on |
-| **Live allowlist** | PB-01, PB-02, PB-03, PB-04 only (`PLAYBOOK_LIVE_ALLOWLIST`) — **allowlist ≠ matcher validated** (PB-04 matcher is `partial`) |
+| **Live allowlist** | PB-01, PB-02, PB-03 only (`PLAYBOOK_PAPER_EXECUTABLE_DEFAULT`) — PB-04 **shadow** (mvp matcher) |
+| **Execution modes** | `shadow` → `paper_executable` → `limited_live` → `production` per registry |
 | **Prod Railway** | Legacy confluence BUY unless `PLAYBOOK_LIVE_GATE=1` (off) |
-| **Primary selection** | FULL-SPEC §5 order minus PB-09 (HELIX modifier only) |
+| **Primary selection** | Evidence-aware composite score (#74); static priority tie-break only |
 | **State machine** | Matcher FSM `implemented`; trade FSM `implemented`; blocked-while-armed ordering `partial` |
 | **Evidence** | n=19 prod outcomes mined; autonomous prod BUY frozen until tier thresholds |
 
@@ -348,6 +349,8 @@ Durable references only — no branch-relative labels. Staging deploy: **continu
 | **#70** | `1bde430e` | 2026-07 staging | Full FSM open/managing/closed, Trade Governor, PB-01–04 exit engines, options P/L model, VolatilityContext, cron FSM sync |
 | **#77** | `736ba401` | 2026-07-11 staging | Session-aware promotion gates, counterfactual comparability filter, normalized-param roadmap |
 | **#78** | `ad47ea85` | 2026-07-11 staging | Family→subtype hierarchy, `subtype_audit`, exact implementation status vocabulary |
+| **#79** | `7058b458` | 2026-07-11 staging | Operating assumptions, durable PR trail, P0 priority order |
+| **#71–#76** | stack merge | 2026-07-11 staging | Episode `instance_id`, trade FSM, temporal contracts, primary score, policy alignment, option sim `lite_v1` + counterfactual contract |
 
 ---
 
@@ -438,7 +441,7 @@ Infrastructure merged — see §7 PR trail for SHAs.
 
 - `playbookStagingLabEnabled()` → `isStagingDeploy()` at Docker build
 - `playbookLiveGateEnabled()` → true on staging
-- Default allowlist: `PB-01,PB-02,PB-03,PB-04` (`PLAYBOOK_LIVE_ALLOWLIST_DEFAULT_STAGING`)
+- Default paper-executable: `PB-01,PB-02,PB-03` (`PLAYBOOK_PAPER_EXECUTABLE_DEFAULT` / gate A17)
 - Infra: `blackout-infra` `apply-staging-env-overrides.mjs` sets `PLAYBOOK_LIVE_ALLOWLIST`
 
 ### Gate A17 checklist (live BUY)

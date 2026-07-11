@@ -170,8 +170,8 @@ export const PLAYBOOK_SUBSYSTEM_STATUS: readonly PlaybookSubsystemStatus[] = [
   },
   {
     subsystem: "spx_playbook_instances",
-    status: "partial",
-    detail: "Durable episode row; identity {session}:{pb} collapses multi-episode same day (P0)",
+    status: "implemented",
+    detail: "Episode-scoped id + durable row; temporal ordering still partial",
   },
   {
     subsystem: "execution_sim",
@@ -196,7 +196,7 @@ export type InstanceSchemaFieldStatus = {
 export const INSTANCE_SCHEMA_FIELD_STATUS: readonly InstanceSchemaFieldStatus[] = [
   { field: "session_date", status: "implemented", where: "spx_playbook_instances" },
   { field: "playbook_id", status: "implemented", where: "spx_playbook_instances" },
-  { field: "instance_id", status: "partial", where: "spx_playbook_instances", gap: "{session}:{pb} collapses multiple same-day episodes — P0 redesign" },
+  { field: "instance_id", status: "implemented", where: "playbook-instance-episode.ts", gap: "episode-scoped #71" },
   { field: "armed_at", status: "implemented", where: "COALESCE on first armed" },
   { field: "triggered_at", status: "implemented", where: "COALESCE on first triggered" },
   { field: "invalidated_at", status: "implemented", where: "invalidated transition" },

@@ -1,8 +1,12 @@
 import type { PlaybookId } from "@/features/spx/lib/playbook-registry";
 import type { SpxDeskPayload } from "@/features/spx/lib/spx-desk";
 import { playGexStaleMaxSec } from "@/features/spx/lib/spx-play-config";
+import { playbookDataQualityBlockReason } from "@/features/spx/lib/playbook-data-requirements";
 
-/** Event / breakout playbooks blocked on live gate when feeds are degraded. */
+/**
+ * @deprecated Capability-based policy supersedes this set — see `playbook-data-requirements.ts`.
+ * Retained for telemetry/docs references only.
+ */
 export const DEGRADED_FEED_LIVE_BLOCK_PLAYBOOKS: ReadonlySet<PlaybookId> = new Set([
   "PB-03",
   "PB-05",
@@ -17,7 +21,7 @@ export type PlaybookDataQualityFlags = {
   gex_missing: boolean;
 };
 
-/** Live posture derived from feed flags — drives per-PB blocks and global severe veto. */
+/** Live posture derived from feed flags — drives global severe veto. */
 export type LiveDataQualityMode = "normal" | "degraded" | "severe";
 
 export function liveDataQualityMode(flags: PlaybookDataQualityFlags): LiveDataQualityMode {
@@ -45,10 +49,11 @@ export function playbookDataQualityFlags(desk: SpxDeskPayload): PlaybookDataQual
   };
 }
 
+/** Capability-aware block — replaces hand-maintained degraded PB list. */
 export function isDegradedForLivePlaybook(
   pbId: PlaybookId,
-  flags: PlaybookDataQualityFlags
+  flags: PlaybookDataQualityFlags,
+  desk?: Pick<SpxDeskPayload, "vix"> | null
 ): boolean {
-  if (!DEGRADED_FEED_LIVE_BLOCK_PLAYBOOKS.has(pbId)) return false;
-  return flags.halt_channel_stale || flags.desk_stale;
+  return playbookDataQualityBlockReason(pbId, flags, desk) != null;
 }

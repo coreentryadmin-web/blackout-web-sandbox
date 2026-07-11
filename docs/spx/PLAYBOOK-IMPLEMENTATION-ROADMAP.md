@@ -36,7 +36,7 @@ Tracks ChatGPT + Claude external-review recommendations against staging (`blacko
 |------|--------|-------|
 | Playbook-specific exit management | ⏳ Planned | Legacy engine exits still own open plays |
 | Session risk governor | 🟡 Partial | `playSessionMaxEntries` / `playSessionMaxLosses` exist |
-| Evidence-aware primary ranking | ✅ Shipped | `playbook-primary-rank.ts` — FULL-SPEC order minus PB-09 |
+| Evidence-aware primary ranking | ✅ Shipped | `playbook-primary-score.ts` + `playbook-primary-rank.ts` — composite factors; static order tie-break only |
 | `setup_family` on registry | ✅ Shipped | Four families + `family_audit` on pipeline |
 | State machine invalidation | ✅ Shipped | `resolvePlaybookLifecycleState` |
 | Severe data quality fail-closed | ✅ Shipped | `liveDataQualityMode` in gate A17 |

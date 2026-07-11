@@ -45,9 +45,9 @@ export const PLAYBOOK_ARCHITECTURE_ASSUMPTIONS: PlaybookArchitectureAssumptions 
     "spx_playbook_shadow_observations throttled by playbookShadowStateKey (primary + fired set + gate fingerprint)",
   instance_event_dedup:
     "spx_playbook_instance_events append on FSM transitions; blocked events deduped per instance+gate_blocks cursor",
-  instance_id_formula: "{session_date}:{playbook_id} — one row per PB per session today",
+  instance_id_formula: "{session}:{playbook_id}:{direction_key}:{first_armed_ms} — episode-scoped (#71)",
   instance_id_known_limitation:
-    "Does NOT yet support multiple same-day episodes per PB, direction keys, or re-arm instance spawn (P0)",
+    "Re-arm spawns new episode when prior terminal; temporal enforcement still partial (P0/P1)",
   data_retention:
     "No automatic purge of spx_playbook_* tables — Postgres retention = infra policy; append-only events grow unbounded",
 };

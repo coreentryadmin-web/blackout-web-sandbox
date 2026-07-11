@@ -1,5 +1,9 @@
 import type { OrBreakMemory } from "@/features/spx/lib/playbook-break-memory";
-import { pickPrimaryPlaybook } from "@/features/spx/lib/playbook-primary-rank";
+import { snapshotFromInstanceRow } from "@/features/spx/lib/playbook-instance-episode";
+import {
+  buildPrimaryRankContext,
+  pickPrimaryPlaybook,
+} from "@/features/spx/lib/playbook-primary-rank";
 import {
   applyPlaybookVerdictGuards,
   nextArmedPollCounts,
@@ -10,7 +14,8 @@ import {
   type PlaybookMatchVerdict,
   type PlaybookShadowMatchResult,
 } from "@/features/spx/lib/playbook-shadow-matcher";
-import type { PlaybookLifecycleState } from "@/features/spx/lib/playbook-state";
+import type { PlaybookLifecycleState } from "@/features/spx/lib/playbook-trade-fsm";
+import type { PlaybookInstanceSnapshot } from "@/features/spx/lib/playbook-instance-episode";
 import type { SpxDeskPayload } from "@/features/spx/lib/spx-desk";
 import type { PlayTechnicals } from "@/features/spx/lib/spx-play-technicals";
 import {
@@ -22,6 +27,7 @@ import {
 
 export type ResolvedPlaybookMatch = PlaybookShadowMatchResult & {
   raw_verdicts: PlaybookMatchVerdict[];
+  instance_snapshots: PlaybookInstanceSnapshot[];
   prev_by_instance: Map<string, PlaybookLifecycleState>;
   armed_poll_counts: PlaybookArmedPollCounts;
   next_armed_poll_counts: Map<string, number>;
@@ -40,12 +46,14 @@ export async function resolveGuardedPlaybookMatch(
     or_break_memory: opts?.or_break_memory ?? null,
   });
 
+  let snapshots: PlaybookInstanceSnapshot[] = [];
   let prevMap = new Map<string, PlaybookLifecycleState>();
   let armedCounts: PlaybookArmedPollCounts = new Map();
   let triggersToday = new Map<string, number>();
 
   if (dbConfigured()) {
     const states = await loadPlaybookInstanceStates(sessionDate);
+    snapshots = states.map(snapshotFromInstanceRow);
     prevMap = new Map(states.map((r) => [r.instance_id, r.state]));
     armedCounts = await loadPlaybookArmedPollCounts(sessionDate);
     triggersToday = await loadPlaybookTriggerCountsByPb(sessionDate);
@@ -54,15 +62,22 @@ export async function resolveGuardedPlaybookMatch(
   const guardedVerdicts = applyPlaybookVerdictGuards(
     sessionDate,
     raw.verdicts,
-    prevMap,
-    armedCounts
+    snapshots,
+    armedCounts,
+    now
   );
-  const nextArmed = nextArmedPollCounts(sessionDate, raw.verdicts, armedCounts);
+  const nextArmed = nextArmedPollCounts(sessionDate, raw.verdicts, snapshots, armedCounts, now);
+  const primaryRankCtx = buildPrimaryRankContext({
+    desk,
+    armed_poll_counts: armedCounts,
+    verdicts: guardedVerdicts,
+  });
 
   return {
     verdicts: guardedVerdicts,
-    primary_playbook_id: pickPrimaryPlaybook(guardedVerdicts),
+    primary_playbook_id: pickPrimaryPlaybook(guardedVerdicts, primaryRankCtx),
     raw_verdicts: raw.verdicts,
+    instance_snapshots: snapshots,
     prev_by_instance: prevMap,
     armed_poll_counts: armedCounts,
     next_armed_poll_counts: nextArmed,

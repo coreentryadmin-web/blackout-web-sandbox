@@ -42,10 +42,10 @@ test("PLAYBOOK_HIERARCHY: every PB-01..14 mapped", () => {
   }
 });
 
-test("instanceSchemaCoverageSummary: 17 implemented, 3 partial, 0 not_started", () => {
+test("instanceSchemaCoverageSummary: 18 implemented, 2 partial, 0 not_started", () => {
   const c = instanceSchemaCoverageSummary();
   assert.equal(c.total, 20);
-  assert.equal(c.implemented, 17);
-  assert.equal(c.partial, 3);
+  assert.equal(c.implemented, 18);
+  assert.equal(c.partial, 2);
   assert.equal(c.not_started, 0);
 });

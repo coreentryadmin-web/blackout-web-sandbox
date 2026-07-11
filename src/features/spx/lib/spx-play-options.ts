@@ -42,11 +42,16 @@ export type OptionTicket = {
   option_type: "call" | "put";
   contract_label: string;
   ticker: string | null;
+  expiration_date?: string | null;
   bid: number | null;
   ask: number | null;
   mid: number | null;
   spread_pct: number | null;
   delta: number | null;
+  gamma?: number | null;
+  theta?: number | null;
+  implied_volatility?: number | null;
+  volume?: number | null;
   open_interest: number | null;
   premium_range: string;
   blocked: boolean;
@@ -230,11 +235,15 @@ export async function buildOptionTicket(
     option_type,
     contract_label: `${strike}${option_type === "call" ? "C" : "P"}`,
     ticker: best.details?.ticker ?? null,
+    expiration_date: best.details?.expiration_date ?? expiry,
     bid,
     ask,
     mid,
     spread_pct: spreadPct,
     delta: Number(best.greeks?.delta ?? 0) || null,
+    gamma: Number(best.greeks?.gamma ?? 0) || null,
+    implied_volatility: Number(best.implied_volatility ?? 0) || null,
+    volume: Number(best.day?.volume ?? 0) || null,
     open_interest: Number(best.open_interest ?? 0) || null,
     premium_range,
     blocked: false,

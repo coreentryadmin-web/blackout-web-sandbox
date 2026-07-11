@@ -31,11 +31,16 @@ import {
 import type { PlaybookId } from "@/features/spx/lib/playbook-registry";
 import { isUnknownPlaybookRegime } from "@/features/spx/lib/playbook-regime-router";
 import {
-  isDegradedForLivePlaybook,
   liveDataQualityMode,
   playbookDataQualityFlags,
   shouldFailClosedLiveOnDataQuality,
 } from "@/features/spx/lib/playbook-data-quality";
+import {
+  haltStaleEntryBlocked,
+  playbookDataQualityBlockReason,
+  playbookDataRequirements,
+} from "@/features/spx/lib/playbook-data-requirements";
+import { playbookDef } from "@/features/spx/lib/playbook-registry";
 import {
   categorizeGateBlocks,
   firstGateBlockCategory,
@@ -225,7 +230,10 @@ export function evaluatePlayGates(
     } else if (!isPlaybookLiveAllowlisted(pbId)) {
       const allowlist = playbookLiveAllowlist();
       const listed = allowlist ? [...allowlist].join(", ") : "none";
-      blocks.push(`Playbook ${pbId} not in live allowlist (${listed})`);
+      const mode = playbookDef(pbId).execution_mode;
+      blocks.push(
+        `Playbook ${pbId} not paper-executable (mode=${mode}; allowlist=${listed})`
+      );
     } else if (isUnknownPlaybookRegime(desk)) {
       blocks.push("Unknown EMA regime — playbook live gate fail-closed");
     } else {
@@ -235,24 +243,44 @@ export function evaluatePlayGates(
         blocks.push(
           `Severe data quality (${dqMode}) — live playbook gate fail-closed (halt=${dq.halt_channel_stale}, desk=${dq.desk_stale}, gex=${dq.gex_missing})`
         );
-      } else if (isDegradedForLivePlaybook(pbId, dq)) {
-        blocks.push(
-          `Playbook ${pbId} blocked — degraded feed (halt stale=${dq.halt_channel_stale}, desk stale=${dq.desk_stale})`
-        );
-      } else if (stagingLab) {
-        warnings.push(`Playbook lab: primary ${pbId} ${opts?.playbook_primary_direction} armed entry path`);
+      } else {
+        const dqBlock = playbookDataQualityBlockReason(pbId, dq, desk, {
+          option_quotes_available: opts?.option_preview != null,
+        });
+        if (dqBlock) {
+          blocks.push(dqBlock);
+        } else if (stagingLab) {
+          warnings.push(`Playbook lab: primary ${pbId} ${opts?.playbook_primary_direction} armed entry path`);
+        }
       }
     }
   }
 
-  // Stale halt feed → fail-OPEN (allow play to proceed) with a warning so the operator
-  // can see feed degradation without blocking valid entries. A real, fresh active-halt
-  // still blocks as before. The previous fail-closed-on-stale behavior was too aggressive:
-  // a transient UW WS gap during RTH would block all entries even when no halt existed.
   const haltStale = desk.halt_channel_stale === true;
-  if (haltStale) {
-    console.warn("[spx-play-gates] halt channel stale — failing OPEN (allowing play); monitor UW WS");
-    warnings.push("Halt feed stale (UW channel offline) — proceeding fail-open; verify no active halts");
+  if (haltStale && buyIntent) {
+    const pbId = opts?.playbook_primary_id ?? null;
+    if (pbId) {
+      const haltPolicy = haltStaleEntryBlocked(pbId, playbookDataQualityFlags(desk), desk);
+      if (haltPolicy.blocked) {
+        if (!blocks.some((b) => b.includes(pbId) && b.includes("halt"))) {
+          blocks.push(haltPolicy.reason!);
+        }
+      } else {
+        console.warn(
+          "[spx-play-gates] halt channel stale — restricted entry mode (low-velocity setups only)"
+        );
+        warnings.push(
+          "Halt feed stale — restricted mode: low-velocity mean-reversion only; verify no active halts"
+        );
+      }
+    } else {
+      console.warn("[spx-play-gates] halt channel stale — no playbook primary; legacy path restricted");
+      warnings.push(
+        "Halt feed stale — restricted entry mode; playbook primary required on staging lab"
+      );
+    }
+  } else if (haltStale) {
+    warnings.push("Halt feed stale (UW channel offline) — monitor before entering");
   }
   const halt = shouldBlockForTradingHalt(undefined, {
     failClosedOnStale: false, // never block on staleness — only block on a confirmed live halt
@@ -261,7 +289,14 @@ export function evaluatePlayGates(
     blocks.push(halt.reason);
   }
 
-  if (!desk.gex_walls?.length) {
+  const playbookPrimaryId = opts?.playbook_primary_id ?? null;
+  const playbookGatedBuy = buyIntent && playbookLiveGateEnabled() && playbookPrimaryId;
+  const needsGex =
+    playbookGatedBuy
+      ? playbookDataRequirements(playbookPrimaryId).gex
+      : true;
+
+  if (needsGex && !desk.gex_walls?.length) {
     blocks.push("GEX walls required — no entry without dealer map");
   }
 

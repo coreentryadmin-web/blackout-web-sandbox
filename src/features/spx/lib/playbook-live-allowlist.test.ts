@@ -5,7 +5,7 @@ import {
   parsePlaybookLiveAllowlist,
 } from "./spx-play-config";
 
-test("parsePlaybookLiveAllowlist: staging default is PB-01..04", () => {
+test("parsePlaybookLiveAllowlist: staging default is PB-01..03 (paper-executable)", () => {
   const allowlist = parsePlaybookLiveAllowlist(undefined, true);
   assert.ok(allowlist);
   assert.deepEqual(
@@ -23,6 +23,12 @@ test("parsePlaybookLiveAllowlist: explicit list", () => {
   const allowlist = parsePlaybookLiveAllowlist("PB-04,PB-08", false);
   assert.ok(allowlist);
   assert.deepEqual([...allowlist], ["PB-04", "PB-08"]);
+});
+
+test("parsePlaybookLiveAllowlist: staging default excludes mvp PB-04", () => {
+  const allowlist = parsePlaybookLiveAllowlist(undefined, true);
+  assert.ok(allowlist);
+  assert.equal(allowlist.has("PB-04"), false);
 });
 
 test("parsePlaybookLiveAllowlist: * disables filter", () => {

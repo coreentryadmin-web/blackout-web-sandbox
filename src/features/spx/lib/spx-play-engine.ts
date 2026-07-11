@@ -93,7 +93,10 @@ import {
 } from "@/features/spx/lib/playbook-exit-engines";
 import { buildVolatilityContext } from "@/features/spx/lib/playbook-volatility-context";
 import {
+  commitPlaybookInstanceCancelled,
   commitPlaybookInstanceClosed,
+  commitPlaybookInstanceEntryPending,
+  commitPlaybookInstanceExitPending,
   commitPlaybookInstanceManaging,
   commitPlaybookInstanceOpen,
 } from "@/features/spx/lib/playbook-fsm-sync";
@@ -307,8 +310,22 @@ async function evaluateOpenPlay(
         : (row.entry_price - price) / totalRun
       : 0;
 
-  const fsmOnClose = async (exitReason: string, exitAction: string) => {
+  const fsmOnClose = async (
+    exitReason: string,
+    exitAction: string,
+    setupInvalidated = false
+  ) => {
     if (!mutate || !pbId) return;
+    if (setupInvalidated) {
+      await commitPlaybookInstanceExitPending({
+        session_date: sessionDateFsm,
+        playbook_id: pbId,
+        direction: dir,
+        desk,
+        technicals,
+        reason: exitReason,
+      });
+    }
     await commitPlaybookInstanceClosed({
       session_date: sessionDateFsm,
       playbook_id: pbId,
@@ -492,7 +509,7 @@ async function evaluateOpenPlay(
         direction: dir,
         close: closeSnapshot(exitAction, wasLoss, row.trim_done),
       });
-      await fsmOnClose(headline, exitAction);
+      await fsmOnClose(headline, exitAction, thesisBreak);
       firePlayTelemetry("maybeLogSpxPlay:SELL", () =>
         maybeLogSpxPlay(
         { price: desk.price, market_open: desk.market_open },
@@ -540,7 +557,7 @@ async function evaluateOpenPlay(
         direction: dir,
         close: closeSnapshot("THESIS", wasLoss, row.trim_done),
       });
-      await fsmOnClose(pbExitSignal.reason, "THESIS");
+      await fsmOnClose(pbExitSignal.reason, "THESIS", true);
     }
   } else if (trimZone) {
     action = "TRIM";
@@ -1007,7 +1024,7 @@ async function evaluateFlatPlay(
 
   const dir = confluence.direction;
   const optionTicketRaw = await buildOptionTicket(desk.price, dir, confluence.grade);
-  const executionSim = buildOptionExecutionSim(optionTicketRaw, dir, desk.price);
+  const executionSim = buildOptionExecutionSim(optionTicketRaw, dir, desk.price, desk);
   const optionTicket: OptionTicket = executionSim
     ? {
         ...optionTicketRaw,
@@ -1041,6 +1058,16 @@ async function evaluateFlatPlay(
       playBuyCooldownAplusBypass() && gradeRank(confluence.grade) >= gradeRank("A+"),
   });
   if (optionGovernor.blocks.length) {
+    if (mutate && playbookLabActive && playbookPrimaryId && dir) {
+      await commitPlaybookInstanceCancelled({
+        session_date: sessionDate,
+        playbook_id: playbookPrimaryId,
+        direction: dir,
+        desk,
+        technicals,
+        reason: optionGovernor.blocks.join("; "),
+      });
+    }
     return {
       ...scanningPayload(desk, confluence, pickIdleMessage(), {
         passed: false,
@@ -1071,6 +1098,16 @@ async function evaluateFlatPlay(
   });
 
   if (optionTicket.blocked && playOptionChainRequired()) {
+    if (mutate && playbookLabActive && playbookPrimaryId && dir) {
+      await commitPlaybookInstanceCancelled({
+        session_date: sessionDate,
+        playbook_id: playbookPrimaryId,
+        direction: dir,
+        desk,
+        technicals,
+        reason: optionTicket.block_reason ?? "Option chain unavailable",
+      });
+    }
     return {
       ...scanningPayload(desk, confluence, pickIdleMessage(), {
         passed: false,
@@ -1227,6 +1264,14 @@ async function evaluateFlatPlay(
     await recordBuy(dir);
     if (promoteEligible) await consumeWatchRecord();
     if (playbookPrimaryId) {
+      await commitPlaybookInstanceEntryPending({
+        session_date: sessionDate,
+        playbook_id: playbookPrimaryId,
+        direction: dir,
+        desk,
+        technicals,
+        detail: `ticket ${optionTicket.contract_label ?? "generated"}`,
+      });
       await commitPlaybookInstanceOpen({
         session_date: sessionDate,
         playbook_id: playbookPrimaryId,
