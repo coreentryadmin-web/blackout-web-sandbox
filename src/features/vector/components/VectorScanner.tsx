@@ -1,8 +1,14 @@
 "use client";
 
+import { useState } from "react";
 import useSWR from "swr";
 import type { VectorUniverseSnapshot, VectorUniverseRow } from "@/features/vector";
 import { fmtPrice } from "@/lib/api";
+import {
+  screenUniverse,
+  screenerRegimeOf,
+  type ScreenerPreset,
+} from "@/features/vector/lib/vector-screener";
 
 async function fetchUniverse(): Promise<VectorUniverseSnapshot> {
   const res = await fetch("/api/market/vector/universe", { cache: "no-store" });
@@ -14,17 +20,6 @@ type Props = {
   activeTicker: string;
   onSelect: (ticker: string) => void;
 };
-
-/**
- * Regime = spot vs gamma flip. Above flip → dealers hedge WITH the move
- * (supportive / pinning); below flip → dealers hedge AGAINST it (momentum /
- * vol expansion). This is the single most important read in the table, so it
- * drives the row's color rather than being a number the eye has to compute.
- */
-function regimeOf(row: VectorUniverseRow): "above" | "below" | "unknown" {
-  if (row.spot == null || row.gammaFlip == null) return "unknown";
-  return row.spot >= row.gammaFlip ? "above" : "below";
-}
 
 /** Signed distance from spot to a level, in %, for the proximity read. */
 function distPct(spot: number | null, level: number | null): number | null {
@@ -38,11 +33,19 @@ function fmtDist(pct: number | null): string {
   return `${s}${pct.toFixed(1)}%`;
 }
 
+const PRESETS: Array<{ key: ScreenerPreset; label: string; hint: string }> = [
+  { key: "all", label: "All", hint: "Every covered name, A–Z" },
+  { key: "nearest-flip", label: "Nearest flip", hint: "Closest to a regime change — most actionable" },
+  { key: "most-pinned", label: "Most pinned", hint: "Above flip with the strongest walls — mean-revert" },
+  { key: "most-explosive", label: "Most explosive", hint: "Below flip and near it — vol-expansion risk" },
+];
+
 export function VectorScanner({ activeTicker, onSelect }: Props) {
   const { data, error, isLoading } = useSWR("vector-universe", fetchUniverse, {
     refreshInterval: 30_000,
     revalidateOnFocus: true,
   });
+  const [preset, setPreset] = useState<ScreenerPreset>("all");
 
   if (isLoading && !data) {
     return (
@@ -60,8 +63,31 @@ export function VectorScanner({ activeTicker, onSelect }: Props) {
     );
   }
 
+  const activePreset = PRESETS.find((p) => p.key === preset) ?? PRESETS[0]!;
+  const displayRows = screenUniverse(data.rows, { preset });
+
   return (
     <div className="vector-scanner-table-wrap">
+      <div className="vector-screener-controls" role="group" aria-label="Screener view">
+        {PRESETS.map((p) => (
+          <button
+            key={p.key}
+            type="button"
+            className={`vector-screener-chip${p.key === preset ? " is-active" : ""}`}
+            aria-pressed={p.key === preset}
+            title={p.hint}
+            onClick={() => setPreset(p.key)}
+          >
+            {p.label}
+          </button>
+        ))}
+        <span className="vector-screener-hint">{activePreset.hint}</span>
+      </div>
+      {displayRows.length === 0 && (
+        <p className="vector-scanner-note" role="status">
+          No names match “{activePreset.label}” right now.
+        </p>
+      )}
       <table className="vector-scanner-table">
         <thead>
           <tr>
@@ -74,9 +100,9 @@ export function VectorScanner({ activeTicker, onSelect }: Props) {
           </tr>
         </thead>
         <tbody>
-          {data.rows.map((row) => {
+          {displayRows.map((row) => {
             const selected = row.ticker === activeTicker;
-            const regime = regimeOf(row);
+            const regime = screenerRegimeOf(row);
             const flipDist = distPct(row.spot, row.gammaFlip);
             const callDist = distPct(row.spot, row.topCallWall);
             const putDist = distPct(row.spot, row.topPutWall);

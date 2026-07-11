@@ -8570,6 +8570,39 @@ body::before {
     @apply px-4 pb-4 text-xs text-cyan-300/80;
   }
 
+  .vector-screener-controls {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 0.5rem 1rem 0.25rem;
+  }
+  .vector-screener-chip {
+    font-size: 0.6875rem;
+    line-height: 1;
+    padding: 0.3125rem 0.625rem;
+    border-radius: 9999px;
+    border: 1px solid rgba(34, 211, 238, 0.25);
+    color: rgba(165, 243, 252, 0.85);
+    background: rgba(8, 145, 178, 0.08);
+    cursor: pointer;
+    transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+  }
+  .vector-screener-chip:hover {
+    background: rgba(8, 145, 178, 0.16);
+    border-color: rgba(34, 211, 238, 0.45);
+  }
+  .vector-screener-chip.is-active {
+    background: rgba(34, 211, 238, 0.22);
+    border-color: rgba(34, 211, 238, 0.7);
+    color: rgb(224, 251, 255);
+  }
+  .vector-screener-hint {
+    flex-basis: 100%;
+    font-size: 0.6875rem;
+    color: rgba(165, 243, 252, 0.6);
+  }
+
   .vector-scanner-table-wrap {
     @apply overflow-x-auto;
   }
