@@ -127,6 +127,13 @@ export function VectorPageShell({
         <div className="mt-2 vector-chart-terminal-grid">
           <div className="vector-chart-terminal-chart min-w-0">
             <VectorChart
+              // Ticker switches are client-side searchParams navigations — they
+              // re-render in place and do NOT remount unkeyed client components.
+              // VectorChart seeds bars/walls/SSE from initial props via refs and its
+              // mount-only effect owns the EventSource, so without this key a switch
+              // to NVDA kept streaming and displaying SPX candles under the NVDA
+              // header. Keying forces a clean remount with the new ticker's SSR seed.
+              key={activeTicker}
               ticker={activeTicker}
               initialBars={initialBars}
               initialWalls={initialWalls}
