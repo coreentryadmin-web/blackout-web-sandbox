@@ -1,7 +1,7 @@
 # SPX Playbook — Architecture & Status (Single Source of Truth)
 
 **Repo:** `coreentryadmin-web/blackout-web-sandbox` → `https://staging.blackouttrades.com`  
-**Last updated:** 2026-07-10  
+**Last updated:** 2026-07-11  
 **Scope:** Staging playbook lab only — do **not** merge to Railway prod `blackout-web` `main` unless explicitly requested.
 
 This document consolidates architecture, implementation status, per-playbook fidelity, four setup families, what is fixed, what remains, validation tiers, and code map. Older docs (`PLAYBOOK-ARCHITECTURE-DEEP-DIVE.md`, `PLAYBOOK-IMPLEMENTATION-ROADMAP.md`, etc.) remain as detail appendices; **start here** for current truth.
@@ -13,6 +13,8 @@ This document consolidates architecture, implementation status, per-playbook fid
 1. [Executive summary](#1-executive-summary)
 2. [Architecture — layered decision stack](#2-architecture--layered-decision-stack)
 3. [Four setup families](#3-four-setup-families)
+   - [Hierarchical research taxonomy](#31-hierarchical-research-taxonomy)
+   - [Implementation status vocabulary](#32-implementation-status-vocabulary)
 4. [What changed from the old model](#4-what-changed-from-the-old-model)
 5. [Runtime flow (today)](#5-runtime-flow-today)
 6. [Per-playbook status matrix](#6-per-playbook-status-matrix)
@@ -38,13 +40,13 @@ This document consolidates architecture, implementation status, per-playbook fid
 |-----------|--------|
 | **Model** | Playbook-first BUY on staging (14 named setups PB-01…PB-14) replacing opaque confluence score |
 | **Staging deploy** | Playbook lab **hardwired** via `isStagingDeploy()` — live gate always on |
-| **Live allowlist** | PB-01, PB-02, PB-03, PB-04 only (`PLAYBOOK_LIVE_ALLOWLIST`) |
+| **Live allowlist** | PB-01, PB-02, PB-03, PB-04 only (`PLAYBOOK_LIVE_ALLOWLIST`) — **allowlist ≠ matcher validated** (PB-04 matcher is `partial`) |
 | **Prod Railway** | Legacy confluence BUY unless `PLAYBOOK_LIVE_GATE=1` (off) |
 | **Primary selection** | FULL-SPEC §5 order minus PB-09 (HELIX modifier only) |
-| **State machine** | Per-instance transitions with **invalidation**; still tick-recomputed matchers |
+| **State machine** | Matcher FSM `implemented`; trade FSM `implemented`; blocked-while-armed ordering `partial` |
 | **Evidence** | n=19 prod outcomes mined; autonomous prod BUY frozen until tier thresholds |
 
-**Bottom line:** Staging is the evidence lab. Architecture is promising; **trading edge remains unproven**. Do not confuse explainability with profitability. Four families validate edge before per-PB label splits. PB-09 demoted. Unknown regime and severe data quality fail-closed on live BUY. MVP matchers stay shadow-only until promotion tiers met.
+**Bottom line:** Staging is the evidence lab. Architecture is promising; **trading edge remains unproven**. Families are a **hierarchical research rollup**, not proof that playbooks share one return process. Aggregate outcomes at **structural subtype** or **playbook** level before family-level claims. PB-09 demoted. Unknown regime and severe data quality fail-closed on live BUY.
 
 > **Critical takeaway:** Do not interpret the sophistication of the architecture as evidence that the strategy works. The architecture enables falsifiable hypotheses; profitability requires clean prospective evidence, execution realism, and risk controls.
 
@@ -121,16 +123,75 @@ Global halt channel remains **fail-open** with warning in `spx-play-gates.ts` (c
 
 ## 3. Four setup families
 
-Validate **family edge first**, then test whether individual PB labels separate outcomes.
+Families are a **coarse research rollup** — members are **not statistically homogeneous**. Do not merge family buckets for expectancy without checking subtype separation.
 
-| Family | Playbooks | Role | Live allowlist today |
-|--------|-----------|------|----------------------|
-| **Trend continuation** | PB-03, PB-05, PB-06, PB-08, PB-10 | Breakouts, wall rides, power hour, EMA stack | PB-03 |
-| **Mean reversion** | PB-02, PB-04, PB-07, PB-11 | VWAP reject, pin fade, max pain, chop scalp | PB-02, PB-04 |
-| **Reversal / failure** | PB-01, PB-12, PB-13, PB-14 | VWAP reclaim, lotto reversal, gap fade, failed ORB | PB-01 |
-| **Flow / event (modifier)** | PB-09 | HELIX surge — **never primary** | None |
+### 3.1 Hierarchical research taxonomy
 
-Registry fields: `setup_family`, `fidelity` (`high` | `mvp`) on each `PlaybookDefinition` in `playbook-registry.ts`.
+**Analysis order:** Family → **structural subtype** → playbook → **parameter version**
+
+Implemented in `playbook-setup-hierarchy.ts`. Telemetry adds `subtype_audit` alongside `family_audit` in `pipeline_audit`.
+
+```
+Family: mean_reversion
+  → level_rejection
+      → PB-02 VWAP Reject
+      → PB-04 Gamma Pin Fade (gamma wall reject)
+  → price_gravitation
+      → PB-07 Max Pain Gravitation
+  → range_bound_fade
+      → PB-11 Range Chop Scalp
+
+Family: reversal_failure
+  → level_reclaim
+      → PB-01 VWAP Reclaim
+  → extension_reversal
+      → PB-12 Lotto Reversal
+  → gap_open_structure
+      → PB-13 Gap Fade
+  → failed_break_reversal
+      → PB-14 Failed ORB Reversal
+
+Family: trend_continuation
+  → opening_breakout → PB-03 ORB
+  → wall_breakout → PB-05 Wall Break
+  → structure_ride → PB-06 Flip Ride, PB-10 EMA Pullback
+  → session_momentum → PB-08 Power Hour
+
+Family: flow_event
+  → flow_surge → PB-09 HELIX (modifier only)
+```
+
+**Parameter version:** all playbooks ship `v1_default` until a matcher bump changes thresholds materially (replay tag).
+
+**Outcome analysis rule:** never treat family-level profit as interchangeable — VWAP reclaim (PB-01) and failed ORB (PB-14) can share `reversal_failure` but not the same return process.
+
+### 3.2 Implementation status vocabulary
+
+Use **only** these labels in matrices and docs (`playbook-implementation-status.ts`):
+
+| Status | Meaning |
+|--------|---------|
+| `not_started` | Designed only; no runtime wiring |
+| `stub` | Placeholder path; not decision-grade |
+| `partial` | Wired but incomplete vs spec (proxies, join-only fields) |
+| `implemented` | Spec-shaped in staging code paths |
+| `validated` | OOS evidence + promotion gates for scoped surface |
+| `production_eligible` | Limited-live / prod tier + risk controls cleared |
+
+**Decoupled surfaces:** `allowlist_gate=implemented` permits staging BUY; it does **not** imply `matcher=validated`. Example: **PB-04** — `matcher: partial`, `allowlist_gate: implemented`, `production_eligible: not_started`.
+
+### Family rollup (telemetry only)
+
+| Family | Playbooks | Subtype count | Allowlist today |
+|--------|-----------|---------------|-----------------|
+| **Trend continuation** | PB-03,05,06,08,10 | 4 subtypes | PB-03 |
+| **Mean reversion** | PB-02,04,07,11 | 3 subtypes | PB-02, PB-04† |
+| **Reversal / failure** | PB-01,12,13,14 | 4 subtypes | PB-01 |
+| **Flow / event** | PB-09 | 1 subtype | None |
+
+† PB-04 on allowlist for paper-path accumulation; matcher remains `partial` (mvp wall proxy).
+
+Registry fields: `setup_family`, `fidelity` (`high` | `mvp`) plus hierarchy in `PLAYBOOK_HIERARCHY`.
 
 ### Primary priority (FULL-SPEC §5 minus PB-09)
 
@@ -165,43 +226,55 @@ Every ~2s play poll on staging:
 2. `matchPlaybooksShadow(desk, technicals, now, { or_break_memory })` — 14 verdicts
 3. `pickPrimaryPlaybook(verdicts)` — excludes PB-09; family-grouped tie-break
 4. `evaluatePlayGates(..., { playbook_primary_id, playbook_primary_direction })` — A17 on BUY
-5. `buildPlaybookShadowPanel()` → API `playbook_shadow` with `pipeline_audit` + `family_audit`
+5. `buildPlaybookShadowPanel()` → API `playbook_shadow` with `pipeline_audit` + `family_audit` + `subtype_audit`
 6. `maybeLogPlaybookShadowMatch()` → Postgres + instance transitions
 7. If gates pass + lab path → `openPlay()` with `playbook_id`, `execution_sim` on option ticket
 
-### State machine (stub → P1)
+### Matcher + trade state machines
 
-| State | Meaning |
+| Subsystem | Status | Detail |
+|-----------|--------|--------|
+| Matcher FSM (`idle→armed→triggered→invalidated`) | `implemented` | Persisted to `spx_playbook_instances` + `instance_transitions` |
+| Trade FSM (`open→managing→closed`) | `implemented` | Engine commits on BUY/TRIM/SELL (#70) |
+| Matcher tick recompute | `partial` | Each poll re-evaluates preconditions — no full blocked-while-armed episode ordering |
+| `spx_playbook_instance_events` | `implemented` | Append-only; immutable `feature_snapshot` per transition |
+| `spx_playbook_instances` | `implemented` | Durable episode row; latest snapshot overwritten (events = source of truth) |
+
+| Matcher state | Meaning |
 |-------|---------|
 | `idle` | Window closed, regime ineligible, or no precondition |
 | `armed` | `precondition_match` true |
 | `triggered` | `trigger_fired` true |
 | `invalidated` | Lost precondition after armed, or trigger dropped after fired |
 
-`collectPlaybookInstanceTransitions()` uses `resolvePlaybookLifecycleState()` — persisted to `spx_playbook_instances` / shadow row `instance_transitions`.
+`collectPlaybookInstanceTransitions()` uses `resolvePlaybookLifecycleState()`.
 
-**Still tick-recomputed:** matchers do not require prior armed duration or blocked-while-armed ordering (phase 2).
+**Do not describe this as "stub"** — persistence and trade FSM are `implemented`; remaining gap is matcher episode ordering (`partial`).
 
 ---
 
 ## 6. Per-playbook status matrix
 
-| ID | Name | Family | Fidelity | Matcher | Live | Notes |
-|----|------|--------|----------|---------|------|-------|
-| PB-01 | VWAP Reclaim | reversal_failure | **high** | Strict `minutes_below_vwap >= 15` | ✅ allowlist | #61 |
-| PB-02 | VWAP Reject | mean_reversion | **high** | Flow materiality ≥100k | ✅ allowlist | Not z-score/persistence yet |
-| PB-03 | OR Breakout | trend_continuation | **high** | OR break + flow; static MTF buffer | ✅ allowlist | Buffer not VIX/OR-normalized |
-| PB-04 | Gamma Pin Fade | mean_reversion | mvp | Wall proximity proxy | ✅ allowlist | Shadow-quality matcher |
-| PB-05 | Wall Break Cont. | trend_continuation | mvp | Wall break, no VEX streak | ❌ shadow | Degraded-feed block on live |
-| PB-06 | Flip Level Ride | trend_continuation | mvp | Flip break + EMA stack proxy | ❌ shadow | |
-| PB-07 | Max Pain Gravitation | mean_reversion | mvp | Time + distance proxy | ❌ shadow | |
-| PB-08 | Power Hour Mom. | trend_continuation | mvp | Net flow + micro-range | ❌ shadow | Parallel `spx-power-hour-engine` |
-| PB-09 | HELIX Flow Surge | flow_event | mvp | HELIX tier + desk align | ❌ **never primary** | Modifier; degraded block if live |
-| PB-10 | EMA Stack Pullback | trend_continuation | mvp | Uses `minutes_above_vwap` as EMA proxy | ❌ shadow | Needs real EMA stack fields |
-| PB-11 | Range Chop Scalp | mean_reversion | **high** | Rolling 30m high/low | ❌ shadow | #61 |
-| PB-12 | Lotto Reversal | reversal_failure | mvp | Session change % proxy | ❌ shadow | Parallel `spx-lotto-engine` |
-| PB-13 | Gap Fade | reversal_failure | mvp | Gap + fail-to-extend | ❌ shadow | Degraded-feed block |
-| PB-14 | Failed ORB Reversal | reversal_failure | **high** | OR break memory + re-entry | ❌ shadow | Memory #64; not on allowlist |
+Statuses from `PLAYBOOK_SURFACE_STATUS` in `playbook-implementation-status.ts`. **Subtype** from `playbook-setup-hierarchy.ts`.
+
+| ID | Name | Subtype | Matcher | FSM | Allowlist | Exit mgmt | Prod eligible | Notes |
+|----|------|---------|---------|-----|-----------|-----------|---------------|-------|
+| PB-01 | VWAP Reclaim | level_reclaim | implemented | implemented | implemented | implemented | not_started | #61 |
+| PB-02 | VWAP Reject | level_rejection | implemented | implemented | implemented | implemented | not_started | Flow materiality ≥100k |
+| PB-03 | OR Breakout | opening_breakout | implemented | implemented | implemented | implemented | not_started | |
+| PB-04 | Gamma Pin Fade | level_rejection | **partial** | implemented | implemented | implemented | not_started | mvp wall proxy — allowlisted for paper only |
+| PB-05 | Wall Break Cont. | wall_breakout | partial | implemented | not_started | partial | not_started | Shadow |
+| PB-06 | Flip Level Ride | structure_ride | partial | implemented | not_started | partial | not_started | |
+| PB-07 | Max Pain Gravitation | price_gravitation | partial | implemented | not_started | partial | not_started | |
+| PB-08 | Power Hour Mom. | session_momentum | partial | implemented | not_started | partial | not_started | |
+| PB-09 | HELIX Flow Surge | flow_surge | partial | implemented | not_started | stub | not_started | Never primary |
+| PB-10 | EMA Stack Pullback | structure_ride | partial | implemented | not_started | partial | not_started | |
+| PB-11 | Range Chop Scalp | range_bound_fade | implemented | implemented | not_started | partial | not_started | #61 |
+| PB-12 | Lotto Reversal | extension_reversal | partial | implemented | not_started | partial | not_started | |
+| PB-13 | Gap Fade | gap_open_structure | partial | implemented | not_started | partial | not_started | |
+| PB-14 | Failed ORB Reversal | failed_break_reversal | implemented | implemented | not_started | partial | not_started | OR memory #64 |
+
+**No playbook is `production_eligible` today.** `validated` requires OOS promotion gates per playbook/subtype.
 
 ---
 
@@ -219,6 +292,7 @@ Every ~2s play poll on staging:
 | **#69** (phase 2) | VIX/OR scaled buffers, armed-poll guards, session risk governor, playbook exit profiles, option exit sim, ECS auto-roll |
 | **#70** (phase 3) | Full FSM open/managing/closed, Trade Governor, PB-01–04 exit engines, options P/L model, VolatilityContext, cron FSM sync |
 | **#77** (promotion stats) | Session-aware promotion gates, robustness checks, counterfactual comparability filter, normalized-param roadmap |
+| **#78** (hierarchy + status) | Family→subtype→playbook hierarchy, `subtype_audit`, exact implementation status vocabulary |
 
 ---
 
@@ -312,7 +386,7 @@ Market Data → Feature Engine → Regime Engine → Playbook Matcher
 |------|--------|
 | Typed registry → doc matrices CI check | ⏳ Planned |
 | PB-14 allowlist expansion | ⏳ Blocked on evidence |
-| Family-level outcome mining | ⏳ Planned (SQL on `playbook_id` + `setup_family`) |
+| Family-level outcome mining | ⏳ Planned — **subtype first**, then family (`playbookSubtypeGroups`) |
 
 ---
 
@@ -511,38 +585,39 @@ ChatGPT research checklist (2026-07-10). **Implemented on staging** unless noted
 
 ## 14. Instance schema
 
-Target row per playbook instance (research contract):
+Target row per playbook instance (research contract). Status labels: `playbook-implementation-status.ts` → `INSTANCE_SCHEMA_FIELD_STATUS`.
 
-| # | Field | Status | Where today |
-|---|-------|--------|-------------|
-| 1 | `session_date` | ✅ | `spx_playbook_instances` |
-| 2 | `playbook_id` | ✅ | same |
-| 3 | `instance_id` | ✅ | `{session}:{playbook_id}` |
-| 4 | `armed_at` | ✅ | COALESCE on first armed |
-| 5 | `triggered_at` | ✅ | COALESCE on first triggered |
-| 6 | `invalidated_at` | ✅ | Set on invalidated transition |
-| 7 | `opened_at` | ✅ | Patched on engine open |
-| 8 | `closed_at` | 🟡 | Join `spx_play_outcomes` |
-| 9 | `direction` | ✅ | instance row |
-| 10 | regime snapshot | ✅ | `feature_snapshot` + events |
-| 11 | input feature snapshot | ✅ | Full snapshot on each event |
-| 12 | data-quality flags | ✅ | `data_quality_mode`, halt, desk, gex |
-| 13 | reason armed | ✅ | event `reason` + `detail` |
-| 14 | reason triggered | ✅ | event `reason` |
-| 15 | reason blocked | ✅ | `reason_blocked` + blocked events |
-| 16 | reason invalidated | ✅ | `reason_invalidated` |
-| 17 | underlying entry reference | ✅ | `trigger_price` + `price_at_event` |
-| 18 | option contract candidate | ✅ | `option_contract_candidate` on open |
-| 19 | counterfactual MFE/MAE | ✅ | Instance row + blocked path |
-| 20 | actual outcome | 🟡 | `spx_play_outcomes` join when opened |
+| # | Field | Status | Where | Gap |
+|---|-------|--------|-------|-----|
+| 1 | `session_date` | implemented | `spx_playbook_instances` | — |
+| 2 | `playbook_id` | implemented | same | — |
+| 3 | `instance_id` | implemented | episode-scoped id | — |
+| 4 | `armed_at` | implemented | COALESCE first armed | — |
+| 5 | `triggered_at` | implemented | COALESCE first triggered | — |
+| 6 | `invalidated_at` | implemented | invalidated transition | — |
+| 7 | `opened_at` | implemented | patched on engine open | — |
+| 8 | `closed_at` | partial | `spx_play_outcomes` join | not on instance row |
+| 9 | `direction` | implemented | instance row | — |
+| 10 | regime snapshot | implemented | `feature_snapshot` + events | — |
+| 11 | input feature snapshot | implemented | append-only events | — |
+| 12 | data-quality flags | implemented | `data_quality_mode`, halt, desk, gex | — |
+| 13 | reason armed | implemented | event `reason` | — |
+| 14 | reason triggered | implemented | event `reason` | — |
+| 15 | reason blocked | implemented | `reason_blocked` + blocked events | — |
+| 16 | reason invalidated | implemented | `reason_invalidated` | — |
+| 17 | underlying entry reference | implemented | `trigger_price` + `price_at_event` | — |
+| 18 | option contract candidate | implemented | JSONB on open | — |
+| 19 | counterfactual MFE/MAE | implemented | `counterfactual_*_pts` + `counterfactual_eval` | — |
+| 20 | actual outcome | partial | `spx_play_outcomes` when opened | absent when never opened (by design) |
 
-**Coverage today: ~17/20 complete, ~2/20 partial (closed_at join, outcome when no open).**
+**Coverage: 18/20 `implemented`, 2/20 `partial`, 0/20 `not_started`.**  
+Partial fields are join-dependent by design — not missing implementation work for triggered-not-opened paths.
 
 ---
 
 ## 15. Expectancy metrics
 
-Per playbook (and per family), compute from **prospective OOS sample only**:
+Per **playbook** or **structural subtype** (preferred over blind family merge), from **prospective OOS sample only**:
 
 | Metric | Status |
 |--------|--------|
@@ -593,6 +668,8 @@ Implemented in `playbook-evidence-config.ts` + `npm run playbook:param-sweep`. *
 | Module | Role |
 |--------|------|
 | `playbook-registry.ts` | PB-01…14 + `setup_family` + `fidelity` |
+| `playbook-setup-hierarchy.ts` | Family → subtype → playbook → `parameter_version` |
+| `playbook-implementation-status.ts` | Exact status vocabulary + surface/subsystem matrices |
 | `playbook-primary-rank.ts` | `pickPrimaryPlaybook`, `PLAYBOOK_PRIMARY_PRIORITY` |
 | `playbook-regime-router.ts` | Regime eligibility + `isUnknownPlaybookRegime` |
 | `playbook-shadow-matcher.ts` | 14 matchers → verdicts (VIX/OR scaled distances) |
@@ -602,7 +679,7 @@ Implemented in `playbook-evidence-config.ts` + `npm run playbook:param-sweep`. *
 | `playbook-session-risk.ts` | Per-PB session trigger cap + degraded size |
 | `playbook-shadow-panel.ts` | API/UI snapshot |
 | `playbook-shadow-log.ts` | Postgres telemetry |
-| `playbook-pipeline-audit.ts` | Long/short funnel + `family_audit` |
+| `playbook-pipeline-audit.ts` | Long/short funnel + `family_audit` + `subtype_audit` |
 | `playbook-state.ts` | Lifecycle + invalidation transitions |
 | `playbook-data-quality.ts` | Flags + `liveDataQualityMode` |
 | `playbook-break-memory.ts` | PB-14 OR break memory |
@@ -657,4 +734,4 @@ Expected staging playbook validate:
 
 ---
 
-*Last updated:* 2026-07-11 (session-aware promotion gates + parameter validation roadmap)
+*Last updated:* 2026-07-11 (hierarchical family taxonomy + exact implementation status labels)
