@@ -42,9 +42,9 @@ in this file.
 
 **Root cause:** Fifth-pass review: assert re-used resolver `from_state` (same inputs as the guard), never flagged `idle` + `trigger_fired`, tests did not exercise failure branches, env var was unwired in CI/`npm test`, and no FINDINGS entry.
 
-**Fix:** Assert against persisted `snapshots[].state`; throw on `idle` + `trigger_fired`; add branch tests; enable `PLAYBOOK_VERDICT_GUARD_ASSERT=1` in `npm test` + CI verify job.
+**Fix:** Assert against persisted `snapshots[].state` (no `from_state` fallback); throw on `idle` + `trigger_fired`; add branch tests; enable `PLAYBOOK_VERDICT_GUARD_ASSERT=1` in `npm test` + CI. **Sixth-pass (#103):** narrow reopen — sync assert in `applyPlaybookVerdictGuards` is self-consistency only. **#105:** production `resolveGuardedPlaybookMatch` re-reads DB (`loadPlaybookInstanceStates` + `loadPlaybookArmedPollCounts`) before assert when flag+DB configured.
 
-**Status:** FIXED (`cursor/playbook-fifth-pass-fixes-261c` on `blackout-web-sandbox`).
+**Status:** FIXED for production cross-tick desync (#105); CI/unit path remains self-consistency check (documented). Sixth-pass F2 confirmed closed; F4 still pending.
 
 ## 🔴 P0 FOUND+FIXING 2026-07-07 — Tailwind purged `src/features/` CSS after folder migration (desktop desk broken)
 
@@ -4495,25 +4495,20 @@ Every page/subpage/panel/button/layout/font; every number/level/matrix/flow valu
 
 ---
 
-## SPX Slayer — verdict-guard assert (Q4) reopened, sixth-pass review (2026-07-11)
+## SPX Slayer — verdict-guard assert (Q4), sixth-pass review (2026-07-11)
 
-**Status:** REOPENED — narrow gap, not the full item. `docs/spx/PLAYBOOK-BUG-AUDIT-2026-07-11.md`'s fifth-pass closure section marked Q4 (`assertPlaybookVerdictGuardInvariants`) ✅ closed via PR #100. Sixth-pass adversarial re-verification confirms two of the three fifth-pass complaints are genuinely fixed, but the core structural complaint is not, and PR #100's own code comment overstates what the fix actually does.
+**Status:** PARTIALLY CLOSED — PR #105 (`cursor/deep-sweep-deferred-261c`) addresses the sixth-pass reopen. Sixth-pass (#103) correctly flagged that PR #100's comment overpromised an "independent source of truth" while the sync assert reused the guard's in-memory load.
 
-**Severity:** Medium (documentation/design-intent gap, not an active production bug — the assert is opt-in via `PLAYBOOK_VERDICT_GUARD_ASSERT` and currently only runs in CI/tests, not against live traffic).
+**Severity:** Medium (design-intent/documentation gap; assert is opt-in via `PLAYBOOK_VERDICT_GUARD_ASSERT=1`).
 
-**What's genuinely fixed (confirmed, don't re-litigate):**
-1. Idle-desync detection — `playbook-verdict-guard.ts`'s `assertPlaybookVerdictGuardInvariants` now explicitly checks `persistedState === "idle"` and throws when a trigger survives despite the persisted FSM state being idle (the prior gap: only terminal/post-entry states were checked, not idle).
-2. Test coverage — the previously no-op test (which never let `trigger_fired` reach the assertion logic) is replaced with a genuine violation case (calls the assert directly with an idle-state fixture, confirms it throws) and a genuine healthy-path case (runs the full `applyPlaybookVerdictGuards` pipeline with the assert live, confirms `trigger_fired` survives).
-3. CI wiring — `PLAYBOOK_VERDICT_GUARD_ASSERT=1` is genuinely set in both `package.json`'s `test` script and `.github/workflows/ci.yml`'s `env:` block for the unit-test step, not just referenced in a comment.
+**What's genuinely fixed (confirmed sixth-pass + #105, don't re-litigate):**
+1. Idle-desync detection — assert throws on `persistedState === "idle"` + `trigger_fired` (#100).
+2. Test coverage + CI wiring — violation/healthy-path tests; `PLAYBOOK_VERDICT_GUARD_ASSERT=1` in `npm test` + CI (#100).
+3. **Independent production read (#105)** — `resolveGuardedPlaybookMatch` performs a **second** DB round-trip (`loadPlaybookInstanceStates` + `loadPlaybookArmedPollCounts`) before calling assert when flag+`dbConfigured()`. This can catch stale in-memory counters vs. DB state that changed between loads.
+4. **Honest labeling (#105)** — sync path inside `applyPlaybookVerdictGuards` documented as **self-consistency** (CI/unit tests); no `from_state` fallback on missing persisted rows.
 
-**What's not fixed — the reason for reopening:** PR #100's code comment claims the assert "uses durable snapshot rows (not resolver-derived state) to catch idle/arm desync" — implying an independent source of truth. This is not accurate. Traced end to end: `assertPlaybookVerdictGuardInvariants` is called at `playbook-verdict-guard.ts:158-161` with the *same* `snapshots`/`armedPollCounts` parameter objects that `applyPlaybookVerdictGuards` already consumed, moments earlier in the same function, to produce the `guarded` result being checked. The production caller (`playbook-match-resolver.ts:52-62`) loads both from the DB exactly once at the top of `resolveGuardedPlaybookMatch` and both the guard logic and the assert consume that single load. Worse: `resolveEpisodeInstance`'s `from_state` (what the guard itself uses) is provably identical to `persisted.state` (what the assert newly checks) in every code path — both terminate at the same `snapshots[i].state` field, just accessed through two different function calls. So there is no second, independent read anywhere in this fix.
+**Remaining limitation:** The in-function assert at `applyPlaybookVerdictGuards:158-161` still reuses the same load as the guard (by design for fast unit tests). Cross-tick desync detection relies on the resolver's fresh read, not the sync path.
 
-**Concrete failure mode this leaves open:** the real-world scenario this assert exists to catch is an in-memory `armedPollCounts` map that's gone stale-high relative to a persisted FSM state that changed underneath it (e.g., a concurrent write, or a race between two evaluator ticks). That scenario requires the map and the persisted state to have diverged *before* either is read. Since both are loaded once and consumed by both the guard and the assert from that single snapshot-in-time, the assert has no way to detect that kind of divergence — it can only catch a bug in `applyPlaybookVerdictGuards`'s own internal arithmetic (a real but much narrower class of bug than the one it's named for).
+**Files:** `playbook-verdict-guard.ts`, `playbook-match-resolver.ts:70-80`, `playbook-verdict-guard.test.ts`.
 
-**Recommended fix (not applied — this is a review/handoff entry, no code changed):** one of two small options, either is acceptable:
-1. Give the assert a genuinely independent read — a fresh DB round-trip for persisted instance state, separate from the `snapshots` the caller already loaded — accepting the added latency, likely still worth keeping behind the same opt-in flag so it never runs against live traffic.
-2. If a true independent read isn't worth the cost, rename/redocument this function as a **self-consistency check** (which it is, correctly and usefully) rather than continuing to claim in the code comment that it catches a cross-source desync it structurally cannot see. The current mismatch between what the comment promises and what the code does is the actual defect — not the assert's existence or design, which is otherwise reasonable.
-
-**Files:** `src/features/spx/lib/playbook-verdict-guard.ts` (`assertPlaybookVerdictGuardInvariants`, lines ~158-192), `src/features/spx/lib/playbook-match-resolver.ts:52-62` (the shared single-load call site), `src/features/spx/lib/playbook-verdict-guard.test.ts` (test coverage, confirmed adequate for what's being reviewed here — no test change needed).
-
-**Evidence trail:** full reasoning in `docs/spx/PLAYBOOK-BUG-AUDIT-2026-07-11.md`, "Claude — sixth-pass validation" section, dated 2026-07-11.
+**Evidence trail:** sixth-pass reasoning in `docs/spx/PLAYBOOK-BUG-AUDIT-2026-07-11.md`; closure in #105.

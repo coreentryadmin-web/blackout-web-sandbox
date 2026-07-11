@@ -163,10 +163,10 @@ export function applyPlaybookVerdictGuards(
 }
 
 /**
- * Defense-in-depth self-consistency check: persisted FSM state + armed polls must allow trigger_fired.
- * Uses durable snapshot rows only (never resolver-derived from_state fallback).
- * Production path re-reads DB in resolveGuardedPlaybookMatch before calling this.
- * Enable with PLAYBOOK_VERDICT_GUARD_ASSERT=1 (dev/staging audits + CI unit tests).
+ * Self-consistency check when called from applyPlaybookVerdictGuards (same in-memory load as guard).
+ * Production cross-tick desync: resolveGuardedPlaybookMatch re-reads DB then calls this (#105).
+ * Requires a persisted snapshot row — never falls back to resolveEpisodeInstance.from_state.
+ * Enable with PLAYBOOK_VERDICT_GUARD_ASSERT=1 (CI unit tests + optional production resolver audit).
  */
 export function assertPlaybookVerdictGuardInvariants(
   sessionDate: string,

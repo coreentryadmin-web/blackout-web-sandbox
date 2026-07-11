@@ -153,4 +153,4 @@ None of this overturns the standing verdict that staging is correctly positioned
 | 38 | **OPEN** | No DB FK on playbook instance refs (schema change deferred) |
 | 4 (Largo) | **FIXED** | `composeSpxDeskRead` threads `playbookShadow` |
 | 7 | **PARTIAL** | `SPX_CLAUDE_GATE` default off by design (staging research) |
-| Q4 | **FIXED** | Assert requires persisted row; production re-reads DB before assert |
+| Q4 | **FIXED** | Production DB re-read in resolver (#105); sync path = self-consistency |
