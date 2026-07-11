@@ -8,6 +8,19 @@ and required CI (`verify`) are green — no per-PR approval, no end-of-day hold.
 here and merge the PR in the same session. Supersedes all earlier "leave OPEN for review" notes
 in this file.
 
+## 🟠 P2 FOUND+FIXED 2026-07-11 — Put (support) walls render OFF-SCREEN: chart autoscales to candles only, so purple beads below the intraday band are clipped
+
+**Surface:** `src/features/vector/components/VectorChart.tsx` candle series (no `autoscaleInfoProvider`) + `vector-price-range.ts` (new, pure). Reported from a live staging screenshot: the SPX chart showed only the yellow call-wall rails, **no purple put-wall beads at all**.
+
+**Root cause:** lightweight-charts autoscales the price axis to the **candle series only**; wall price-lines and bead markers never widen the range. In a long-gamma session the put (support) walls sit a few % below spot (live case: spot 7575, put walls 7400/7300/7200 = 2.3–4.9% below) — well outside the tight intraday candle band (~7510–7600) — so every put bead was drawn but **clipped below the visible frame**. The member correctly saw "no purple beads." Call walls happened to be near spot (7600, 0.3% above) so their yellow rails stayed in view, making the chart look one-sided.
+
+**Fix:** an `autoscaleInfoProvider` on the candle series unions the candle-fitted range with the drawn wall strikes within ±5% of spot (`extendRangeForWalls`, env-tunable `NEXT_PUBLIC_VECTOR_WALL_VIEW_MAX_PCT`). Pure union — never narrows the candle range; only extends when a wall is actually outside the band; the ±cap stops a very far weak wall from squishing candles to a sliver. `rangeWallsRef` (seeded from the SSR walls so the first mount autoscale already includes them) is refreshed in `refreshOverlays` — the single draw path for both live and replay — followed by an `autoScale:true` nudge so a lens/DTE switch re-reveals the walls off-hours too.
+
+**Evidence:** `vector-price-range.test.ts` (5) — extends down to reveal a 3.6%-below put wall; respects the ±cap (far wall ignored); extends up for a call wall; no-op when walls already in band; null/zero guards. `tsc` clean; 144/144 vector lib tests; `@apply` guard clean. Live before/after screenshot to be captured post-deploy.
+
+**Status:** FIXED (`fix/vector-wall-viewport`).
+
+
 ## 🟢 P3 SHIPPED 2026-07-11 — Real universe screener — preset views over the scanner (Vector task #18)
 
 **Surface:** `src/features/vector/lib/vector-screener.ts` (new, pure) + `VectorScanner` controls + `globals.css` chip styles. Client-only over the rows the scanner already loads — no new data/endpoints.
