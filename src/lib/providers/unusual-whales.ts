@@ -840,7 +840,7 @@ export async function fetchUwDarkPool(
   opts?: { limit?: number; min_premium?: number }
 ): Promise<DarkPoolSnapshot | null> {
   const redis = await getUwCacheRedis();
-  return uwCacheGet(redis, UW_KEYS.darkPoolTicker(ticker), UW_CACHE_TTL.darkPoolTicker, async () => {
+  return uwCacheGet(redis, UW_KEYS.darkPoolTicker(ticker, opts), UW_CACHE_TTL.darkPoolTicker, async () => {
     const params: Record<string, string | number> = {
       limit: Math.min(opts?.limit ?? 20, 100),
     };

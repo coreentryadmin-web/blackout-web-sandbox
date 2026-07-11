@@ -737,6 +737,8 @@ export type VectorStreamSnapshot = {
   gammaFlip?: number | null;
   vexFlip?: number | null;
   darkPoolLevels?: VectorDarkPoolLevel[];
+  /** Dark-pool snapshot fetch time (epoch ms; 0 = unknown/legacy cache entry). */
+  darkPoolAsOf?: number;
   /** Candle tick time (epoch ms). */
   t?: number;
   /** GEX wall ladder as-of (epoch ms). */
