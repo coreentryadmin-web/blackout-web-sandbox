@@ -576,12 +576,14 @@ Implemented in `playbook-evidence-config.ts` + `npm run playbook:param-sweep`. *
 | `playbook-shadow-matcher.ts` | 14 matchers → verdicts (VIX/OR scaled distances) |
 | `playbook-match-resolver.ts` | Guarded match + armed polls + trigger counts |
 | `playbook-volatility-scale.ts` | VIX/OR scaled buffer & proximity |
-| `playbook-verdict-guard.ts` | Armed-poll guard + exit profiles |
-| `playbook-session-risk.ts` | Per-PB session trigger cap + degraded size |
-| `playbook-shadow-panel.ts` | API/UI snapshot |
-| `playbook-shadow-log.ts` | Postgres telemetry |
-| `playbook-pipeline-audit.ts` | Long/short funnel + `family_audit` |
-| `playbook-state.ts` | Lifecycle + invalidation transitions |
+| `playbook-state-machine.ts` | Full FSM + latch + gate re-arm |
+| `playbook-fsm-sync.ts` | Engine-driven open/managing/closed commits |
+| `playbook-engine-telemetry.ts` | Cron mutate path FSM logging |
+| `trade-governor.ts` | Session risk subsystem (caps, spread, VIX, revenge) |
+| `playbook-exit-engines.ts` | PB-01–04 entry/exit logic |
+| `playbook-option-pnl.ts` | Delta/gamma/theta premium P/L estimates |
+| `playbook-volatility-context.ts` | ATR/VIX/OR distance scaling |
+| `playbook-state.ts` | FSM transition collection (matcher path) |
 | `playbook-data-quality.ts` | Flags + `liveDataQualityMode` |
 | `playbook-break-memory.ts` | PB-14 OR break memory |
 | `playbook-option-sim.ts` | `execution_sim` on option ticket |
