@@ -1564,8 +1564,12 @@ export async function fetchUwEtfTide(etf: string) {
 export async function fetchUwLitFlow(ticker: string, limit = 20) {
   const redis = await getUwCacheRedis();
   return uwCacheGet(redis, UW_KEYS.litFlow(ticker), UW_CACHE_TTL.litFlow, async () => {
-    const data = await uwGetSafe<unknown>("/api/lit-flow/ticker", {
-      ticker: ticker.toUpperCase(),
+    // `ticker` is a PATH param, not a query param. The old call requested the
+    // literal route `/api/lit-flow/ticker` (the word "ticker") with the real
+    // symbol tacked on as a query — UW returns 200-empty for that bogus path, so
+    // the mistake surfaced as "no lit-flow data" rather than an error. Catalog
+    // ground truth: `/api/lit-flow/{ticker}`.
+    const data = await uwGetSafe<unknown>(`/api/lit-flow/${safeTicker(ticker)}`, {
       limit: Math.min(limit, 50),
     });
     return extractRows(data).slice(0, limit);
