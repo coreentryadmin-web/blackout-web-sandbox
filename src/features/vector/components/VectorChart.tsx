@@ -42,7 +42,11 @@ import {
 import { deriveVectorRegime, type VectorRegime } from "@/features/vector/lib/vector-regime";
 import { deriveWallProximity, type WallProximity } from "@/features/vector/lib/vector-wall-proximity";
 import { deriveGammaMagnet, type GammaMagnet } from "@/features/vector/lib/vector-gamma-magnet";
-import { extendRangeForWalls, DEFAULT_WALL_VIEW_MAX_PCT } from "@/features/vector/lib/vector-price-range";
+import {
+  extendRangeForWalls,
+  DEFAULT_WALL_VIEW_MAX_PCT,
+  BEAD_VIEW_MAX_PCT,
+} from "@/features/vector/lib/vector-price-range";
 import { scoreTopWalls, type WallIntegrity } from "@/features/vector/lib/vector-wall-integrity";
 import {
   alphaForPct,
@@ -442,14 +446,17 @@ function applyWallBeadMarkers(
   baseColor: string,
   lens: VectorWallLens,
   intervalMinutes: VectorTimeframeMinutes
-): void {
-  if (!beadsPlugin) return;
+): number[] {
+  if (!beadsPlugin) return [];
   const bucketed = bucketWallHistoryForInterval(history, intervalMinutes);
   const trails = trailsByStrike(bucketed, side, lens);
   // Bead strike-rows scale with the timeframe the same way the wall guides do — few near-spot
   // rows on 1m, more (further-out) rows on higher timeframes.
   const active = pickActiveStrikes(trails, wallCountForTimeframe(intervalMinutes));
   beadsPlugin.setMarkers(buildWallBeadMarkers(trails, active, baseColor));
+  // Return the strikes actually drawn so the caller can widen the price axis to cover them —
+  // otherwise a drawn bead outside the current-ladder range clips out on zoom (see beadStrikesRef).
+  return active;
 }
 
 function upsertBar(bars: VectorBar[], candle: VectorBar): VectorBar[] {
@@ -514,6 +521,10 @@ export function VectorChart({
     call: (initialWalls?.callWalls ?? []).slice(0, wallCountForTimeframe(1)).map((w) => w.strike),
     put: (initialWalls?.putWalls ?? []).slice(0, wallCountForTimeframe(1)).map((w) => w.strike),
   });
+  // The strikes ACTUALLY drawn as beads (from the session-trail rail, per side). The autoscale
+  // provider widens for these too — not just the live ladder in rangeWallsRef — so a bead never
+  // clips out when zoom re-runs autoscale off fewer visible candles. Populated by refreshTrails.
+  const beadStrikesRef = useRef<{ call: number[]; put: number[] }>({ call: [], put: [] });
   const dpGuideRefs = useRef<(IPriceLine | null)[]>([]);
   const flipGuideRef = useRef<IPriceLine | null>(null);
   const callBeadsRef = useRef<ISeriesMarkersPluginApi<Time> | null>(null);
@@ -653,8 +664,12 @@ export function VectorChart({
             liveTrailAnchorSec(wallHistoryRef.current, minuteBarsRef.current.map((b) => b.time))
           )
         : wallHistoryRef.current;
-    applyWallBeadMarkers(callBeadsRef.current, history, "callWalls", v.callColor, activeLens, timeframeRef.current);
-    applyWallBeadMarkers(putBeadsRef.current, history, "putWalls", v.putColor, activeLens, timeframeRef.current);
+    const callStrikes = applyWallBeadMarkers(callBeadsRef.current, history, "callWalls", v.callColor, activeLens, timeframeRef.current);
+    const putStrikes = applyWallBeadMarkers(putBeadsRef.current, history, "putWalls", v.putColor, activeLens, timeframeRef.current);
+    // Record what was actually drawn so the autoscale provider widens to reveal these exact beads
+    // at every zoom level, then nudge a rescale (off-hours there is no tick to trigger it).
+    beadStrikesRef.current = { call: callStrikes, put: putStrikes };
+    series.priceScale().applyOptions({ autoScale: true });
     pinCandlesOnTop(series);
   }, []);
 
@@ -711,8 +726,10 @@ export function VectorChart({
 
       const visibleHistory = sliceHistoryToTime(history, cursorTime);
       const v = lensVisuals(activeLens);
-      applyWallBeadMarkers(callBeadsRef.current, visibleHistory, "callWalls", v.callColor, activeLens, timeframeRef.current);
-      applyWallBeadMarkers(putBeadsRef.current, visibleHistory, "putWalls", v.putColor, activeLens, timeframeRef.current);
+      const callStrikes = applyWallBeadMarkers(callBeadsRef.current, visibleHistory, "callWalls", v.callColor, activeLens, timeframeRef.current);
+      const putStrikes = applyWallBeadMarkers(putBeadsRef.current, visibleHistory, "putWalls", v.putColor, activeLens, timeframeRef.current);
+      // Same zoom-stability guarantee in replay: widen the axis for the beads this frame drew.
+      beadStrikesRef.current = { call: callStrikes, put: putStrikes };
       pinCandlesOnTop(series);
 
       // initialWalls/etc are the page-load seed — a reasonable fallback only when the
@@ -1106,14 +1123,29 @@ export function VectorChart({
       autoscaleInfoProvider: (original: () => AutoscaleInfo | null) => {
         const res = original();
         if (!res || !res.priceRange) return res;
+        // Two composed widenings (each only ever WIDENS, never narrows the candle band):
+        // 1) the current live ladder (rangeWallsRef) within the tight ±WALL_VIEW_MAX_PCT window;
+        // 2) the strikes ACTUALLY drawn as beads (beadStrikesRef) within the wider BEAD_VIEW_MAX_PCT.
+        // (2) is what keeps beads from vanishing on zoom: autoscale re-runs on every zoom off the
+        // now-fewer visible candles, and without covering the drawn-bead strikes a bead outside the
+        // ladder range clipped out and reappeared on zoom-back. Covering the drawn set makes the
+        // rail stable at every zoom (Skylit wide-rail look).
+        const ladderRange = extendRangeForWalls(
+          res.priceRange,
+          spotRef.current,
+          rangeWallsRef.current.call,
+          rangeWallsRef.current.put,
+          WALL_VIEW_MAX_PCT
+        );
         return {
           ...res,
           priceRange: extendRangeForWalls(
-            res.priceRange,
+            ladderRange,
             spotRef.current,
-            rangeWallsRef.current.call,
-            rangeWallsRef.current.put,
-            WALL_VIEW_MAX_PCT
+            beadStrikesRef.current.call,
+            beadStrikesRef.current.put,
+            BEAD_VIEW_MAX_PCT,
+            BEAD_VIEW_MAX_PCT
           ),
         };
       },
