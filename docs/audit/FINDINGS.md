@@ -8,6 +8,31 @@ and required CI (`verify`) are green — no per-PR approval, no end-of-day hold.
 here and merge the PR in the same session. Supersedes all earlier "leave OPEN for review" notes
 in this file.
 
+## 🔴 P1 FOUND+FIXED 2026-07-12 — Vector under-shows walls for the whole long tail: ±6% heatmap band starves low-priced/wide-strike names (e.g. ASTS = only 1 call/1 put wall)
+
+**Surface:** `src/lib/providers/polygon-options-gex.ts` (`heatmapBandPct`). Found from a member report ("ASTS shows only one call, one put wall — should be multiple, worst case on 15m") + a live Polygon deep-dive.
+
+**Symptom (measured live 2026-07-12):** ASTS @ spot $73.32. The shared GEX heatmap — which feeds `getVectorGexWalls` for every non-oracle Vector ticker via `strike_totals` → `computeGexWalls` — only fetches strikes within **±6% of spot** (`heatmapBandPct` returned `0.06` for all non-SPX names). Independent Polygon recompute over the nearest 8 expiries:
+
+| band | strikes in-band | call walls | put walls |
+|---|---|---|---|
+| **±6% (shipped)** | 10 | **2** | 8 |
+| ±12% (fix) | 22 | 4 | 18 |
+| ±20% | 35 | 8 | 27 |
+| ±35% (full chain) | 51 | 18 | 33 |
+
+So ASTS could **never** show more than 2 call walls at any timeframe, and its real call walls (90/100/125 — big round-number OI) sit far outside ±6% and were **never even fetched**. This affected EVERY low-priced / wide-strike-spacing non-oracle ticker (the whole on-demand long tail), not just ASTS.
+
+**Root cause:** the band is measured in PERCENT but wall structure lives in STRIKES. ±6% at a $7500 SPX spot is ±$450 (~180 dense strikes → rich), but ±6% at a $73 spot is ±$4.40 (~10 strikes, often skewed to one side). The single `0.06` default served both. Worse, the Vector chart's own reveal caps (`NEAREST_WALL_VIEW_MAX_PCT` 0.12, `BEAD_VIEW_MAX_PCT` 0.20) are WIDER than the data band — the chart was willing to draw walls the fetch never pulled.
+
+**Fix:** `heatmapBandPct` now returns **±12% for every non-SPX ticker** (`DEFAULT_HEATMAP_BAND_PCT = 0.12`) while **SPX stays ±6%** (`SPX_HEATMAP_BAND_PCT`) — SPX's chain is dense, so a tight band already yields ~180 strikes/expiry and keeps its hot, cron-warmed payload small; widening it would balloon contract count for no wall-count gain. ±12% matches the chart's nearest-wall reveal cap, so we no longer fetch a narrower window than we draw. Both env-overridable (`SPX_GEX_HEATMAP_BAND_PCT` / `GEX_HEATMAP_BAND_PCT`, clamped (0, 0.25]).
+
+**Blast radius:** widens the shared heatmap for all non-SPX names (also enriches the desk Thermal/Grid GEX panels — more complete positioning). Oracle Vector tickers (SPY/QQQ) read the UW WS ladder for walls, not this band, so their wall count is unchanged; the band only affects their (non-Vector) desk heatmap. Payload for the ~10 warm presets grows ~2×, bounded and acceptable (page guard 40).
+
+**Evidence:** live Polygon ladder table above; `polygon-options-gex.test.ts` +1 (SPX 0.06 / non-SPX 0.12 / env-override + clamp). tsc + eslint + @apply clean.
+
+**Status:** FIXED (`fix/vector-wall-band-width`, PR pending) — live re-probe of ASTS owed post-deploy.
+
 ## 🟢 P4 SHIPPED 2026-07-12 — Skylit visual pass: strength-scaled beads, clean price axis, purple put walls revealed
 
 Member-driven UI pass (with Skylit Atlas screenshots) across three merged PRs:

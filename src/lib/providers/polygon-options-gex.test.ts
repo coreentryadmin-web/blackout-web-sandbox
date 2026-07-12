@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import {
   resolveHeatmapPageGuard,
   resolveChainBandPageGuard,
+  __test_heatmapBandPct as heatmapBandPct,
   computeGexEvents,
   computeMaxPainFromChain,
   resolveExpiryAxis,
@@ -405,4 +406,31 @@ test("resolveExpiryAxis: a far target that never printed a real contract is excl
 
   assert.deepEqual(farKeep, ["2026-09-18"], "December never printed a contract — must not be fabricated into farKeep");
   assert.ok(!expiries.includes("2026-12-18"));
+});
+
+test("heatmapBandPct: SPX stays tight (±6%), non-SPX widens to ±12% for multi-wall coverage", () => {
+  const savedSpx = process.env.SPX_GEX_HEATMAP_BAND_PCT;
+  const savedGlobal = process.env.GEX_HEATMAP_BAND_PCT;
+  delete process.env.SPX_GEX_HEATMAP_BAND_PCT;
+  delete process.env.GEX_HEATMAP_BAND_PCT;
+  try {
+    // SPX chain is dense → keep the band tight so its hot payload stays small.
+    assert.equal(heatmapBandPct("SPX"), 0.06);
+    // Every other ticker gets the wider default — this is the ASTS "only 1 call/1 put wall" fix:
+    // a $73 name has ~2 net-positive strikes inside ±6% but 4+ inside ±12%.
+    assert.equal(heatmapBandPct("ASTS"), 0.12);
+    assert.equal(heatmapBandPct("NVDA"), 0.12);
+    // env override wins, clamped to (0, 0.25].
+    process.env.GEX_HEATMAP_BAND_PCT = "0.2";
+    assert.equal(heatmapBandPct("ASTS"), 0.2);
+    process.env.GEX_HEATMAP_BAND_PCT = "0.9"; // out of range → ignored, back to default
+    assert.equal(heatmapBandPct("ASTS"), 0.12);
+    process.env.SPX_GEX_HEATMAP_BAND_PCT = "0.03";
+    assert.equal(heatmapBandPct("SPX"), 0.03);
+  } finally {
+    if (savedSpx === undefined) delete process.env.SPX_GEX_HEATMAP_BAND_PCT;
+    else process.env.SPX_GEX_HEATMAP_BAND_PCT = savedSpx;
+    if (savedGlobal === undefined) delete process.env.GEX_HEATMAP_BAND_PCT;
+    else process.env.GEX_HEATMAP_BAND_PCT = savedGlobal;
+  }
 });
