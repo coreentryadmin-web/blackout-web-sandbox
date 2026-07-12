@@ -80,6 +80,8 @@ import {
 import {
   aggregateVectorBars,
   mergeBarsByTime,
+  wallCountForTimeframe,
+  VECTOR_WALL_NODES_PER_SIDE,
   type VectorTimeframeMinutes,
 } from "@/features/vector/lib/vector-bar-timeframes";
 import { mergeSpyVolumeRows } from "@/features/vector/lib/vector-spy-volume-merge";
@@ -108,7 +110,6 @@ const WALL_VIEW_MAX_PCT = (() => {
   const raw = Number(process.env.NEXT_PUBLIC_VECTOR_WALL_VIEW_MAX_PCT);
   return Number.isFinite(raw) && raw > 0 && raw <= 0.2 ? raw : DEFAULT_WALL_VIEW_MAX_PCT;
 })();
-const MAX_WALL_GUIDES = 6;
 const MAX_DP_GUIDES = 6;
 /** Re-poll cadence for the SPY volume backfill — Polygon only publishes one new closed
  *  minute bar per minute, so anything faster than that would just refetch the same data. */
@@ -255,14 +256,29 @@ function applyWallGuides(
   guideRefs: React.MutableRefObject<(IPriceLine | null)[]>,
   levels: VectorWallLevel[],
   baseColor: string,
-  label: string
+  label: string,
+  maxGuides: number
 ): void {
+  // Grow the guide-ref array to the server cap so a higher timeframe has slots to draw into —
+  // same grow-then-fill pattern as applyDarkPoolGuides (the wall count is now variable per
+  // timeframe, not a fixed 6). We size to VECTOR_WALL_NODES_PER_SIDE (the max any timeframe can
+  // ask for) rather than maxGuides so the array never has to shrink.
+  if (guideRefs.current.length < VECTOR_WALL_NODES_PER_SIDE) {
+    guideRefs.current = [
+      ...guideRefs.current,
+      ...Array.from({ length: VECTOR_WALL_NODES_PER_SIDE - guideRefs.current.length }, () => null),
+    ];
+  }
+  // Walk the FULL ref array (guideRefs.current.length), not just maxGuides: on a DOWNSHIFT
+  // (e.g. 15m→1m) maxGuides drops from 12 to 6, so slots 6..11 hold price lines that must be
+  // removed. levels is sliced to maxGuides, so applyPriceGuides sees `undefined` for every
+  // slot past the new count and clears it (removePriceLine + null) — no stale guides linger.
   applyPriceGuides(
     series,
     guideRefs,
-    levels.slice(0, MAX_WALL_GUIDES).map((l) => ({ ...l, label })),
+    levels.slice(0, maxGuides).map((l) => ({ ...l, label })),
     baseColor,
-    MAX_WALL_GUIDES,
+    guideRefs.current.length,
     true
   );
 }
@@ -332,7 +348,8 @@ function applyWallsToSeries(
   callGuideRefs: React.MutableRefObject<(IPriceLine | null)[]>,
   putGuideRefs: React.MutableRefObject<(IPriceLine | null)[]>,
   walls: VectorWalls | null | undefined,
-  lens: VectorWallLens
+  lens: VectorWallLens,
+  maxGuides: number
 ): void {
   // Must still call through (with empty levels) rather than early-return on null —
   // applyWallGuides/applyPriceGuides clear stale price lines when passed [], but an
@@ -341,8 +358,8 @@ function applyWallsToSeries(
   // fix below: nulling out gexAt/vexAt during early-timeline scrubbing did nothing
   // visually because the old wall lines never got cleared.
   const v = lensVisuals(lens);
-  applyWallGuides(series, callGuideRefs, walls?.callWalls ?? [], v.callColor, v.callLabel);
-  applyWallGuides(series, putGuideRefs, walls?.putWalls ?? [], v.putColor, v.putLabel);
+  applyWallGuides(series, callGuideRefs, walls?.callWalls ?? [], v.callColor, v.callLabel, maxGuides);
+  applyWallGuides(series, putGuideRefs, walls?.putWalls ?? [], v.putColor, v.putLabel, maxGuides);
 }
 
 function buildWallBeadMarkers(
@@ -399,7 +416,9 @@ function applyWallBeadMarkers(
   if (!beadsPlugin) return;
   const bucketed = bucketWallHistoryForInterval(history, intervalMinutes);
   const trails = trailsByStrike(bucketed, side, lens);
-  const active = pickActiveStrikes(trails);
+  // Bead strike-rows scale with the timeframe the same way the wall guides do — few near-spot
+  // rows on 1m, more (further-out) rows on higher timeframes.
+  const active = pickActiveStrikes(trails, wallCountForTimeframe(intervalMinutes));
   beadsPlugin.setMarkers(buildWallBeadMarkers(trails, active, baseColor));
 }
 
@@ -415,7 +434,9 @@ function upsertBar(bars: VectorBar[], candle: VectorBar): VectorBar[] {
 }
 
 function emptyGuideRefs(): (IPriceLine | null)[] {
-  return Array.from({ length: MAX_WALL_GUIDES }, () => null);
+  // Sized to the server cap (max any timeframe can draw); applyWallGuides only fills up to the
+  // timeframe's scaled count and clears the rest.
+  return Array.from({ length: VECTOR_WALL_NODES_PER_SIDE }, () => null);
 }
 
 function displayBarsFromMinute(
@@ -457,9 +478,11 @@ export function VectorChart({
   // autoscaleInfoProvider to widen the price axis so support/resistance walls
   // (esp. put walls a few % below spot) aren't clipped off-screen. Seeded from the
   // SSR walls so the FIRST autoscale on mount already includes them.
+  // Sliced to the 1m shown-count (the mount default timeframe) so the first autoscale matches
+  // what's actually drawn; refreshOverlays re-slices to the active timeframe on every repaint.
   const rangeWallsRef = useRef<{ call: number[]; put: number[] }>({
-    call: (initialWalls?.callWalls ?? []).map((w) => w.strike),
-    put: (initialWalls?.putWalls ?? []).map((w) => w.strike),
+    call: (initialWalls?.callWalls ?? []).slice(0, wallCountForTimeframe(1)).map((w) => w.strike),
+    put: (initialWalls?.putWalls ?? []).slice(0, wallCountForTimeframe(1)).map((w) => w.strike),
   });
   const dpGuideRefs = useRef<(IPriceLine | null)[]>([]);
   const flipGuideRef = useRef<IPriceLine | null>(null);
@@ -619,15 +642,21 @@ export function VectorChart({
       const walls = wallsForActiveLens(activeLens, gexWalls, vexWalls);
       const flip = flipForActiveLens(activeLens, gammaFlip, vexFlip);
       const v = lensVisuals(activeLens);
-      applyWallsToSeries(series, callGuideRefs, putGuideRefs, walls ?? undefined, activeLens);
+      // How many wall guides/beads THIS timeframe shows (1m→6 … 15m→12). Higher timeframe →
+      // more, further-out walls drawn → wider axis (extendRangeForWalls keys off these SHOWN
+      // strikes below, so 1m stays tight while 15m widens).
+      const maxGuides = wallCountForTimeframe(timeframeRef.current);
+      applyWallsToSeries(series, callGuideRefs, putGuideRefs, walls ?? undefined, activeLens, maxGuides);
       applyFlipGuide(series, flipGuideRef, flip, v.flipLabel, v.flipColor);
       applyDarkPoolGuides(series, dpGuideRefs, dp);
       // Feed the just-drawn strikes to the autoscale provider and nudge a rescale, so
       // the axis widens to reveal support/resistance walls the moment the lens/horizon
-      // changes (off-hours there's no tick to trigger the recompute otherwise).
+      // changes (off-hours there's no tick to trigger the recompute otherwise). Sliced to the
+      // SHOWN count so the axis only widens for walls actually on screen — a 1m chart drawing 6
+      // walls must not be stretched by the 7th–12th walls that only a higher timeframe reveals.
       rangeWallsRef.current = {
-        call: (walls?.callWalls ?? []).map((w) => w.strike),
-        put: (walls?.putWalls ?? []).map((w) => w.strike),
+        call: (walls?.callWalls ?? []).slice(0, maxGuides).map((w) => w.strike),
+        put: (walls?.putWalls ?? []).slice(0, maxGuides).map((w) => w.strike),
       };
       series.priceScale().applyOptions({ autoScale: true });
     },
@@ -1358,6 +1387,19 @@ export function VectorChart({
       displayBarTimeRef.current = display[display.length - 1]?.time ?? 0;
       applyDisplayBars(series, volumeSeriesRef.current, display);
       refreshTrails(lensRef.current);
+      // Repaint the wall GUIDES too: the shown-count (wallCountForTimeframe) changes with the
+      // timeframe, so a pure timeframe switch (no lens/tick change) must redraw the call/put
+      // price lines — growing the count on an upshift, and clearing the now-extra lines on a
+      // downshift. refreshTrails above already rescaled the beads; without this the guides
+      // would stay frozen at the previous timeframe's count until the next SSE tick.
+      refreshOverlays(
+        lensRef.current,
+        liveGexWalls(),
+        vexWallsRef.current,
+        liveGammaFlip(),
+        vexFlipRef.current,
+        darkPoolRef.current
+      );
       if (liveSession) {
         maybeScrollToLive(chart);
       }
@@ -1368,7 +1410,7 @@ export function VectorChart({
     // too would just double the work; it only needs the CURRENT cursorTime on the renders
     // where timeframe/replayMode/liveSession actually change.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [timeframe, replayMode, liveSession, refreshTrails, applyFrame]);
+  }, [timeframe, replayMode, liveSession, refreshTrails, refreshOverlays, applyFrame, liveGexWalls, liveGammaFlip]);
 
   const handleLens = (next: VectorWallLens) => {
     if (next === "vex" && !vexAvailable) return;

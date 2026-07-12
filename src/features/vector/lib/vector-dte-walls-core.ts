@@ -5,6 +5,7 @@ import {
   type ReconstructContract,
 } from "./vector-gex-reconstruct";
 import { expiriesForHorizon, type VectorDteHorizon } from "./vector-dte-horizon";
+import { VECTOR_WALL_NODES_PER_SIDE } from "./vector-bar-timeframes";
 
 /**
  * PURE per-expiry GEX-walls core — the horizon-aware math behind DTE walls for ANY
@@ -53,7 +54,7 @@ export function perExpiryWallsFromContracts(
   const ladder = gexLadderAtSpot(filtered, spot, todayYmd);
   if (ladder.size === 0) return null;
 
-  const walls = computeGexWalls(ladder);
+  const walls = computeGexWalls(ladder, { maxPerSide: VECTOR_WALL_NODES_PER_SIDE });
   const flip = gammaFlipFromLadder(ladder, spot);
   return { walls, flip };
 }

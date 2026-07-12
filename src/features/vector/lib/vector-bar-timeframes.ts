@@ -12,6 +12,31 @@ export type VectorTimeframeMinutes = number;
 export const VECTOR_INTERVAL_MIN = 1;
 export const VECTOR_INTERVAL_MAX = 240;
 
+/**
+ * Max gamma-wall nodes per side the SERVER returns for Vector (double the global
+ * DEFAULT_WALL_NODES_PER_SIDE = 6 that other products use). Higher candle timeframes show a
+ * wider price range, so walls further from spot become relevant — the server must actually
+ * return those further-out walls for the client to reveal them. The client never draws more
+ * than this many per side; wallCountForTimeframe() picks how many of them to SHOW per timeframe.
+ */
+export const VECTOR_WALL_NODES_PER_SIDE = 12;
+
+/**
+ * How many wall nodes (guides + beads) to SHOW per side at a given candle timeframe. Higher
+ * timeframe → wider visible price band → more, further-out walls are worth showing. Bounded by
+ * VECTOR_WALL_NODES_PER_SIDE (the server cap) so we never ask to draw walls the server didn't
+ * return. Monotonic non-decreasing in tf. Anything above 15m (custom large intervals) stays at
+ * the cap.
+ */
+export function wallCountForTimeframe(tf: VectorTimeframeMinutes): number {
+  let count: number;
+  if (tf <= 1) count = 6;
+  else if (tf <= 3) count = 8;
+  else if (tf <= 5) count = 10;
+  else count = 12; // tf >= 15, and any larger custom interval, saturates at the cap
+  return Math.max(1, Math.min(VECTOR_WALL_NODES_PER_SIDE, count));
+}
+
 export type VectorOhlcBar = {
   time: number;
   open: number;

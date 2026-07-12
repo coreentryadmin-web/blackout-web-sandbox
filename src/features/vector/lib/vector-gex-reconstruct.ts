@@ -1,6 +1,7 @@
 import { computeGexWalls, type GexWalls } from "@/lib/providers/gex-wall-levels";
 import { buildWallHistorySample } from "./vector-wall-sample";
 import type { WallHistorySample } from "./vector-wall-history";
+import { VECTOR_WALL_NODES_PER_SIDE } from "./vector-bar-timeframes";
 
 /**
  * Historical intraday GEX reconstruction — the honest way to get DENSE wall rails
@@ -93,7 +94,7 @@ export function reconstructGexRail(
   for (const { time, spot } of spotSamples) {
     const ladder = gexLadderAtSpot(contracts, spot, sessionYmd);
     if (ladder.size === 0) continue;
-    const walls: GexWalls = computeGexWalls(ladder);
+    const walls: GexWalls = computeGexWalls(ladder, { maxPerSide: VECTOR_WALL_NODES_PER_SIDE });
     const sample = buildWallHistorySample({
       time,
       gexWalls: walls,
