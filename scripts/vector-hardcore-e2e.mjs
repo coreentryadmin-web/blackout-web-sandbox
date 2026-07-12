@@ -21,6 +21,7 @@ import { mkdirSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { join } from "node:path";
 import { chromium } from "playwright";
+import sharp from "sharp";
 
 const STAGING = (process.env.STAGING_BASE_URL || "https://staging.blackouttrades.com").replace(/\/$/, "");
 const OUT = process.env.SHOT_DIR || "/tmp/claude-0/-home-user/464bea58-d425-5552-a7bd-de5f2e9c99f9/scratchpad/vector-gate-shots";
@@ -70,6 +71,25 @@ const api = (page, path) => page.evaluate(async (p) => { try { const r = await f
 async function chartHash(page) {
   try { const buf = await page.locator("canvas").first().screenshot(); return createHash("md5").update(buf).digest("hex"); } catch { return null; }
 }
+// Composited screenshot of the whole chart region (all stacked canvases), for pixel-truth checks.
+async function chartShot(page) {
+  const box = await page.locator("canvas").first().boundingBox();
+  if (!box) return null;
+  await page.mouse.move(0, 0); // park the cursor so the crosshair legend can't bleed into the pixels
+  await page.waitForTimeout(300);
+  return page.screenshot({ clip: { x: box.x, y: box.y, width: box.width, height: box.height } });
+}
+// Count pixels within `tol` of an {r,g,b} target — proves a specific overlay colour is really drawn.
+async function countColor(buf, target, tol) {
+  const { data, info } = await sharp(buf).raw().toBuffer({ resolveWithObject: true });
+  let n = 0;
+  for (let i = 0; i < data.length; i += info.channels) {
+    if (Math.abs(data[i] - target.r) <= tol && Math.abs(data[i + 1] - target.g) <= tol && Math.abs(data[i + 2] - target.b) <= tol) n++;
+  }
+  return n;
+}
+const fmtVariants = (n) => [String(n), Number(n).toLocaleString("en-US")];
+const textCites = (text, n) => fmtVariants(n).some((v) => text.includes(v));
 async function dismiss(page) {
   for (const sel of ['button:has-text("SKIP")', '[aria-label="Close"]']) { const el = page.locator(sel).first(); if (await el.count().catch(() => 0)) { await el.click().catch(() => {}); return; } }
 }
@@ -116,11 +136,13 @@ async function validateTicker(page, ticker, errs) {
   rec(`${ticker}: no malformed unrounded floats in ladder`, noJunkFloats);
 
   // ---- C/D/E. per-DTE: max-pain + flip + regime consistency + dynamism ----
-  const mpByDte = {}, flipByDte = {}, regimeByDte = {}, termByDte = {};
+  const mpByDte = {}, flipByDte = {}, regimeByDte = {}, termByDte = {}, hashByDte = {}, wallsByDte = {};
   for (const dte of DTES) {
     await clickDte(page, dte);
     const snap = await domSnap(page);
     regimeByDte[dte] = snap.regime; termByDte[dte] = snap.terminal;
+    hashByDte[dte] = await chartHash(page); // the CHART itself must re-render per horizon, not just text
+    wallsByDte[dte] = await api(page, `/api/market/vector/walls?ticker=${ticker}&dte=${DTE_PARAM[dte]}`);
     const mp = await api(page, `/api/market/vector/max-pain?ticker=${ticker}&dte=${DTE_PARAM[dte]}`);
     mpByDte[dte] = mp?.maxPain ?? null;
     // Parse the flip the regime banner cites + assert wording matches spot-vs-flip.
@@ -144,6 +166,22 @@ async function validateTicker(page, ticker, errs) {
   rec(`${ticker}: DTE re-scopes (maxPain/flip/regime/terminal change across horizons)`,
     variants(mpByDte) > 1 || variants(flipByDte) > 1 || variants(regimeByDte) > 1 || variants(termByDte) > 1,
     `maxPain=${variants(mpByDte)} flip=${variants(flipByDte)} regime=${variants(regimeByDte)} term=${variants(termByDte)}`);
+  rec(`${ticker}: DTE re-renders the CHART canvas (pixels differ across horizons)`,
+    new Set(Object.values(hashByDte).filter(Boolean)).size > 1, `${new Set(Object.values(hashByDte).filter(Boolean)).size} distinct frames`);
+  // Narrowed horizons: the banner's resistance/support MUST equal the scoped walls API — that's the
+  // exact data path the DTE toggle re-scopes (#170). ("All" is checked against the ladder in H3
+  // instead: on "all" the UI intentionally shows the near-term stream walls, not this route.)
+  for (const dte of ["WEEKLY", "MONTHLY"]) {
+    const w = wallsByDte[dte]?.walls;
+    const rTxt = regimeByDte[dte] || "";
+    const bRes = rTxt.match(/resistance ([\d,.]+)/), bSup = rTxt.match(/support ([\d,.]+)/);
+    if (w?.callWalls?.[0] && w?.putWalls?.[0] && bRes && bSup) {
+      const br = Number(bRes[1].replace(/,/g, "")), bs = Number(bSup[1].replace(/,/g, ""));
+      rec(`${ticker} ${dte}: banner resistance/support equal the scoped walls API`,
+        near(br, w.callWalls[0].strike, 0.01) && near(bs, w.putWalls[0].strike, 0.01),
+        `banner ${br}/${bs} vs API ${w.callWalls[0].strike}/${w.putWalls[0].strike}`);
+    }
+  }
 
   // ---- F. timeframe dynamism: canvas re-renders + MA availability re-computes ----
   const hashByTf = {}, noteByTf = {};
@@ -168,6 +206,66 @@ async function validateTicker(page, ticker, errs) {
   const after = await chartHash(page);
   const badge = await page.locator(".vector-ind-badge").textContent().catch(() => null);
   rec(`${ticker}: enabling indicators redraws chart + badge tracks count`, before !== after && Number(badge) === 3, `badge=${badge}`);
+
+  // ---- H. UI TRUTH: the values MEMBERS SEE on screen match the data, and the pixels are real ----
+  // H1. EMA draw/undraw at the PIXEL level: EMA-9's orange (#fb923c) is unique on the chart (pivots
+  // share it but are off), so counting orange pixels proves the line is genuinely painted — and
+  // vanishes when toggled off. This is the strongest "the UI really rendered it" check we have.
+  const shotOn = await chartShot(page);
+  const emaOn = shotOn ? await countColor(shotOn, { r: 251, g: 146, b: 60 }, 18) : 0;
+  await page.locator(".vector-ind-trigger").click().catch(() => {}); await page.waitForTimeout(300);
+  await page.locator('.vector-ind-item:has-text("EMA")').first().click().catch(() => {});
+  await page.keyboard.press("Escape"); await page.waitForTimeout(1200);
+  const shotOff = await chartShot(page);
+  const emaOff = shotOff ? await countColor(shotOff, { r: 251, g: 146, b: 60 }, 18) : 0;
+  rec(`${ticker}: EMA pixels really paint on enable and vanish on disable`, emaOn > 120 && emaOff < emaOn * 0.25, `on=${emaOn}px off=${emaOff}px`);
+
+  // H2. Ladder UI text vs API: the strikes members READ in the panel are exactly the API's rows, in
+  // order, and each row's printed $ sign matches its side (call "+$", put "-$").
+  const uiRows = await page.evaluate(() =>
+    [...document.querySelectorAll(".vector-gex-ladder-row")].map((r) => (r.textContent || "").replace(/\s+/g, " ").trim())
+  );
+  const uiStrikes = uiRows.map((t) => { const m = t.match(/^([\d,]+(?:\.\d+)?)/); return m ? Number(m[1].replace(/,/g, "")) : NaN; });
+  const strikesMatch = uiStrikes.length === rows.length && uiStrikes.every((s, i) => near(s, rows[i].strike, 0.001));
+  const signsMatch = uiRows.every((t, i) => (rows[i]?.side === "call" ? t.includes("+$") : t.includes("-$")));
+  const fmtOk = uiRows.every((t) => /[+-]\$[\d,.]+[BMK]?/.test(t));
+  rec(`${ticker}: ladder UI strikes match API exactly (order + values)`, strikesMatch, `${uiStrikes.length} UI vs ${rows.length} API`);
+  rec(`${ticker}: ladder UI $-signs match side + formatted (+$/-$ B/M/K)`, signsMatch && fmtOk);
+
+  // H3/H4. Cross-SURFACE consistency on "all": the banner's resistance/support, the ladder's kings,
+  // and the terminal's callouts are three separate member-visible surfaces reading the same
+  // near-term structure — they must cite the SAME strikes. (The horizon walls route is checked on
+  // narrowed DTEs above; on "all" the UI intentionally shows the stream/ladder aggregate.)
+  const callKingL = rows.find((r) => r.isKing && r.side === "call")?.strike;
+  const putKingL = rows.find((r) => r.isKing && r.side === "put")?.strike;
+  if (callKingL != null && putKingL != null) {
+    const ui = await domSnap(page);
+    const bRes = ui.regime.match(/resistance ([\d,.]+)/), bSup = ui.regime.match(/support ([\d,.]+)/);
+    const br = bRes ? Number(bRes[1].replace(/,/g, "")) : NaN, bs = bSup ? Number(bSup[1].replace(/,/g, "")) : NaN;
+    rec(`${ticker}: banner resistance/support equal the ladder kings (cross-surface truth)`,
+      near(br, callKingL, 0.01) && near(bs, putKingL, 0.01), `banner ${br}/${bs} vs ladder kings ${callKingL}/${putKingL}`);
+    rec(`${ticker}: desk terminal cites the king strikes`, textCites(ui.terminal, callKingL) || textCites(ui.terminal, putKingL), `kings ${callKingL}/${putKingL}`);
+  }
+
+  // H5. Crosshair truth: hovering the chart shows a close that lies INSIDE the session's real
+  // high/low band (bars API), and moving the cursor changes the readout (interactive, not frozen).
+  const barsResp = await api(page, `/api/market/vector/bars?ticker=${ticker}`);
+  const bars = Array.isArray(barsResp?.bars) ? barsResp.bars : [];
+  const dayLo = Math.min(...bars.map((b) => b.low)), dayHi = Math.max(...bars.map((b) => b.high));
+  const box = await page.locator("canvas").first().boundingBox();
+  if (box && bars.length) {
+    const legendSel = "div.pointer-events-none.absolute.left-3.top-3";
+    await page.mouse.move(box.x + box.width * 0.3, box.y + box.height * 0.5); await page.waitForTimeout(600);
+    const leg1 = await page.locator(legendSel).innerText().catch(() => "");
+    await page.mouse.move(box.x + box.width * 0.7, box.y + box.height * 0.5); await page.waitForTimeout(600);
+    const leg2 = await page.locator(legendSel).innerText().catch(() => "");
+    const m = leg2.replace(/\s+/g, " ").match(new RegExp(`${ticker}\\s+([\\d,]+(?:\\.\\d+)?)`));
+    const hoverClose = m ? Number(m[1].replace(/,/g, "")) : NaN;
+    rec(`${ticker}: crosshair readout inside the session's real range [${dayLo}, ${dayHi}]`,
+      Number.isFinite(hoverClose) && hoverClose >= dayLo * 0.995 && hoverClose <= dayHi * 1.005, `hover close=${hoverClose}`);
+    rec(`${ticker}: crosshair readout tracks the cursor (two hovers differ)`, leg1 && leg2 && leg1 !== leg2);
+    await page.mouse.move(0, 0); await page.waitForTimeout(300);
+  } else rec(`${ticker}: crosshair check ran`, false, `box=${!!box} bars=${bars.length}`);
 
   // ---- I. wall/bead dynamics over time (forming / updating / growing / fading) ----
   // The recorded rail is what replay scrubs through, so its FRAME COUNT proves the walls were
