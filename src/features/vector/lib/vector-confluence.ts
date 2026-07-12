@@ -116,3 +116,31 @@ export function confluenceZones(
     (a, b) => b.score - a.score || Math.abs(a.center - spot) - Math.abs(b.center - spot)
   );
 }
+
+const KIND_LABEL: Record<ConfluenceKind, string> = {
+  "call-wall": "call wall",
+  "put-wall": "put wall",
+  "gamma-flip": "gamma flip",
+  "max-pain": "max pain",
+  "golden-pocket": "golden pocket",
+  hod: "HOD",
+  lod: "LOD",
+  pdh: "PDH",
+  pdl: "PDL",
+  pivot: "pivot",
+};
+
+/**
+ * Terminal-ready callout strings for the top zones — formatted HERE (where spot is known) so the
+ * terminal just prints lines: "7,472.5 (1.36% below) — put wall + golden pocket + PDL · score 6.5".
+ */
+export function confluenceCallouts(zones: readonly ConfluenceZone[], spot: number): string[] {
+  if (!(spot > 0)) return [];
+  return zones.map((z) => {
+    const pct = ((z.center - spot) / spot) * 100;
+    const side = pct >= 0 ? "above" : "below";
+    const kinds = z.kinds.map((k) => KIND_LABEL[k]).join(" + ");
+    const center = Math.round(z.center * 100) / 100;
+    return `${center.toLocaleString("en-US")} (${Math.abs(pct).toFixed(2)}% ${side}) — ${kinds} · score ${z.score}`;
+  });
+}

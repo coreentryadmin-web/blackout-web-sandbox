@@ -83,3 +83,20 @@ test("confluenceZones: quiet on junk — bad spot, non-finite prices, <2 usable 
   assert.deepEqual(confluenceZones([{ price: NaN, kind: "hod" }, { price: 1000, kind: "lod" }], SPOT), []);
   assert.deepEqual(confluenceZones([], SPOT), []);
 });
+
+test("confluenceCallouts: formatted terminal lines with distance side and kind names", async () => {
+  const { confluenceCallouts } = await import("./vector-confluence");
+  const zones = confluenceZones(
+    [
+      { price: 990.0, kind: "put-wall" },
+      { price: 990.8, kind: "golden-pocket" },
+      { price: 991.5, kind: "pdl" },
+    ],
+    SPOT
+  );
+  const out = confluenceCallouts(zones, SPOT);
+  assert.equal(out.length, 1);
+  // center 990.592…→ 990.59, 0.94% below spot 1000, kinds in cluster order, score 6.5.
+  assert.equal(out[0], "990.59 (0.94% below) — put wall + golden pocket + PDL · score 6.5");
+  assert.deepEqual(confluenceCallouts(zones, 0), []);
+});

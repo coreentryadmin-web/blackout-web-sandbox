@@ -22,6 +22,8 @@ type Props = {
   streamUpdatedAt?: number | null;
   proximity?: WallProximity | null;
   magnet?: GammaMagnet | null;
+  /** Ranked confluence callouts (pre-formatted by the chart's emit) — null when no zones. */
+  confluence?: string[] | null;
   wallIntegrity?: { call: WallIntegrity | null; put: WallIntegrity | null };
 };
 
@@ -36,6 +38,7 @@ export function VectorDeskTerminal({
   streamUpdatedAt,
   proximity,
   magnet,
+  confluence,
   wallIntegrity,
 }: Props) {
   const normalized = normalizeVectorTicker(ticker);
@@ -93,6 +96,15 @@ export function VectorDeskTerminal({
         indent: 1,
       });
     }
+    // CONFLUENCE — where several INDEPENDENT levels stack (walls, flip, max pain, golden
+    // pocket, session/prior-day levels). Ranked by the pure engine; absent when nothing stacks,
+    // never a filler line. The strings arrive pre-formatted from the chart (which knows spot).
+    if (confluence?.length) {
+      intel.push({ icon: "section", tone: "accent", text: "CONFLUENCE — stacked levels", indent: 1 });
+      for (const c of confluence) {
+        intel.push({ icon: "level", tone: "accent", text: c, indent: 2 });
+      }
+    }
     // Wall-integrity confidence for the two levels the desk reads first. A "thin"
     // wall is a warning (don't over-trust it); "firm" is confirmation. Only shown
     // on the GEX lens (integrity is a gamma-wall measure, not a vanna one).
@@ -109,7 +121,7 @@ export function VectorDeskTerminal({
     }
     if (intel.length) return [base[0]!, ...intel, ...base.slice(1)];
     return base;
-  }, [isSpx, spxPlay, spxPlayError, liveSession, normalized, lens, wallEvents, proximity, magnet, wallIntegrity]);
+  }, [isSpx, spxPlay, spxPlayError, liveSession, normalized, lens, wallEvents, proximity, magnet, confluence, wallIntegrity]);
 
   const cmd = isSpx ? "playbook --spx --vector-desk" : `vector --ticker ${normalized} --structure`;
 
