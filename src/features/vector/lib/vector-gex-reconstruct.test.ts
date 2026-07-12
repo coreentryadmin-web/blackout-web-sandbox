@@ -4,6 +4,7 @@ import {
   gammaPerShare,
   gexLadderAtSpot,
   reconstructGexRail,
+  reconstructGexHeatmapGrid,
   yearsToExpiry,
   type ReconstructContract,
 } from "./vector-gex-reconstruct";
@@ -61,4 +62,52 @@ test("empty/invalid inputs → empty rail, never throws or fabricates", () => {
   assert.deepEqual(reconstructGexRail([], [{ time: 1, spot: 7500 }], "2026-07-10"), []);
   assert.deepEqual(reconstructGexRail(chain, [], "2026-07-10"), []);
   assert.deepEqual(reconstructGexRail(chain, [{ time: 1, spot: 0 }], "2026-07-10"), []);
+});
+
+test("reconstructGexHeatmapGrid: dense strike×time matrix — signed cells, call+/put−", () => {
+  const spots = Array.from({ length: 6 }, (_, i) => ({ time: 1000 + i * 300, spot: 7500 + i * 10 }));
+  const grid = reconstructGexHeatmapGrid(chain, spots, "2026-07-10");
+  // One column per spot sample; rows = the 4 chain strikes, ascending.
+  assert.equal(grid.times.length, 6);
+  assert.equal(grid.cells.length, 6);
+  assert.deepEqual(grid.strikes, [7450, 7500, 7550, 7600]);
+  for (const col of grid.cells) assert.equal(col.length, grid.strikes.length);
+  // Signed: the call strikes (7550/7600) are +, the put strikes (7450/7500) are − at every column.
+  const iCall = grid.strikes.indexOf(7600);
+  const iPut = grid.strikes.indexOf(7450);
+  for (const col of grid.cells) {
+    assert.ok(col[iCall] > 0, "7600 call cell positive");
+    assert.ok(col[iPut] < 0, "7450 put cell negative");
+  }
+  assert.ok(grid.maxAbs > 0);
+});
+
+test("reconstructGexHeatmapGrid: caps the strike axis to the heaviest strikes by peak |GEX|", () => {
+  // 100 call strikes of trivial OI + the 4 heavy fixture strikes → cap keeps the heavy ones.
+  const many: ReconstructContract[] = [
+    ...chain,
+    ...Array.from({ length: 100 }, (_, i) => ({
+      strike: 8000 + i,
+      expiry: "2026-07-13",
+      openInterest: 1,
+      iv: 0.15,
+      type: "call" as const,
+    })),
+  ];
+  const spots = [{ time: 1000, spot: 7550 }];
+  const grid = reconstructGexHeatmapGrid(many, spots, "2026-07-10", 4);
+  assert.equal(grid.strikes.length, 4);
+  // The four fixture strikes (thousands of OI) dominate peak |GEX| over the OI=1 filler.
+  assert.deepEqual(grid.strikes, [7450, 7500, 7550, 7600]);
+});
+
+test("reconstructGexHeatmapGrid: empty/invalid inputs → empty grid, never throws", () => {
+  const empty = reconstructGexHeatmapGrid(chain, [], "2026-07-10");
+  assert.deepEqual(empty, { times: [], strikes: [], cells: [], maxAbs: 0 });
+  assert.deepEqual(reconstructGexHeatmapGrid([], [{ time: 1, spot: 7500 }], "2026-07-10"), {
+    times: [],
+    strikes: [],
+    cells: [],
+    maxAbs: 0,
+  });
 });

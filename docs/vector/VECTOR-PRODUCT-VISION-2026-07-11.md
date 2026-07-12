@@ -45,7 +45,12 @@ Three properties separate top-tier from mere:
   This is the single highest-leverage interpretation layer: it reframes every wall.
 - **Strike×time GEX positioning heatmap** *(task #14, BREAKTHROUGH)* — a 2D intensity map of the
   whole gamma surface migrating through the session, behind the candles. The "wow" visual that
-  out-reads static beads. Built on the recorder ring.
+  out-reads static beads. *(DATA LAYER SHIPPED: `reconstructGexHeatmapGrid` keeps the full
+  per-strike signed net-GEX ladder per time bucket — the strike×time matrix — instead of collapsing
+  to top walls; server wrapper `reconstructSessionHeatmap` reuses the rail's exact fetch/spot-path,
+  Redis-cached. This is the honest primitive the reconstruction module (#21, kept out of the bead
+  rail in #160) was preserved for — a heatmap is openly a MODEL, unlike the observed bead rail.
+  Next slice: the canvas render behind the candles + a toggle.)*
 - **Gamma magnet + expected-move cone** *(task #15)* — the gamma-weighted price hedging pulls
   toward, plus the options-implied probable range. Predictive, not descriptive. *(Magnet SHIPPED:
   strength-weighted center-of-mass, regime-honest wording — a magnet/pin in long gamma, a pivot

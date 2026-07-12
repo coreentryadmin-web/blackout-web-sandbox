@@ -43,4 +43,5 @@ export {
 } from "./lib/vector-wall-history";
 export type { VectorTimeframeMinutes } from "./lib/vector-bar-timeframes";
 export { loadSessionWallHistory } from "./lib/vector-wall-persist";
-export { reconstructSessionRail } from "./lib/vector-gex-reconstruct-server";
+export { reconstructSessionRail, reconstructSessionHeatmap } from "./lib/vector-gex-reconstruct-server";
+export type { GexHeatmapGrid } from "./lib/vector-gex-reconstruct";
