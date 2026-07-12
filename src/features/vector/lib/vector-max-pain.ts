@@ -18,6 +18,8 @@
  * so it doesn't move the arg-min.
  */
 
+import { expiriesForHorizon, type VectorDteHorizon } from "./vector-dte-horizon";
+
 /** The only chain fields max pain needs. `ReconstructContract` structurally satisfies this. */
 export type MaxPainContract = { strike: number; type: "call" | "put"; openInterest: number };
 
@@ -65,4 +67,23 @@ export function computeMaxPain(contracts: readonly MaxPainContract[]): MaxPainRe
   let best = points[0]!;
   for (const pt of points) if (pt.totalCash < best.totalCash) best = pt;
   return { maxPain: best.strike, points };
+}
+
+/**
+ * Max pain scoped to a DTE horizon — the read behind the chart's DTE toggle. Filters the chain to
+ * the horizon's expiries (same `expiriesForHorizon` the GEX walls use, so the honest "nearest
+ * expiry" fallback applies — a 0DTE horizon over a weekend snaps to the next live expiry rather
+ * than returning nothing) and computes max pain over just those contracts. Null when the horizon
+ * has no expiry / no usable OI. Kept pure (the chain fetch lives in the server shell).
+ */
+export function maxPainForHorizon(
+  contracts: readonly (MaxPainContract & { expiry: string })[],
+  horizon: VectorDteHorizon,
+  todayYmd: string
+): MaxPainResult | null {
+  if (contracts.length === 0) return null;
+  const expiries = [...new Set(contracts.map((c) => c.expiry))].sort();
+  const scoped = new Set(expiriesForHorizon(expiries, horizon, todayYmd));
+  if (scoped.size === 0) return null;
+  return computeMaxPain(contracts.filter((c) => scoped.has(c.expiry)));
 }
