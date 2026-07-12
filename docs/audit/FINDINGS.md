@@ -8,6 +8,18 @@ and required CI (`verify`) are green — no per-PR approval, no end-of-day hold.
 here and merge the PR in the same session. Supersedes all earlier "leave OPEN for review" notes
 in this file.
 
+## 🟡 P3 FOUND+FIXED 2026-07-12 — GEX ladder panel crowned its put king INSIDE the display band, disagreeing with the banner + chart anchor (SPX ⚑7480 vs true wall 7475)
+
+**Surface:** `src/features/vector/lib/vector-gex-ladder.ts` (`buildGexLadder`). Caught live by the new hardcore-suite cross-surface check (PR #204): three member-visible surfaces read the same near-term structure but cited different put walls — **SPX** banner/chart anchor `support 7,475` vs ladder panel king `⚑7480`; **NVDA** `190` vs `195`. Call side agreed everywhere.
+
+**Root cause:** kings were crowned AFTER the band/nearest-`maxRows` trim. With spot sitting high in the chain (SPX spot 7575 → 40-nearest band `[7480, 7675]`), the true put wall (7475) was cut by the cap before crowning, so the panel crowned the strongest strike *left inside the band* (7480) — a strike the banner/regime/anchor (which read the untrimmed structure) never cite. The panel's ⚑ silently pointed at the wrong wall whenever the real one sat just outside the band — exactly the price region members trade against.
+
+**Fix (`fix/vector-ladder-king-off-band`):** crown the kings on the FULL cleaned set BEFORE banding, then force-retain them through the trim — a king that fell outside is re-inserted, evicting the farthest-from-spot non-king row (smallest |gex| when spot is unknown) so the row cap holds and the panel always shows the same walls the banner and anchor cite. Exact-|gex| ties crown the strike NEAREST spot so a tie can never drag an arbitrary far-OTM strike into the panel. `magnitude` renormalises against the retained king (it is the new `maxAbs`).
+
+**Evidence:** live suite run 92/94 with exactly these 2 fails pre-fix (`banner 7475 vs ladder kings 7480`, `banner 190 vs 195`); `vector-gex-ladder.test.ts` +2 — a reconstruction of the SPX shape (41 strikes, true put king 5 below the band floor → force-retained + crowned, cap held at 40, farthest non-king evicted, maxAbs renormalised) and the tie-break case (all-equal |gex| → kings nearest spot, nothing off-band dragged in), 8/8. Full vector lib suite 246/246; tsc clean.
+
+**Status:** FIXED — pending merge + deploy, then the hardcore suite's cross-surface check must go green (94/94) as the live proof.
+
 ## 🟡 P2 FOUND+FIXED 2026-07-12 — Vector DTE toggle re-scoped everything EXCEPT the beads (0DTE still showed "All" walls)
 
 **Surface:** `src/features/vector/components/VectorChart.tsx` (`refreshTrails` + the DTE-effect `repaintLive`). Member finding: "select All shows walls/beads, then select 0DTE — it still shows All's walls and beads."

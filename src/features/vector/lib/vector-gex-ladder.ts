@@ -74,6 +74,28 @@ export function buildGexLadder(
   }
   if (entries.length === 0) return { ...EMPTY, spot };
 
+  // Crown the kings on the FULL cleaned set — BEFORE banding — and remember the entries so they can
+  // be force-retained below. Crowning after the trim let the panel's ⚑ disagree with the banner and
+  // the chart's king anchor whenever the true wall sat just outside the nearest-N band (caught live:
+  // SPX banner/chart put wall 7475 vs panel king 7480 with a [7480,7675] band). The three surfaces
+  // read the same structure, so the panel must crown — and show — the same strikes.
+  let fullCallKing: { strike: number; gex: number } | null = null;
+  let fullPutKing: { strike: number; gex: number } | null = null;
+  const spotForTie = spot != null && Number.isFinite(spot) && spot > 0 ? spot : null;
+  // Strictly-stronger wins; exact-|gex| ties crown the strike NEAREST spot (the tradable one), so a
+  // tie can never drag an arbitrary far-OTM strike into the panel via the force-retain below.
+  const beats = (cand: { strike: number; gex: number }, cur: { strike: number; gex: number } | null) => {
+    if (!cur) return true;
+    const a = Math.abs(cand.gex), b = Math.abs(cur.gex);
+    if (a !== b) return a > b;
+    return spotForTie != null && Math.abs(cand.strike - spotForTie) < Math.abs(cur.strike - spotForTie);
+  };
+  for (const e of entries) {
+    if (e.gex > 0) {
+      if (beats(e, fullCallKing)) fullCallKing = e;
+    } else if (beats(e, fullPutKing)) fullPutKing = e;
+  }
+
   // Band + nearest-to-spot cap, both keyed to spot so the panel centres on the tradable strikes.
   if (spot != null && Number.isFinite(spot) && spot > 0) {
     const halfBand = spot * bandPct;
@@ -91,23 +113,35 @@ export function buildGexLadder(
     entries = entries.slice(0, maxRows);
   }
 
+  // Force-retain the full-set kings through the band/cap: a king that fell outside is re-inserted,
+  // evicting the weakest claim (farthest-from-spot non-king row, or the smallest |gex| without a
+  // spot) so the row count stays capped and the panel ALWAYS shows the same walls the banner and
+  // the chart anchor cite.
+  const kingCallStrike = fullCallKing?.strike ?? null;
+  const kingPutStrike = fullPutKing?.strike ?? null;
+  for (const king of [fullCallKing, fullPutKing]) {
+    if (!king || entries.some((e) => e.strike === king.strike)) continue;
+    entries.push(king);
+    if (entries.length > maxRows) {
+      let evict = -1;
+      let worst = -Infinity;
+      for (let i = 0; i < entries.length; i++) {
+        const e = entries[i]!;
+        if (e.strike === kingCallStrike || e.strike === kingPutStrike) continue;
+        const score = spotForTie != null ? Math.abs(e.strike - spotForTie) : -Math.abs(e.gex);
+        if (score > worst) {
+          worst = score;
+          evict = i;
+        }
+      }
+      if (evict >= 0) entries.splice(evict, 1);
+    }
+  }
+
   let maxAbs = 0;
-  let kingCallStrike: number | null = null;
-  let kingCallAbs = 0;
-  let kingPutStrike: number | null = null;
-  let kingPutAbs = 0;
   for (const e of entries) {
     const abs = Math.abs(e.gex);
     if (abs > maxAbs) maxAbs = abs;
-    if (e.gex > 0) {
-      if (abs > kingCallAbs) {
-        kingCallAbs = abs;
-        kingCallStrike = e.strike;
-      }
-    } else if (abs > kingPutAbs) {
-      kingPutAbs = abs;
-      kingPutStrike = e.strike;
-    }
   }
 
   const rows: GexLadderRow[] = entries
@@ -116,7 +150,8 @@ export function buildGexLadder(
       gex: e.gex,
       side: (e.gex > 0 ? "call" : "put") as GexLadderSide,
       magnitude: maxAbs > 0 ? Math.abs(e.gex) / maxAbs : 0,
-      isKing: e.strike === kingCallStrike || e.strike === kingPutStrike,
+      // Crowned on the FULL set (side-checked so a strike shared across signs can't double-crown).
+      isKing: (e.gex > 0 && e.strike === kingCallStrike) || (e.gex < 0 && e.strike === kingPutStrike),
     }))
     .sort((a, b) => b.strike - a.strike);
 
