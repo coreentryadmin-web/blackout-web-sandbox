@@ -61,6 +61,7 @@ import {
   hasVexInHistory,
   liveTrailAnchorSec,
   mergeWallHistory,
+  narrowedHorizonTrail,
   pickActiveStrikes,
   trailsByStrike,
   trimHistoryForLiveTrails,
@@ -656,14 +657,23 @@ export function VectorChart({
     const series = seriesRef.current;
     if (!series) return;
     const v = lensVisuals(activeLens);
-    const history =
-      liveSessionRef.current && !replayModeRef.current
+    // NARROWED DTE HORIZON (0DTE/weekly/monthly): the recorded session rail is BLENDED near-term
+    // only — no per-horizon point-in-time history exists — so replaying it under a narrowed toggle
+    // would (wrongly) show the same beads as "All" (member finding: "select 0DTE, still shows All's
+    // walls"). narrowedHorizonTrail returns the CURRENT horizon-scoped walls (fetched into
+    // horizonWallsRef by the DTE effect) as a single point-in-time column at the latest bar — the
+    // honest "current 0DTE/weekly/monthly structure", distinct from All, refreshed each 15s in RTH.
+    // It returns null for All / VEX / empty-scope, in which case we draw the blended rail as before.
+    const lastBarTime = minuteBarsRef.current[minuteBarsRef.current.length - 1]?.time ?? 0;
+    const history: WallHistorySample[] =
+      narrowedHorizonTrail(dteHorizonRef.current, activeLens, horizonWallsRef.current, lastBarTime, horizonFlipRef.current) ??
+      (liveSessionRef.current && !replayModeRef.current
         ? trimHistoryForLiveTrails(
             wallHistoryRef.current,
             undefined,
             liveTrailAnchorSec(wallHistoryRef.current, minuteBarsRef.current.map((b) => b.time))
           )
-        : wallHistoryRef.current;
+        : wallHistoryRef.current);
     const callStrikes = applyWallBeadMarkers(callBeadsRef.current, history, "callWalls", v.callColor, activeLens, timeframeRef.current);
     const putStrikes = applyWallBeadMarkers(putBeadsRef.current, history, "putWalls", v.putColor, activeLens, timeframeRef.current);
     // Record what was actually drawn so the autoscale provider widens to reveal these exact beads
@@ -878,6 +888,10 @@ export function VectorChart({
         vexFlipRef.current,
         darkPoolRef.current
       );
+      // Repaint the BEADS on the horizon toggle too — refreshTrails is now horizon-aware, so a
+      // narrowed horizon redraws the scoped walls instead of the blended "All" rail. Without this,
+      // the toggle re-scoped only the flip line + terminal and the beads stayed on "All" (the bug).
+      refreshTrails(lensRef.current);
       // Re-derive the desk-terminal narration against the just-scoped walls/flip so the
       // regime banner, magnet, proximity, and integrity all snap to the new DTE horizon
       // the instant the member toggles it — not on the next SSE tick. Each emit is
@@ -939,6 +953,7 @@ export function VectorChart({
     // series exists fires the initial emits against the SSR-seeded walls/spot refs.
     chartReady,
     refreshOverlays,
+    refreshTrails,
     liveGexWalls,
     liveGammaFlip,
     emitRegime,

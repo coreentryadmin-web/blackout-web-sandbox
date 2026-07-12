@@ -8,6 +8,20 @@ and required CI (`verify`) are green — no per-PR approval, no end-of-day hold.
 here and merge the PR in the same session. Supersedes all earlier "leave OPEN for review" notes
 in this file.
 
+## 🟡 P2 FOUND+FIXED 2026-07-12 — Vector DTE toggle re-scoped everything EXCEPT the beads (0DTE still showed "All" walls)
+
+**Surface:** `src/features/vector/components/VectorChart.tsx` (`refreshTrails` + the DTE-effect `repaintLive`). Member finding: "select All shows walls/beads, then select 0DTE — it still shows All's walls and beads."
+
+**Root cause:** the wall BEADS are drawn only from the blended session rail (`wallHistoryRef` → `refreshTrails`), which is never horizon-scoped. The DTE toggle's `repaintLive` called `refreshOverlays` (flip line + autoscale) and re-emitted the terminal, but **never `refreshTrails`** — so the beads stayed on the "All" blended rail regardless of horizon. Two gaps: (a) beads not repainted on toggle; (b) even if repainted, the rail has no per-horizon history to draw.
+
+**Fix (Option A — user-directed default):** `refreshTrails` is now horizon-aware via a pure `narrowedHorizonTrail(horizon, lens, scopedWalls, lastBarTime, flip)` helper — for a narrowed GEX horizon it draws the CURRENT horizon-scoped walls (already fetched into `horizonWallsRef` by the DTE effect) as a single point-in-time column at the latest bar, honestly the "current 0DTE/weekly/monthly structure", distinct from All and refreshed each 15s in RTH. Returns null (→ blended rail) for All / VEX / empty-scope / no-bar, so beads never blank on a toggle. `repaintLive` now calls `refreshTrails` so the toggle repaints the beads.
+
+**Known limitation (honest):** narrowed horizons show the current scoped structure, not a multi-hour point-in-time TRAIL — the blended recorder doesn't keep per-horizon history. A per-horizon server recorder is the future full solution (logged as a follow-up).
+
+**Evidence:** `vector-wall-history.test.ts` +1 (narrowed→single scoped column; all/vex/empty→blended fallback), 33/33. tsc + eslint + @apply clean.
+
+**Status:** FIXED (`fix/vector-dte-bead-rescope`, PR #185) — live verify owed post-deploy.
+
 ## 🔴 P1 FOUND+FIXED 2026-07-12 — Vector under-shows walls for the whole long tail: ±6% heatmap band starves low-priced/wide-strike names (e.g. ASTS = only 1 call/1 put wall)
 
 **Surface:** `src/lib/providers/polygon-options-gex.ts` (`heatmapBandPct`). Found from a member report ("ASTS shows only one call, one put wall — should be multiple, worst case on 15m") + a live Polygon deep-dive.

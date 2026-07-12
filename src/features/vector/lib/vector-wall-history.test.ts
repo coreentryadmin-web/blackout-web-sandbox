@@ -5,6 +5,7 @@ import {
   liveTrailAnchorSec,
   mergeModeledUnderlay,
   mergeWallHistory,
+  narrowedHorizonTrail,
   pickActiveStrikes,
   recordWallSample,
   seedWallHistoryForDisplay,
@@ -359,4 +360,23 @@ test("bucketWallHistoryForInterval: 5m aligns to five-minute candle buckets", ()
   assert.deepEqual(out.map((s) => s.time), [base, base + 300]);
   assert.equal(out[0]!.walls.callWalls[0]!.strike, 6810);
   assert.equal(out[1]!.walls.callWalls[0]!.strike, 6830);
+});
+
+test("narrowedHorizonTrail: narrowed GEX horizon → single scoped column; all/vex/empty → blended fallback", () => {
+  const scoped = { callWalls: [{ strike: 105, pct: 40 }], putWalls: [{ strike: 95, pct: 30 }] };
+  // Narrowed GEX horizon with scoped walls → one point-in-time sample at the last bar.
+  const t = narrowedHorizonTrail("0dte", "gex", scoped, 1_700_000_000, 100.5);
+  assert.ok(t && t.length === 1, "narrowed → single-sample trail");
+  assert.equal(t![0]!.time, 1_700_000_000);
+  assert.equal(t![0]!.walls, scoped);
+  assert.equal(t![0]!.gammaFlip, 100.5);
+  // "all" horizon → null (caller uses the blended recorded rail).
+  assert.equal(narrowedHorizonTrail("all", "gex", scoped, 1_700_000_000, 100.5), null);
+  // VEX lens has no horizon scope → null.
+  assert.equal(narrowedHorizonTrail("weekly", "vex", scoped, 1_700_000_000, 100.5), null);
+  // Empty scoped walls → null (never blank the rail on a toggle; fall back to blended).
+  assert.equal(narrowedHorizonTrail("weekly", "gex", { callWalls: [], putWalls: [] }, 1_700_000_000, 100.5), null);
+  assert.equal(narrowedHorizonTrail("weekly", "gex", null, 1_700_000_000, 100.5), null);
+  // No last-bar time → null.
+  assert.equal(narrowedHorizonTrail("weekly", "gex", scoped, 0, 100.5), null);
 });
