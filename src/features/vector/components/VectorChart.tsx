@@ -98,7 +98,12 @@ export type VectorBar = {
   volume?: number;
 };
 
-const PUT_WALL_COLOR = "#b26bff";
+// Put beads are brightened from #b26bff so purple reads as strongly as the gold call beads at the
+// SAME opacity. Yellow (#ffd60a, ~0.72 rel-luminance) punches through a dark chart at low alpha;
+// the old purple (~0.30) washed out — so at the dimmed modeled-underlay alpha (0.15) members saw
+// "only yellow beads." #d97bff (~0.52) closes that perceptual gap so both colors ghost/solidify
+// together at every alpha, off-hours and in live RTH alike.
+const PUT_WALL_COLOR = "#d97bff";
 const CALL_WALL_COLOR = "#ffd60a";
 const VEX_POS_COLOR = "#7dd3fc";
 const VEX_NEG_COLOR = "#fb7185";
