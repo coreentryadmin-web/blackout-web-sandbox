@@ -230,23 +230,40 @@ export async function getVectorGexWallsForHorizon(
 ): Promise<GexWalls | null> {
   const t = normalizeVectorTicker(ticker);
 
-  if (vectorHasWsOracle(t)) {
-    if (horizon === "all") return getVectorGexWalls(t);
-    await primeVectorWallScope(t);
-    const s = state(t);
-    const scoped = expiriesForHorizon(s.wallScope.expiries ?? [], horizon, todayEtYmd());
-    if (!scoped.length) return getVectorGexWalls(t);
-    const ws = getGexStrikeExpiryLadder(t, scoped);
-    if (!ws || ws.ladder.size === 0) return getVectorGexWalls(t);
-    return computeGexWalls(ws.ladder, { maxPerSide: VECTOR_WALL_NODES_PER_SIDE });
-  }
+  // "all" is the fast, already-warmed blended aggregate for every ticker — no chain fetch.
+  if (horizon === "all") return getVectorGexWalls(t);
 
-  // NON-ORACLE: per-expiry walls from the Polygon chain (DTE for all tickers).
-  if (horizon === "all") return getVectorGexWalls(t); // blended aggregate — fast, no chain fetch
+  // NARROWED HORIZON — per-expiry walls from the Polygon options chain, for EVERY ticker
+  // including the oracles (SPX/SPY/QQQ all have option chains: SPX via I:SPX index options,
+  // SPY/QQQ via their equity chains). This is the path that ACTUALLY re-scopes by expiry.
+  //
+  // Why the chain path leads even for oracles: the UW per-expiry WS ladder
+  // (`getGexStrikeExpiryLadder`) is served per-process from the socket store, but the DTE
+  // toggle fires a fresh `/api/market/vector/walls?dte=` request that can land on any task —
+  // and there the horizon-sliced ladder came back IDENTICAL for 0dte/weekly/monthly (audit:
+  // SPX showed call 7575 / put 7475 / flip 7495.51 for all three), so the toggle was inert on
+  // the three flagship tickers. The chain recompute (same BSM the stocks use) genuinely
+  // narrows, so it takes precedence; the WS ladder stays a fallback below.
   const perExpiry = await getPerExpiryGexWalls(t, horizon).catch(() => null);
   if (perExpiry?.walls && (perExpiry.walls.callWalls.length || perExpiry.walls.putWalls.length)) {
     return perExpiry.walls;
   }
+
+  // ORACLE fallback: the UW per-expiry WS ladder sliced to the horizon, if the chain path was
+  // empty (e.g. Polygon options snapshot unavailable for the index root). Better than the
+  // blended aggregate when it exists, and it never regresses below the prior behavior.
+  if (vectorHasWsOracle(t)) {
+    await primeVectorWallScope(t);
+    const s = state(t);
+    const scoped = expiriesForHorizon(s.wallScope.expiries ?? [], horizon, todayEtYmd());
+    if (scoped.length) {
+      const ws = getGexStrikeExpiryLadder(t, scoped);
+      if (ws && ws.ladder.size > 0) {
+        return computeGexWalls(ws.ladder, { maxPerSide: VECTOR_WALL_NODES_PER_SIDE });
+      }
+    }
+  }
+
   return getVectorGexWalls(t); // honest fallback: never blank the walls
 }
 
@@ -254,19 +271,23 @@ export async function getVectorGexWallsForHorizon(
  * Gamma flip scoped to a DTE horizon — the companion to getVectorGexWallsForHorizon so the
  * gamma-flip overlay line re-scopes with the toggle too, not just the walls.
  *
- * For oracle tickers and the "all" horizon this is the canonical near-term flip
- * (`getVectorGammaFlip`) — the oracle per-expiry WS ladder doesn't expose a per-horizon flip
- * here, and "all" is the whole-chain view. For a non-oracle narrowed horizon it's the flip
- * derived from the SAME per-expiry ladder the walls came from (shares getPerExpiryGexWalls's
- * short memo, so this is not a second chain fetch), falling back to the near-term flip when the
+ * For the "all" horizon this is the canonical near-term flip (`getVectorGammaFlip`) — the
+ * whole-chain view. For a narrowed horizon (ANY ticker, oracle included) it's the flip derived
+ * from the SAME per-expiry chain ladder the walls came from (shares getPerExpiryGexWalls's short
+ * memo, so this is not a second chain fetch), falling back to the near-term flip when the
  * per-expiry ladder yields no crossing.
+ *
+ * Oracles used to short-circuit here (return the near-term flip for every horizon), which — with
+ * the walls path also collapsing — left the DTE toggle fully inert on SPX/SPY/QQQ. Routing the
+ * oracle flip through the per-expiry chain (the same source the walls now use) makes the flip
+ * line re-scope with the toggle on the flagship tickers too.
  */
 export async function getVectorGammaFlipForHorizon(
   ticker: string,
   horizon: VectorDteHorizon
 ): Promise<number | null> {
   const t = normalizeVectorTicker(ticker);
-  if (horizon === "all" || vectorHasWsOracle(t)) return getVectorGammaFlip(t);
+  if (horizon === "all") return getVectorGammaFlip(t);
   const perExpiry = await getPerExpiryGexWalls(t, horizon).catch(() => null);
   return perExpiry?.flip ?? getVectorGammaFlip(t);
 }
