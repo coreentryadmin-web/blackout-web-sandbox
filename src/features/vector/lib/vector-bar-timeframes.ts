@@ -52,6 +52,24 @@ export function wallCountForTimeframe(tf: VectorTimeframeMinutes): number {
   return Math.max(1, Math.min(VECTOR_WALL_NODES_PER_SIDE, count));
 }
 
+/**
+ * Half-width (fraction of spot) of the "in view" strike band the KING ANCHOR considers at a given
+ * candle timeframe. Scales UP with the timeframe so the anchor is timeframe-aware: a tight 1m view
+ * anchors to the nearest strong wall (~±2%), while a wide 4h view (~±12%) lets a bigger, further-out
+ * dominant wall become the anchor. Paired with `pickKingStrikes(walls, {spot, bandPct})`. Monotonic
+ * non-decreasing in tf; the near-spot dominant-wall case (e.g. SPX today) anchors the same at every
+ * timeframe because that wall is inside even the tightest band — which is correct, not a no-op.
+ */
+export function anchorBandPctForTimeframe(tf: VectorTimeframeMinutes): number {
+  if (tf <= 1) return 0.02;
+  if (tf <= 3) return 0.03;
+  if (tf <= 5) return 0.04;
+  if (tf <= 15) return 0.055;
+  if (tf <= 30) return 0.07;
+  if (tf <= 60) return 0.09;
+  return 0.12; // 2h+ — widest view
+}
+
 export type VectorOhlcBar = {
   time: number;
   open: number;
