@@ -168,6 +168,15 @@ export function VectorPageShell({
             chart toolbar row, and the regime banner sits just above the canvas. The universe scanner
             is a secondary, collapsible panel below. */}
         <div className="vector-chart-terminal-grid">
+          {/* Thin LEFT rail: the per-strike GEX ladder (few rows, dense) — moved off the right so the
+              chart gets the centre and the desk terminal owns the full right column. */}
+          <div className="vector-ladder-rail">
+            <VectorGexLadder
+              ticker={activeTicker}
+              liveSession={liveSession}
+              initialSpot={initialBars.length ? initialBars[initialBars.length - 1]!.close : null}
+            />
+          </div>
           <div className="vector-chart-terminal-chart min-w-0">
             <VectorChart
               // Ticker switches are client-side searchParams navigations — they
@@ -200,14 +209,9 @@ export function VectorPageShell({
               regimeSlot={<VectorRegimeBanner regime={regime} />}
             />
           </div>
-          {/* Right rail: the per-strike GEX ladder (Skylit-Atlas parity — the dense strike
-              column scanned alongside the chart) stacked above the desk terminal narration. */}
-          <div className="vector-right-rail">
-            <VectorGexLadder
-              ticker={activeTicker}
-              liveSession={liveSession}
-              initialSpot={initialBars.length ? initialBars[initialBars.length - 1]!.close : null}
-            />
+          {/* Full RIGHT column: the desk terminal narration — the main thing that scrolls, so it
+              gets the width and height (ladder moved to the thin left rail above). */}
+          <div className="vector-terminal-rail">
             <VectorDeskTerminal
               ticker={activeTicker}
               lens={lens}
