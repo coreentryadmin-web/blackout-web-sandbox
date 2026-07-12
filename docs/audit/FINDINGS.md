@@ -8,6 +8,38 @@ and required CI (`verify`) are green — no per-PR approval, no end-of-day hold.
 here and merge the PR in the same session. Supersedes all earlier "leave OPEN for review" notes
 in this file.
 
+## 🔴 P1 FOUND+FIXED 2026-07-12 — DTE toggle was INERT on the flagship tickers (SPX/SPY/QQQ): identical walls + flip for 0DTE/weekly/monthly
+
+**Surface:** `src/features/vector/lib/vector-snapshot.ts` (`getVectorGexWallsForHorizon` + `getVectorGammaFlipForHorizon`). Found in a **live 13-ticker end-to-end CTO audit** on staging (SPX, SPY, QQQ, NVDA, TSLA, AAPL, AMZN, META, RKLB, SNOW, CRWD, ASTS, EOSE — every DTE horizon + coherence + console/status).
+
+**Symptom (measured live):** SPX/SPY/QQQ returned **byte-identical walls AND gamma flip across 0DTE / weekly / monthly** — SPX: call 7575 / put 7475 / flip 7495.51 for all three horizons; SPY: 757 / 748 / 750.87 for all three. Every non-oracle stock re-scoped correctly (NVDA 0DTE put 190 → weekly/monthly 180; flip 195.28 → 199.26 → 199.68). The toggle *looked* like it worked (UI changed) but the data never moved — on the three tickers members use most.
+
+**Root cause (two collapsing paths):** (1) `getVectorGammaFlipForHorizon` short-circuited `horizon === "all" || vectorHasWsOracle(t)`, so the oracle flip returned the near-term flip for EVERY horizon by construction. (2) The oracle walls branch sliced the UW per-expiry WS ladder (`getGexStrikeExpiryLadder`) by the horizon's expiries, but the DTE toggle fires a fresh `/api/market/vector/walls?dte=` request that lands on any task, where the horizon-sliced ladder came back identical for all three horizons (the per-expiry WS store isn't reliably horizon-sliceable off the live socket task).
+
+**Fix:** prefer the per-expiry **Polygon-chain path for narrowed horizons on ALL tickers** — SPX (I:SPX index options), SPY/QQQ (equity chains) all have chains, and the chain recompute (same BSM the 9 stocks use, proven to narrow) now leads; the UW WS ladder is an oracle-only fallback used only when the chain returns empty (never regresses). The flip drops its oracle special-case and derives from the same per-expiry ladder. `"all"` is unchanged (UW-grade blended). This also makes the desk terminal (wired to horizon-scoped walls in #170) actually change across horizons on the flagship tickers.
+
+**Evidence:** `vector-dte-walls-server.test.ts` (+1) proves the per-expiry core re-scopes at INDEX scale (~7500): 0DTE keeps only today's 7575 call, 0DTE ≠ monthly walls. `tsc` clean; 4/4 DTE-server tests; `@apply` guard clean. Live staging re-verification of SPX/SPY/QQQ post-deploy.
+
+**Status:** FIXED (`fix/vector-oracle-dte-rescope`, PR #171).
+
+## 🟡 P3 FOUND 2026-07-12 — `/api/market/vector/walls?dte=all` returns empty/degenerate walls on cold serverless tasks
+
+**Surface:** `src/features/vector/lib/vector-snapshot.ts` (`getVectorGexWalls`, the `"all"` branch). Found in the same 13-ticker audit.
+
+**Symptom:** the `dte=all` walls API returns `calls:0, puts:0` (e.g. SPX/SPY/META/EOSE) or a degenerate asymmetric set (NVDA `calls:10, puts:1`) when the request lands on a task whose in-memory SSE stream state (`fallbackStrikeTotals`) hasn't warmed. The **flip** for `"all"` still returns correctly on the same request, so it's specifically the blended-walls read that's cold-state-dependent.
+
+**Not user-visible on the chart:** the chart's `"all"` walls come from the live per-viewer SSE stream (warm), not this endpoint — the `/walls?dte=` fetch only fires for NARROWED horizons in `VectorChart`. So members see walls on `"all"`; the public API is simply wrong for that horizon on a cold task. #171 partially mitigates by trying the chain path first for narrowed horizons, but `dte=all` itself still reads the blended aggregate. **Fix direction:** have the `"all"` walls fall back to a chain/heatmap recompute (like the flip already resolves) when the in-memory blended aggregate is empty, so the endpoint is self-consistent regardless of task warmth. Logged for a dedicated follow-up.
+
+**Status:** LOGGED (P3, latent — not chart-facing).
+
+## 🟡 P3 INVESTIGATE 2026-07-12 — App shows "JUL 10 CLOSE" while Polygon's latest close is Jul 11 (possible session-date staleness / staging ingest lag)
+
+**Surface:** Vector session-date resolution / staging market-data ingest. Found cross-checking spots against Polygon ground truth (`/v2/aggs/ticker/{t}/prev`).
+
+**Evidence:** app NVDA banner reads "JUL 10 CLOSE" spot 210.58; Polygon's most-recent prev-close is **210.96 (Jul 11, Fri)**. All app spots are one session behind Polygon. Could be (a) staging's universe/ingest cron not having advanced to Jul 11, or (b) a real off-by-one in the "last session" resolution. Prices are otherwise sane (SPX 7575 ≈ 10× SPY 755). **Next:** confirm on staging whether the session-date logic or the data pipeline is a day behind before Monday RTH; if it's ingest lag it self-resolves live, if it's resolution logic it needs a fix. Low urgency (off-hours; numbers internally consistent).
+
+**Status:** INVESTIGATE (P3).
+
 ## 🟡 P3 FOUND+FIXED 2026-07-12 — Desk terminal + regime banner described a DIFFERENT scope than the walls on the chart (DTE incoherence)
 
 **Surface:** `src/features/vector/components/VectorChart.tsx` (`emitRegime` / `emitProximity` / `emitMagnet` / `emitWallIntegrity`) + new pure helper `pickHorizonScopedValue` in `src/features/vector/lib/vector-dte-horizon.ts`. Found while live-verifying the DTE-for-all-tickers work (#168) on staging.

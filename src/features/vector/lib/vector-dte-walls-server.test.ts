@@ -62,6 +62,31 @@ test("call walls net-positive / put walls net-negative sign is preserved", () =>
   );
 });
 
+test("re-scopes at INDEX scale (SPX-like ~7500) — the oracle path now runs through this same core", () => {
+  // Regression guard for the oracle DTE bug: SPX/SPY/QQQ were showing identical 0dte/weekly/
+  // monthly walls because the UW WS ladder couldn't slice by horizon on a cold API task. The fix
+  // routes oracle narrowed-horizons through this per-expiry chain core, so it must genuinely
+  // narrow at index magnitudes too (not just the ~100 spot the other cases use).
+  const spx = 7500;
+  const spxChain: ReconstructContract[] = [
+    { strike: 7575, expiry: "2026-07-13", openInterest: 5000, iv: 0.15, type: "call" }, // 0DTE
+    { strike: 7425, expiry: "2026-07-13", openInterest: 5000, iv: 0.15, type: "put" },
+    { strike: 7650, expiry: "2026-07-17", openInterest: 8000, iv: 0.16, type: "call" }, // weekly
+    { strike: 7350, expiry: "2026-07-17", openInterest: 8000, iv: 0.16, type: "put" },
+    { strike: 7800, expiry: "2026-08-15", openInterest: 12000, iv: 0.18, type: "call" }, // monthly
+    { strike: 7200, expiry: "2026-08-15", openInterest: 12000, iv: 0.18, type: "put" },
+  ];
+  const zero = perExpiryWallsFromContracts(spxChain, spx, "0dte", TODAY);
+  const monthly = perExpiryWallsFromContracts(spxChain, spx, "monthly", TODAY);
+  assert.ok(zero && monthly, "both horizons resolve at index scale");
+  assert.deepEqual(
+    zero!.walls.callWalls.map((w) => w.strike).sort((a, b) => a - b),
+    [7575],
+    "0DTE keeps only today's 7575 call"
+  );
+  assert.notDeepEqual(zero!.walls, monthly!.walls, "SPX 0DTE vs monthly walls must differ");
+});
+
 test("honest null: empty chain, bad spot, or an all-expired horizon returns null (never blank walls)", () => {
   assert.equal(perExpiryWallsFromContracts([], SPOT, "0dte", TODAY), null, "empty chain → null");
   assert.equal(perExpiryWallsFromContracts(chain, 0, "0dte", TODAY), null, "spot ≤ 0 → null");
