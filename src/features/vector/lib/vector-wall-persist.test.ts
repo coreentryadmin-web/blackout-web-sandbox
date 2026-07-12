@@ -35,6 +35,15 @@ test("appendSessionWallSample replaces in-place for the same bar time", async ()
   assert.equal(loaded[0].walls.callWalls[0].strike, 6825);
 });
 
+test("appendSessionWallSample returns true when a sample lands, false when sessionYmd is empty", async () => {
+  // The boolean return is what lets the cron tally how many samples actually landed —
+  // the signal that was missing when a silent persistence gap emptied the off-hours rail.
+  const session = "2099-01-05";
+  assert.equal(await appendSessionWallSample(session, { time: 500, walls: walls(6800, 6700) }), true);
+  // A missing session id is never persisted — guarded before any cache touch.
+  assert.equal(await appendSessionWallSample("", { time: 1, walls: walls(1, 1) }), false);
+});
+
 test("persistWallSampleDebounced: coalesces rapid writes in the same bucket", async () => {
   _resetWallPersistDebounceForTest();
   const session = "2099-01-04";

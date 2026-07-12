@@ -8,6 +8,21 @@ and required CI (`verify`) are green — no per-PR approval, no end-of-day hold.
 here and merge the PR in the same session. Supersedes all earlier "leave OPEN for review" notes
 in this file.
 
+## 🟠 P2 INVESTIGATING 2026-07-12 — Off-hours SPX wall rail is EMPTY on staging: recorder persistence gap hidden behind a green `{ok}` cron
+
+**Surface:** `src/features/vector/lib/vector-wall-persist.ts` (`appendSessionWallSample`) + `src/app/api/cron/vector-universe-snapshot/route.ts`. Surfaced while capturing a replay to prove the rail is point-in-time (per the member's dynamism request): the off-hours SPX replay for Jul 10 renders **candles but zero wall beads**, and the desk terminal reads *"no GEX structure shifts"* — i.e. the persisted rail has ≤1 sample for a full trading session.
+
+**Evidence / what was ruled out (staging, via AWS CLI):** the EventBridge rule `blackout-staging-vector-universe-snapshot` exists + is ENABLED (`cron(*/5 11-21 ? * MON-FRI *)`); the `blackout-staging-hit-cron` Lambda fired 2402× on Jul 10 with only 54 errors across all ~30 crons; the endpoint records real data when force-hit (`{ok, rows:21}`); staging ElastiCache (`blackout-staging-redis`) shows **zero evictions** and **9% max memory** (not an eviction/OOM loss); `isEtCashRth()` is timezone-correct; and the write/read session-key aligns on the trading day itself. So the rail was **never durably written during RTH**, not lost after — yet the cron returned `{ok}` the whole session.
+
+**Root cause of the BLINDNESS (fixed here):** `appendSessionWallSample` swallowed every persistence error silently (`catch { /* never block */ }`) and the cron reported only `{ok, rows}` — it never surfaced whether a single wall sample actually landed. A session-long recording gap was therefore indistinguishable from a healthy run, which is exactly why it went unnoticed and took hours of AWS forensics to localize.
+
+**Fix (observability + read-back, this PR):** `appendSessionWallSample` now (1) logs caught errors to CloudWatch instead of swallowing them and (2) returns `boolean` so callers can tally landed samples. The cron reads the flagship SPX rail straight back after the build and returns/logs `spxRailLen` + `sessionYmd` — durability is now a number: force-run twice and `spxRailLen` must increment; if it stays flat while `rows=21`, the write path (not the heatmap fetch) is the culprit, and CloudWatch will now carry the underlying error. This does not change the non-blocking contract.
+
+**Evidence:** `vector-wall-persist.test.ts` (+1) — append returns `true` on a durable write, `false` on empty session id; `tsc` clean; 4/4 persist tests; `@apply` guard clean. Definitive root-cause read comes from the instrumented `spxRailLen` on the next force-run/RTH session post-deploy.
+
+**Status:** OBSERVABILITY FIXED (`fix/vector-recorder-observability`); underlying persistence root-cause tracked to the post-deploy `spxRailLen` reading. Note: #160 (time-honest rail) correctly removed the reconstruction that was *masking* this emptiness with a fabricated full-width rail — so this gap is now visible rather than papered over, which is the honest state.
+
+
 ## 🟡 P3 FOUND+FIXED 2026-07-11 — Off-hours rail was back-projecting the CLOSING chain → flat, full-width beads (the opposite of point-in-time dynamism)
 
 **Surface:** `src/app/(site)/vector/page.tsx` (off-hours dense-rail backfill block). Reported live: member compared to Skylit — "why are the beads throughout the price axis? those walls should be based on time / point-in-time … the reference beads don't stretch across the whole screen, they change dynamically with time and strength."
