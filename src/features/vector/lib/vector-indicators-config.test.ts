@@ -93,6 +93,8 @@ test("VECTOR_INDICATOR_GROUPS: covers every family + level + structure id exactl
     ...VECTOR_OVERLAY_FAMILIES.map((f) => f.id),
     ...VECTOR_LEVELS.map((l) => l.id),
     "market-structure",
+    "rsi",
+    "macd",
   ];
   assert.deepEqual([...grouped].sort(), [...expected].sort());
 });

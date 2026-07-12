@@ -73,7 +73,7 @@ import {
   type WallHistorySample,
 } from "@/features/vector/lib/vector-wall-history";
 import { pickKingStrikes, kingAnchorTitle } from "@/features/vector/lib/vector-king-anchor";
-import { smaSeries, emaSeries, vwapSeries } from "@/features/vector/lib/vector-indicators";
+import { smaSeries, emaSeries, vwapSeries, rsiSeries, macdSeries } from "@/features/vector/lib/vector-indicators";
 import {
   VECTOR_OVERLAYS,
   VECTOR_LEVELS,
@@ -692,6 +692,11 @@ export function VectorChart({
   // mirrors the state for the imperative paint path; `lastDisplayBarsRef` lets a toggle repaint
   // against the currently-shown bars without waiting for the next tick/timeframe change.
   const overlaySeriesRef = useRef<Map<VectorOverlayId, ISeriesApi<"Line">>>(new Map());
+  // Oscillator sub-pane series (RSI / MACD) — keyed by series role. Rebuilt only when the enabled
+  // OSCILLATOR set changes (pane layout shifts); their data is refreshed every paint. `lastOscKey`
+  // is that enabled-set signature so we don't tear down/recreate panes on every tick.
+  const oscillatorSeriesRef = useRef<Map<string, ISeriesApi<"Line"> | ISeriesApi<"Histogram">>>(new Map());
+  const lastOscKeyRef = useRef<string>("");
   // Horizontal price-line overlays for the "Key levels" group (HOD/LOD, opening range, fib), keyed
   // by `${levelId}:${lineKey}` so each line is diffed/kept/removed independently across repaints.
   const levelLinesRef = useRef<Map<string, IPriceLine>>(new Map());
@@ -1007,7 +1012,73 @@ export function VectorChart({
         );
       }
     }
+
+    // Oscillator sub-panes (RSI / MACD) in their OWN panes below price. The pane LAYOUT is rebuilt
+    // only when the enabled-oscillator set changes (toggling on/off), assigning panes 1..N in a
+    // fixed order so there's never an empty pane; the series DATA refreshes every paint. Drawing
+    // nothing when the study can't compute (too few bars) is honest — the pane just stays empty.
+    if (chart) paintOscillators(chart, enabled, bars, closes);
   }, []);
+
+  // Rebuild oscillator panes when the enabled set changes; always refresh their data. Kept a plain
+  // function (not a hook) because it's only called from inside the stable paintOverlays.
+  function paintOscillators(
+    chart: IChartApi,
+    enabled: Set<VectorIndicatorId>,
+    bars: VectorBar[],
+    closes: number[]
+  ) {
+    const oscMap = oscillatorSeriesRef.current;
+    // Fixed order → contiguous pane indices starting at 1 (0 is the price pane).
+    const active = (["rsi", "macd"] as const).filter((id) => enabled.has(id));
+    const key = active.join(",");
+    if (key !== lastOscKeyRef.current) {
+      for (const s of oscMap.values()) chart.removeSeries(s);
+      oscMap.clear();
+      active.forEach((id, i) => {
+        const pane = i + 1;
+        if (id === "rsi") {
+          const line = chart.addSeries(LineSeries, { color: "#c084fc", lineWidth: 2, priceLineVisible: false, lastValueVisible: true }, pane);
+          // 30/70 oversold/overbought guides + the 50 midline, drawn on the RSI series itself.
+          for (const [lvl, style] of [[70, LineStyle.Dashed], [50, LineStyle.Dotted], [30, LineStyle.Dashed]] as const) {
+            line.createPriceLine({ price: lvl, color: withAlpha("#c084fc", 0.4), lineWidth: 1, lineStyle: style, axisLabelVisible: true, title: String(lvl) });
+          }
+          oscMap.set("rsi", line);
+        } else {
+          // MACD pane: histogram (behind) + macd line + signal line.
+          oscMap.set("macd-hist", chart.addSeries(HistogramSeries, { priceLineVisible: false, lastValueVisible: false }, pane));
+          oscMap.set("macd", chart.addSeries(LineSeries, { color: "#38bdf8", lineWidth: 2, priceLineVisible: false, lastValueVisible: true }, pane));
+          oscMap.set("macd-signal", chart.addSeries(LineSeries, { color: "#f59e0b", lineWidth: 1, priceLineVisible: false, lastValueVisible: false }, pane));
+        }
+      });
+      lastOscKeyRef.current = key;
+    }
+    if (!active.length) return;
+    if (active.includes("rsi")) {
+      const rsi = rsiSeries(closes, 14);
+      const data: { time: Time; value: number }[] = [];
+      for (let i = 0; i < bars.length; i++) if (rsi[i] != null) data.push({ time: bars[i]!.time, value: rsi[i] as number });
+      (oscMap.get("rsi") as ISeriesApi<"Line"> | undefined)?.setData(data);
+    }
+    if (active.includes("macd")) {
+      const m = macdSeries(closes, 12, 26, 9);
+      const line: { time: Time; value: number }[] = [];
+      const sig: { time: Time; value: number }[] = [];
+      const hist: { time: Time; value: number; color: string }[] = [];
+      for (let i = 0; i < bars.length; i++) {
+        const t = bars[i]!.time;
+        if (m[i]!.macd != null) line.push({ time: t, value: m[i]!.macd as number });
+        if (m[i]!.signal != null) sig.push({ time: t, value: m[i]!.signal as number });
+        if (m[i]!.histogram != null) {
+          const h = m[i]!.histogram as number;
+          hist.push({ time: t, value: h, color: withAlpha(h >= 0 ? "#34d399" : "#f87171", 0.6) });
+        }
+      }
+      (oscMap.get("macd-hist") as ISeriesApi<"Histogram"> | undefined)?.setData(hist);
+      (oscMap.get("macd") as ISeriesApi<"Line"> | undefined)?.setData(line);
+      (oscMap.get("macd-signal") as ISeriesApi<"Line"> | undefined)?.setData(sig);
+    }
+  }
 
   // Sync the enabled-indicator set to the ref the imperative paint reads, and repaint immediately
   // against the currently-shown bars so toggling an indicator is instant (no wait for the next
@@ -1761,6 +1832,10 @@ export function VectorChart({
       // chart.remove() disposes the overlay line series too — swap in a fresh map so a remount
       // rebuilds instead of touching the now-disposed series (matches the sibling ref resets).
       overlaySeriesRef.current = new Map();
+      // chart.remove() disposes the oscillator pane series too — swap in a fresh map + clear the
+      // layout key so a remount rebuilds the panes from scratch.
+      oscillatorSeriesRef.current = new Map();
+      lastOscKeyRef.current = "";
       levelLinesRef.current = new Map();
       priorDayRef.current = null;
       priorDayTickerRef.current = null;
