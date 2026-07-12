@@ -34,15 +34,22 @@ export async function appendSessionWallSample(
   sessionYmd: string,
   sample: WallHistorySample,
   ticker = "SPX"
-): Promise<void> {
-  if (!sessionYmd) return;
+): Promise<boolean> {
+  if (!sessionYmd) return false;
   try {
     const existing = await loadSessionWallHistory(sessionYmd, ticker);
     const next = mergeWallHistory(existing, [sample]);
-    if (next === existing) return; // no-op merge — nothing new to write
+    if (next === existing) return false; // no-op merge — nothing new to write
     await sharedCacheSet(redisKey(ticker, sessionYmd), next, TTL_SEC);
-  } catch {
-    /* supplementary visual — never block the live stream */
+    return true;
+  } catch (err) {
+    // Persistence is a supplementary visual and must never block the live stream —
+    // but swallowing the error SILENTLY hid a session-long recording gap (an empty
+    // off-hours rail) behind a green {ok} cron for hours. Log it so the failure is
+    // observable in CloudWatch without changing the non-blocking contract, and
+    // return false so callers can tally how many samples actually landed.
+    console.warn(`[vector-wall-persist] append failed ${ticker}:${sessionYmd}:`, err);
+    return false;
   }
 }
 
