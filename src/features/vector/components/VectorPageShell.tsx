@@ -100,6 +100,7 @@ export function VectorPageShell({
       gammaFlip: initialGammaFlip,
     })
   );
+  const [confluence, setConfluence] = useState<string[] | null>(null);
   const [magnet, setMagnet] = useState<GammaMagnet | null>(() =>
     deriveGammaMagnet({
       spot: initialBars.length ? initialBars[initialBars.length - 1]!.close : null,
@@ -191,6 +192,7 @@ export function VectorPageShell({
               onRegimeChange={setRegime}
               onProximityChange={setProximity}
               onMagnetChange={setMagnet}
+              onConfluenceChange={setConfluence}
               onWallIntegrityChange={setWallIntegrity}
             />
           </div>
@@ -210,6 +212,7 @@ export function VectorPageShell({
               streamUpdatedAt={streamUpdatedAt}
               proximity={proximity}
               magnet={magnet}
+              confluence={confluence}
               wallIntegrity={wallIntegrity}
             />
           </div>

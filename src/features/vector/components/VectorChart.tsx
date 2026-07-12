@@ -82,6 +82,9 @@ import {
 } from "@/features/vector/lib/vector-indicators-config";
 import { levelLinesFor, type LevelLine, type PriorDayOhlc } from "@/features/vector/lib/vector-key-levels";
 import { buildStructureMarkers } from "@/features/vector/lib/vector-structure-markers";
+import { confluenceZones, confluenceCallouts, type ConfluenceLevel } from "@/features/vector/lib/vector-confluence";
+import { sessionHodLod } from "@/features/vector/lib/vector-key-levels";
+import { latestSwing, goldenPocket } from "@/features/vector/lib/vector-fib-swing";
 import {
   buildReplayTimeline,
   clampTimelineIndex,
@@ -177,6 +180,8 @@ type Props = {
   onRegimeChange?: (regime: VectorRegime) => void;
   onProximityChange?: (proximity: WallProximity | null) => void;
   onMagnetChange?: (magnet: GammaMagnet | null) => void;
+  /** Ranked confluence callouts (pre-formatted strings) for the desk terminal; null = no zones. */
+  onConfluenceChange?: (callouts: string[] | null) => void;
   onWallIntegrityChange?: (integrity: { call: WallIntegrity | null; put: WallIntegrity | null }) => void;
 };
 
@@ -644,6 +649,7 @@ export function VectorChart({
   onRegimeChange,
   onProximityChange,
   onMagnetChange,
+  onConfluenceChange,
   onWallIntegrityChange,
   onLensChange,
 }: Props) {
@@ -676,8 +682,11 @@ export function VectorChart({
   const kingPutLineRef = useRef<IPriceLine | null>(null);
   // Max-pain level — a single dotted amber line at the horizon-scoped max-pain strike, fetched from
   // /api/market/vector/max-pain and redrawn on ticker/DTE change (like the king anchor). Cleared on
-  // ticker switch / unmount alongside the other price lines.
+  // ticker switch / unmount alongside the other price lines. The VALUE is kept too — the confluence
+  // emit stacks it against the other levels.
   const maxPainLineRef = useRef<IPriceLine | null>(null);
+  const maxPainValueRef = useRef<number | null>(null);
+  const lastConfluenceRef = useRef<string>("");
   // Opt-in technical overlays (VWAP/EMA/SMA) — one lightweight-charts line series per enabled
   // indicator, created on demand and removed when toggled off. Default: none. `indicatorsRef`
   // mirrors the state for the imperative paint path; `lastDisplayBarsRef` lets a toggle repaint
@@ -1181,6 +1190,40 @@ export function VectorChart({
     onMagnetChange(magnet);
   }, [onMagnetChange, liveGexWalls, liveGammaFlip]);
 
+  // Emit ranked CONFLUENCE zones (CTO#7) — stacks every level the chart already tracks (horizon-
+  // scoped walls, flip, max pain, session HOD/LOD, auto-fib golden pocket, prior-day H/L) through
+  // the pure confluenceZones engine and sends the top callouts to the desk terminal. Levels the
+  // chart doesn't have yet (max pain pre-fetch, prior-day unfetched) simply don't contribute — the
+  // zones are honest about what's known NOW and refine as data lands. Deduped by the callout key.
+  const emitConfluence = useCallback(() => {
+    if (!onConfluenceChange) return;
+    const spot = spotRef.current;
+    if (!(spot && spot > 0)) return;
+    const lvls: ConfluenceLevel[] = [];
+    const walls = liveGexWalls();
+    for (const w of walls?.callWalls?.slice(0, 3) ?? []) lvls.push({ price: w.strike, kind: "call-wall" });
+    for (const w of walls?.putWalls?.slice(0, 3) ?? []) lvls.push({ price: w.strike, kind: "put-wall" });
+    const flip = liveGammaFlip();
+    if (flip != null) lvls.push({ price: flip, kind: "gamma-flip" });
+    if (maxPainValueRef.current != null) lvls.push({ price: maxPainValueRef.current, kind: "max-pain" });
+    const bars = lastDisplayBarsRef.current;
+    const hl = sessionHodLod(bars);
+    if (hl) lvls.push({ price: hl.hod, kind: "hod" }, { price: hl.lod, kind: "lod" });
+    const swing = latestSwing(bars, 3);
+    if (swing) {
+      const gp = goldenPocket(swing);
+      lvls.push({ price: gp.top, kind: "golden-pocket" }, { price: gp.bottom, kind: "golden-pocket" });
+    }
+    if (priorDayRef.current) {
+      lvls.push({ price: priorDayRef.current.pdh, kind: "pdh" }, { price: priorDayRef.current.pdl, kind: "pdl" });
+    }
+    const callouts = confluenceCallouts(confluenceZones(lvls, spot).slice(0, 3), spot);
+    const key = callouts.join("|") || "none";
+    if (key === lastConfluenceRef.current) return;
+    lastConfluenceRef.current = key;
+    onConfluenceChange(callouts.length ? callouts : null);
+  }, [onConfluenceChange, liveGexWalls, liveGammaFlip]);
+
   // Emit top-wall integrity (is this wall real?) — strength × session persistence
   // (from the same history rail the trails use) × isolation. Scores the HORIZON-SCOPED
   // top walls (liveGexWalls) so the readout matches the walls on the chart. Note: the
@@ -1236,6 +1279,7 @@ export function VectorChart({
       emitRegime();
       emitProximity();
       emitMagnet();
+      emitConfluence();
       emitWallIntegrity();
     };
 
@@ -1327,7 +1371,9 @@ export function VectorChart({
             ? ((await res.json()) as { maxPain?: number | null }).maxPain ?? null
             : null;
         if (cancelled || dteHorizonRef.current !== dteHorizon || !seriesRef.current) return;
+        maxPainValueRef.current = strike;
         applyMaxPainLine(seriesRef.current, maxPainLineRef, strike);
+        emitConfluence(); // the max-pain level just landed — the zone stack may have changed
       } catch {
         // Network throw: keep the last-drawn line rather than blank it on a transient blip.
       }
@@ -1362,7 +1408,7 @@ export function VectorChart({
     liveGammaFlip,
     emitRegime,
     emitProximity,
-    emitMagnet,
+    emitMagnet, emitConfluence,
     emitWallIntegrity,
   ]);
 
@@ -1380,8 +1426,9 @@ export function VectorChart({
     emitRegime();
     emitProximity();
     emitMagnet();
+      emitConfluence();
     emitWallIntegrity();
-  }, [lens, chartReady, emitRegime, emitProximity, emitMagnet, emitWallIntegrity]);
+  }, [lens, chartReady, emitRegime, emitProximity, emitMagnet, emitConfluence, emitWallIntegrity]);
 
   const connectLive = useCallback(() => {
     if (!liveSessionRef.current) return;
@@ -1532,10 +1579,11 @@ export function VectorChart({
         emitRegime();
         emitProximity();
         emitMagnet();
+      emitConfluence();
         emitWallIntegrity();
       }
     });
-  }, [sessionYmd, refreshTrails, refreshOverlays, onFreshness, ticker, liveGexWalls, liveGammaFlip, emitRegime, emitProximity, emitMagnet, emitWallIntegrity, paintOverlays]);
+  }, [sessionYmd, refreshTrails, refreshOverlays, onFreshness, ticker, liveGexWalls, liveGammaFlip, emitRegime, emitProximity, emitMagnet, emitConfluence, emitWallIntegrity, paintOverlays]);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -1709,6 +1757,7 @@ export function VectorChart({
       kingCallLineRef.current = null;
       kingPutLineRef.current = null;
       maxPainLineRef.current = null;
+      maxPainValueRef.current = null;
       // chart.remove() disposes the overlay line series too — swap in a fresh map so a remount
       // rebuilds instead of touching the now-disposed series (matches the sibling ref resets).
       overlaySeriesRef.current = new Map();
