@@ -109,18 +109,21 @@ test("wallCountForTimeframe: preset timeframes map to the specified shown-counts
   assert.equal(wallCountForTimeframe(1), 6, "1m shows 6 near-spot walls");
   assert.equal(wallCountForTimeframe(3), 8, "3m shows 8");
   assert.equal(wallCountForTimeframe(5), 10, "5m shows 10");
-  assert.equal(wallCountForTimeframe(15), 12, "15m shows the full 12 (server cap)");
+  assert.equal(wallCountForTimeframe(15), 12, "15m shows 12");
+  assert.equal(wallCountForTimeframe(30), 14, "30m steps up to 14");
+  assert.equal(wallCountForTimeframe(60), 16, "60m steps up to 16");
+  assert.equal(wallCountForTimeframe(120), 18, "2h shows 18");
 });
 
 test("wallCountForTimeframe: never exceeds VECTOR_WALL_NODES_PER_SIDE, even for huge intervals", () => {
-  assert.equal(VECTOR_WALL_NODES_PER_SIDE, 12);
+  assert.equal(VECTOR_WALL_NODES_PER_SIDE, 20);
   for (const tf of [15, 30, 60, 120, 240]) {
     assert.ok(
       wallCountForTimeframe(tf) <= VECTOR_WALL_NODES_PER_SIDE,
       `tf=${tf} must not exceed the server cap`
     );
   }
-  assert.equal(wallCountForTimeframe(240), 12, "largest interval saturates at the cap");
+  assert.equal(wallCountForTimeframe(240), 20, "largest interval saturates at the cap");
 });
 
 test("wallCountForTimeframe: monotonic non-decreasing across ascending timeframes", () => {
