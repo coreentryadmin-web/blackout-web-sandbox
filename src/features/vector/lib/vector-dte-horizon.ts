@@ -49,6 +49,28 @@ export function normalizeDteHorizon(v: unknown): VectorDteHorizon {
   return isVectorDteHorizon(v) ? v : VECTOR_DEFAULT_DTE_HORIZON;
 }
 
+/**
+ * Choose the value to SHOW for a given horizon: the horizon-scoped value when the
+ * member has narrowed the DTE (not "all") AND a scoped value exists, else the live
+ * near-term stream value. This is the single rule behind coherence between the walls
+ * drawn on the chart and the desk-terminal narration (regime / magnet / proximity /
+ * integrity) — every consumer that must "adapt to the DTE selection" routes through
+ * this so it can never describe a different scope than the chart shows.
+ *
+ * Honest fallback: on "all", or when the scoped fetch hasn't landed / yielded nothing
+ * (scoped == null), we fall back to the stream value rather than blanking — a narrowed
+ * horizon must never make a wall or flip vanish just because its scoped fetch was empty.
+ *
+ * Pure and generic (works for walls objects and for the numeric gamma flip alike).
+ */
+export function pickHorizonScopedValue<T>(
+  horizon: VectorDteHorizon,
+  scoped: T | null | undefined,
+  stream: T
+): T {
+  return horizon !== "all" && scoped != null ? scoped : stream;
+}
+
 /** Calendar days from `todayYmd` to `expiryYmd` (expiry − today), or null on a bad date. */
 function dteDays(todayYmd: string, expiryYmd: string): number | null {
   const a = Date.parse(`${todayYmd}T00:00:00Z`);

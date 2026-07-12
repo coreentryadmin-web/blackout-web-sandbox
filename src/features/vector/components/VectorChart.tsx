@@ -36,6 +36,7 @@ import {
 import { VECTOR_CHART_LOCALE } from "@/features/vector/lib/vector-chart-config";
 import {
   normalizeDteHorizon,
+  pickHorizonScopedValue,
   type VectorDteHorizon,
 } from "@/features/vector/lib/vector-dte-horizon";
 import { deriveVectorRegime, type VectorRegime } from "@/features/vector/lib/vector-regime";
@@ -709,9 +710,7 @@ export function VectorChart({
   // full near-term scope), so the horizon override is a live-view concern only.
   const liveGexWalls = useCallback(
     (): VectorWalls | null =>
-      dteHorizonRef.current !== "all" && horizonWallsRef.current
-        ? horizonWallsRef.current
-        : gexWallsRef.current,
+      pickHorizonScopedValue(dteHorizonRef.current, horizonWallsRef.current, gexWallsRef.current),
     []
   );
 
@@ -720,56 +719,58 @@ export function VectorChart({
   // live-view-only scope as liveGexWalls: replay/history paths use time-sliced recorded flips.
   const liveGammaFlip = useCallback(
     (): number | null =>
-      dteHorizonRef.current !== "all" && horizonFlipRef.current != null
-        ? horizonFlipRef.current
-        : gammaFlipRef.current,
+      pickHorizonScopedValue(dteHorizonRef.current, horizonFlipRef.current, gammaFlipRef.current),
     []
   );
 
-  // Compute the gamma regime from the current spot / flip / near-term walls and
-  // emit it up to the page banner. Uses the canonical near-term walls (not the
-  // DTE-scoped view) since the gamma flip is itself a near-term measure — regime
-  // is about the market's actual hedging posture, independent of the DTE lens.
+  // Compute the gamma regime from the current spot / flip / walls and emit it up to
+  // the page banner. Uses the HORIZON-SCOPED view (liveGexWalls/liveGammaFlip) so the
+  // banner describes exactly what the member is looking at: on "all" that's the near-
+  // term stream, but when they narrow to 0DTE/weekly/monthly the regime read + flip
+  // re-scope with the walls actually drawn on the chart. (User-requested coherence —
+  // the terminal must adapt to the DTE selection, not narrate a different scope.)
   const emitRegime = useCallback(() => {
     if (!onRegimeChange) return;
-    const walls = gexWallsRef.current;
+    const walls = liveGexWalls();
     const regime = deriveVectorRegime({
       spot: spotRef.current,
-      gammaFlip: gammaFlipRef.current,
+      gammaFlip: liveGammaFlip(),
       topCallWall: walls?.callWalls?.[0]?.strike ?? null,
       topPutWall: walls?.putWalls?.[0]?.strike ?? null,
     });
     if (regime.read === lastRegimeReadRef.current) return;
     lastRegimeReadRef.current = regime.read;
     onRegimeChange(regime);
-  }, [onRegimeChange]);
+  }, [onRegimeChange, liveGexWalls, liveGammaFlip]);
 
-  // Emit the nearest-wall proximity callout (dynamic desk-terminal pulse). Uses
-  // the canonical near-term walls + flip, deduped by callout text so it only
+  // Emit the nearest-wall proximity callout (dynamic desk-terminal pulse). Uses the
+  // HORIZON-SCOPED walls + flip so "spot testing the 190 put wall" refers to the wall
+  // the member's DTE selection actually surfaces — deduped by callout text so it only
   // fires when the actionable level actually changes.
   const emitProximity = useCallback(() => {
     if (!onProximityChange) return;
     const prox = deriveWallProximity({
       spot: spotRef.current,
-      walls: gexWallsRef.current,
-      gammaFlip: gammaFlipRef.current,
+      walls: liveGexWalls(),
+      gammaFlip: liveGammaFlip(),
     });
     const key = prox ? `${prox.side}:${prox.strike}:${prox.nearness}` : "none";
     if (key === lastProximityRef.current) return;
     lastProximityRef.current = key;
     onProximityChange(prox);
-  }, [onProximityChange]);
+  }, [onProximityChange, liveGexWalls, liveGammaFlip]);
 
   // Emit the gamma magnet (dealer-hedging center of mass) up to the desk terminal.
   // Regime posture drives the honest wording (pin in long gamma, pivot in short),
-  // so it's derived here from the SAME canonical near-term walls/flip as the regime
-  // banner. Deduped by the level+pull+posture key so it only fires on real change.
+  // so it's derived here from the SAME horizon-scoped walls/flip as the regime banner
+  // (liveGexWalls/liveGammaFlip) — the magnet's center of mass re-computes over the
+  // walls the member's DTE selection surfaces. Deduped by the level+pull+posture key.
   const emitMagnet = useCallback(() => {
     if (!onMagnetChange) return;
-    const walls = gexWallsRef.current;
+    const walls = liveGexWalls();
     const regime = deriveVectorRegime({
       spot: spotRef.current,
-      gammaFlip: gammaFlipRef.current,
+      gammaFlip: liveGammaFlip(),
       topCallWall: walls?.callWalls?.[0]?.strike ?? null,
       topPutWall: walls?.putWalls?.[0]?.strike ?? null,
     });
@@ -778,19 +779,23 @@ export function VectorChart({
     if (key === lastMagnetRef.current) return;
     lastMagnetRef.current = key;
     onMagnetChange(magnet);
-  }, [onMagnetChange]);
+  }, [onMagnetChange, liveGexWalls, liveGammaFlip]);
 
   // Emit top-wall integrity (is this wall real?) — strength × session persistence
-  // (from the same history rail the trails use) × isolation. Deduped by the tier+score
-  // of both sides so it only fires when the confidence read actually changes.
+  // (from the same history rail the trails use) × isolation. Scores the HORIZON-SCOPED
+  // top walls (liveGexWalls) so the readout matches the walls on the chart. Note: the
+  // persistence component reads the near-term-scoped recorded rail (wallHistoryRef), so
+  // for a narrowed horizon whose top wall sits at a strike the rail never recorded,
+  // persistence is best-effort — strength + isolation still score it honestly, and a
+  // strike the rail did track still gets full persistence credit. Deduped by tier+score.
   const emitWallIntegrity = useCallback(() => {
     if (!onWallIntegrityChange) return;
-    const integ = scoreTopWalls(gexWallsRef.current, wallHistoryRef.current);
+    const integ = scoreTopWalls(liveGexWalls(), wallHistoryRef.current);
     const key = `${integ.call?.strike ?? "-"}:${integ.call?.tier ?? "-"}:${integ.call?.score ?? "-"}|${integ.put?.strike ?? "-"}:${integ.put?.tier ?? "-"}:${integ.put?.score ?? "-"}`;
     if (key === lastWallIntegrityRef.current) return;
     lastWallIntegrityRef.current = key;
     onWallIntegrityChange(integ);
-  }, [onWallIntegrityChange]);
+  }, [onWallIntegrityChange, liveGexWalls]);
 
   // DTE horizon → repaint GEX walls. "all" follows the live stream; a narrower
   // horizon fetches expiry-scoped walls on demand (keeping the shared per-second
@@ -809,6 +814,14 @@ export function VectorChart({
         vexFlipRef.current,
         darkPoolRef.current
       );
+      // Re-derive the desk-terminal narration against the just-scoped walls/flip so the
+      // regime banner, magnet, proximity, and integrity all snap to the new DTE horizon
+      // the instant the member toggles it — not on the next SSE tick. Each emit is
+      // self-deduped, so switching back to a horizon that yields the same reads is a no-op.
+      emitRegime();
+      emitProximity();
+      emitMagnet();
+      emitWallIntegrity();
     };
 
     if (dteHorizon === "all") {
@@ -843,7 +856,18 @@ export function VectorChart({
       cancelled = true;
       if (id) clearInterval(id);
     };
-  }, [dteHorizon, ticker, liveSession, refreshOverlays, liveGexWalls, liveGammaFlip]);
+  }, [
+    dteHorizon,
+    ticker,
+    liveSession,
+    refreshOverlays,
+    liveGexWalls,
+    liveGammaFlip,
+    emitRegime,
+    emitProximity,
+    emitMagnet,
+    emitWallIntegrity,
+  ]);
 
   const connectLive = useCallback(() => {
     if (!liveSessionRef.current) return;

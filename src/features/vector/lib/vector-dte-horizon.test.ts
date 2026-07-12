@@ -5,6 +5,7 @@ import {
   normalizeDteHorizon,
   isVectorDteHorizon,
   dteHorizonLabel,
+  pickHorizonScopedValue,
   VECTOR_DTE_HORIZONS,
 } from "./vector-dte-horizon";
 
@@ -69,4 +70,35 @@ test("normalizeDteHorizon / isVectorDteHorizon: junk falls back to 'all'", () =>
 
 test("every horizon has a label", () => {
   for (const h of VECTOR_DTE_HORIZONS) assert.ok(dteHorizonLabel(h).length > 0);
+});
+
+test("pickHorizonScopedValue: 'all' always uses the live stream value, ignoring any scoped value", () => {
+  assert.equal(pickHorizonScopedValue("all", 190, 197), 197);
+  assert.equal(pickHorizonScopedValue("all", null, 197), 197);
+});
+
+test("pickHorizonScopedValue: a narrowed horizon uses the scoped value when present", () => {
+  // This is the coherence contract: 0DTE walls/flip drive the terminal, not the near-term stream.
+  assert.equal(pickHorizonScopedValue("0dte", 190, 197), 190);
+  assert.equal(pickHorizonScopedValue("weekly", 180, 197), 180);
+  assert.equal(pickHorizonScopedValue("monthly", 180, 197), 180);
+});
+
+test("pickHorizonScopedValue: narrowed horizon with no scoped value falls back to the stream (never blanks)", () => {
+  // Scoped fetch hasn't landed / yielded nothing → show the stream value rather than nothing.
+  assert.equal(pickHorizonScopedValue("0dte", null, 197), 197);
+  assert.equal(pickHorizonScopedValue("weekly", undefined, 197), 197);
+});
+
+test("pickHorizonScopedValue: works for walls objects, not just numbers (generic)", () => {
+  const stream = { callWalls: [{ strike: 210, pct: 5 }], putWalls: [{ strike: 197.5, pct: 4 }] };
+  const scoped = { callWalls: [{ strike: 210, pct: 9 }], putWalls: [{ strike: 190, pct: 7 }] };
+  assert.equal(pickHorizonScopedValue("all", scoped, stream), stream);
+  assert.equal(pickHorizonScopedValue("0dte", scoped, stream), scoped);
+  assert.equal(pickHorizonScopedValue("0dte", null, stream), stream);
+});
+
+test("pickHorizonScopedValue: a falsy-but-non-null scoped value (0) is still selected under a narrowed horizon", () => {
+  // Guards the `!= null` check — 0 is a legitimate scoped flip and must not fall through to stream.
+  assert.equal(pickHorizonScopedValue("0dte", 0, 197), 0);
 });
