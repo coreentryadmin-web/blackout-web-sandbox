@@ -469,6 +469,25 @@ const LEVEL_LINE_STYLE = {
 } as const;
 
 /**
+ * Pane layout: 0 = price/candles, 1 = volume (always present, its own sub-pane like RSI/MACD — NOT
+ * an overlay on the candles), 2..N = enabled oscillators. `applyPaneStretch` reasserts the relative
+ * pane heights so the price pane stays dominant and volume is a thin strip; it must run after the
+ * oscillator panes are (re)built, since a freshly-created pane starts at the default stretch of 1.
+ */
+const VOLUME_PANE_INDEX = 1;
+const PRICE_PANE_STRETCH = 8;
+const VOLUME_PANE_STRETCH = 1.4;
+const OSCILLATOR_PANE_STRETCH = 2.6;
+
+function applyPaneStretch(chart: IChartApi): void {
+  const panes = chart.panes();
+  panes.forEach((pane, i) => {
+    const stretch = i === 0 ? PRICE_PANE_STRETCH : i === VOLUME_PANE_INDEX ? VOLUME_PANE_STRETCH : OSCILLATOR_PANE_STRETCH;
+    pane.setStretchFactor(stretch);
+  });
+}
+
+/**
  * Draw/diff the enabled "Key levels" price lines (HOD/LOD, opening range, fib) on the candle series.
  * Each enabled level id expands to one or more {@link LevelLine}s via `levelLinesFor(bars)`; the map
  * (keyed `levelId:lineKey`) is reconciled against the desired set so lines are added/updated/removed
@@ -1029,14 +1048,14 @@ export function VectorChart({
     closes: number[]
   ) {
     const oscMap = oscillatorSeriesRef.current;
-    // Fixed order → contiguous pane indices starting at 1 (0 is the price pane).
+    // Fixed order → contiguous pane indices starting at 2 (0 = price, 1 = the always-on volume pane).
     const active = (["rsi", "macd"] as const).filter((id) => enabled.has(id));
     const key = active.join(",");
     if (key !== lastOscKeyRef.current) {
       for (const s of oscMap.values()) chart.removeSeries(s);
       oscMap.clear();
       active.forEach((id, i) => {
-        const pane = i + 1;
+        const pane = i + VOLUME_PANE_INDEX + 1;
         if (id === "rsi") {
           const line = chart.addSeries(LineSeries, { color: "#c084fc", lineWidth: 2, priceLineVisible: false, lastValueVisible: true }, pane);
           // 30/70 oversold/overbought guides + the 50 midline, drawn on the RSI series itself.
@@ -1052,6 +1071,9 @@ export function VectorChart({
         }
       });
       lastOscKeyRef.current = key;
+      // New oscillator panes start at the default stretch of 1 — reassert the layout so price stays
+      // dominant and the volume strip keeps its height as oscillators come and go.
+      applyPaneStretch(chart);
     }
     if (!active.length) return;
     if (active.includes("rsi")) {
@@ -1732,20 +1754,23 @@ export function VectorChart({
       },
     }, 0);
 
-    // TradingView-style volume strip — overlay on pane 0 (LWC documented pattern).
+    // Volume in its OWN sub-pane below price (like RSI/MACD), not overlaid on the candles. Pane 1 is
+    // reserved for volume; oscillator panes start at 2 (see paintOscillators). Stretch factors keep
+    // the price pane dominant and volume a thin strip — applyPaneStretch reasserts them whenever the
+    // oscillator panes are (re)built.
     const volumeSeries = chart.addSeries(
       HistogramSeries,
       {
         priceFormat: { type: "volume" },
-        priceScaleId: "",
         lastValueVisible: false,
         priceLineVisible: false,
       },
-      0
+      VOLUME_PANE_INDEX
     );
     volumeSeries.priceScale().applyOptions({
-      scaleMargins: { top: 0.72, bottom: 0 },
+      scaleMargins: { top: 0.1, bottom: 0 },
     });
+    applyPaneStretch(chart);
 
     const initialDisplay = displayBarsFromMinute(initialBars, 1);
     applyDisplayBars(series, volumeSeries, initialDisplay);
