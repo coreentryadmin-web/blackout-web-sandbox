@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   aggregateVectorBars,
   wallCountForTimeframe,
+  anchorBandPctForTimeframe,
   VECTOR_WALL_NODES_PER_SIDE,
   VECTOR_PRESET_TIMEFRAMES,
   isPresetTimeframe,
@@ -124,6 +125,20 @@ test("wallCountForTimeframe: never exceeds VECTOR_WALL_NODES_PER_SIDE, even for 
     );
   }
   assert.equal(wallCountForTimeframe(240), 20, "largest interval saturates at the cap");
+});
+
+test("anchorBandPctForTimeframe: widens with the timeframe, monotonic non-decreasing", () => {
+  assert.equal(anchorBandPctForTimeframe(1), 0.02, "1m tight band");
+  assert.equal(anchorBandPctForTimeframe(15), 0.055, "15m");
+  assert.equal(anchorBandPctForTimeframe(60), 0.09, "60m");
+  assert.equal(anchorBandPctForTimeframe(240), 0.12, "4h widest");
+  const tfs = [1, 3, 5, 15, 30, 60, 120, 240];
+  let prev = 0;
+  for (const tf of tfs) {
+    const b = anchorBandPctForTimeframe(tf);
+    assert.ok(b >= prev, `tf=${tf} band (${b}) must be >= previous (${prev})`);
+    prev = b;
+  }
 });
 
 test("wallCountForTimeframe: monotonic non-decreasing across ascending timeframes", () => {

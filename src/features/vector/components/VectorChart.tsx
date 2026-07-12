@@ -104,6 +104,7 @@ import {
   aggregateVectorBars,
   mergeBarsByTime,
   wallCountForTimeframe,
+  anchorBandPctForTimeframe,
   VECTOR_WALL_NODES_PER_SIDE,
   type VectorTimeframeMinutes,
 } from "@/features/vector/lib/vector-bar-timeframes";
@@ -1008,8 +1009,13 @@ export function VectorChart({
       applyWallsToSeries(series, callGuideRefs, putGuideRefs, EMPTY_WALLS, activeLens, 0);
       applyFlipGuide(series, flipGuideRef, flip, v.flipLabel, v.flipColor);
       // King anchors: solid lines at the dominant call/put wall of the ACTIVE (horizon-scoped) walls,
-      // so the anchor re-scopes with the DTE toggle and redraws in replay (this runs there too).
-      const kings = pickKingStrikes(walls);
+      // so the anchor re-scopes with the DTE toggle. Timeframe-aware too: the band widens with the
+      // candle interval (anchorBandPctForTimeframe), so a tight 1m view anchors to the nearest strong
+      // wall and a wide 4h view lets a bigger further-out wall become the anchor. Redraws in replay.
+      const kings = pickKingStrikes(walls, {
+        spot: spotRef.current,
+        bandPct: anchorBandPctForTimeframe(timeframeRef.current),
+      });
       applyKingAnchor(series, kingCallLineRef, kings.call, v.callColor);
       applyKingAnchor(series, kingPutLineRef, kings.put, v.putColor);
       applyDarkPoolGuides(series, dpGuideRefs, []);
