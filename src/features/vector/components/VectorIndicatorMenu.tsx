@@ -4,6 +4,8 @@ import { useEffect, useRef, useState } from "react";
 import clsx from "clsx";
 import {
   VECTOR_INDICATOR_GROUPS,
+  isVectorOverlayFamilyId,
+  overlayFamilyAvailability,
   type VectorIndicatorId,
 } from "@/features/vector/lib/vector-indicators-config";
 
@@ -11,6 +13,8 @@ type Props = {
   enabled: Set<VectorIndicatorId>;
   onToggle: (id: VectorIndicatorId) => void;
   onClear: () => void;
+  /** Bars currently shown (at the active timeframe) — MA families that need more are annotated. */
+  barCount: number;
 };
 
 /**
@@ -20,7 +24,7 @@ type Props = {
  * outside-click / Escape. Oscillators (RSI/MACD) and profiles land in follow-ups and slot into this
  * same menu as new type toggles.
  */
-export function VectorIndicatorMenu({ enabled, onToggle, onClear }: Props) {
+export function VectorIndicatorMenu({ enabled, onToggle, onClear, barCount }: Props) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
 
@@ -70,13 +74,33 @@ export function VectorIndicatorMenu({ enabled, onToggle, onClear }: Props) {
               </div>
               {group.items.map((it) => {
                 const on = enabled.has(it.id);
+                // MA families can't compute when the current timeframe leaves too few bars (e.g.
+                // SMA 200 on a ~7-bar 60m session). Annotate that, and block ENABLING a family that
+                // would draw nothing — but never block turning one OFF (so a family enabled at a
+                // lower timeframe can still be cleared). Levels have no bar-count dependency.
+                const avail = isVectorOverlayFamilyId(it.id)
+                  ? overlayFamilyAvailability(it.id, barCount)
+                  : null;
+                const note =
+                  avail?.status === "none"
+                    ? `needs ≥${avail.minBars} bars`
+                    : avail?.status === "partial"
+                      ? `${avail.missing.join("/")} n/a`
+                      : null;
+                const blocked = avail?.status === "none" && !on;
                 return (
                   <button
                     key={it.id}
                     type="button"
                     role="menuitemcheckbox"
                     aria-checked={on}
-                    className={clsx("vector-ind-item", on && "vector-ind-item-on")}
+                    disabled={blocked}
+                    title={note ? `${it.label} — ${note} at this timeframe` : undefined}
+                    className={clsx(
+                      "vector-ind-item",
+                      on && "vector-ind-item-on",
+                      blocked && "vector-ind-item-disabled"
+                    )}
                     onClick={() => onToggle(it.id)}
                   >
                     <span
@@ -85,6 +109,7 @@ export function VectorIndicatorMenu({ enabled, onToggle, onClear }: Props) {
                       aria-hidden="true"
                     />
                     <span className="vector-ind-label">{it.label}</span>
+                    {note ? <span className="vector-ind-note">{note}</span> : null}
                     <span className="vector-ind-check" aria-hidden="true">
                       {on ? "✓" : ""}
                     </span>
