@@ -41,7 +41,7 @@ export function isVectorOverlayId(v: unknown): v is VectorOverlayId {
  * series). Each id maps to `levelLinesFor(id, bars)` in `vector-key-levels`, which yields one or
  * more lines. Same opt-in/default-off contract as the overlays.
  */
-export type VectorLevelId = "hod-lod" | "opening-range" | "fib";
+export type VectorLevelId = "hod-lod" | "opening-range" | "fib" | "pdh-pdl-pdc" | "pivots";
 
 export type VectorLevelDef = {
   id: VectorLevelId;
@@ -49,12 +49,17 @@ export type VectorLevelDef = {
   /** Representative colour for the menu dot (the individual lines carry their own colours). */
   color: string;
   group: "Key levels";
+  /** True when the level needs the prior-day OHLC fetch (PDH/PDL/PDC, pivots) rather than just the
+   *  current session bars. The chart lazily fetches that once when any such level is enabled. */
+  needsPriorDay?: boolean;
 };
 
 export const VECTOR_LEVELS: readonly VectorLevelDef[] = [
   { id: "hod-lod", label: "HOD / LOD", color: "#34d399", group: "Key levels" },
   { id: "opening-range", label: "Opening range (15m)", color: "#a78bfa", group: "Key levels" },
   { id: "fib", label: "Fibonacci (HOD→LOD)", color: "#ffd60a", group: "Key levels" },
+  { id: "pdh-pdl-pdc", label: "PDH / PDL / PDC", color: "#38bdf8", group: "Key levels", needsPriorDay: true },
+  { id: "pivots", label: "Floor pivots (P/R/S)", color: "#fb923c", group: "Key levels", needsPriorDay: true },
 ] as const;
 
 const LEVEL_IDS = new Set<string>(VECTOR_LEVELS.map((l) => l.id));
