@@ -72,6 +72,17 @@ Three properties separate top-tier from mere:
   retention** pruned by the db-cleanup cron. This makes "the beads reliably persist and never
   silently vanish" a structural guarantee — the class of failure behind the Jul 10 blank rail — and
   gives replay ~3 months of history + a durable base for the strike×time heatmap (#14).
+- **Per-horizon frozen bead trails** *(2026-07-12, #185 → #186 backend → #187 client)* — closes the
+  "narrowed DTE shows only a single bead after close" gap. #185 made the DTE toggle re-scope the
+  beads (drawing the *current* 0DTE/weekly/monthly structure as one column), but the recorder kept
+  only the blended "All" history, so weekly/monthly had no multi-hour trail to replay. Now each
+  horizon records its OWN point-in-time trail under a composite `ticker::horizon` storage key (Redis
+  + Postgres, zero migration — "All" stays byte-identical), and the chart reads it via
+  `/api/market/vector/wall-history` and draws it through the pure `composeHorizonTrail` (recorded
+  trail preferred, live current column unioned in, single-column then blended-rail fallbacks). So
+  weekly/monthly show the **frozen call/put clusters after close**, on every timeframe — the
+  after-hours analogue of the live "All" rail, not single beads (direct member ask). Live proof owed
+  Monday's RTH session.
 
 ## Roadmap — ranked by (impact × differentiation × feasibility)
 
