@@ -99,3 +99,29 @@ test("levelLinesFor: pdh-pdl-pdc + pivots need priorDay; null → [] (never a bo
   assert.deepEqual(levelLinesFor("pdh-pdl-pdc", [], null), []);
   assert.deepEqual(levelLinesFor("pivots", [], undefined), []);
 });
+
+test("levelLinesFor fib-auto: golden pocket + swing levels from the LAST fractal swing; [] without structure", async () => {
+  const { levelLinesFor } = await import("./vector-key-levels");
+  // Down swing: pivot high 105.5 (idx 3), pivot low 96.5 (idx 9), then partial recovery. k=3 needs
+  // 3 confirming bars each side.
+  const path = [100, 101, 102, 105, 103, 101, 99, 98, 97.5, 97, 98, 99, 100];
+  const bars = path.map((p, i) => ({ time: 60 * i, high: p + 0.5, low: p - 0.5, close: p }));
+  const lines = levelLinesFor("fib-auto", bars);
+  const by = (k) => lines.find((l) => l.key === k);
+
+  // Down swing 105.5→96.5 (range 9): 0% = 96.5, 50% = 101, pocket = 96.5 + {0.618,0.65}·9 =
+  // {102.062, 102.35}, 100% = 105.5.
+  assert.equal(lines.length, 5);
+  assert.equal(by("afib-0").price, 96.5);
+  assert.equal(by("afib-100").price, 105.5);
+  assert.equal(by("afib-50").price, 101);
+  assert.ok(Math.abs(by("afib-gp-b").price - 102.062) < 1e-9);
+  assert.ok(Math.abs(by("afib-gp-a").price - 102.35) < 1e-9);
+  assert.ok(by("afib-0").label.includes("↓"), "direction marked on the swing bounds");
+  // Pocket sits strictly inside the swing.
+  assert.ok(by("afib-gp-b").price > 96.5 && by("afib-gp-a").price < 105.5);
+
+  // No structure (monotone rise → no confirmed pivot high) → no lines, never a bogus level.
+  const flat = Array.from({ length: 13 }, (_, i) => ({ time: 60 * i, high: 100 + i + 0.5, low: 100 + i - 0.5, close: 100 + i }));
+  assert.deepEqual(levelLinesFor("fib-auto", flat), []);
+});

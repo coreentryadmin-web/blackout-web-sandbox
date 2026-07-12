@@ -110,7 +110,7 @@ export function overlayFamilyAvailability(
  * more lines. Same opt-in/default-off contract as the overlays. These are already one toggle per
  * type (HOD/LOD, opening range, …), so they need no family layer.
  */
-export type VectorLevelId = "hod-lod" | "opening-range" | "fib" | "pdh-pdl-pdc" | "pivots";
+export type VectorLevelId = "hod-lod" | "opening-range" | "fib" | "fib-auto" | "pdh-pdl-pdc" | "pivots";
 
 export type VectorLevelDef = {
   id: VectorLevelId;
@@ -127,6 +127,7 @@ export const VECTOR_LEVELS: readonly VectorLevelDef[] = [
   { id: "hod-lod", label: "HOD / LOD", color: "#34d399", group: "Key levels" },
   { id: "opening-range", label: "Opening range (15m)", color: "#a78bfa", group: "Key levels" },
   { id: "fib", label: "Fibonacci (HOD→LOD)", color: "#ffd60a", group: "Key levels" },
+  { id: "fib-auto", label: "Auto fib + golden pocket", color: "#fde047", group: "Key levels" },
   { id: "pdh-pdl-pdc", label: "PDH / PDL / PDC", color: "#38bdf8", group: "Key levels", needsPriorDay: true },
   { id: "pivots", label: "Floor pivots (P/R/S)", color: "#fb923c", group: "Key levels", needsPriorDay: true },
 ] as const;

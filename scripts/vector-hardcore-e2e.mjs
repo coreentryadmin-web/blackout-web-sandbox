@@ -201,11 +201,11 @@ async function validateTicker(page, ticker, errs) {
   await page.locator("#vector-tf-select").selectOption({ label: "1 min" }).catch(() => {}); await page.waitForTimeout(1000);
   await page.locator(".vector-ind-trigger").click().catch(() => {}); await page.waitForTimeout(300);
   const before = await chartHash(page);
-  for (const label of ["VWAP", "EMA", "HOD / LOD"]) { await page.locator(`.vector-ind-item:has-text("${label}")`).first().click().catch(() => {}); await page.waitForTimeout(500); }
+  for (const label of ["VWAP", "EMA", "HOD / LOD", "Auto fib"]) { await page.locator(`.vector-ind-item:has-text("${label}")`).first().click().catch(() => {}); await page.waitForTimeout(500); }
   await page.keyboard.press("Escape"); await page.waitForTimeout(1200);
   const after = await chartHash(page);
   const badge = await page.locator(".vector-ind-badge").textContent().catch(() => null);
-  rec(`${ticker}: enabling indicators redraws chart + badge tracks count`, before !== after && Number(badge) === 3, `badge=${badge}`);
+  rec(`${ticker}: enabling indicators redraws chart + badge tracks count (incl. Auto fib)`, before !== after && Number(badge) === 4, `badge=${badge}`);
 
   // ---- H. UI TRUTH: the values MEMBERS SEE on screen match the data, and the pixels are real ----
   // H1. EMA draw/undraw at the PIXEL level: EMA-9's orange (#fb923c) is unique on the chart (pivots
