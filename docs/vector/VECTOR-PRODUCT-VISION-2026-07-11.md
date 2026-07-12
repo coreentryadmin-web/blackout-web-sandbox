@@ -41,6 +41,16 @@ Three properties separate top-tier from mere:
 - **Time-honest rail** *(2026-07-11)* — the wall rail renders ONLY what the live recorder captured
   point-in-time during RTH; where nothing was recorded, a single honest **as-of-close** snapshot,
   never a fabricated full-day rail. Dynamism you see is dynamism that happened.
+- **Timeframe-scaled walls** *(2026-07-12, #169)* — the wall guides + beads showed a fixed 6
+  near-spot walls at every zoom; now the server returns up to 12 per side and the client shows
+  more, further-out walls as the candle timeframe widens (`1m→6, 3m→8, 5m→10, ≥15m→12`), with the
+  autoscale range keyed to the shown-count so 1m stays tight and 15m reveals the outer structure.
+- **Terminal follows the DTE horizon** *(2026-07-12, #170)* — the desk terminal + regime banner
+  read the near-term stream even when the member narrowed to 0DTE/weekly/monthly, so the narration
+  ("magnet 210 · 198P · flip 197.65") could describe a *different scope* than the walls on the
+  chart (0DTE 190 put, 195.2 flip). Now regime/magnet/proximity/integrity all read the horizon-
+  scoped `liveGexWalls()`/`liveGammaFlip()` and re-derive on toggle, via a pure tested
+  `pickHorizonScopedValue` — the terminal and the chart can no longer disagree about scope.
 - **Durable wall-history storage** *(2026-07-12)* — the rail was Redis-only (48h TTL): nothing
   survived a Redis restart or older than ~2 days. Now **write-through to Postgres** — the recorder
   fans each 15s/5min bucket to both Redis (hot cache, unchanged) and a `vector_wall_history` table
