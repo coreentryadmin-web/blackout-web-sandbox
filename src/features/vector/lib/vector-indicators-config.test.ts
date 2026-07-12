@@ -8,6 +8,7 @@ import {
   isVectorOverlayId,
   isVectorOverlayFamilyId,
   isVectorLevelId,
+  overlayFamilyAvailability,
 } from "./vector-indicators-config";
 
 test("VECTOR_OVERLAYS: unique ids, ema/sma carry a positive period, vwap does not need one", () => {
@@ -66,6 +67,24 @@ test("VECTOR_LEVELS + isVectorLevelId: hex colours, unique ids, disjoint from fa
   assert.ok(!isVectorLevelId(null));
   // family/level id spaces don't collide (the enabled Set holds both).
   for (const id of ids) assert.ok(!isVectorOverlayFamilyId(id), `${id} not also a family id`);
+});
+
+test("overlayFamilyAvailability: full / partial / none track the bar count vs member periods", () => {
+  // VWAP is a family of one needing a single bar — computable the moment there's any bar.
+  assert.deepEqual(overlayFamilyAvailability("vwap", 1), { status: "full", minBars: 1, missing: [] });
+  assert.equal(overlayFamilyAvailability("vwap", 0).status, "none");
+
+  // EMA family = 9/21/50. Under 9 bars nothing draws; at 30 the 50 is still missing; at 50 all draw.
+  assert.deepEqual(overlayFamilyAvailability("ema", 5), { status: "none", minBars: 9, missing: [9, 21, 50] });
+  const ema30 = overlayFamilyAvailability("ema", 30);
+  assert.equal(ema30.status, "partial");
+  assert.deepEqual(ema30.missing, [50]);
+  assert.equal(overlayFamilyAvailability("ema", 50).status, "full");
+
+  // SMA family = 50/200 — the real motivator: a ~7-bar 60m session can't draw either.
+  assert.equal(overlayFamilyAvailability("sma", 7).status, "none");
+  assert.deepEqual(overlayFamilyAvailability("sma", 100).missing, [200]);
+  assert.equal(overlayFamilyAvailability("sma", 200).status, "full");
 });
 
 test("VECTOR_INDICATOR_GROUPS: covers every family + level id exactly once (the toggle space)", () => {

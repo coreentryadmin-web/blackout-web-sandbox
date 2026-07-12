@@ -8574,6 +8574,26 @@ body::before {
     text-align: center;
   }
 
+  /* "not enough bars at this timeframe" annotation — dim, so it reads as a hint not a value. */
+  .vector-ind-note {
+    flex: 0 0 auto;
+    font-size: 0.62rem;
+    color: rgba(148, 163, 184, 0.7);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+
+  /* A family that can draw nothing at this timeframe and is off — can't be enabled (nothing to
+     show); greyed and non-interactive until the timeframe has enough bars. */
+  .vector-ind-item-disabled {
+    cursor: not-allowed;
+    opacity: 0.45;
+  }
+
+  .vector-ind-item-disabled:hover {
+    background: none;
+  }
+
   .vector-desk-terminal {
     @apply flex flex-col min-h-0 h-full min-w-0 overflow-hidden rounded-2xl border border-white/10 bg-[#050508] p-1.5;
     min-height: min(72vh, 640px);

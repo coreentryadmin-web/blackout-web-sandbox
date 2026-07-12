@@ -80,6 +80,31 @@ export function isVectorOverlayFamilyId(v: unknown): v is VectorOverlayFamilyId 
 }
 
 /**
+ * Whether a moving-average family can actually draw at the current bar count. `emaSeries`/`smaSeries`
+ * produce their first value only once `period` bars exist (VWAP needs just one), so a higher
+ * timeframe — where a 6.5h session is only a handful of bars — can leave SMA 200 permanently
+ * un-computable. The menu uses this to annotate (and disable, when nothing at all draws) so an
+ * enabled toggle that renders nothing is explained rather than looking broken.
+ *
+ * - `full`    — every member has enough bars.
+ * - `partial` — some members draw, some don't (`missing` lists the periods that can't).
+ * - `none`    — not even the shortest member can draw; `minBars` is how many it needs.
+ */
+export function overlayFamilyAvailability(
+  familyId: VectorOverlayFamilyId,
+  barCount: number
+): { status: "full" | "partial" | "none"; minBars: number; missing: number[] } {
+  const members = VECTOR_OVERLAYS.filter((o) => o.family === familyId);
+  // Bars a member needs before its first point is defined: its lookback, or 1 for VWAP.
+  const req = (o: VectorOverlayDef) => o.period ?? 1;
+  const minBars = Math.min(...members.map(req));
+  const missing = members.filter((o) => barCount < req(o)).map((o) => o.period ?? 1);
+  const drawable = members.length - missing.length;
+  const status = drawable === members.length ? "full" : drawable === 0 ? "none" : "partial";
+  return { status, minBars, missing };
+}
+
+/**
  * "Levels" indicators — horizontal price-line overlays (drawn like the king anchor, not per-bar
  * series). Each id maps to `levelLinesFor(id, bars)` in `vector-key-levels`, which yields one or
  * more lines. Same opt-in/default-off contract as the overlays. These are already one toggle per

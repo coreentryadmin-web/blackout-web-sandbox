@@ -42,6 +42,8 @@ type Props = {
   indicators: Set<VectorIndicatorId>;
   onToggleIndicator: (id: VectorIndicatorId) => void;
   onClearIndicators: () => void;
+  /** Bars currently shown (at the active timeframe) — drives the MA "not enough bars" annotation. */
+  barCount: number;
 };
 
 /** Single compact toolbar — timeframe left, replay + lens right. */
@@ -78,6 +80,7 @@ export function VectorToolbar(props: Props) {
     indicators,
     onToggleIndicator,
     onClearIndicators,
+    barCount,
   } = props;
 
   return (
@@ -93,6 +96,7 @@ export function VectorToolbar(props: Props) {
             enabled={indicators}
             onToggle={onToggleIndicator}
             onClear={onClearIndicators}
+            barCount={barCount}
           />
         </div>
         <div className="flex min-w-0 flex-1 flex-wrap items-start justify-end gap-2">

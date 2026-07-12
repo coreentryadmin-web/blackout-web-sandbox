@@ -740,6 +740,11 @@ export function VectorChart({
   const [chartReady, setChartReady] = useState(false);
   // Enabled overlay indicators (default none — the chart stays clean until the member opts in).
   const [indicators, setIndicators] = useState<Set<VectorIndicatorId>>(() => new Set());
+  // Count of bars currently shown (at the active timeframe). Drives the indicator menu's
+  // "not enough bars" annotation so an MA family that can't compute at this timeframe is explained
+  // rather than looking broken. Updated imperatively from paintOverlays; setState bails out when
+  // the count is unchanged, so this re-renders at most once per new bar / timeframe switch.
+  const [displayBarCount, setDisplayBarCount] = useState<number>(initialBars.length);
 
   useEffect(() => {
     // Replay honesty for the structure feed: while scrubbed to 9:35 the ticker
@@ -891,6 +896,7 @@ export function VectorChart({
     const chart = chartRef.current;
     if (!chart || !seriesRef.current) return;
     lastDisplayBarsRef.current = bars;
+    setDisplayBarCount(bars.length); // menu availability follows the shown-bar count (no-op if unchanged)
     const enabled = indicatorsRef.current;
     const map = overlaySeriesRef.current;
     const closes = bars.map((b) => b.close);
@@ -1950,6 +1956,7 @@ export function VectorChart({
         indicators={indicators}
         onToggleIndicator={toggleIndicator}
         onClearIndicators={clearIndicators}
+        barCount={displayBarCount}
       />
 
       <div className="relative">
