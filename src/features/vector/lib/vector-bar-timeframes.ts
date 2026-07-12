@@ -1,5 +1,12 @@
-/** Preset Vector chart intervals — aggregated client-side from 1m SPX seed + live ticks. */
-export const VECTOR_PRESET_TIMEFRAMES = [1, 3, 5, 15] as const;
+/**
+ * Preset Vector chart intervals (minutes) — aggregated client-side from the 1m seed + live ticks.
+ * 30m/60m are intraday roll-ups of the SAME session's 1m bars (a 6.5h RTH session → ~13 30m or
+ * ~7 60m bars), so they need no extra data. Larger horizons (4h/1D/1W) are intentionally NOT
+ * presets: they'd need a multi-day daily-bar feed we don't seed yet, and bucketing a single
+ * session's 1m bars to 4h would collapse the whole day to 1–2 bars. Add those once the daily feed
+ * lands. `VectorTimeframeMinutes` still accepts any custom whole-minute interval up to the max.
+ */
+export const VECTOR_PRESET_TIMEFRAMES = [1, 3, 5, 15, 30, 60] as const;
 
 /** @deprecated Use VECTOR_PRESET_TIMEFRAMES */
 export const VECTOR_TIMEFRAMES = VECTOR_PRESET_TIMEFRAMES;

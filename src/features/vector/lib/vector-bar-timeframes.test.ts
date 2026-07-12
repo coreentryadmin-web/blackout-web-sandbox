@@ -4,6 +4,8 @@ import {
   aggregateVectorBars,
   wallCountForTimeframe,
   VECTOR_WALL_NODES_PER_SIDE,
+  VECTOR_PRESET_TIMEFRAMES,
+  isPresetTimeframe,
 } from "./vector-bar-timeframes";
 
 const m1 = (
@@ -20,6 +22,28 @@ const m1 = (
   low: l,
   close: c,
   ...(volume != null ? { volume } : {}),
+});
+
+test("VECTOR_PRESET_TIMEFRAMES: includes the 30m + 60m intraday roll-ups", () => {
+  assert.deepEqual([...VECTOR_PRESET_TIMEFRAMES], [1, 3, 5, 15, 30, 60]);
+  assert.ok(isPresetTimeframe(30) && isPresetTimeframe(60), "30/60 are presets");
+  assert.ok(!isPresetTimeframe(45), "non-preset stays custom");
+});
+
+test("aggregateVectorBars: 60m rolls a session's 1m bars into hourly buckets", () => {
+  const base = 60 * 3600; // aligned to a 60m boundary
+  const bars = [
+    m1(base, 100, 101, 99, 100.5),
+    m1(base + 60, 100.5, 103, 100, 102), // same hour → merges
+    m1(base + 3600, 102, 104, 101, 103), // next hour → new bucket
+  ];
+  const out = aggregateVectorBars(bars, 60);
+  assert.equal(out.length, 2, "two hourly buckets");
+  assert.equal(out[0]!.open, 100);
+  assert.equal(out[0]!.high, 103, "high across the hour");
+  assert.equal(out[0]!.low, 99, "low across the hour");
+  assert.equal(out[0]!.close, 102, "last close in the hour");
+  assert.equal(out[1]!.open, 102);
 });
 
 test("aggregateVectorBars: 1m passthrough unchanged", () => {

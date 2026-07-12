@@ -20,6 +20,8 @@ type Props = {
 };
 
 function presetLabel(minutes: number): string {
+  // Whole-hour intervals read cleaner as "1H"/"2H" than "60 min"/"120 min".
+  if (minutes >= 60 && minutes % 60 === 0) return `${minutes / 60}H`;
   return `${minutes} min`;
 }
 
