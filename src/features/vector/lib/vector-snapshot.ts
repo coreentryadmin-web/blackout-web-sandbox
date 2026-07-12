@@ -247,7 +247,20 @@ export async function getVectorGexWallsForHorizon(
     // symmetry the narrowed-horizon and oracle branches below already have. Warm tasks never reach
     // here — the guard above returns first — so the hot SSE path is untouched.
     await primeVectorWallScope(t);
-    return getVectorGexWalls(t);
+    const primed = getVectorGexWalls(t);
+    if (wallsHaveNodes(primed)) return primed;
+
+    // Heatmap STILL empty after priming. On a cold API task the shared heatmap can come back
+    // empty for a non-preset name (no cron warm on THIS task, a transient band fetch miss, or a
+    // short-lived cached empty matrix) even though the options chain is perfectly readable — proven
+    // live 2026-07-12: ASTS/PLTR/UBER/NVDA returned dte=all → 0 walls via the heatmap while every
+    // NARROWED horizon returned 12/12 via the per-expiry chain on the same request. So fall back to
+    // that same chain path over ALL live expiries (expiriesForHorizon(..., "all") = the whole
+    // near-term set), guaranteeing "All" is never blank when the chain has data. Heatmap still LEADS
+    // (it's the fast, warm-cron-fed aggregate); this only rescues the cold-miss case.
+    const chain = await getPerExpiryGexWalls(t, "all").catch(() => null);
+    if (chain?.walls && wallsHaveNodes(chain.walls)) return chain.walls;
+    return primed; // honest: return whatever we have (possibly empty) rather than throw
   }
 
   // NARROWED HORIZON — per-expiry walls from the Polygon options chain, for EVERY ticker

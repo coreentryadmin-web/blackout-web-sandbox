@@ -102,3 +102,22 @@ test("honest null: empty chain, bad spot, or an all-expired horizon returns null
     "all-expired chain → null"
   );
 });
+
+test('"all" horizon spans every live expiry — the cold-heatmap chain fallback for dte=all', () => {
+  // getVectorGexWallsForHorizon("all") falls back to perExpiryWallsFromContracts(chain, spot, "all")
+  // when the shared heatmap comes back empty on a cold API task (live: ASTS dte=all=0 via heatmap,
+  // 12/12 via chain). "all" must include EVERY live expiry — a superset of monthly — so the
+  // fallback yields the full near-term ladder, never a blank "All".
+  const all = perExpiryWallsFromContracts(chain, SPOT, "all", TODAY);
+  const monthly = perExpiryWallsFromContracts(chain, SPOT, "monthly", TODAY);
+  assert.ok(all, '"all" resolves walls over the whole chain');
+  const allStrikes = new Set([
+    ...all!.walls.callWalls.map((w) => w.strike),
+    ...all!.walls.putWalls.map((w) => w.strike),
+  ]);
+  // The fixture's 3 expiries (0DTE 95/105, weekly 90/110, monthly 85/115) → "all" sees all 6 strikes.
+  assert.equal(allStrikes.size, 6, '"all" includes every expiry\'s strikes');
+  for (const s of [85, 90, 95, 105, 110, 115]) assert.ok(allStrikes.has(s), `"all" includes ${s}`);
+  const monthlyStrikes = monthly!.walls.callWalls.length + monthly!.walls.putWalls.length;
+  assert.ok(allStrikes.size >= monthlyStrikes, '"all" is a superset of monthly');
+});
