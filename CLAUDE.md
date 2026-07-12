@@ -39,8 +39,25 @@ same repo) can read the diff cold and understand it without asking follow-up que
 - In-code comments on the non-obvious parts (the WHY, per the repo's normal comment policy) so
   the reasoning survives even if the PR description is skimmed.
 
+## Vector per-push E2E validation (STANDING GATE — do this for EVERY push, not once)
+After **every** Vector change deploys to staging, run the full end-to-end validation and only move
+on when it's green. This is a hard gate, repeated per push — never a one-time check.
+- **Harness:** `scripts/vector-staging-e2e.mjs` (`npm run validate:vector-push-gate`). Signs into staging
+  (Cognito temp admin+premium user, always deleted) and sweeps **multiple stocks × multiple
+  timeframes × multiple expiries** — default `SPX,SPY,NVDA,ASTS` × `1m,5m,15m,1H` × `0DTE,WEEKLY,
+  MONTHLY,ALL` (override via `VECTOR_E2E_TICKERS/TFS/DTES`). Per ticker it asserts: chart canvas +
+  GEX ladder rows + spot + desk terminal + regime banner render; every DTE toggle re-scopes; every
+  timeframe redraws; the indicator menu shows BOTH groups and enabling one of each kind (overlay /
+  session level / prior-day level) actually draws; and **zero console errors**. Exits non-zero on
+  any failure. Run with `env -u AWS_ACCESS_KEY_ID -u AWS_SECRET_ACCESS_KEY` so `~/.aws/credentials`
+  is used. Screenshots under `SHOT_DIR`.
+- **Rule:** a change isn't "done" until this passes on the deployed build. If it fails, fix (new
+  PR) before starting the next feature. Deploys take a few min — validate after the deploy settles,
+  not mid-deploy (mid-deploy chunk-hash races produce transient `_next` 404/MIME noise).
+
 ## Audit toolkit (committed)
 - `scripts/audit/data-validator.mjs` — cross-provider validator (Polygon+UW ground truth vs the numbers members see: prices/indices, GEX/greeks, track-record math, malformed-number scan). Secrets from env only; one temp Clerk user per run, always deleted. Exits non-zero on any FAIL.
+- `scripts/vector-staging-e2e.mjs` — the Vector per-push E2E gate (see the section above).
 - `docs/audit/MARKET-OPEN-VALIDATION.md` — runbook + the daily market-open **Claude scheduled-trigger** prompt + secrets checklist (13:32 UTC weekdays).
 - `docs/audit/BASELINE-2026-07-01.md` — pre-open baseline to diff the live run against.
 - `docs/audit/FINDINGS.md` — living issue log (keep updating).
