@@ -357,13 +357,14 @@ function buildWallBeadMarkers(
     if (!points) continue;
     for (const p of points) {
       const time = p.time as Time;
-      // Modeled (reconstructed) beads read as a DIM, slightly smaller ghost of an observed bead:
-      // same color/shape, alpha scaled to MODELED_ALPHA_SCALE and size to 0.8×, so a real recorded
-      // sample (solid, full size) is unmistakably "more real" wherever it overwrites the modeled
-      // one. Observed beads (modeled falsy) are unchanged.
+      // Modeled (reconstructed) beads read as a FAINT, smaller GHOST of an observed bead: same
+      // color/shape, alpha scaled to MODELED_ALPHA_SCALE (0.15) and size to 0.6×, so a real recorded
+      // sample (solid, full size) is unmistakably "more real" wherever it overwrites the modeled one
+      // — and a full-width reconstruction reads as a quiet underlay, not axis-to-axis walls.
+      // Observed beads (modeled falsy) are unchanged.
       const modeled = p.modeled === true;
       const alphaScale = modeled ? MODELED_ALPHA_SCALE : 1;
-      const size = markerSizeForPct(p.pct) * (modeled ? 0.8 : 1);
+      const size = markerSizeForPct(p.pct) * (modeled ? 0.6 : 1);
       const coreAlpha = alphaForPct(p.pct) * alphaScale;
       const glowAlpha = glowAlphaForPct(p.pct) * alphaScale;
       // Halo + core — Skylit-style glow on dominant walls (per-bead size + opacity).
