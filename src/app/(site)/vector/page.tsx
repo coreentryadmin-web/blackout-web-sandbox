@@ -12,11 +12,9 @@ import {
   getVectorVexWalls,
   getVectorWallHistory,
   loadSessionWallHistory,
-  mergeModeledUnderlay,
   mergeWallHistory,
   normalizeVectorTicker,
   primeVectorWallScope,
-  reconstructSessionRail,
   seedWallHistoryForDisplay,
   type WallHistorySample,
 } from "@/features/vector";
@@ -57,28 +55,28 @@ export default async function VectorPage({ searchParams }: PageProps) {
   const today = todayEt();
   const liveSession = sessionYmd === today && isEtCashRth();
 
-  // Observed rail: exactly what the live universe recorder captured point-in-time during RTH —
-  // genuinely dynamic walls that shift/build/fade with the tape (in-memory + persisted Redis rows).
-  const baseHistory = mergeWallHistory(getVectorWallHistory(ticker), persistedHistory);
+  // Observed rail ONLY — exactly what the live recorder captured point-in-time during RTH:
+  // genuinely dynamic walls that shift/build/fade with the tape (in-memory + persisted Redis/PG
+  // rows). `sessionYmd` comes from fetchVectorSeedBars, which walks back to the most recent day
+  // that actually HAS price bars — so off-hours (weekend/overnight) this is the last RTH session,
+  // and loadSessionWallHistory(sessionYmd) returns THAT session's real recorded beads. The bars
+  // and the rail therefore always describe the same session and align on the time axis.
+  //
+  // The modeled full-width underlay (reconstructSessionRail + mergeModeledUnderlay) was REMOVED
+  // here (2026-07-12, user-directed). Because intraday OI history is unpublished, the
+  // reconstruction can only replay the CLOSING chain back-projected across every bucket — a flat,
+  // uniform full-width rail that reads as fake "static open→close lines" and is the opposite of
+  // the point-in-time dynamism a bead rail implies. A member could not tell a wall that held all
+  // day from one that formed at noon. Showing only observed samples means every bead the member
+  // sees is a real point-in-time observation; where nothing was recorded we show an honest gap (or
+  // the single as-of-close seed below), never a model smeared across the session. The
+  // reconstruction module lives on for the strike×time heatmap (#14), where a back-projected grid
+  // is openly a MODEL — the honest primitive for that surface, unlike an observed bead.
+  const combined = mergeWallHistory(getVectorWallHistory(ticker), persistedHistory);
 
-  // Modeled underlay (product decision 2026-07-12, user-approved). The trail now shows the
-  // RECONSTRUCTED session instantly as DIM, clearly-labeled "modeled" beads, which the observed
-  // recorded samples above OVERWRITE with solid ones wherever they exist (mergeModeledUnderlay:
-  // observed wins its bucket). This gives a member the whole-day wall trail on LOAD for ANY ticker
-  // — fresh, off-hours, or non-universe — instead of a 1-dot trail that must build up over many
-  // 15s ticks. Crucially it is NOT the earlier #160 bug, where reconstruction was injected into the
-  // rail presented AS observed with no distinction: here modeled and observed are visually and
-  // textually separated (dim/ghosted + a "modeled vs recorded" legend), so honesty is preserved.
-  // reconstructSessionRail is Redis-cached (a past session's bars + EOD chain are final) and never
-  // throws — an empty array on any failure degrades gracefully to the observed-only rail.
-  const modeledHistory = await reconstructSessionRail({ ticker, sessionYmd }).catch(
-    () => [] as WallHistorySample[]
-  );
-  const combined = mergeModeledUnderlay(baseHistory, modeledHistory);
-
-  // seedWallHistoryForDisplay remains the empty-case fallback (a single as-of-close snapshot when
-  // there is genuinely nothing to show); it no-ops here whenever the modeled underlay filled the
-  // trail, since it only seeds when history is empty.
+  // Empty-case fallback: a single as-of-close snapshot at the last bar when there is genuinely
+  // nothing recorded for this session (e.g. a ticker no one viewed during RTH). No-ops whenever
+  // the observed rail already has samples. Never a full-day fabrication.
   const initialWallHistory = seedWallHistoryForDisplay(
     combined,
     bars.map((b) => b.time),
