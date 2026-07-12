@@ -4,12 +4,17 @@
  * chart draws (like the king anchor), NOT a per-bar series. Kept out of the component so the level
  * math is unit-tested directly.
  *
- * This first slice covers the levels derivable from the CURRENT session's bars alone (no extra
- * data): high/low of day, the opening range, and a Fibonacci retracement of the HOD→LOD swing.
- * Prior-day levels (PDH/PDL/PDC) + floor pivots need a prior-session OHLC fetch and land next.
+ * Session levels (HOD/LOD, opening range, Fib of the HOD→LOD swing) come from the CURRENT bars
+ * alone. Prior-day levels (PDH/PDL/PDC) and floor pivots need the prior session's OHLC, passed in
+ * as `priorDay` (fetched once by the chart) — still pure here.
  */
 
+import type { VectorLevelId } from "./vector-indicators-config";
+
 export type LevelBar = { time: number; high: number; low: number; close: number };
+
+/** Prior-session OHLC extremes the prior-day/pivot levels are derived from. */
+export type PriorDayOhlc = { pdh: number; pdl: number; pdc: number };
 
 /** A single horizontal level line the chart draws. */
 export type LevelLine = {
@@ -20,9 +25,6 @@ export type LevelLine = {
   color: string;
   style: "solid" | "dashed" | "dotted";
 };
-
-/** The toggleable level groups. */
-export type VectorLevelId = "hod-lod" | "opening-range" | "fib";
 
 const HOD_COLOR = "#34d399"; // green — high of day
 const LOD_COLOR = "#f87171"; // red — low of day
@@ -96,12 +98,51 @@ export function fibLevels(high: number, low: number): Array<{ ratio: number; pri
   return FIB_RATIOS.map((ratio) => ({ ratio, price: high - ratio * range }));
 }
 
+const PD_COLOR = "#38bdf8"; // sky — prior-day high/low/close
+const PIVOT_P_COLOR = "#fb923c"; // orange — the central pivot
+const PIVOT_R_COLOR = "#f87171"; // red — resistance pivots (above P)
+const PIVOT_S_COLOR = "#34d399"; // green — support pivots (below P)
+
+export type FloorPivots = {
+  p: number;
+  r1: number;
+  r2: number;
+  r3: number;
+  s1: number;
+  s2: number;
+  s3: number;
+};
+
 /**
- * Compose the draw-ready horizontal lines for one enabled level group against the session bars.
- * Returns [] when the group can't be computed (no bars / degenerate range) so the caller simply
- * draws nothing rather than a bogus line.
+ * Classic floor-trader pivots from the prior session's H/L/C. P is the fulcrum; R1–R3 / S1–S3 are
+ * the standard resistance/support projections. Returns null on non-finite input.
  */
-export function levelLinesFor(id: VectorLevelId, bars: LevelBar[]): LevelLine[] {
+export function floorPivots(pdh: number, pdl: number, pdc: number): FloorPivots | null {
+  if (![pdh, pdl, pdc].every(Number.isFinite)) return null;
+  const p = (pdh + pdl + pdc) / 3;
+  const range = pdh - pdl;
+  return {
+    p,
+    r1: 2 * p - pdl,
+    s1: 2 * p - pdh,
+    r2: p + range,
+    s2: p - range,
+    r3: pdh + 2 * (p - pdl),
+    s3: pdl - 2 * (pdh - p),
+  };
+}
+
+/**
+ * Compose the draw-ready horizontal lines for one enabled level group. Session groups use `bars`;
+ * the prior-day / pivot groups use `priorDay` (the prior session's OHLC the chart fetched). Returns
+ * [] when the group can't be computed (no bars / degenerate range / prior-day not loaded yet), so
+ * the caller simply draws nothing rather than a bogus line.
+ */
+export function levelLinesFor(
+  id: VectorLevelId,
+  bars: LevelBar[],
+  priorDay?: PriorDayOhlc | null
+): LevelLine[] {
   if (id === "hod-lod") {
     const hl = sessionHodLod(bars);
     if (!hl) return [];
@@ -118,11 +159,35 @@ export function levelLinesFor(id: VectorLevelId, bars: LevelBar[]): LevelLine[] 
       { key: "or-low", price: or.low, label: "OR-L 15m", color: OR_COLOR, style: "dashed" },
     ];
   }
-  // fib
-  const hl = sessionHodLod(bars);
-  if (!hl) return [];
-  return fibLevels(hl.hod, hl.lod).map((f) => {
-    const s = fibStyle(f.ratio);
-    return { key: `fib-${f.ratio}`, price: f.price, label: s.label, color: s.color, style: s.style };
-  });
+  if (id === "fib") {
+    const hl = sessionHodLod(bars);
+    if (!hl) return [];
+    return fibLevels(hl.hod, hl.lod).map((f) => {
+      const s = fibStyle(f.ratio);
+      return { key: `fib-${f.ratio}`, price: f.price, label: s.label, color: s.color, style: s.style };
+    });
+  }
+  if (id === "pdh-pdl-pdc") {
+    if (!priorDay) return [];
+    const { pdh, pdl, pdc } = priorDay;
+    if (![pdh, pdl, pdc].every(Number.isFinite)) return [];
+    return [
+      { key: "pdh", price: pdh, label: "PDH", color: PD_COLOR, style: "dashed" },
+      { key: "pdc", price: pdc, label: "PDC", color: PD_COLOR, style: "solid" },
+      { key: "pdl", price: pdl, label: "PDL", color: PD_COLOR, style: "dashed" },
+    ];
+  }
+  // pivots
+  if (!priorDay) return [];
+  const piv = floorPivots(priorDay.pdh, priorDay.pdl, priorDay.pdc);
+  if (!piv) return [];
+  return [
+    { key: "piv-p", price: piv.p, label: "Pivot", color: PIVOT_P_COLOR, style: "solid" },
+    { key: "piv-r1", price: piv.r1, label: "R1", color: PIVOT_R_COLOR, style: "dashed" },
+    { key: "piv-r2", price: piv.r2, label: "R2", color: PIVOT_R_COLOR, style: "dotted" },
+    { key: "piv-r3", price: piv.r3, label: "R3", color: PIVOT_R_COLOR, style: "dotted" },
+    { key: "piv-s1", price: piv.s1, label: "S1", color: PIVOT_S_COLOR, style: "dashed" },
+    { key: "piv-s2", price: piv.s2, label: "S2", color: PIVOT_S_COLOR, style: "dotted" },
+    { key: "piv-s3", price: piv.s3, label: "S3", color: PIVOT_S_COLOR, style: "dotted" },
+  ];
 }

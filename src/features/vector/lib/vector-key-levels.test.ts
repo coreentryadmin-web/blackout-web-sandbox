@@ -4,6 +4,7 @@ import {
   sessionHodLod,
   openingRange,
   fibLevels,
+  floorPivots,
   levelLinesFor,
   FIB_RATIOS,
 } from "./vector-key-levels";
@@ -68,4 +69,33 @@ test("levelLinesFor: hod-lod / opening-range / fib produce labelled lines; empty
 
   assert.deepEqual(levelLinesFor("hod-lod", []), []);
   assert.deepEqual(levelLinesFor("fib", []), []);
+});
+
+test("floorPivots: classic formulas from prior H/L/C; non-finite → null", () => {
+  // H=110 L=90 C=100 → P=100, R1=110, S1=90, R2=120, S2=80, R3=130, S3=70.
+  const p = floorPivots(110, 90, 100);
+  assert.ok(p);
+  assert.equal(p.p, 100);
+  assert.equal(p.r1, 110);
+  assert.equal(p.s1, 90);
+  assert.equal(p.r2, 120);
+  assert.equal(p.s2, 80);
+  assert.equal(p.r3, 130);
+  assert.equal(p.s3, 70);
+  assert.equal(floorPivots(Number.NaN, 90, 100), null);
+});
+
+test("levelLinesFor: pdh-pdl-pdc + pivots need priorDay; null → [] (never a bogus line)", () => {
+  const prior = { pdh: 110, pdl: 90, pdc: 100 };
+  const pd = levelLinesFor("pdh-pdl-pdc", [], prior);
+  assert.deepEqual(pd.map((l) => l.key).sort(), ["pdc", "pdh", "pdl"]);
+  assert.equal(pd.find((l) => l.key === "pdh").price, 110);
+
+  const piv = levelLinesFor("pivots", [], prior);
+  assert.deepEqual(piv.map((l) => l.key), ["piv-p", "piv-r1", "piv-r2", "piv-r3", "piv-s1", "piv-s2", "piv-s3"]);
+  assert.equal(piv.find((l) => l.key === "piv-p").price, 100);
+
+  // No prior-day loaded yet → nothing drawn.
+  assert.deepEqual(levelLinesFor("pdh-pdl-pdc", [], null), []);
+  assert.deepEqual(levelLinesFor("pivots", [], undefined), []);
 });

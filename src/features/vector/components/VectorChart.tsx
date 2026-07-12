@@ -80,7 +80,7 @@ import {
   type VectorOverlayId,
   type VectorIndicatorId,
 } from "@/features/vector/lib/vector-indicators-config";
-import { levelLinesFor, type LevelLine } from "@/features/vector/lib/vector-key-levels";
+import { levelLinesFor, type LevelLine, type PriorDayOhlc } from "@/features/vector/lib/vector-key-levels";
 import {
   buildReplayTimeline,
   clampTimelineIndex,
@@ -440,12 +440,14 @@ function applyLevelLines(
   series: ISeriesApi<"Candlestick">,
   map: Map<string, IPriceLine>,
   enabled: Set<VectorIndicatorId>,
-  bars: VectorBar[]
+  bars: VectorBar[],
+  priorDay: PriorDayOhlc | null
 ): void {
   const desired = new Map<string, LevelLine>();
   for (const def of VECTOR_LEVELS) {
     if (!enabled.has(def.id)) continue;
-    for (const line of levelLinesFor(def.id, bars)) desired.set(`${def.id}:${line.key}`, line);
+    for (const line of levelLinesFor(def.id, bars, priorDay))
+      desired.set(`${def.id}:${line.key}`, line);
   }
   // Remove lines no longer wanted (toggled off, or a level that now yields fewer lines).
   for (const [k, pl] of map) {
@@ -646,6 +648,10 @@ export function VectorChart({
   // Horizontal price-line overlays for the "Key levels" group (HOD/LOD, opening range, fib), keyed
   // by `${levelId}:${lineKey}` so each line is diffed/kept/removed independently across repaints.
   const levelLinesRef = useRef<Map<string, IPriceLine>>(new Map());
+  // Prior-session OHLC for the PDH/PDL/PDC + floor-pivot levels — fetched once per ticker (only when
+  // such a level is enabled). `priorDayTickerRef` guards a fetch from a previous ticker landing late.
+  const priorDayRef = useRef<PriorDayOhlc | null>(null);
+  const priorDayTickerRef = useRef<string | null>(null);
   const indicatorsRef = useRef<Set<VectorIndicatorId>>(new Set());
   const lastDisplayBarsRef = useRef<VectorBar[]>(initialBars);
   const callBeadsRef = useRef<ISeriesMarkersPluginApi<Time> | null>(null);
@@ -925,7 +931,7 @@ export function VectorChart({
 
     // Draw the enabled "Key levels" horizontal lines from the SAME bars, on the candle series.
     if (seriesRef.current) {
-      applyLevelLines(seriesRef.current, levelLinesRef.current, enabled, bars);
+      applyLevelLines(seriesRef.current, levelLinesRef.current, enabled, bars, priorDayRef.current);
     }
   }, []);
 
@@ -936,6 +942,34 @@ export function VectorChart({
     indicatorsRef.current = indicators;
     paintOverlays(lastDisplayBarsRef.current);
   }, [indicators, paintOverlays]);
+
+  // Lazy prior-day OHLC fetch: only when a prior-day/pivot level is enabled, and only once per
+  // ticker. The PDH/PDL/PDC + floor-pivot lines need the prior session's high/low/close, which the
+  // session bars don't carry. On success, repaint so the lines appear without waiting for a tick.
+  useEffect(() => {
+    const needsPrior = VECTOR_LEVELS.some((l) => l.needsPriorDay && indicators.has(l.id));
+    if (!needsPrior || (priorDayTickerRef.current === ticker && priorDayRef.current)) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await fetch(`/api/market/vector/prior-day?ticker=${encodeURIComponent(ticker)}`);
+        if (cancelled || !res.ok) return;
+        const d = (await res.json()) as { pdh: number | null; pdl: number | null; pdc: number | null };
+        if (cancelled) return;
+        priorDayRef.current =
+          d.pdh != null && d.pdl != null && d.pdc != null
+            ? { pdh: d.pdh, pdl: d.pdl, pdc: d.pdc }
+            : null;
+        priorDayTickerRef.current = ticker;
+        paintOverlays(lastDisplayBarsRef.current);
+      } catch {
+        /* best-effort — the prior-day/pivot lines simply don't draw if the fetch fails */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [indicators, ticker, paintOverlays]);
 
   const toggleIndicator = useCallback((id: VectorIndicatorId) => {
     setIndicators((prev) => {
@@ -1591,6 +1625,8 @@ export function VectorChart({
       // rebuilds instead of touching the now-disposed series (matches the sibling ref resets).
       overlaySeriesRef.current = new Map();
       levelLinesRef.current = new Map();
+      priorDayRef.current = null;
+      priorDayTickerRef.current = null;
       callBeadsRef.current = null;
       putBeadsRef.current = null;
       volumeSeriesRef.current = null;
