@@ -857,6 +857,17 @@ export function VectorChart({
     dteHorizonRef.current = dteHorizon;
     let cancelled = false;
 
+    // A selection change (DTE horizon or ticker — this effect's own deps) must ALWAYS repaint the
+    // terminal, even if the new scope happens to yield the same coarse dedup key as the last emit.
+    // The emit dedup refs persist for the component's life, so without this reset a toggle whose
+    // read collides with the prior one is SWALLOWED and the terminal stays on the old selection
+    // until a full page refresh clears the refs — exactly the "had to refresh" report. Clearing them
+    // here guarantees the first post-selection emit fires; steady-state SSE dedup is unaffected.
+    lastRegimeReadRef.current = "";
+    lastProximityRef.current = "";
+    lastMagnetRef.current = "";
+    lastWallIntegrityRef.current = "";
+
     const repaintLive = () => {
       if (replayModeRef.current || !seriesRef.current) return;
       refreshOverlays(
@@ -889,7 +900,14 @@ export function VectorChart({
         const res = await fetch(
           `/api/market/vector/walls?ticker=${encodeURIComponent(ticker)}&dte=${dteHorizon}`
         );
-        if (!res.ok || cancelled) return;
+        if (cancelled || dteHorizonRef.current !== dteHorizon) return;
+        if (!res.ok) {
+          // Fetch reachable but errored (e.g. 5xx). Still repaint against the live stream values
+          // (liveGexWalls/liveGammaFlip fall back to the un-scoped stream), so the terminal reflects
+          // the CURRENT selection instead of freezing on the previous horizon's narration.
+          repaintLive();
+          return;
+        }
         const data = (await res.json()) as { walls?: VectorWalls | null; flip?: number | null };
         if (cancelled || dteHorizonRef.current !== dteHorizon) return;
         horizonWallsRef.current = data.walls ?? null;
@@ -899,7 +917,9 @@ export function VectorChart({
         horizonFlipRef.current = data.flip ?? null;
         repaintLive();
       } catch {
-        /* keep last-known scoped walls/flip; the stream values still draw if none */
+        // Network throw: keep last-known scoped walls/flip, but STILL repaint so the terminal
+        // re-derives against the current selection (stream fallback) rather than staying stale.
+        if (!cancelled && dteHorizonRef.current === dteHorizon) repaintLive();
       }
     };
 
@@ -913,6 +933,11 @@ export function VectorChart({
     dteHorizon,
     ticker,
     liveSession,
+    // chartReady: at mount this effect runs BEFORE the chart-creation effect builds the series, so
+    // repaintLive() bails on !seriesRef.current and the terminal stays blank until the first SSE
+    // frame — which never arrives in a closed session (→ "had to refresh"). Re-running once the
+    // series exists fires the initial emits against the SSR-seeded walls/spot refs.
+    chartReady,
     refreshOverlays,
     liveGexWalls,
     liveGammaFlip,
@@ -921,6 +946,23 @@ export function VectorChart({
     emitMagnet,
     emitWallIntegrity,
   ]);
+
+  // Lens (GEX↔VEX) is a selection too: re-derive the terminal so the lens-gated wall-integrity line
+  // (and the rest) reflect the new lens immediately, not on the next SSE frame — which never arrives
+  // in a closed session, forcing the member to refresh. Reset the dedup keys so the switch can't be
+  // swallowed by a coincidental key match. Placed after the emit callbacks are declared (they read
+  // lensRef, synced above) and guarded on the series existing / not replaying.
+  useEffect(() => {
+    if (!chartReady || replayModeRef.current || !seriesRef.current) return;
+    lastRegimeReadRef.current = "";
+    lastProximityRef.current = "";
+    lastMagnetRef.current = "";
+    lastWallIntegrityRef.current = "";
+    emitRegime();
+    emitProximity();
+    emitMagnet();
+    emitWallIntegrity();
+  }, [lens, chartReady, emitRegime, emitProximity, emitMagnet, emitWallIntegrity]);
 
   const connectLive = useCallback(() => {
     if (!liveSessionRef.current) return;
