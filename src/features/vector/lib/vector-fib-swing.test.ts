@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   detectPivots,
   latestSwing,
+  dominantSwing,
   swingRetracement,
   goldenPocket,
 } from "./vector-fib-swing";
@@ -67,6 +68,31 @@ test("swingRetracement: measured from the terminus back toward the origin, per d
   assert.equal(swingRetracement(down, 0), 90);
   assert.equal(swingRetracement(down, 1), 110);
   assert.ok(Math.abs(swingRetracement(down, 0.618) - 102.36) < 1e-9);
+});
+
+// Big up impulse (low i2 94.5 → high i6 110.5, leg 16) then a smaller pullback swing
+// (low i9 103.5 → high i12 107.5, leg 4). latestSwing grabs the recent SMALL pair; dominantSwing
+// must return the big impulse.
+const BIG_THEN_SMALL = [100, 98, 95, 100, 105, 108, 110, 107, 105, 104, 105, 106, 107, 106, 105];
+
+test("dominantSwing: picks the LARGEST leg, not the last (noise) wiggle", () => {
+  const bars = barsFrom(BIG_THEN_SMALL);
+  const dom = dominantSwing(bars, 2)!;
+  assert.equal(dom.low, 94.5, "dominant swing low is the impulse origin, not the pullback low");
+  assert.equal(dom.high, 110.5, "dominant swing high is the impulse peak");
+  assert.equal(dom.direction, "up");
+  // The naive last-pair swing is the small recent one — strictly smaller than the dominant.
+  const last = latestSwing(bars, 2)!;
+  assert.ok(last.high - last.low < dom.high - dom.low, `last ${last.high - last.low} < dom ${dom.high - dom.low}`);
+  assert.equal(last.high, 107.5);
+});
+
+test("dominantSwing: minRange floor → null when no leg clears it (the noise-pocket fix)", () => {
+  const bars = barsFrom(BIG_THEN_SMALL);
+  // The biggest leg here is 16; a 100-point floor rejects everything → null (draw nothing).
+  assert.equal(dominantSwing(bars, 2, 100), null);
+  // A floor below the dominant leg still returns it.
+  assert.ok(dominantSwing(bars, 2, 10));
 });
 
 test("goldenPocket: the 61.8–65% zone, returned low-to-high regardless of direction", () => {

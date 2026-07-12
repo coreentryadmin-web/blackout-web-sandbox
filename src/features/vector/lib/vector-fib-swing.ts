@@ -90,6 +90,41 @@ export function latestSwing(bars: readonly SwingBar[], k: number): Swing | null 
 }
 
 /**
+ * The DOMINANT recent swing — the single largest-range leg between adjacent (opposite-kind) fractal
+ * pivots in the displayed window, subject to a `minRange` floor. This is what auto-fib should
+ * retrace: `latestSwing` above takes the *last* pivot pair, which on a 1-minute chart is usually
+ * noise (a 0.1-point wiggle) — the pocket then collapses to a hairline near spot. Picking the
+ * biggest leg instead surfaces the real impulse traders actually retrace, and the floor means we
+ * draw NOTHING until a genuine swing exists (honest, not a hairline). Ties resolve to the more
+ * recent leg. Null when no opposite-kind adjacent leg clears `minRange`.
+ */
+export function dominantSwing(bars: readonly SwingBar[], k: number, minRange = 0): Swing | null {
+  const { highs, lows } = detectPivots(bars, k);
+  const merged = [
+    ...highs.map((p) => ({ ...p, kind: "high" as const })),
+    ...lows.map((p) => ({ ...p, kind: "low" as const })),
+  ].sort((a, b) => a.index - b.index);
+  if (merged.length < 2) return null;
+
+  let best: { hi: SwingPoint; lo: SwingPoint; down: boolean; range: number } | null = null;
+  for (let i = 0; i < merged.length - 1; i++) {
+    const a = merged[i]!;
+    const b = merged[i + 1]!;
+    if (a.kind === b.kind) continue; // need an up-or-down leg, not two same-side pivots
+    const range = Math.abs(a.price - b.price);
+    if (range < minRange || range <= 0) continue;
+    const hi = a.kind === "high" ? a : b;
+    const lo = a.kind === "high" ? b : a;
+    // ">=" so a later leg of equal size wins the tie (prefer recency).
+    if (!best || range >= best.range) best = { hi, lo, down: hi.index < lo.index, range };
+  }
+  if (!best) return null;
+  const strip = (p: SwingPoint) => ({ index: p.index, time: p.time, price: p.price });
+  const [from, to] = best.down ? [best.hi, best.lo] : [best.lo, best.hi];
+  return { from: strip(from), to: strip(to), direction: best.down ? "down" : "up", high: best.hi.price, low: best.lo.price };
+}
+
+/**
  * Retracement price at `ratio` for a swing, measured from the terminus back toward the origin —
  * 0% is the end of the move, 100% fully retraces it (see module doc for the per-direction form).
  */

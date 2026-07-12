@@ -84,7 +84,7 @@ import { levelLinesFor, type LevelLine, type PriorDayOhlc } from "@/features/vec
 import { buildStructureMarkers } from "@/features/vector/lib/vector-structure-markers";
 import { confluenceZones, confluenceCallouts, type ConfluenceLevel } from "@/features/vector/lib/vector-confluence";
 import { sessionHodLod } from "@/features/vector/lib/vector-key-levels";
-import { latestSwing, goldenPocket } from "@/features/vector/lib/vector-fib-swing";
+import { dominantSwing, goldenPocket } from "@/features/vector/lib/vector-fib-swing";
 import {
   buildReplayTimeline,
   clampTimelineIndex,
@@ -1280,7 +1280,7 @@ export function VectorChart({
     const bars = lastDisplayBarsRef.current;
     const hl = sessionHodLod(bars);
     if (hl) lvls.push({ price: hl.hod, kind: "hod" }, { price: hl.lod, kind: "lod" });
-    const swing = latestSwing(bars, 3);
+    const swing = dominantSwing(bars, 3, spot > 0 ? spot * 0.0015 : 0);
     if (swing) {
       const gp = goldenPocket(swing);
       lvls.push({ price: gp.top, kind: "golden-pocket" }, { price: gp.bottom, kind: "golden-pocket" });
