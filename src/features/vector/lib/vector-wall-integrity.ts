@@ -45,6 +45,14 @@ const W_ISOLATION = 0.2;
 const STRIKE_MATCH_TOL = 1.0;
 /** How many trailing rail samples define "recent" for persistence. */
 const PERSISTENCE_WINDOW = 60;
+/**
+ * Fewer rail samples than this = no meaningful time series yet, so persistence is
+ * "unknown" (neutral 0.5), NOT "proven." This matters off-hours for a ticker with no
+ * recorded rail: seedWallHistoryForDisplay drops a SINGLE as-of-close sample, and a
+ * one-sample rail made every wall read "held 100% of session" — an overclaim, since
+ * nothing was actually observed holding over time. Below the floor we say "as-of-close."
+ */
+const MIN_RAIL_SAMPLES = 3;
 
 function clamp01(n: number): number {
   return n < 0 ? 0 : n > 1 ? 1 : n;
@@ -59,7 +67,7 @@ function persistenceFor(
   side: "call" | "put",
   history: readonly WallHistorySample[]
 ): number {
-  if (history.length === 0) return 0.5; // unknown ≠ proven; neutral, honest
+  if (history.length < MIN_RAIL_SAMPLES) return 0.5; // seed/near-empty rail — unknown ≠ proven
   const recent = history.slice(-PERSISTENCE_WINDOW);
   let hits = 0;
   for (const sample of recent) {
@@ -154,7 +162,9 @@ function buildNote(
   const held =
     historyLen === 0
       ? "no rail yet"
-      : `held ${Math.round(persistence * 100)}% of session`;
+      : historyLen < MIN_RAIL_SAMPLES
+        ? "as-of-close" // seed/near-empty rail — no session-long observation to claim
+        : `held ${Math.round(persistence * 100)}% of session`;
   const shape = isolation >= 0.5 ? "dominant" : "clustered";
   return `${Math.round(strike)}${side === "call" ? "C" : "P"} ${tier} — ${held}, ${shape}`;
 }

@@ -8,6 +8,23 @@ and required CI (`verify`) are green — no per-PR approval, no end-of-day hold.
 here and merge the PR in the same session. Supersedes all earlier "leave OPEN for review" notes
 in this file.
 
+## 🟡 P3 FOUND+FIXED 2026-07-12 — Non-SPX tickers mislabeled their own spot as "SPX" + integrity overclaimed "held 100% of session" off-hours
+
+**Surface:** `src/features/vector/components/VectorCrosshairLegend.tsx` + `src/features/vector/lib/vector-wall-integrity.ts`. Found during a deep-dive audit of 7 non-universe tickers (RKLB, NOW, ALAB, CRWD, EOSE, SNOW, IREN) the user asked for.
+
+**Two honest-labeling bugs:**
+1. **Wrong ticker in the crosshair legend.** The price readout was hardcoded `SPX <price>` — so viewing RKLB/SNOW/EOSE showed e.g. "SPX 81.52" for RKLB's own spot. Fixed: pass the active `ticker` into the legend and render it instead of the literal "SPX".
+2. **Integrity overclaimed persistence off-hours.** With no recorded rail, `seedWallHistoryForDisplay` drops ONE as-of-close sample; `persistenceFor` then computed hits/1 = 100%, so every wall read *"held 100% of session"* — an overclaim (nothing was observed holding *over time*). Fixed: a `MIN_RAIL_SAMPLES = 3` floor — below it, persistence stays neutral (0.5, unknown ≠ proven) and the note reads **"as-of-close"** instead of "held 100% of session". Truly-empty history still reads "no rail yet".
+
+**Also surfaced (follow-up, not in this fix):** the legend/wall labels round prices via `Math.round` (SPX-centric), so a $4 name (EOSE spot 4.41) shows "4" and half-dollar strikes collapse — a dedicated price-precision-by-magnitude pass will fix all rounding sites consistently.
+
+**Deep-dive result (the audit that found these):** all 10 tickers (7 non-universe + SPX/NVDA/TSLA) loaded **200, zero console errors**, real GEX walls + flip + regime + terminal. Cold non-universe SSR **0.46–1.4s** vs universe **0.32–0.9s** — the on-demand path is not meaningfully slower than the pre-warmed universe.
+
+**Evidence:** `vector-wall-integrity.test.ts` (+1) — a seed-only rail reads "as-of-close" with neutral persistence, never "held N% of session"; empty history still "no rail yet". `tsc` clean; 8/8 integrity tests; `@apply` guard clean.
+
+**Status:** FIXED (`fix/vector-honest-labels`).
+
+
 ## 🟠 P2 INVESTIGATING 2026-07-12 — Off-hours SPX wall rail is EMPTY on staging: recorder persistence gap hidden behind a green `{ok}` cron
 
 **Surface:** `src/features/vector/lib/vector-wall-persist.ts` (`appendSessionWallSample`) + `src/app/api/cron/vector-universe-snapshot/route.ts`. Surfaced while capturing a replay to prove the rail is point-in-time (per the member's dynamism request): the off-hours SPX replay for Jul 10 renders **candles but zero wall beads**, and the desk terminal reads *"no GEX structure shifts"* — i.e. the persisted rail has ≤1 sample for a full trading session.

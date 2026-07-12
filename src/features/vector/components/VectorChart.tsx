@@ -1377,7 +1377,7 @@ export function VectorChart({
       />
 
       <div className="relative">
-        <VectorCrosshairLegend state={crosshair} />
+        <VectorCrosshairLegend state={crosshair} ticker={ticker} />
         <p className="pointer-events-none absolute bottom-2 left-2 z-10 font-mono text-[10px] uppercase tracking-wide text-sky-300">
           SPY vol
         </p>
