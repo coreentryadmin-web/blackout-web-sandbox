@@ -8,6 +8,28 @@ and required CI (`verify`) are green — no per-PR approval, no end-of-day hold.
 here and merge the PR in the same session. Supersedes all earlier "leave OPEN for review" notes
 in this file.
 
+## ℹ️ INFO / VERIFIED-CORRECT 2026-07-12 — "no put wall below spot" on SPX is REAL, not a bug — the ladder shows NET dealer gamma, and near-term positioning is genuinely call-dominant down to ~7500
+
+**Surface:** `src/features/vector/lib/vector-gex-ladder.ts` + `src/lib/providers/polygon-options-gex.ts` (`strike_totals`). Member report (screenshot): SPX spot 7,575 and "no put wall literally from 7575 to 7475 — there definitely will be at least a weak put wall."
+
+**Investigation (Polygon ground truth, independent of the app):** recomputed SPX per-strike net GEX straight from the Polygon options chain — `Σ sign · gamma · OI · 100 · spot² · 0.01`, calls `+` / puts `−`, over the 8 near-term expiries (the exact set that feeds `strike_totals`). Verified three ways:
+
+| Scope | Nearest **net-put** (support) strike below spot 7,575 |
+|---|---|
+| Near-term (8 nearest expiries — the ladder default) | **7,495** |
+| All 55 fetched expiries | **7,495** |
+| Monthlies only (3rd-Fridays) | **7,530** |
+
+In every scope the band 7,575 → ~7,500 is **net call-dominant** (yellow), flipping put-dominant (purple) only at ~7,495 — exactly what the ladder renders. Concrete: 7,550 = **13.4B call vs 9.8B put** (all-exp) → net +call, even with 25,003 put contracts sitting there (38,911 calls outweigh them); 7,495 = 0.4B call vs 0.6B put → net −put (first strike puts win).
+
+**Root cause of the confusion (NOT a code bug):** the ladder shows **NET dealer gamma = call γ·OI − put γ·OI** (the standard GEX-wall definition), not **gross** put OI. The puts the member expects *are* there, but calls outweigh them at every strike down to ~7,500 in this long-gamma, pinned tape. No fabrication, no sign error — the app matches ground truth exactly (`sign = call ? +1 : put ? −1` at `polygon-options-gex.ts:2130`).
+
+**Where the real put walls live:** in the LONGER-dated expiries — confirmed live by the hardcore suite: SPX **WEEKLY** put wall **7,400**, **MONTHLY** **7,300**. The DTE-scoped ladder (PR #220) now surfaces these when the member toggles Weekly/Monthly, so the structure they were looking for is reachable — it just isn't in the near-term book.
+
+**Evidence:** ground-truth script output (scratchpad `gex-truth.mjs`/`gex-truth2.mjs`); hardcore suite 94/94 on the deployed build showing DTE re-scoping (0DTE flip 7543 / WEEKLY 5992 / MONTHLY 7584 / ALL 7495) + WEEKLY/MONTHLY put walls 7400/7300; cross-surface truth `banner 7575/7475 = ladder kings = terminal`.
+
+**Status:** VERIFIED-CORRECT — no code change. **Potential enhancement (not a fix):** an optional **gross put-OI / put-side lens** on the ladder, so raw put positioning is visible even where calls net it out — offered to the member; only build on request (changing the net-GEX definition would corrupt the standard view).
+
 ## 🟡 P3 FOUND+FIXED 2026-07-12 — GEX ladder panel crowned its put king INSIDE the display band, disagreeing with the banner + chart anchor (SPX ⚑7480 vs true wall 7475)
 
 **Surface:** `src/features/vector/lib/vector-gex-ladder.ts` (`buildGexLadder`). Caught live by the new hardcore-suite cross-surface check (PR #204): three member-visible surfaces read the same near-term structure but cited different put walls — **SPX** banner/chart anchor `support 7,475` vs ladder panel king `⚑7480`; **NVDA** `190` vs `195`. Call side agreed everywhere.
