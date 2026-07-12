@@ -44,6 +44,11 @@ type Props = {
   onClearIndicators: () => void;
   /** Bars currently shown (at the active timeframe) — drives the MA "not enough bars" annotation. */
   barCount: number;
+  /** Compact page title/ticker cluster, rendered at the far LEFT of the toolbar row (so the header
+   *  and the timeframe/indicator controls share one line instead of a tall separate header block). */
+  leadSlot?: React.ReactNode;
+  /** Freshness/status chip, rendered at the far RIGHT of the toolbar row, aligned with the title. */
+  trailSlot?: React.ReactNode;
 };
 
 /** Single compact toolbar — timeframe left, replay + lens right. */
@@ -81,12 +86,15 @@ export function VectorToolbar(props: Props) {
     onToggleIndicator,
     onClearIndicators,
     barCount,
+    leadSlot,
+    trailSlot,
   } = props;
 
   return (
     <div className="vector-toolbar mb-2" role="group" aria-label="Chart timeframe">
-      <div className="flex flex-wrap items-start justify-between gap-2">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex flex-wrap items-center gap-2">
+          {leadSlot}
           <VectorTimeframeSelect
             interval={interval}
             onInterval={onInterval}
@@ -99,7 +107,7 @@ export function VectorToolbar(props: Props) {
             barCount={barCount}
           />
         </div>
-        <div className="flex min-w-0 flex-1 flex-wrap items-start justify-end gap-2">
+        <div className="flex min-w-0 flex-1 flex-wrap items-center justify-end gap-2">
           <VectorReplayControls
             replayMode={replayMode}
             playing={playing}
@@ -136,6 +144,7 @@ export function VectorToolbar(props: Props) {
               disabled={replayMode}
             />
           )}
+          {trailSlot}
         </div>
       </div>
     </div>
