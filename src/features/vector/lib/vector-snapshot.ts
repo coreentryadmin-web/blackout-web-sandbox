@@ -26,6 +26,7 @@ import {
 } from "./vector-ticker";
 import { expiriesForHorizon, type VectorDteHorizon } from "./vector-dte-horizon";
 import { getPerExpiryGexWalls } from "./vector-dte-walls-server";
+import { VECTOR_WALL_NODES_PER_SIDE } from "./vector-bar-timeframes";
 
 const WALL_SCOPE_REFRESH_MS = 15_000;
 const VEX_WALLS_CACHE_MS = 8_000;
@@ -122,7 +123,9 @@ function runWallScopeFetch(ticker: string): Promise<void> {
       if (hm?.vex?.strike_totals && Object.keys(hm.vex.strike_totals).length > 0) {
         s.fallbackVexStrikeTotals = hm.vex.strike_totals;
         s.cachedVexFlip = hm.vex.flip ?? null;
-        s.cachedVexWalls = computeGexWalls(mapFromStrikeTotalsRecord(hm.vex.strike_totals));
+        s.cachedVexWalls = computeGexWalls(mapFromStrikeTotalsRecord(hm.vex.strike_totals), {
+          maxPerSide: VECTOR_WALL_NODES_PER_SIDE,
+        });
         s.cachedVexWallsAt = Date.now();
       }
     })
@@ -160,14 +163,16 @@ export function getVectorGexWalls(ticker: string = VECTOR_DEFAULT_TICKER): GexWa
   if (vectorHasWsOracle(t)) {
     const ws = getGexStrikeExpiryLadder(t, s.wallScope.expiries);
     if (ws) {
-      s.cachedWalls = computeGexWalls(ws.ladder);
+      s.cachedWalls = computeGexWalls(ws.ladder, { maxPerSide: VECTOR_WALL_NODES_PER_SIDE });
       s.cachedWallsAt = now;
       return s.cachedWalls;
     }
   }
 
   if (s.fallbackStrikeTotals) {
-    s.cachedWalls = computeGexWalls(mapFromStrikeTotalsRecord(s.fallbackStrikeTotals));
+    s.cachedWalls = computeGexWalls(mapFromStrikeTotalsRecord(s.fallbackStrikeTotals), {
+      maxPerSide: VECTOR_WALL_NODES_PER_SIDE,
+    });
     // gexAsOf must report DATA age, not compute time: during a provider outage
     // the fallback never refreshes, and stamping "now" here made members see
     // indefinitely-fresh age chips over walls that stopped updating.
@@ -187,7 +192,9 @@ export function getVectorVexWalls(ticker: string = VECTOR_DEFAULT_TICKER): GexWa
   const now = Date.now();
   if (now - s.cachedVexWallsAt < VEX_WALLS_CACHE_MS) return s.cachedVexWalls;
   if (s.fallbackVexStrikeTotals && Object.keys(s.fallbackVexStrikeTotals).length > 0) {
-    s.cachedVexWalls = computeGexWalls(mapFromStrikeTotalsRecord(s.fallbackVexStrikeTotals));
+    s.cachedVexWalls = computeGexWalls(mapFromStrikeTotalsRecord(s.fallbackVexStrikeTotals), {
+      maxPerSide: VECTOR_WALL_NODES_PER_SIDE,
+    });
     s.cachedVexWallsAt = s.fallbackFetchedAt;
   } else {
     s.cachedVexWalls = null;
@@ -231,7 +238,7 @@ export async function getVectorGexWallsForHorizon(
     if (!scoped.length) return getVectorGexWalls(t);
     const ws = getGexStrikeExpiryLadder(t, scoped);
     if (!ws || ws.ladder.size === 0) return getVectorGexWalls(t);
-    return computeGexWalls(ws.ladder);
+    return computeGexWalls(ws.ladder, { maxPerSide: VECTOR_WALL_NODES_PER_SIDE });
   }
 
   // NON-ORACLE: per-expiry walls from the Polygon chain (DTE for all tickers).

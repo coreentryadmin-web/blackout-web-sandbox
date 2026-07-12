@@ -1,6 +1,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { aggregateVectorBars } from "./vector-bar-timeframes";
+import {
+  aggregateVectorBars,
+  wallCountForTimeframe,
+  VECTOR_WALL_NODES_PER_SIDE,
+} from "./vector-bar-timeframes";
 
 const m1 = (
   timeSec: number,
@@ -75,6 +79,36 @@ test("aggregateVectorBars: custom 10m interval buckets", () => {
   assert.equal(out.length, 2);
   assert.equal(out[0]!.close, 2);
   assert.equal(out[1]!.close, 2.5);
+});
+
+test("wallCountForTimeframe: preset timeframes map to the specified shown-counts", () => {
+  assert.equal(wallCountForTimeframe(1), 6, "1m shows 6 near-spot walls");
+  assert.equal(wallCountForTimeframe(3), 8, "3m shows 8");
+  assert.equal(wallCountForTimeframe(5), 10, "5m shows 10");
+  assert.equal(wallCountForTimeframe(15), 12, "15m shows the full 12 (server cap)");
+});
+
+test("wallCountForTimeframe: never exceeds VECTOR_WALL_NODES_PER_SIDE, even for huge intervals", () => {
+  assert.equal(VECTOR_WALL_NODES_PER_SIDE, 12);
+  for (const tf of [15, 30, 60, 120, 240]) {
+    assert.ok(
+      wallCountForTimeframe(tf) <= VECTOR_WALL_NODES_PER_SIDE,
+      `tf=${tf} must not exceed the server cap`
+    );
+  }
+  assert.equal(wallCountForTimeframe(240), 12, "largest interval saturates at the cap");
+});
+
+test("wallCountForTimeframe: monotonic non-decreasing across ascending timeframes", () => {
+  // Sub-1m / zero / negative clamp up to at least 1; higher tf never returns fewer walls.
+  const tfs = [0, 1, 2, 3, 4, 5, 6, 10, 15, 30, 240];
+  let prev = 0;
+  for (const tf of tfs) {
+    const count = wallCountForTimeframe(tf);
+    assert.ok(count >= 1, `tf=${tf} clamps to >= 1`);
+    assert.ok(count >= prev, `tf=${tf} (${count}) must be >= previous (${prev})`);
+    prev = count;
+  }
 });
 
 test("mergeBarsByTime: fills reconnect holes, prefers fetched OHLC, preserves live volume", async () => {

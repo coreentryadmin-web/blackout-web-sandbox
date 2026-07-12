@@ -9,6 +9,7 @@ import { normalizeVectorTicker } from "./vector-ticker";
 import { roundFloats } from "@/lib/round-floats";
 import { bucketWallSampleTime, buildWallHistorySample } from "./vector-wall-sample";
 import { appendSessionWallSample } from "./vector-wall-persist";
+import { VECTOR_WALL_NODES_PER_SIDE } from "./vector-bar-timeframes";
 
 /**
  * Options for the universe build. `recordWallHistory` makes the build ALSO
@@ -85,10 +86,14 @@ export async function buildVectorUniverseSnapshot(
       const hm = await fetchGexHeatmap(ticker);
       const spot = hm?.spot ?? null;
       const gexWalls = hm?.gex?.strike_totals
-        ? computeGexWalls(mapFromStrikeTotalsRecord(hm.gex.strike_totals))
+        ? computeGexWalls(mapFromStrikeTotalsRecord(hm.gex.strike_totals), {
+            maxPerSide: VECTOR_WALL_NODES_PER_SIDE,
+          })
         : { callWalls: [], putWalls: [] };
       const vexWalls = hm?.vex?.strike_totals
-        ? computeGexWalls(mapFromStrikeTotalsRecord(hm.vex.strike_totals))
+        ? computeGexWalls(mapFromStrikeTotalsRecord(hm.vex.strike_totals), {
+            maxPerSide: VECTOR_WALL_NODES_PER_SIDE,
+          })
         : { callWalls: [], putWalls: [] };
 
       if (recordWallHistory && sessionYmd) {
