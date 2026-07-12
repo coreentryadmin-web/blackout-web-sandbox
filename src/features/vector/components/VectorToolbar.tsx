@@ -4,9 +4,11 @@ import { VectorLensToggle } from "@/features/vector/components/VectorLensToggle"
 import { VectorDteToggle } from "@/features/vector/components/VectorDteToggle";
 import { VectorReplayControls } from "@/features/vector/components/VectorReplayControls";
 import { VectorTimeframeSelect } from "@/features/vector/components/VectorTimeframeSelect";
+import { VectorIndicatorMenu } from "@/features/vector/components/VectorIndicatorMenu";
 import type { VectorWallLens } from "@/features/vector/lib/vector-wall-history";
 import type { VectorTimeframeMinutes } from "@/features/vector/lib/vector-bar-timeframes";
 import type { VectorDteHorizon } from "@/features/vector/lib/vector-dte-horizon";
+import type { VectorOverlayId } from "@/features/vector/lib/vector-indicators-config";
 
 type Props = {
   interval: VectorTimeframeMinutes;
@@ -37,6 +39,9 @@ type Props = {
   onJumpOpen: () => void;
   onJumpClose: () => void;
   onToggleLoop: () => void;
+  indicators: Set<VectorOverlayId>;
+  onToggleIndicator: (id: VectorOverlayId) => void;
+  onClearIndicators: () => void;
 };
 
 /** Single compact toolbar — timeframe left, replay + lens right. */
@@ -70,16 +75,26 @@ export function VectorToolbar(props: Props) {
     onJumpOpen,
     onJumpClose,
     onToggleLoop,
+    indicators,
+    onToggleIndicator,
+    onClearIndicators,
   } = props;
 
   return (
     <div className="vector-toolbar mb-2" role="group" aria-label="Chart timeframe">
       <div className="flex flex-wrap items-start justify-between gap-2">
-        <VectorTimeframeSelect
-          interval={interval}
-          onInterval={onInterval}
-          disabled={timeframeDisabled}
-        />
+        <div className="flex flex-wrap items-center gap-2">
+          <VectorTimeframeSelect
+            interval={interval}
+            onInterval={onInterval}
+            disabled={timeframeDisabled}
+          />
+          <VectorIndicatorMenu
+            enabled={indicators}
+            onToggle={onToggleIndicator}
+            onClear={onClearIndicators}
+          />
+        </div>
         <div className="flex min-w-0 flex-1 flex-wrap items-start justify-end gap-2">
           <VectorReplayControls
             replayMode={replayMode}
