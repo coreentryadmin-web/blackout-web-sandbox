@@ -14,10 +14,11 @@ type Props = {
 };
 
 /**
- * Indicator toggle menu — a compact dropdown of the price-pane overlays (VWAP / EMAs / SMAs), all
- * OFF by default. The member opts each one in; enabled indicators show a coloured dot matching the
- * on-chart line. Closes on outside-click / Escape. Oscillators (RSI/MACD) and profiles land in
- * follow-ups and slot into this same menu.
+ * Indicator toggle menu — a compact dropdown of the price-pane overlays, all OFF by default. One
+ * toggle per TYPE (VWAP / EMA / SMA), so enabling "EMA" draws every EMA line at once rather than a
+ * checkbox per period; enabled types show a coloured dot matching the on-chart line. Closes on
+ * outside-click / Escape. Oscillators (RSI/MACD) and profiles land in follow-ups and slot into this
+ * same menu as new type toggles.
  */
 export function VectorIndicatorMenu({ enabled, onToggle, onClear }: Props) {
   const [open, setOpen] = useState(false);
