@@ -83,6 +83,19 @@ Three properties separate top-tier from mere:
   weekly/monthly show the **frozen call/put clusters after close**, on every timeframe — the
   after-hours analogue of the live "All" rail, not single beads (direct member ask). Live proof owed
   Monday's RTH session.
+- **Horizon-aware replay** *(2026-07-12, #188)* — replay now reconstructs the *selected* DTE
+  horizon's beads forming point-in-time (0DTE/weekly/monthly), not always the blended "All" rail,
+  via a pure `pickReplayTrailSource`. Answers the member ask "when I hit replay it should show how
+  the bead walls formed during that time." (Data accrues from Monday forward; "All" replay already
+  has history.)
+- **Per-strike GEX ladder side panel** *(2026-07-12, #14 first slice)* — Skylit-Atlas parity: the
+  dense per-strike net-GEX column scanned alongside the chart. Where the beads collapse each strike
+  to one dot, the ladder shows EVERY near-spot strike with its signed net GEX as a magnitude bar
+  (gold call / purple put) and the dominant "king" per side, with a spot divider. Pure
+  `buildGexLadder` (banded to spot, nearest-N cap) + `/api/market/vector/gex-ladder` read +
+  `VectorGexLadder` in the right rail above the desk terminal. First slice is the near-term ("all")
+  aggregate; **follow-ups: horizon-scope it to the chart's DTE toggle, replay-sync it to the cursor,
+  and multi-ticker columns.**
 
 ## Roadmap — ranked by (impact × differentiation × feasibility)
 

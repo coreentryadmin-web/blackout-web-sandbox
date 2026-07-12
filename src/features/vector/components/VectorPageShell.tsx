@@ -11,6 +11,7 @@ import type { WallHistorySample, VectorWallLens } from "@/features/vector/lib/ve
 import { VectorTickerSelect } from "@/features/vector/components/VectorTickerSelect";
 import { VectorScanner } from "@/features/vector/components/VectorScanner";
 import { VectorDeskTerminal } from "@/features/vector/components/VectorDeskTerminal";
+import { VectorGexLadder } from "@/features/vector/components/VectorGexLadder";
 import { VectorRegimeBanner } from "@/features/vector/components/VectorRegimeBanner";
 import { deriveVectorRegime, type VectorRegime } from "@/features/vector/lib/vector-regime";
 import { deriveWallProximity, type WallProximity } from "@/features/vector/lib/vector-wall-proximity";
@@ -193,16 +194,25 @@ export function VectorPageShell({
               onWallIntegrityChange={setWallIntegrity}
             />
           </div>
-          <VectorDeskTerminal
-            ticker={activeTicker}
-            lens={lens}
-            wallEvents={wallEvents}
-            liveSession={liveSession}
-            streamUpdatedAt={streamUpdatedAt}
-            proximity={proximity}
-            magnet={magnet}
-            wallIntegrity={wallIntegrity}
-          />
+          {/* Right rail: the per-strike GEX ladder (Skylit-Atlas parity — the dense strike
+              column scanned alongside the chart) stacked above the desk terminal narration. */}
+          <div className="vector-right-rail">
+            <VectorGexLadder
+              ticker={activeTicker}
+              liveSession={liveSession}
+              initialSpot={initialBars.length ? initialBars[initialBars.length - 1]!.close : null}
+            />
+            <VectorDeskTerminal
+              ticker={activeTicker}
+              lens={lens}
+              wallEvents={wallEvents}
+              liveSession={liveSession}
+              streamUpdatedAt={streamUpdatedAt}
+              proximity={proximity}
+              magnet={magnet}
+              wallIntegrity={wallIntegrity}
+            />
+          </div>
         </div>
 
         <details className="vector-scanner-panel" open={scannerOpen}>
