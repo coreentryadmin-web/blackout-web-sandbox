@@ -223,6 +223,13 @@ async function runCleanup(): Promise<CleanupRunResult> {
       run: () => deleteOlderThan("spx_playbook_instances", "updated_at", 365),
     },
     { key: "lotto_plays", run: () => deleteOlderThan("lotto_plays", "created_at", 365) },
+
+    // vector_wall_history: durable mirror of the Redis wall rail — one upsert per 15s bucket
+    // during RTH. Only ~90 days are ever replayed, so prune older sessions by updated_at.
+    {
+      key: "vector_wall_history",
+      run: () => deleteOlderThan("vector_wall_history", "updated_at", 90),
+    },
   ];
 
   // allSettled: one table's transient timeout must not abort the rest of the nightly prune.

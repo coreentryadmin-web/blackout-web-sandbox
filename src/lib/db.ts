@@ -1434,6 +1434,27 @@ async function runMigrations(): Promise<void> {
     );
     CREATE INDEX IF NOT EXISTS signal_outcomes_event_idx ON signal_outcomes(signal_event_id, checkpoint);
   `);
+
+  // Vector wall-history durable write-through (007_vector_wall_history.sql) — inlined for
+  // ECS standalone cold starts. Mirrors the Redis-only rail so it survives Redis restarts
+  // and keeps ~90 days of past sessions for replay. UNIQUE(ticker, session_ymd, bucket_time)
+  // makes the recorder's per-bucket upsert idempotent; pruned to 90 days by db-cleanup.
+  await p.query(`
+    CREATE TABLE IF NOT EXISTS vector_wall_history (
+      id BIGSERIAL PRIMARY KEY,
+      ticker TEXT NOT NULL,
+      session_ymd DATE NOT NULL,
+      bucket_time BIGINT NOT NULL,
+      walls JSONB NOT NULL,
+      gamma_flip DOUBLE PRECISION,
+      vex_walls JSONB,
+      vex_flip DOUBLE PRECISION,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE (ticker, session_ymd, bucket_time)
+    );
+    CREATE INDEX IF NOT EXISTS vector_wall_history_lookup_idx ON vector_wall_history (ticker, session_ymd, bucket_time);
+    CREATE INDEX IF NOT EXISTS vector_wall_history_updated_at_idx ON vector_wall_history (updated_at DESC);
+  `);
   await p.query(`
     ALTER TABLE largo_messages
     ADD COLUMN IF NOT EXISTS tool_results JSONB;
