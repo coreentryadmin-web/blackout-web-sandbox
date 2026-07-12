@@ -8,6 +8,7 @@ import {
   computeGexWalls,
   mapFromStrikeTotalsRecord,
   nextWallScope,
+  wallsHaveNodes,
   type GexWalls,
   type WallScopeState,
 } from "@/lib/providers/gex-wall-levels";
@@ -231,7 +232,23 @@ export async function getVectorGexWallsForHorizon(
   const t = normalizeVectorTicker(ticker);
 
   // "all" is the fast, already-warmed blended aggregate for every ticker — no chain fetch.
-  if (horizon === "all") return getVectorGexWalls(t);
+  if (horizon === "all") {
+    const warm = getVectorGexWalls(t);
+    if (wallsHaveNodes(warm)) return warm;
+    // Cold-task safety net. getVectorGexWalls is a SYNCHRONOUS in-memory read: on a freshly
+    // spun serverless task the UW WS ladder isn't connected and s.fallbackStrikeTotals hasn't
+    // been populated yet (getVectorGexWalls → refreshWallScope kicks off the heatmap fetch but
+    // returns BEFORE it resolves), so the first call returns null/empty walls. The companion
+    // getVectorGammaFlipForHorizon("all") is fetch-backed (getVectorGammaFlip → getGexPositioning),
+    // so /api/market/vector/walls?dte=all could answer with a real flip and ZERO walls — a member
+    // toggling the DTE control to "All" would watch the beads/walls blank out intermittently
+    // depending on which task the request lands on. primeVectorWallScope AWAITS the same heatmap
+    // fetch (populating s.fallbackStrikeTotals from hm.gex.strike_totals), restoring the wall/flip
+    // symmetry the narrowed-horizon and oracle branches below already have. Warm tasks never reach
+    // here — the guard above returns first — so the hot SSE path is untouched.
+    await primeVectorWallScope(t);
+    return getVectorGexWalls(t);
+  }
 
   // NARROWED HORIZON — per-expiry walls from the Polygon options chain, for EVERY ticker
   // including the oracles (SPX/SPY/QQQ all have option chains: SPX via I:SPX index options,
