@@ -243,6 +243,30 @@ export function narrowedHorizonTrail(
   return [{ time: lastBarTime, walls: scoped!, gammaFlip: flip ?? null }];
 }
 
+/**
+ * Compose the bead trail to draw for a NARROWED DTE horizon from its two sources:
+ *   - `recorded`: the durable per-horizon trail (composite-keyed rail, PR #186) — the FROZEN
+ *     point-in-time clusters that make weekly/monthly show accumulated beads after close, the
+ *     after-hours analogue of the blended "All" rail. Pass null/empty for "all" / the VEX lens /
+ *     nothing recorded (the caller owns that gate).
+ *   - `current`: {@link narrowedHorizonTrail}'s single current-structure column at the latest bar.
+ *
+ * Precedence: prefer the recorded trail, but UNION the current column into it (mergeWallHistory,
+ * by bucket time) so the newest live structure paints even before the 5-min recorder writes the
+ * current bucket — the current column overwrites/extends the recorded tail, never regresses it.
+ * With no recorded trail, fall back to the current column alone. With neither, return null so the
+ * caller draws the blended "All" rail (beads never blank on a toggle).
+ */
+export function composeHorizonTrail(
+  recorded: WallHistorySample[] | null | undefined,
+  current: WallHistorySample[] | null | undefined
+): WallHistorySample[] | null {
+  if (recorded && recorded.length > 0) {
+    return current && current.length > 0 ? mergeWallHistory(recorded, current) : recorded;
+  }
+  return current && current.length > 0 ? current : null;
+}
+
 /** Merge server-observed history into the client buffer — union by bar time, longer tail wins ties. */
 export function mergeWallHistory(
   local: WallHistorySample[],
