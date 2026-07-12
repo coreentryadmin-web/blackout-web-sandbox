@@ -423,6 +423,39 @@ function applyKingAnchor(
   }
 }
 
+/**
+ * Max-pain line — a single DOTTED amber level at the strike of minimum aggregate option intrinsic
+ * (where net-short writers pay out least and price tends to pin into expiry). DTE-dynamic: it reads
+ * the horizon-scoped `/api/market/vector/max-pain` value, so it re-scopes with the toggle exactly
+ * like the king anchor. Styled distinct from every other line (dotted amber vs the solid king, the
+ * dashed cyan flip, and the gold/purple bead colours) so it reads as its own concept. Null → the
+ * line is removed (no honest max-pain level to draw).
+ */
+function applyMaxPainLine(
+  series: ISeriesApi<"Candlestick">,
+  lineRef: React.MutableRefObject<IPriceLine | null>,
+  strike: number | null
+): void {
+  if (strike == null || !Number.isFinite(strike) || strike <= 0) {
+    if (lineRef.current) {
+      series.removePriceLine(lineRef.current);
+      lineRef.current = null;
+    }
+    return;
+  }
+  const opts = {
+    price: strike,
+    color: withAlpha("#f59e0b", 0.9), // amber — distinct from king/flip/bead colours
+    lineWidth: 1 as const,
+    lineStyle: LineStyle.Dotted,
+    lineVisible: true,
+    axisLabelVisible: true,
+    title: `⊗ Max Pain ${strike}`,
+  };
+  if (lineRef.current) lineRef.current.applyOptions(opts);
+  else lineRef.current = series.createPriceLine(opts);
+}
+
 const LEVEL_LINE_STYLE = {
   solid: LineStyle.Solid,
   dashed: LineStyle.Dashed,
@@ -640,6 +673,10 @@ export function VectorChart({
   // ticker switch / unmount alongside the flip line.
   const kingCallLineRef = useRef<IPriceLine | null>(null);
   const kingPutLineRef = useRef<IPriceLine | null>(null);
+  // Max-pain level — a single dotted amber line at the horizon-scoped max-pain strike, fetched from
+  // /api/market/vector/max-pain and redrawn on ticker/DTE change (like the king anchor). Cleared on
+  // ticker switch / unmount alongside the other price lines.
+  const maxPainLineRef = useRef<IPriceLine | null>(null);
   // Opt-in technical overlays (VWAP/EMA/SMA) — one lightweight-charts line series per enabled
   // indicator, created on demand and removed when toggled off. Default: none. `indicatorsRef`
   // mirrors the state for the imperative paint path; `lastDisplayBarsRef` lets a toggle repaint
@@ -1255,8 +1292,29 @@ export function VectorChart({
       }
     };
 
+    // Max-pain level for the current (ticker, horizon). Independent of the walls/history fetch — it
+    // reads OI-by-strike, not the gamma ladder — so it lands and draws on its own. Best-effort: on
+    // any failure or a null strike the line is simply removed (no honest level to pin).
+    const fetchMaxPain = async () => {
+      try {
+        const res = await fetch(
+          `/api/market/vector/max-pain?ticker=${encodeURIComponent(ticker)}&dte=${dteHorizon}`
+        );
+        if (cancelled || dteHorizonRef.current !== dteHorizon) return;
+        const strike =
+          res.ok && seriesRef.current
+            ? ((await res.json()) as { maxPain?: number | null }).maxPain ?? null
+            : null;
+        if (cancelled || dteHorizonRef.current !== dteHorizon || !seriesRef.current) return;
+        applyMaxPainLine(seriesRef.current, maxPainLineRef, strike);
+      } catch {
+        // Network throw: keep the last-drawn line rather than blank it on a transient blip.
+      }
+    };
+
     void fetchScoped();
     void fetchHistory();
+    void fetchMaxPain();
     // Only the current walls need the 15s cadence; the recorded trail advances at the recorder's
     // 5-min bucket, so refresh it on a slower interval in RTH (and once, above, off-hours).
     const id = liveSession ? setInterval(fetchScoped, 15_000) : null;
@@ -1628,6 +1686,7 @@ export function VectorChart({
       // remount (ticker switch) starts clean instead of calling removePriceLine on a dead series.
       kingCallLineRef.current = null;
       kingPutLineRef.current = null;
+      maxPainLineRef.current = null;
       // chart.remove() disposes the overlay line series too — swap in a fresh map so a remount
       // rebuilds instead of touching the now-disposed series (matches the sibling ref resets).
       overlaySeriesRef.current = new Map();
