@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { computeMaxPain, type MaxPainContract } from "./vector-max-pain";
+import { computeMaxPain, maxPainForHorizon, type MaxPainContract } from "./vector-max-pain";
 
 /** Build a symmetric call+put chain with the same OI at each strike. */
 function symChain(strikes: number[], oi: number): MaxPainContract[] {
@@ -81,4 +81,42 @@ test("computeMaxPain: ignores non-positive OI and non-finite strikes; null when 
 test("computeMaxPain: points are ascending by strike and cover every positive-OI strike once", () => {
   const res = computeMaxPain(symChain([120, 100, 110], 3))!;
   assert.deepEqual(res.points.map((p) => p.strike), [100, 110, 120]);
+});
+
+// --- horizon-scoped ---
+
+type ExpChain = MaxPainContract & { expiry: string };
+const TODAY = "2026-07-13"; // a Monday
+// Near expiry (0DTE today) pins low; a far expiry adds strikes that shift the "all" pin.
+const NEAR: ExpChain[] = [
+  { strike: 100, type: "call", openInterest: 10, expiry: "2026-07-13" },
+  { strike: 110, type: "put", openInterest: 10, expiry: "2026-07-13" },
+];
+const FAR: ExpChain[] = [
+  { strike: 200, type: "call", openInterest: 10, expiry: "2026-08-21" },
+  { strike: 210, type: "put", openInterest: 10, expiry: "2026-08-21" },
+];
+
+test("maxPainForHorizon: 0DTE scopes to today's expiry; ALL spans the whole chain", () => {
+  const chain = [...NEAR, ...FAR];
+  // 0DTE → only the 2026-07-13 contracts → tie at 100/110 → lower strike 100.
+  assert.equal(maxPainForHorizon(chain, "0dte", TODAY)!.maxPain, 100);
+  // ALL → strikes {100,110,200,210}; totals tie at P=110 and P=200 → lower strike 110.
+  assert.equal(maxPainForHorizon(chain, "all", TODAY)!.maxPain, 110);
+});
+
+test("maxPainForHorizon: empty horizon falls back to the nearest expiry (never blanks)", () => {
+  // Only a far expiry exists; a 0DTE request has nothing within the ceiling, so it snaps to the
+  // nearest live expiry rather than returning null — same honest fallback the walls use.
+  const res = maxPainForHorizon(FAR, "0dte", TODAY)!;
+  assert.equal(res.maxPain, 200);
+});
+
+test("maxPainForHorizon: null when every expiry is in the past or the chain is empty", () => {
+  assert.equal(maxPainForHorizon([], "all", TODAY), null);
+  const expired: ExpChain[] = [
+    { strike: 100, type: "call", openInterest: 10, expiry: "2020-01-17" },
+    { strike: 110, type: "put", openInterest: 10, expiry: "2020-01-17" },
+  ];
+  assert.equal(maxPainForHorizon(expired, "all", TODAY), null);
 });
