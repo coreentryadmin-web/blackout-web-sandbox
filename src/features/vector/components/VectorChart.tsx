@@ -6,6 +6,7 @@ import {
   createSeriesMarkers,
   CandlestickSeries,
   HistogramSeries,
+  LineSeries,
   ColorType,
   LineStyle,
   type AutoscaleInfo,
@@ -72,6 +73,11 @@ import {
   type WallHistorySample,
 } from "@/features/vector/lib/vector-wall-history";
 import { pickKingStrikes, kingAnchorTitle } from "@/features/vector/lib/vector-king-anchor";
+import { smaSeries, emaSeries, vwapSeries } from "@/features/vector/lib/vector-indicators";
+import {
+  VECTOR_OVERLAYS,
+  type VectorOverlayId,
+} from "@/features/vector/lib/vector-indicators-config";
 import {
   buildReplayTimeline,
   clampTimelineIndex,
@@ -582,6 +588,13 @@ export function VectorChart({
   // ticker switch / unmount alongside the flip line.
   const kingCallLineRef = useRef<IPriceLine | null>(null);
   const kingPutLineRef = useRef<IPriceLine | null>(null);
+  // Opt-in technical overlays (VWAP/EMA/SMA) — one lightweight-charts line series per enabled
+  // indicator, created on demand and removed when toggled off. Default: none. `indicatorsRef`
+  // mirrors the state for the imperative paint path; `lastDisplayBarsRef` lets a toggle repaint
+  // against the currently-shown bars without waiting for the next tick/timeframe change.
+  const overlaySeriesRef = useRef<Map<VectorOverlayId, ISeriesApi<"Line">>>(new Map());
+  const indicatorsRef = useRef<Set<VectorOverlayId>>(new Set());
+  const lastDisplayBarsRef = useRef<VectorBar[]>(initialBars);
   const callBeadsRef = useRef<ISeriesMarkersPluginApi<Time> | null>(null);
   const putBeadsRef = useRef<ISeriesMarkersPluginApi<Time> | null>(null);
   const wallHistoryRef = useRef<WallHistorySample[]>(initialWallHistory);
@@ -666,6 +679,8 @@ export function VectorChart({
   const [vexAsOf, setVexAsOf] = useState<number | null>(null);
   const [timeframe, setTimeframe] = useState<VectorTimeframeMinutes>(1);
   const [chartReady, setChartReady] = useState(false);
+  // Enabled overlay indicators (default none — the chart stays clean until the member opts in).
+  const [indicators, setIndicators] = useState<Set<VectorOverlayId>>(() => new Set());
 
   useEffect(() => {
     // Replay honesty for the structure feed: while scrubbed to 9:35 the ticker
@@ -805,6 +820,75 @@ export function VectorChart({
     []
   );
 
+  /**
+   * Draw/refresh the enabled technical overlays against the CURRENTLY-shown bars. Called after every
+   * applyDisplayBars (tick, timeframe, replay, seed) so the lines track the same aggregated bars the
+   * candles use, and by the indicator-toggle effect so enabling/disabling repaints immediately.
+   * One line series per enabled indicator, created lazily and removed the moment it's toggled off —
+   * nothing is drawn while the (default-empty) enabled set is empty. Values are computed 1:1 with
+   * the bars and the null warm-up region is dropped so lines simply start once defined.
+   */
+  const paintOverlays = useCallback((bars: VectorBar[]) => {
+    const chart = chartRef.current;
+    if (!chart || !seriesRef.current) return;
+    lastDisplayBarsRef.current = bars;
+    const enabled = indicatorsRef.current;
+    const map = overlaySeriesRef.current;
+    const closes = bars.map((b) => b.close);
+
+    for (const def of VECTOR_OVERLAYS) {
+      const existing = map.get(def.id) ?? null;
+      if (!enabled.has(def.id)) {
+        if (existing) {
+          chart.removeSeries(existing);
+          map.delete(def.id);
+        }
+        continue;
+      }
+      const values =
+        def.kind === "vwap"
+          ? vwapSeries(bars)
+          : def.kind === "ema"
+            ? emaSeries(closes, def.period ?? 0)
+            : smaSeries(closes, def.period ?? 0);
+      const data: { time: Time; value: number }[] = [];
+      for (let i = 0; i < bars.length; i++) {
+        const v = values[i];
+        if (v != null) data.push({ time: bars[i]!.time, value: v });
+      }
+      let line = existing;
+      if (!line) {
+        line = chart.addSeries(LineSeries, {
+          color: def.color,
+          lineWidth: 2,
+          priceLineVisible: false,
+          lastValueVisible: false,
+          crosshairMarkerVisible: false,
+        });
+        map.set(def.id, line);
+      }
+      line.setData(data);
+    }
+  }, []);
+
+  // Sync the enabled-indicator set to the ref the imperative paint reads, and repaint immediately
+  // against the currently-shown bars so toggling an indicator is instant (no wait for the next
+  // tick/timeframe change). paintOverlays is stable, so this runs only when the selection changes.
+  useEffect(() => {
+    indicatorsRef.current = indicators;
+    paintOverlays(lastDisplayBarsRef.current);
+  }, [indicators, paintOverlays]);
+
+  const toggleIndicator = useCallback((id: VectorOverlayId) => {
+    setIndicators((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
+  const clearIndicators = useCallback(() => setIndicators(new Set()), []);
+
   const applyFrame = useCallback(
     (cursorTime: number, bars: VectorBar[], history: WallHistorySample[], activeLens: VectorWallLens) => {
       const chart = chartRef.current;
@@ -813,6 +897,7 @@ export function VectorChart({
 
       const visibleBars = displayBarsFromMinute(bars, timeframeRef.current, cursorTime);
       applyDisplayBars(series, volumeSeriesRef.current, visibleBars);
+      paintOverlays(visibleBars);
 
       // Horizon-aware replay: when the member has narrowed the DTE (GEX lens) and that horizon
       // has a recorded trail, replay THAT horizon's beads forming point-in-time — not the blended
@@ -852,7 +937,7 @@ export function VectorChart({
       // (walls/flip above are carefully time-honest; DP must not be the exception).
       refreshOverlays(activeLens, gexAt, vexAt, gammaAt, vexFlipAt, []);
     },
-    [initialWalls, initialVexWalls, initialGammaFlip, initialVexFlip, refreshOverlays]
+    [initialWalls, initialVexWalls, initialGammaFlip, initialVexFlip, refreshOverlays, paintOverlays]
   );
 
   const stopReplayTimer = useCallback(() => {
@@ -1142,6 +1227,7 @@ export function VectorChart({
           const display = displayBarsFromMinute(merged, timeframeRef.current);
           displayBarTimeRef.current = display[display.length - 1]?.time ?? 0;
           applyDisplayBars(seriesRef.current, volumeSeriesRef.current, display);
+          paintOverlays(display);
         }
       })
       .catch(() => {
@@ -1271,7 +1357,7 @@ export function VectorChart({
         emitWallIntegrity();
       }
     });
-  }, [sessionYmd, refreshTrails, refreshOverlays, onFreshness, ticker, liveGexWalls, liveGammaFlip, emitRegime, emitProximity, emitMagnet, emitWallIntegrity]);
+  }, [sessionYmd, refreshTrails, refreshOverlays, onFreshness, ticker, liveGexWalls, liveGammaFlip, emitRegime, emitProximity, emitMagnet, emitWallIntegrity, paintOverlays]);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -1366,6 +1452,7 @@ export function VectorChart({
 
     const initialDisplay = displayBarsFromMinute(initialBars, 1);
     applyDisplayBars(series, volumeSeries, initialDisplay);
+    paintOverlays(initialDisplay);
     displayBarTimeRef.current = initialBars[initialBars.length - 1]?.time ?? 0;
     if (initialBars.length) chart.timeScale().fitContent();
 
@@ -1442,6 +1529,9 @@ export function VectorChart({
       // remount (ticker switch) starts clean instead of calling removePriceLine on a dead series.
       kingCallLineRef.current = null;
       kingPutLineRef.current = null;
+      // chart.remove() disposes the overlay line series too — swap in a fresh map so a remount
+      // rebuilds instead of touching the now-disposed series (matches the sibling ref resets).
+      overlaySeriesRef.current = new Map();
       callBeadsRef.current = null;
       putBeadsRef.current = null;
       volumeSeriesRef.current = null;
@@ -1489,6 +1579,7 @@ export function VectorChart({
         if (replayModeRef.current) return;
         const display = displayBarsFromMinute(merged, timeframeRef.current);
         applyDisplayBars(seriesRef.current!, volumeSeriesRef.current, display);
+        paintOverlays(display);
       } catch {
         /* best-effort */
       }
@@ -1499,7 +1590,7 @@ export function VectorChart({
       cancelled = true;
       clearInterval(interval);
     };
-  }, [chartReady, sessionYmd, ticker]);
+  }, [chartReady, sessionYmd, ticker, paintOverlays]);
 
   useEffect(() => {
     if (!replayMode || !playing || timelineRef.current.length === 0) {
@@ -1558,6 +1649,7 @@ export function VectorChart({
     displayBarTimeRef.current = display[display.length - 1]?.time ?? 0;
     if (seriesRef.current) {
       applyDisplayBars(seriesRef.current, volumeSeriesRef.current, display);
+      paintOverlays(display);
     }
     const history = wallHistoryRef.current;
     refreshTrails(lens);
@@ -1683,6 +1775,7 @@ export function VectorChart({
       const display = displayBarsFromMinute(minuteBarsRef.current, timeframe);
       displayBarTimeRef.current = display[display.length - 1]?.time ?? 0;
       applyDisplayBars(series, volumeSeriesRef.current, display);
+      paintOverlays(display);
       refreshTrails(lensRef.current);
       // Repaint the wall GUIDES too: the shown-count (wallCountForTimeframe) changes with the
       // timeframe, so a pure timeframe switch (no lens/tick change) must redraw the call/put
@@ -1751,6 +1844,9 @@ export function VectorChart({
         onJumpOpen={jumpReplayOpen}
         onJumpClose={jumpReplayClose}
         onToggleLoop={() => setReplayLoop((v) => !v)}
+        indicators={indicators}
+        onToggleIndicator={toggleIndicator}
+        onClearIndicators={clearIndicators}
       />
 
       <div className="relative">

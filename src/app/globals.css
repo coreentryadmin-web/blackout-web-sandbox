@@ -8453,6 +8453,127 @@ body::before {
     @apply min-w-0;
   }
 
+  /* Indicator toggle menu (chart technicals) */
+  .vector-ind-menu {
+    position: relative;
+    display: inline-block;
+  }
+
+  .vector-ind-trigger {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    border-radius: 0.5rem;
+    border: 1px solid rgba(148, 163, 184, 0.35);
+    background: rgba(148, 163, 184, 0.08);
+    padding: 0.375rem 0.625rem;
+    font-family: var(--font-mono, ui-monospace, monospace);
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: rgba(203, 213, 225, 0.9);
+    cursor: pointer;
+  }
+
+  .vector-ind-trigger-active {
+    border-color: rgba(56, 189, 248, 0.55);
+    background: rgba(56, 189, 248, 0.12);
+    color: rgb(56, 189, 248);
+  }
+
+  .vector-ind-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 1.05rem;
+    height: 1.05rem;
+    padding: 0 0.25rem;
+    border-radius: 999px;
+    background: rgb(56, 189, 248);
+    color: #04121c;
+    font-size: 9px;
+    font-weight: 800;
+  }
+
+  .vector-ind-panel {
+    position: absolute;
+    z-index: 30;
+    top: calc(100% + 0.35rem);
+    left: 0;
+    min-width: 11rem;
+    border-radius: 0.6rem;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    background: #0a0a0f;
+    padding: 0.3rem;
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.55);
+  }
+
+  .vector-ind-panel-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.2rem 0.4rem 0.35rem;
+    font-size: 0.62rem;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: rgba(148, 163, 184, 0.7);
+  }
+
+  .vector-ind-clear {
+    font-size: 0.62rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: rgba(56, 189, 248, 0.85);
+    cursor: pointer;
+    background: none;
+    border: none;
+    padding: 0;
+  }
+
+  .vector-ind-item {
+    display: flex;
+    width: 100%;
+    align-items: center;
+    gap: 0.5rem;
+    border-radius: 0.4rem;
+    padding: 0.35rem 0.4rem;
+    background: none;
+    border: none;
+    cursor: pointer;
+    text-align: left;
+  }
+
+  .vector-ind-item:hover {
+    background: rgba(255, 255, 255, 0.05);
+  }
+
+  .vector-ind-item-on {
+    background: rgba(255, 255, 255, 0.04);
+  }
+
+  .vector-ind-dot {
+    width: 0.6rem;
+    height: 0.6rem;
+    border-radius: 999px;
+    border: 1.5px solid;
+    flex: 0 0 auto;
+  }
+
+  .vector-ind-label {
+    flex: 1 1 auto;
+    font-size: 0.72rem;
+    color: rgba(226, 232, 240, 0.92);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .vector-ind-check {
+    width: 0.8rem;
+    font-size: 0.72rem;
+    color: rgb(56, 189, 248);
+    text-align: center;
+  }
+
   .vector-desk-terminal {
     @apply flex flex-col min-h-0 h-full min-w-0 overflow-hidden rounded-2xl border border-white/10 bg-[#050508] p-1.5;
     min-height: min(72vh, 640px);
