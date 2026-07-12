@@ -183,6 +183,9 @@ type Props = {
   /** Ranked confluence callouts (pre-formatted strings) for the desk terminal; null = no zones. */
   onConfluenceChange?: (callouts: string[] | null) => void;
   onWallIntegrityChange?: (integrity: { call: WallIntegrity | null; put: WallIntegrity | null }) => void;
+  /** Emits the current DTE horizon whenever the member toggles it, so sibling panels (the GEX
+   *  ladder) can re-scope to the SAME expiries the chart's walls use. */
+  onDteHorizonChange?: (horizon: VectorDteHorizon) => void;
   /** Compact page title + ticker cluster, rendered at the far left of the chart toolbar row. */
   leadSlot?: React.ReactNode;
   /** Freshness/status chip, rendered at the far right of the toolbar row. */
@@ -732,6 +735,7 @@ export function VectorChart({
   onConfluenceChange,
   onWallIntegrityChange,
   onLensChange,
+  onDteHorizonChange,
   leadSlot,
   trailSlot,
   regimeSlot,
@@ -1433,6 +1437,8 @@ export function VectorChart({
   // SSE stream untouched) and repaints, refreshing on an interval while live.
   useEffect(() => {
     dteHorizonRef.current = dteHorizon;
+    // Surface the horizon to the shell so the GEX ladder re-scopes to the same expiries.
+    onDteHorizonChange?.(dteHorizon);
     let cancelled = false;
 
     // A selection change (DTE horizon or ticker — this effect's own deps) must ALWAYS repaint the
@@ -1599,7 +1605,9 @@ export function VectorChart({
     emitRegime,
     emitProximity,
     emitMagnet, emitConfluence,
+    paintConfluenceBand,
     emitWallIntegrity,
+    onDteHorizonChange,
   ]);
 
   // Lens (GEX↔VEX) is a selection too: re-derive the terminal so the lens-gated wall-integrity line

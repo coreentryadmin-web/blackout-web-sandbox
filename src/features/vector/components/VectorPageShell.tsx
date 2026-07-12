@@ -8,6 +8,7 @@ import { ProductMark } from "@/components/marks/ProductMark";
 import type { VectorBar } from "@/features/vector/components/VectorChart";
 import type { VectorDarkPoolLevel, VectorWalls } from "@/lib/api";
 import type { WallHistorySample, VectorWallLens } from "@/features/vector/lib/vector-wall-history";
+import type { VectorDteHorizon } from "@/features/vector/lib/vector-dte-horizon";
 import { VectorTickerSelect } from "@/features/vector/components/VectorTickerSelect";
 import { VectorScanner } from "@/features/vector/components/VectorScanner";
 import { VectorDeskTerminal } from "@/features/vector/components/VectorDeskTerminal";
@@ -79,6 +80,8 @@ export function VectorPageShell({
   const [streamUpdatedAt, setStreamUpdatedAt] = useState<number | null>(null);
   const [wallEvents, setWallEvents] = useState<VectorWallEvent[]>([]);
   const [lens, setLens] = useState<VectorWallLens>("gex");
+  // Mirror the chart's DTE horizon so the GEX ladder re-scopes to the same expiries the walls use.
+  const [dteHorizon, setDteHorizon] = useState<VectorDteHorizon>("all");
   const [now, setNow] = useState<number | null>(null);
   const [scannerOpen, setScannerOpen] = useState(false);
   const activeTicker = ticker || VECTOR_DEFAULT_TICKER;
@@ -175,6 +178,7 @@ export function VectorPageShell({
               ticker={activeTicker}
               liveSession={liveSession}
               initialSpot={initialBars.length ? initialBars[initialBars.length - 1]!.close : null}
+              dteHorizon={dteHorizon}
             />
           </div>
           <div className="vector-chart-terminal-chart min-w-0">
@@ -204,6 +208,7 @@ export function VectorPageShell({
               onMagnetChange={setMagnet}
               onConfluenceChange={setConfluence}
               onWallIntegrityChange={setWallIntegrity}
+              onDteHorizonChange={setDteHorizon}
               leadSlot={chartLead}
               trailSlot={chartFreshness}
               regimeSlot={<VectorRegimeBanner regime={regime} />}

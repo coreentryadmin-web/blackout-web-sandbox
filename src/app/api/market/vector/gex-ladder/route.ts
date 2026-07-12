@@ -4,6 +4,8 @@ import { requireToolApi } from "@/lib/tool-access-server";
 import { normalizeVectorTicker, isVectorTickerAllowed } from "@/features/vector/lib/vector-ticker";
 import { fetchGexHeatmap } from "@/lib/providers/polygon-options-gex";
 import { buildGexLadder } from "@/features/vector/lib/vector-gex-ladder";
+import { getHorizonStrikeTotals } from "@/features/vector/lib/vector-dte-walls-server";
+import { normalizeDteHorizon } from "@/features/vector/lib/vector-dte-horizon";
 import { roundFloats } from "@/lib/round-floats";
 
 export const runtime = "nodejs";
@@ -32,12 +34,27 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: `Invalid ticker` }, { status: 400 });
   }
   const ticker = normalizeVectorTicker(rawTicker);
+  const horizon = normalizeDteHorizon(req.nextUrl.searchParams.get("dte"));
+
+  // Narrowed DTE (0DTE / weekly / monthly): scope the ladder to that horizon's expiries via the
+  // same reconstruction ladder the DTE walls use, so the panel matches the chart's DTE toggle. On
+  // "all" — or when the scoped fetch yields nothing (thin chain, off-hours) — fall back to the
+  // near-term heatmap aggregate so the panel is never blanked by a narrow horizon.
+  if (horizon !== "all") {
+    const scoped = await getHorizonStrikeTotals(ticker, horizon).catch(() => null);
+    if (scoped) {
+      const ladder = buildGexLadder(scoped.strikeTotals, scoped.spot);
+      return NextResponse.json(
+        roundFloats({ ticker, spot: scoped.spot, asOf: null, horizon, ladder })
+      );
+    }
+  }
 
   const hm = await fetchGexHeatmap(ticker).catch(() => null);
   const spot = hm?.spot ?? null;
   const ladder = buildGexLadder(hm?.gex?.strike_totals ?? null, spot);
 
   return NextResponse.json(
-    roundFloats({ ticker, spot, asOf: hm?.asof ?? null, ladder })
+    roundFloats({ ticker, spot, asOf: hm?.asof ?? null, horizon, ladder })
   );
 }
