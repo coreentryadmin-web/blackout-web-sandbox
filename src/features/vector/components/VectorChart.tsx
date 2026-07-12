@@ -183,6 +183,13 @@ type Props = {
   /** Ranked confluence callouts (pre-formatted strings) for the desk terminal; null = no zones. */
   onConfluenceChange?: (callouts: string[] | null) => void;
   onWallIntegrityChange?: (integrity: { call: WallIntegrity | null; put: WallIntegrity | null }) => void;
+  /** Compact page title + ticker cluster, rendered at the far left of the chart toolbar row. */
+  leadSlot?: React.ReactNode;
+  /** Freshness/status chip, rendered at the far right of the toolbar row. */
+  trailSlot?: React.ReactNode;
+  /** Regime banner (or similar), rendered as a thin strip between the toolbar and the canvas so it
+   *  still leads the chart without a tall separate header block above the whole page. */
+  regimeSlot?: React.ReactNode;
 };
 
 function lensVisuals(lens: VectorWallLens) {
@@ -671,6 +678,9 @@ export function VectorChart({
   onConfluenceChange,
   onWallIntegrityChange,
   onLensChange,
+  leadSlot,
+  trailSlot,
+  regimeSlot,
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
@@ -2188,7 +2198,13 @@ export function VectorChart({
         onToggleIndicator={toggleIndicator}
         onClearIndicators={clearIndicators}
         barCount={displayBarCount}
+        leadSlot={leadSlot}
+        trailSlot={trailSlot}
       />
+
+      {/* Regime banner sits directly above the canvas (passed in from the shell) so it still leads
+          the chart, without a tall page-level header block eating chart height. */}
+      {regimeSlot ? <div className="mb-2">{regimeSlot}</div> : null}
 
       <div className="relative">
         <VectorCrosshairLegend state={crosshair} ticker={ticker} />
@@ -2202,23 +2218,10 @@ export function VectorChart({
             ◇ dim = modeled · ● solid = recorded
           </p>
         )}
-        {/* Off-hours the candles are the last close's and the chart can read as
-            empty. A quiet corner affordance names the state and points at the
-            one useful off-hours action — replay the session. */}
-        {!liveSession && !replayMode && canReplay && (
-          <button
-            type="button"
-            className="vector-chart-closed-hint"
-            onClick={toggleReplay}
-          >
-            <span className="vector-chart-closed-dot" aria-hidden="true" />
-            Session closed — last-close structure. Replay the day ▸
-          </button>
-        )}
         <div
           ref={containerRef}
           className="vector-chart-canvas"
-          style={{ height: "calc(100vh - 200px)", minHeight: 480 }}
+          style={{ height: "calc(100vh - 132px)", minHeight: 520 }}
           aria-busy={liveSession && !replayMode}
         />
       </div>

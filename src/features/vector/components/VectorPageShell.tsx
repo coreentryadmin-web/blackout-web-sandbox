@@ -3,7 +3,7 @@
 import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { PageShell, PageHeader, FreshnessChip } from "@/components/ui";
+import { PageShell, FreshnessChip } from "@/components/ui";
 import { ProductMark } from "@/components/marks/ProductMark";
 import type { VectorBar } from "@/features/vector/components/VectorChart";
 import type { VectorDarkPoolLevel, VectorWalls } from "@/lib/api";
@@ -140,33 +140,43 @@ export function VectorPageShell({
   const kicker =
     activeTicker === "SPX" ? "Live SPX chart" : `Live ${activeTicker} chart`;
 
+  // Compact page title cluster — folded INTO the chart toolbar row (far left) so the header and the
+  // timeframe/indicator controls share one line, reclaiming the vertical space the old full-width
+  // PageHeader + separate regime block ate. Product decision per member request: maximise chart area.
+  const chartLead = (
+    <div className="flex items-center gap-2 pr-1">
+      <ProductMark product="vector" size={22} animated={false} />
+      <span className="font-mono text-sm font-bold uppercase tracking-[0.18em] text-cyan-100">Vector</span>
+      <span className="hidden font-mono text-[10px] uppercase tracking-[0.2em] text-cyan-400/60 md:inline">
+        · {kicker}
+      </span>
+      <VectorTickerSelect ticker={activeTicker} />
+    </div>
+  );
+  const chartFreshness = (
+    <FreshnessChip
+      status={freshnessStatus}
+      asOf={liveSession && streamUpdatedAt ? new Date(streamUpdatedAt) : null}
+      label={liveSession ? "Live session" : `${sessionLabel} close`}
+    />
+  );
+
   return (
     <PageShell fullBleed className="vector-page-shell">
-      <div className="px-2 sm:px-4 xl:px-6">
-        <PageHeader
-          kicker={kicker}
-          title="Vector"
-          badge={<ProductMark product="vector" size={40} animated={false} />}
-          actions={
-            <div className="flex flex-wrap items-center gap-3">
-              <VectorTickerSelect ticker={activeTicker} />
-              <FreshnessChip
-                status={freshnessStatus}
-                asOf={liveSession && streamUpdatedAt ? new Date(streamUpdatedAt) : null}
-                label={liveSession ? "Live session" : `${sessionLabel} close`}
-              />
-            </div>
-          }
-        />
-        {/* Gamma regime read — the plain-English "what this positioning means"
-            strip. Leads the chart so the member frames the walls correctly. */}
-        <div className="mt-3">
-          <VectorRegimeBanner regime={regime} />
-        </div>
-        {/* Chart is the hero — it leads the page. The universe scanner is a
-            secondary, collapsible panel below (it used to occupy the entire
-            first viewport, pushing the actual chart below the fold). */}
-        <div className="mt-3 vector-chart-terminal-grid">
+      <div className="px-2 pt-2 sm:px-4 xl:px-6">
+        {/* Chart is the hero — it leads the page. The title/ticker/freshness are folded into the
+            chart toolbar row, and the regime banner sits just above the canvas. The universe scanner
+            is a secondary, collapsible panel below. */}
+        <div className="vector-chart-terminal-grid">
+          {/* Thin LEFT rail: the per-strike GEX ladder (few rows, dense) — moved off the right so the
+              chart gets the centre and the desk terminal owns the full right column. */}
+          <div className="vector-ladder-rail">
+            <VectorGexLadder
+              ticker={activeTicker}
+              liveSession={liveSession}
+              initialSpot={initialBars.length ? initialBars[initialBars.length - 1]!.close : null}
+            />
+          </div>
           <div className="vector-chart-terminal-chart min-w-0">
             <VectorChart
               // Ticker switches are client-side searchParams navigations — they
@@ -194,16 +204,14 @@ export function VectorPageShell({
               onMagnetChange={setMagnet}
               onConfluenceChange={setConfluence}
               onWallIntegrityChange={setWallIntegrity}
+              leadSlot={chartLead}
+              trailSlot={chartFreshness}
+              regimeSlot={<VectorRegimeBanner regime={regime} />}
             />
           </div>
-          {/* Right rail: the per-strike GEX ladder (Skylit-Atlas parity — the dense strike
-              column scanned alongside the chart) stacked above the desk terminal narration. */}
-          <div className="vector-right-rail">
-            <VectorGexLadder
-              ticker={activeTicker}
-              liveSession={liveSession}
-              initialSpot={initialBars.length ? initialBars[initialBars.length - 1]!.close : null}
-            />
+          {/* Full RIGHT column: the desk terminal narration — the main thing that scrolls, so it
+              gets the width and height (ladder moved to the thin left rail above). */}
+          <div className="vector-terminal-rail">
             <VectorDeskTerminal
               ticker={activeTicker}
               lens={lens}
