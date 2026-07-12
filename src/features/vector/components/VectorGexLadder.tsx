@@ -3,6 +3,7 @@
 import clsx from "clsx";
 import { useEffect, useRef, useState } from "react";
 import { buildGexLadder, type GexLadder, type GexLadderRow } from "@/features/vector/lib/vector-gex-ladder";
+import { dteHorizonLabel, type VectorDteHorizon } from "@/features/vector/lib/vector-dte-horizon";
 
 // Match the chart's bead colours exactly (VectorChart CALL_WALL_COLOR / PUT_WALL_COLOR) so the
 // ladder and the beads read as the same object: gold = call/resistance, purple = put/support.
@@ -25,6 +26,9 @@ type Props = {
   liveSession: boolean;
   /** SSR-seeded spot so the header + empty state aren't blank before the first fetch. */
   initialSpot?: number | null;
+  /** DTE horizon from the chart's toggle — the ladder re-scopes to the SAME expiries so it matches
+   *  the walls on the chart. "all" = near-term aggregate (default). */
+  dteHorizon?: VectorDteHorizon;
 };
 
 type LadderResponse = { spot: number | null; asOf: string | null; ladder: GexLadder };
@@ -38,7 +42,7 @@ type LadderResponse = { spot: number | null; asOf: string | null; ladder: GexLad
  * a documented follow-up — this first slice shows the near-term ("all") aggregate the chart
  * defaults to.
  */
-export function VectorGexLadder({ ticker, liveSession, initialSpot = null }: Props) {
+export function VectorGexLadder({ ticker, liveSession, initialSpot = null, dteHorizon = "all" }: Props) {
   const [ladder, setLadder] = useState<GexLadder>(() => buildGexLadder(null, initialSpot));
   const [spot, setSpot] = useState<number | null>(initialSpot);
   const [asOf, setAsOf] = useState<string | null>(null);
@@ -53,7 +57,9 @@ export function VectorGexLadder({ ticker, liveSession, initialSpot = null }: Pro
 
     const load = async () => {
       try {
-        const res = await fetch(`/api/market/vector/gex-ladder?ticker=${encodeURIComponent(ticker)}`);
+        const res = await fetch(
+          `/api/market/vector/gex-ladder?ticker=${encodeURIComponent(ticker)}&dte=${encodeURIComponent(dteHorizon)}`
+        );
         if (cancelled || tickerRef.current !== ticker) return;
         if (!res.ok) {
           setState("error");
@@ -77,7 +83,7 @@ export function VectorGexLadder({ ticker, liveSession, initialSpot = null }: Pro
       cancelled = true;
       if (id) clearInterval(id);
     };
-  }, [ticker, liveSession]);
+  }, [ticker, liveSession, dteHorizon]);
 
   const rows = ladder.rows;
   // Index of the first row at/below spot — the spot marker slots ABOVE it (rows are strike-desc, so
@@ -92,9 +98,12 @@ export function VectorGexLadder({ ticker, liveSession, initialSpot = null }: Pro
   // scroll back if the member has scrolled away.
   const listRef = useRef<HTMLOListElement>(null);
   const centeredTickerRef = useRef<string | null>(null);
+  // Re-centre on ticker OR horizon change — a narrowed DTE shifts the strike set, so the panel must
+  // re-anchor on spot instead of holding the previous horizon's scroll position.
+  const centerKey = `${ticker}:${dteHorizon}`;
   useEffect(() => {
     if (state !== "ready" || spot == null || rows.length === 0) return;
-    if (centeredTickerRef.current === ticker) return;
+    if (centeredTickerRef.current === centerKey) return;
     const list = listRef.current;
     if (!list) return;
     const target =
@@ -104,8 +113,8 @@ export function VectorGexLadder({ ticker, liveSession, initialSpot = null }: Pro
     const t = target.getBoundingClientRect();
     const l = list.getBoundingClientRect();
     list.scrollTop += t.top - l.top - list.clientHeight / 2 + t.height / 2;
-    centeredTickerRef.current = ticker;
-  }, [state, spot, rows, ticker]);
+    centeredTickerRef.current = centerKey;
+  }, [state, spot, rows, centerKey]);
 
   return (
     <section className="vector-gex-ladder" aria-label={`${ticker} GEX strike ladder`}>
@@ -113,7 +122,7 @@ export function VectorGexLadder({ ticker, liveSession, initialSpot = null }: Pro
         <span className="vector-gex-ladder-title">GEX Ladder</span>
         <span className="vector-gex-ladder-sub">
           {spot != null ? `spot ${spot.toLocaleString("en-US", { maximumFractionDigits: 2 })}` : "—"}
-          <span className="vector-gex-ladder-scope"> · near-term</span>
+          <span className="vector-gex-ladder-scope"> · {dteHorizon === "all" ? "near-term" : dteHorizonLabel(dteHorizon)}</span>
         </span>
       </header>
 
