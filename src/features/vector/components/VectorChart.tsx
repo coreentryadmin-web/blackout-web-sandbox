@@ -82,7 +82,7 @@ import {
 } from "@/features/vector/lib/vector-indicators-config";
 import { levelLinesFor, type LevelLine, type PriorDayOhlc } from "@/features/vector/lib/vector-key-levels";
 import { buildStructureMarkers } from "@/features/vector/lib/vector-structure-markers";
-import { confluenceZones, confluenceCallouts, type ConfluenceLevel } from "@/features/vector/lib/vector-confluence";
+import { confluenceZones, confluenceCallouts, topConfluenceBand, type ConfluenceLevel } from "@/features/vector/lib/vector-confluence";
 import { sessionHodLod } from "@/features/vector/lib/vector-key-levels";
 import { dominantSwing, goldenPocket } from "@/features/vector/lib/vector-fib-swing";
 import {
@@ -537,6 +537,60 @@ function applyLevelLines(
   }
 }
 
+/**
+ * Draw/diff the strongest CONFLUENCE ZONE as a faint band on the candle series. Reconciles up to
+ * three price lines — the zone's weighted center plus its high/low edges — against the map (keyed
+ * `mid`/`hi`/`lo`), so toggling off or a zone shift adds/updates/removes without churn. The zone is
+ * the top-ranked cluster from the pure `confluenceZones` engine over whatever levels the caller
+ * gathered (walls/flip/max-pain/golden-pocket/session/prior-day). When the band collapses to a
+ * single price (edges within a hair of the center — a point-cluster) only the labeled center line is
+ * drawn, so it doesn't render as three stacked identical lines. Nothing is drawn when the toggle is
+ * off or no ≥2-kind zone exists — honest about "there is no confluence right now".
+ */
+function applyConfluenceBand(
+  series: ISeriesApi<"Candlestick">,
+  map: Map<string, IPriceLine>,
+  enabled: Set<VectorIndicatorId>,
+  spot: number,
+  levels: readonly ConfluenceLevel[]
+): void {
+  const CONF_COLOR = "#f59e0b";
+  const desired = new Map<string, { price: number; style: LineStyle; label: string; alpha: number }>();
+  if (enabled.has("confluence-band") && spot > 0) {
+    const band = topConfluenceBand(levels, spot);
+    if (band) {
+      const title = `◇ Confluence ×${band.kinds} · score ${Math.round(band.score * 10) / 10}`;
+      desired.set("mid", { price: band.center, style: LineStyle.Dashed, label: title, alpha: 0.85 });
+      // Edge lines only for a genuinely wide zone; a point-cluster draws the center alone.
+      if (band.wide) {
+        desired.set("hi", { price: band.high, style: LineStyle.Dotted, label: "", alpha: 0.45 });
+        desired.set("lo", { price: band.low, style: LineStyle.Dotted, label: "", alpha: 0.45 });
+      }
+    }
+  }
+  for (const [k, pl] of map) {
+    if (!desired.has(k)) {
+      series.removePriceLine(pl);
+      map.delete(k);
+    }
+  }
+  for (const [k, d] of desired) {
+    const opts = {
+      price: d.price,
+      color: withAlpha(CONF_COLOR, d.alpha),
+      lineWidth: 1 as const,
+      lineStyle: d.style,
+      lineVisible: true,
+      // Only the center carries an axis label; unlabeled edges keep the price scale uncluttered.
+      axisLabelVisible: d.label !== "",
+      title: d.label,
+    };
+    const existing = map.get(k);
+    if (existing) existing.applyOptions(opts);
+    else map.set(k, series.createPriceLine(opts));
+  }
+}
+
 function applyWallsToSeries(
   series: ISeriesApi<"Candlestick">,
   callGuideRefs: React.MutableRefObject<(IPriceLine | null)[]>,
@@ -729,6 +783,10 @@ export function VectorChart({
   // Horizontal price-line overlays for the "Key levels" group (HOD/LOD, opening range, fib), keyed
   // by `${levelId}:${lineKey}` so each line is diffed/kept/removed independently across repaints.
   const levelLinesRef = useRef<Map<string, IPriceLine>>(new Map());
+  // The strongest-confluence-zone band lines (center + edges), keyed mid/hi/lo, reconciled the same
+  // way as the level lines. Separate map because the zone is derived from live walls/flip/max-pain,
+  // not from `levelLinesFor(bars)`, so it repaints on wall/flip updates too — not just bar changes.
+  const confluenceBandRef = useRef<Map<string, IPriceLine>>(new Map());
   // Prior-session OHLC for the PDH/PDL/PDC + floor-pivot levels — fetched once per ticker (only when
   // such a level is enabled). `priorDayTickerRef` guards a fetch from a previous ticker landing late.
   const priorDayRef = useRef<PriorDayOhlc | null>(null);
@@ -1298,10 +1356,11 @@ export function VectorChart({
   // the pure confluenceZones engine and sends the top callouts to the desk terminal. Levels the
   // chart doesn't have yet (max pain pre-fetch, prior-day unfetched) simply don't contribute — the
   // zones are honest about what's known NOW and refine as data lands. Deduped by the callout key.
-  const emitConfluence = useCallback(() => {
-    if (!onConfluenceChange) return;
-    const spot = spotRef.current;
-    if (!(spot && spot > 0)) return;
+  // Gather every price level the chart currently tracks into the flat list the confluence engine
+  // clusters. Shared by the terminal callouts (emitConfluence) AND the chart band (paintConfluence)
+  // so the two can never disagree about what stacked where. Levels not yet known (max pain pre-fetch,
+  // prior-day unfetched) simply don't contribute — the zones are honest about what's known NOW.
+  const gatherConfluenceLevels = useCallback((spot: number): ConfluenceLevel[] => {
     const lvls: ConfluenceLevel[] = [];
     const walls = liveGexWalls();
     for (const w of walls?.callWalls?.slice(0, 3) ?? []) lvls.push({ price: w.strike, kind: "call-wall" });
@@ -1320,12 +1379,38 @@ export function VectorChart({
     if (priorDayRef.current) {
       lvls.push({ price: priorDayRef.current.pdh, kind: "pdh" }, { price: priorDayRef.current.pdl, kind: "pdl" });
     }
-    const callouts = confluenceCallouts(confluenceZones(lvls, spot).slice(0, 3), spot);
+    return lvls;
+  }, [liveGexWalls, liveGammaFlip]);
+
+  const emitConfluence = useCallback(() => {
+    if (!onConfluenceChange) return;
+    const spot = spotRef.current;
+    if (!(spot && spot > 0)) return;
+    const callouts = confluenceCallouts(confluenceZones(gatherConfluenceLevels(spot), spot).slice(0, 3), spot);
     const key = callouts.join("|") || "none";
     if (key === lastConfluenceRef.current) return;
     lastConfluenceRef.current = key;
     onConfluenceChange(callouts.length ? callouts : null);
-  }, [onConfluenceChange, liveGexWalls, liveGammaFlip]);
+  }, [onConfluenceChange, gatherConfluenceLevels]);
+
+  // Repaint the strongest-confluence-zone band on the price pane. Reads the enabled set + the SAME
+  // gathered levels as the terminal, so the band and the ranked callout always describe one zone.
+  // Cheap and idempotent (reconciles the ≤3 band lines), so it's safe to call from every place the
+  // walls/flip/max-pain/bars change — that's what keeps the band tracking the tape live.
+  const paintConfluenceBand = useCallback(() => {
+    const series = seriesRef.current;
+    if (!series) return;
+    const spot = spotRef.current ?? 0;
+    applyConfluenceBand(series, confluenceBandRef.current, indicatorsRef.current, spot, gatherConfluenceLevels(spot));
+  }, [gatherConfluenceLevels]);
+
+  // Toggling the "Confluence zone" indicator on/off must repaint the band immediately (it's on a
+  // separate paint path from paintOverlays, which only draws bar-derived overlays). Kept a distinct
+  // effect placed after paintConfluenceBand's declaration to avoid a use-before-declaration cycle
+  // with the earlier indicator-sync effect.
+  useEffect(() => {
+    paintConfluenceBand();
+  }, [indicators, paintConfluenceBand]);
 
   // Emit top-wall integrity (is this wall real?) — strength × session persistence
   // (from the same history rail the trails use) × isolation. Scores the HORIZON-SCOPED
@@ -1383,6 +1468,7 @@ export function VectorChart({
       emitProximity();
       emitMagnet();
       emitConfluence();
+      paintConfluenceBand(); // keep the on-chart band in lockstep with the re-scoped terminal zone
       emitWallIntegrity();
     };
 
@@ -1477,6 +1563,7 @@ export function VectorChart({
         maxPainValueRef.current = strike;
         applyMaxPainLine(seriesRef.current, maxPainLineRef, strike);
         emitConfluence(); // the max-pain level just landed — the zone stack may have changed
+        paintConfluenceBand();
       } catch {
         // Network throw: keep the last-drawn line rather than blank it on a transient blip.
       }
@@ -1529,9 +1616,10 @@ export function VectorChart({
     emitRegime();
     emitProximity();
     emitMagnet();
-      emitConfluence();
+    emitConfluence();
+    paintConfluenceBand();
     emitWallIntegrity();
-  }, [lens, chartReady, emitRegime, emitProximity, emitMagnet, emitConfluence, emitWallIntegrity]);
+  }, [lens, chartReady, emitRegime, emitProximity, emitMagnet, emitConfluence, paintConfluenceBand, emitWallIntegrity]);
 
   const connectLive = useCallback(() => {
     if (!liveSessionRef.current) return;
@@ -1682,11 +1770,12 @@ export function VectorChart({
         emitRegime();
         emitProximity();
         emitMagnet();
-      emitConfluence();
+        emitConfluence();
+        paintConfluenceBand(); // live SSE tick moved the walls — re-fit the band to the new stack
         emitWallIntegrity();
       }
     });
-  }, [sessionYmd, refreshTrails, refreshOverlays, onFreshness, ticker, liveGexWalls, liveGammaFlip, emitRegime, emitProximity, emitMagnet, emitConfluence, emitWallIntegrity, paintOverlays]);
+  }, [sessionYmd, refreshTrails, refreshOverlays, onFreshness, ticker, liveGexWalls, liveGammaFlip, emitRegime, emitProximity, emitMagnet, emitConfluence, paintConfluenceBand, emitWallIntegrity, paintOverlays]);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -1872,6 +1961,7 @@ export function VectorChart({
       oscillatorSeriesRef.current = new Map();
       lastOscKeyRef.current = "";
       levelLinesRef.current = new Map();
+      confluenceBandRef.current = new Map();
       priorDayRef.current = null;
       priorDayTickerRef.current = null;
       callBeadsRef.current = null;

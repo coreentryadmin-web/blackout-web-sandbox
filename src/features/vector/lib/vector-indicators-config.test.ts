@@ -95,6 +95,7 @@ test("VECTOR_INDICATOR_GROUPS: covers every family + level + structure id exactl
     "market-structure",
     "rsi",
     "macd",
+    "confluence-band",
   ];
   assert.deepEqual([...grouped].sort(), [...expected].sort());
 });

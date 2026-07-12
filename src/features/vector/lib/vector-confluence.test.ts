@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { confluenceZones, DEFAULT_WEIGHTS, type ConfluenceLevel } from "./vector-confluence";
+import { confluenceZones, topConfluenceBand, DEFAULT_WEIGHTS, type ConfluenceLevel } from "./vector-confluence";
 
 const SPOT = 1000; // tol default 0.15% → 1.5 pts
 
@@ -99,4 +99,50 @@ test("confluenceCallouts: formatted terminal lines with distance side and kind n
   // center 990.592…→ 990.59, 0.94% below spot 1000, kinds in cluster order, score 6.5.
   assert.equal(out[0], "990.59 (0.94% below) — put wall + golden pocket + PDL · score 6.5");
   assert.deepEqual(confluenceCallouts(zones, 0), []);
+});
+
+test("topConfluenceBand: returns the STRONGEST zone shaped for the chart band; null when none", () => {
+  const levels: ConfluenceLevel[] = [
+    { price: 990.0, kind: "put-wall" }, // strongest cluster (score 6.5) — 1.5-pt spread
+    { price: 990.8, kind: "golden-pocket" },
+    { price: 991.5, kind: "pdl" },
+    { price: 1020, kind: "max-pain" }, // weaker cluster (score 4.5)
+    { price: 1021, kind: "gamma-flip" },
+  ];
+  const band = topConfluenceBand(levels, SPOT)!;
+  assert.equal(band.low, 990);
+  assert.equal(band.high, 991.5);
+  assert.equal(band.kinds, 3);
+  assert.equal(band.score, 6.5);
+  assert.ok(Math.abs(band.center - (3 * 990 + 2 * 990.8 + 1.5 * 991.5) / 6.5) < 1e-9);
+  // 1.5-pt spread on a 1000 spot is 0.15% ≫ 0.02% floor → draw the edge lines.
+  assert.equal(band.wide, true);
+
+  // No ≥2-kind cluster → null (chart draws nothing — honest "no confluence").
+  assert.equal(topConfluenceBand([{ price: 1000, kind: "call-wall" }], SPOT), null);
+});
+
+test("topConfluenceBand: a point-cluster (levels at one price) is NOT wide → center line only", () => {
+  // Two distinct kinds essentially on the same strike: a real zone, but zero spread.
+  const band = topConfluenceBand(
+    [
+      { price: 1000, kind: "call-wall" },
+      { price: 1000, kind: "max-pain" },
+    ],
+    SPOT
+  )!;
+  assert.equal(band.kinds, 2);
+  assert.equal(band.low, 1000);
+  assert.equal(band.high, 1000);
+  assert.equal(band.wide, false, "zero spread must not draw edge lines");
+
+  // A spread just over the 0.02%-of-spot floor (0.2 pt on 1000) flips wide → true.
+  const wideBand = topConfluenceBand(
+    [
+      { price: 1000, kind: "call-wall" },
+      { price: 1000.3, kind: "max-pain" },
+    ],
+    SPOT
+  )!;
+  assert.equal(wideBand.wide, true);
 });

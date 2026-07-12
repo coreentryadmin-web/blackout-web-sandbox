@@ -162,6 +162,20 @@ export function isVectorOscillatorId(v: unknown): v is VectorOscillatorId {
 }
 
 /**
+ * "Confluence" — a single toggle that highlights the strongest CONFLUENCE ZONE on the price pane:
+ * the tight band where several INDEPENDENT levels (dealer walls, gamma flip, max pain, golden
+ * pocket, session/prior-day levels) stack. The desk terminal already RANKS these zones as text;
+ * this draws the top one on the chart so the member sees *where* on the tape the agreement sits.
+ * It maps to a dedicated band-paint path in the chart (not `levelLinesFor`, which is pure over bars)
+ * because the zone is derived from live walls/flip/max-pain, not just the candle series.
+ */
+export type VectorConfluenceId = "confluence-band";
+
+export function isVectorConfluenceId(v: unknown): v is VectorConfluenceId {
+  return v === "confluence-band";
+}
+
+/**
  * Every toggleable indicator id — a moving-average FAMILY (not an individual line), a level, a
  * structure toggle, or an oscillator. This is what the enabled Set and the menu deal in; the chart
  * expands each to its lines/markers/panes at draw time.
@@ -170,7 +184,8 @@ export type VectorIndicatorId =
   | VectorOverlayFamilyId
   | VectorLevelId
   | VectorStructureId
-  | VectorOscillatorId;
+  | VectorOscillatorId
+  | VectorConfluenceId;
 
 /** Menu structure — the toggle menu renders straight from this (title + its items). */
 export const VECTOR_INDICATOR_GROUPS: ReadonlyArray<{
@@ -195,5 +210,9 @@ export const VECTOR_INDICATOR_GROUPS: ReadonlyArray<{
       { id: "rsi", label: "RSI (14)", color: "#c084fc" },
       { id: "macd", label: "MACD (12/26/9)", color: "#38bdf8" },
     ],
+  },
+  {
+    title: "Confluence",
+    items: [{ id: "confluence-band", label: "Confluence zone (strongest stack)", color: "#f59e0b" }],
   },
 ];

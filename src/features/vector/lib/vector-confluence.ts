@@ -117,6 +117,45 @@ export function confluenceZones(
   );
 }
 
+export type ConfluenceBand = {
+  /** Weighted-average price of the strongest zone — where to draw the center line. */
+  center: number;
+  high: number;
+  low: number;
+  /**
+   * True when the zone's edges sit far enough from the center to be worth drawing as a band; false
+   * for a point-cluster (several levels at one price) where only the center line should render, so
+   * the chart doesn't stack three near-identical lines. Threshold is `minSpreadPct` of spot.
+   */
+  wide: boolean;
+  /** Distinct signal kinds agreeing (≥2 by construction). */
+  kinds: number;
+  score: number;
+};
+
+/**
+ * The single STRONGEST confluence zone, shaped for the chart band overlay (CTO#7 slice 3). Pure
+ * wrapper over {@link confluenceZones} that also decides whether the zone is wide enough to draw
+ * edge lines. Returns null when there is no ≥2-kind zone — the chart then draws nothing, which is
+ * the honest "no confluence right now" state. `minSpreadPct` defaults to 0.02% of spot.
+ */
+export function topConfluenceBand(
+  levels: readonly ConfluenceLevel[],
+  spot: number,
+  minSpreadPct = 0.0002
+): ConfluenceBand | null {
+  const zone = confluenceZones(levels, spot)[0];
+  if (!zone) return null;
+  return {
+    center: zone.center,
+    high: zone.high,
+    low: zone.low,
+    wide: zone.high - zone.low > spot * minSpreadPct,
+    kinds: zone.kinds.length,
+    score: zone.score,
+  };
+}
+
 const KIND_LABEL: Record<ConfluenceKind, string> = {
   "call-wall": "call wall",
   "put-wall": "put wall",
