@@ -18,16 +18,25 @@
 
 export type PriceRange = { minValue: number; maxValue: number };
 
-/** Default: reveal walls up to 5% from spot. Beyond that a wall is too far to be
- *  worth collapsing the candle detail for. Env-tunable via the chart. */
+/** Default: densely reveal EVERY wall up to 5% from spot. Beyond that we still reveal the single
+ *  NEAREST wall on each side (see below) but stop pulling in the whole cluster. Env-tunable. */
 export const DEFAULT_WALL_VIEW_MAX_PCT = 0.05;
+
+/** Hard cap for the "always reveal the nearest wall each side" guarantee. In a long-gamma session
+ *  the closest put (support) wall can sit 6-10% below spot — just past the 5% dense window — which
+ *  is exactly why members saw only the yellow call rails and NO purple put beads (the put wall was
+ *  computed and drawn, just clipped off the bottom). We always pull the nearest call AND nearest
+ *  put into view up to this cap so BOTH colors show whenever real walls exist, without letting a
+ *  pathologically far wall squish the candles into a sliver. */
+export const NEAREST_WALL_VIEW_MAX_PCT = 0.12;
 
 export function extendRangeForWalls(
   base: PriceRange,
   spot: number | null | undefined,
   callStrikes: readonly number[],
   putStrikes: readonly number[],
-  maxPct: number = DEFAULT_WALL_VIEW_MAX_PCT
+  maxPct: number = DEFAULT_WALL_VIEW_MAX_PCT,
+  nearestMaxPct: number = NEAREST_WALL_VIEW_MAX_PCT
 ): PriceRange {
   let { minValue, maxValue } = base;
   if (!(typeof spot === "number" && spot > 0) || !(maxPct > 0)) return { minValue, maxValue };
@@ -43,6 +52,22 @@ export function extendRangeForWalls(
   for (const s of putStrikes) {
     if (Number.isFinite(s) && s > 0 && s >= floor && s < minValue) minValue = s;
   }
+
+  // ALWAYS reveal the nearest wall on each side, even a bit past the dense window (up to the hard
+  // cap), so both call (gold) and put (purple) beads are visible whenever the walls exist — the
+  // fix for "I only see yellow beads." Nearest = closest strike to spot on that side.
+  const hardCeil = spot * (1 + nearestMaxPct);
+  const hardFloor = spot * (1 - nearestMaxPct);
+  let nearestCall = Infinity;
+  for (const s of callStrikes) {
+    if (Number.isFinite(s) && s > spot && s <= hardCeil && s < nearestCall) nearestCall = s;
+  }
+  if (Number.isFinite(nearestCall) && nearestCall > maxValue) maxValue = nearestCall;
+  let nearestPut = 0;
+  for (const s of putStrikes) {
+    if (Number.isFinite(s) && s > 0 && s < spot && s >= hardFloor && s > nearestPut) nearestPut = s;
+  }
+  if (nearestPut > 0 && nearestPut < minValue) minValue = nearestPut;
 
   // Small pad on any side we extended, so a revealed bead isn't flush to the frame edge.
   const span = maxValue - minValue;

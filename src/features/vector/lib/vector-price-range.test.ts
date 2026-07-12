@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { extendRangeForWalls } from "./vector-price-range";
+import { extendRangeForWalls, NEAREST_WALL_VIEW_MAX_PCT } from "./vector-price-range";
 
 // Candle band ~7510–7600 around spot 7575 (the live staging case), put walls far below.
 const base = { minValue: 7510, maxValue: 7600 };
@@ -12,10 +12,30 @@ test("extends DOWN to reveal a put wall below the candle band (the purple-beads 
   assert.ok(out.maxValue >= 7600, "top unchanged (call wall already in band)");
 });
 
-test("does NOT extend for a wall beyond the cap (avoids squishing candles for a far wall)", () => {
-  // maxPct 2% → floor 7423.5; 7300/7200 are further than 2% so must be ignored.
-  const out = extendRangeForWalls(base, 7575, [7600], [7300, 7200], 0.02);
-  assert.equal(out.minValue, base.minValue, "no in-band put wall → floor unchanged");
+test("does NOT extend for a wall beyond the HARD cap (avoids squishing candles for a far wall)", () => {
+  // Nearest-wall guarantee caps at NEAREST_WALL_VIEW_MAX_PCT (12%). A put wall 20% below spot is
+  // past both the dense window AND the hard cap → must be ignored so candles don't collapse.
+  const farPut = 7575 * (1 - 0.2); // 6060
+  const out = extendRangeForWalls(base, 7575, [7600], [farPut], 0.05);
+  assert.equal(out.minValue, base.minValue, "put wall past the 12% hard cap → floor unchanged");
+});
+
+test("REGRESSION (purple beads): reveals the NEAREST put wall just PAST the 5% dense window", () => {
+  // Live NVDA case: spot 210.58, nearest (only) put wall 197.5 = 6.2% below → just outside the 5%
+  // dense window, so the member saw only yellow call beads. The nearest-wall guarantee must pull it
+  // into view (it's within the 12% hard cap) so the purple put beads render.
+  const nvdaBase = { minValue: 204, maxValue: 226 };
+  const out = extendRangeForWalls(nvdaBase, 210.58, [210, 216, 220], [197.5], 0.05);
+  assert.ok(out.minValue <= 197.5, `min ${out.minValue} must drop to reveal the 197.5 put wall`);
+  assert.ok(NEAREST_WALL_VIEW_MAX_PCT >= 0.1, "hard cap is generous enough for a ~6% put wall");
+});
+
+test("reveals nearest wall on BOTH sides at once (gold + purple both visible)", () => {
+  const tight = { minValue: 99, maxValue: 101 };
+  // call wall 108 (+8%) and put wall 92 (−8%) both past the 5% window but within 12%.
+  const out = extendRangeForWalls(tight, 100, [108], [92], 0.05);
+  assert.ok(out.maxValue >= 108, "top rises to the nearest call wall");
+  assert.ok(out.minValue <= 92, "bottom drops to the nearest put wall");
 });
 
 test("extends UP to reveal a call wall above the candle band", () => {
