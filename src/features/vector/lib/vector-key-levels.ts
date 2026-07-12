@@ -10,6 +10,7 @@
  */
 
 import type { VectorLevelId } from "./vector-indicators-config";
+import { latestSwing, swingRetracement, goldenPocket } from "./vector-fib-swing";
 
 export type LevelBar = { time: number; high: number; low: number; close: number };
 
@@ -166,6 +167,23 @@ export function levelLinesFor(
       const s = fibStyle(f.ratio);
       return { key: `fib-${f.ratio}`, price: f.price, label: s.label, color: s.color, style: s.style };
     });
+  }
+  if (id === "fib-auto") {
+    // Auto-swing fib (CTO#1): retrace the LAST completed fractal swing of the DISPLAYED bars — so
+    // the swing (and pocket) re-detects per timeframe — with the 61.8–65% golden pocket as the
+    // marquee zone. k=3 is the standard 7-bar fractal; null swing (not enough structure) draws
+    // nothing rather than a bogus level.
+    const swing = latestSwing(bars, 3);
+    if (!swing) return [];
+    const gp = goldenPocket(swing);
+    const dir = swing.direction === "up" ? "↑" : "↓";
+    return [
+      { key: "afib-0", price: swingRetracement(swing, 0), label: `Swing${dir} 0%`, color: FIB_SWING_COLOR, style: "solid" },
+      { key: "afib-50", price: swingRetracement(swing, 0.5), label: "Swing 50%", color: FIB_KEY_COLOR, style: "dashed" },
+      { key: "afib-gp-a", price: gp.top, label: "Golden pocket 61.8–65%", color: FIB_GOLDEN_COLOR, style: "solid" },
+      { key: "afib-gp-b", price: gp.bottom, label: "Golden pocket 61.8–65%", color: FIB_GOLDEN_COLOR, style: "solid" },
+      { key: "afib-100", price: swingRetracement(swing, 1), label: `Swing${dir} 100%`, color: FIB_SWING_COLOR, style: "solid" },
+    ];
   }
   if (id === "pdh-pdl-pdc") {
     if (!priorDay) return [];
