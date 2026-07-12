@@ -42,7 +42,7 @@ same repo) can read the diff cold and understand it without asking follow-up que
 ## Vector per-push E2E validation (STANDING GATE — do this for EVERY push, not once)
 After **every** Vector change deploys to staging, run the full end-to-end validation and only move
 on when it's green. This is a hard gate, repeated per push — never a one-time check.
-- **Harness:** `scripts/vector-staging-e2e.mjs` (`npm run validate:vector-e2e`). Signs into staging
+- **Harness:** `scripts/vector-staging-e2e.mjs` (`npm run validate:vector-push-gate`). Signs into staging
   (Cognito temp admin+premium user, always deleted) and sweeps **multiple stocks × multiple
   timeframes × multiple expiries** — default `SPX,SPY,NVDA,ASTS` × `1m,5m,15m,1H` × `0DTE,WEEKLY,
   MONTHLY,ALL` (override via `VECTOR_E2E_TICKERS/TFS/DTES`). Per ticker it asserts: chart canvas +
