@@ -897,7 +897,8 @@ export function VectorChart({
 
     for (const def of VECTOR_OVERLAYS) {
       const existing = map.get(def.id) ?? null;
-      if (!enabled.has(def.id)) {
+      // Gated by the family toggle, not the individual line: enabling "EMA" draws every EMA line.
+      if (!enabled.has(def.family)) {
         if (existing) {
           chart.removeSeries(existing);
           map.delete(def.id);
