@@ -8462,6 +8462,157 @@ body::before {
     @apply flex-1 min-h-0;
   }
 
+  /* Right rail: GEX ladder stacked above the desk terminal. On wide screens the rail matches the
+     chart's height and the two panels share it (ladder capped, terminal fills the rest); on narrow
+     screens the grid is single-column so the rail just stacks full-width under the chart. */
+  .vector-right-rail {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    min-width: 0;
+  }
+
+  @media (min-width: 1280px) {
+    .vector-right-rail {
+      height: min(72vh, 640px);
+    }
+    .vector-right-rail .vector-desk-terminal {
+      min-height: 0;
+      flex: 1 1 auto;
+    }
+    .vector-right-rail .vector-gex-ladder {
+      flex: 0 0 auto;
+      max-height: 46%;
+    }
+  }
+
+  .vector-gex-ladder {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    max-height: 340px;
+    overflow: hidden;
+    border-radius: 1rem;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    background: #050508;
+  }
+
+  @media (min-width: 1280px) {
+    .vector-gex-ladder {
+      max-height: none;
+    }
+  }
+
+  .vector-gex-ladder-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 0.5rem;
+    padding: 0.5rem 0.7rem;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    flex: 0 0 auto;
+  }
+
+  .vector-gex-ladder-title {
+    font-size: 0.72rem;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: rgba(226, 232, 240, 0.9);
+  }
+
+  .vector-gex-ladder-sub {
+    font-size: 0.68rem;
+    color: rgba(148, 163, 184, 0.9);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .vector-gex-ladder-scope {
+    color: rgba(148, 163, 184, 0.55);
+  }
+
+  .vector-gex-ladder-empty {
+    padding: 1.25rem 0.7rem;
+    font-size: 0.72rem;
+    color: rgba(148, 163, 184, 0.75);
+    text-align: center;
+  }
+
+  .vector-gex-ladder-rows {
+    list-style: none;
+    margin: 0;
+    padding: 0.25rem 0.4rem;
+    overflow-y: auto;
+    flex: 1 1 auto;
+    min-height: 0;
+  }
+
+  .vector-gex-ladder-row {
+    display: grid;
+    grid-template-columns: 3.2rem minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.09rem 0.3rem;
+    border-radius: 0.35rem;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .vector-gex-ladder-king {
+    background: rgba(255, 255, 255, 0.05);
+  }
+
+  .vector-gex-ladder-strike {
+    font-size: 0.72rem;
+    color: rgba(203, 213, 225, 0.95);
+    font-family: var(--font-mono, ui-monospace, monospace);
+  }
+
+  .vector-gex-ladder-bar-track {
+    position: relative;
+    height: 0.55rem;
+    border-radius: 0.28rem;
+    background: rgba(255, 255, 255, 0.05);
+    overflow: hidden;
+  }
+
+  .vector-gex-ladder-bar {
+    display: block;
+    height: 100%;
+    border-radius: 0.28rem;
+    opacity: 0.85;
+  }
+
+  .vector-gex-ladder-val {
+    font-size: 0.68rem;
+    text-align: right;
+    white-space: nowrap;
+    font-family: var(--font-mono, ui-monospace, monospace);
+  }
+
+  .vector-gex-ladder-crown {
+    margin-right: 0.2rem;
+    font-size: 0.6rem;
+  }
+
+  .vector-gex-ladder-spot {
+    display: flex;
+    align-items: center;
+    margin: 0.12rem 0;
+    border-top: 1px dashed rgba(56, 189, 248, 0.5);
+  }
+
+  .vector-gex-ladder-spot-label {
+    font-size: 0.6rem;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    color: rgba(56, 189, 248, 0.9);
+    background: #050508;
+    padding: 0 0.35rem;
+    margin-top: -0.55rem;
+    margin-left: 0.4rem;
+    font-variant-numeric: tabular-nums;
+  }
+
   @media (min-width: 1280px) {
     .vector-desk-terminal {
       min-height: calc(100vh - 200px);
