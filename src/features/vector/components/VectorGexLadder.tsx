@@ -85,6 +85,28 @@ export function VectorGexLadder({ ticker, liveSession, initialSpot = null }: Pro
   const spotIdx =
     spot != null ? rows.findIndex((r) => r.strike <= spot) : -1;
 
+  // Auto-centre the ladder on spot once per ticker: the rows are strike-descending, so without this
+  // the panel opens scrolled to the highest strikes (all calls) and a member has to scroll down to
+  // see spot and the puts below it. Centre the spot marker in the viewport on the first ready load
+  // (and again when the ticker changes) — but NOT on the 15s live refresh, which would yank the
+  // scroll back if the member has scrolled away.
+  const listRef = useRef<HTMLOListElement>(null);
+  const centeredTickerRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (state !== "ready" || spot == null || rows.length === 0) return;
+    if (centeredTickerRef.current === ticker) return;
+    const list = listRef.current;
+    if (!list) return;
+    const target =
+      list.querySelector<HTMLElement>(".vector-gex-ladder-spot") ??
+      list.querySelector<HTMLElement>(".vector-gex-ladder-row");
+    if (!target) return;
+    const t = target.getBoundingClientRect();
+    const l = list.getBoundingClientRect();
+    list.scrollTop += t.top - l.top - list.clientHeight / 2 + t.height / 2;
+    centeredTickerRef.current = ticker;
+  }, [state, spot, rows, ticker]);
+
   return (
     <section className="vector-gex-ladder" aria-label={`${ticker} GEX strike ladder`}>
       <header className="vector-gex-ladder-head">
@@ -102,7 +124,7 @@ export function VectorGexLadder({ ticker, liveSession, initialSpot = null }: Pro
           {state === "loading" ? "Loading GEX ladder…" : "No GEX structure near spot"}
         </div>
       ) : (
-        <ol className="vector-gex-ladder-rows">
+        <ol className="vector-gex-ladder-rows" ref={listRef}>
           {rows.map((r, i) => (
             <LadderRow key={r.strike} row={r} showSpotAbove={i === spotIdx} spot={spot} />
           ))}
