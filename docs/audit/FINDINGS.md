@@ -8,6 +8,18 @@ and required CI (`verify`) are green — no per-PR approval, no end-of-day hold.
 here and merge the PR in the same session. Supersedes all earlier "leave OPEN for review" notes
 in this file.
 
+## 🟢 P4 SHIPPED 2026-07-12 — Skylit visual pass: strength-scaled beads, clean price axis, purple put walls revealed
+
+Member-driven UI pass (with Skylit Atlas screenshots) across three merged PRs:
+
+- **#172 — bead thickness = wall strength (relative to the in-view king).** Beads scaled against a fixed 7% saturation, so on the per-expiry chain path (20–40% concentration) every top wall clipped to max size and looked identical ("all our beads feel the same"). Now `relStrengthT(pct, maxPct)` scales each bead against the strongest wall in view (per side) → fat dominant band, thin stragglers, and a wall's band bulges thicker over the session as it builds. `MARKER_SIZE_MAX` 2.8→3.4. Tests: `vector-wall-visual.test.ts` 13/13 (regression: 41% vs 14% now separate ≥1.8×). Live-verified NVDA (210 wall fat vs weak levels thin).
+- **#173 — clean Skylit price axis.** Removed the full-width "Call/Put wall — %" guide price-lines + dark-pool level lines; walls render ONLY as beads. Gamma-flip promoted to the single dashed reference line (was axis-label-only). `rightOffset: 6` so bead bands stop short of the axis. Axis now carries only price scale + current price + flip. Live-verified AMD/NVDA/TSLA.
+- **#174 — nearest put wall always revealed (purple beads were clipped).** The candle autoscale only revealed walls within ±5% of spot; NVDA's nearest put wall (197.5) sits 6.2% below spot 210.58 → clipped off the bottom, so members saw only yellow call rails. `extendRangeForWalls` now always pulls the nearest call AND put wall into view up to a 12% hard cap. Tests: `vector-price-range.test.ts` 7/7 (NVDA regression + both-sides + hard-cap). Live-verified NVDA axis now extends to 197.65.
+
+**Known follow-ups (open):** (a) off-hours the put beads read faint because they're the dimmed modeled underlay AND purple `#b26bff` has lower luminance than gold `#ffd60a` at 0.15 alpha — solid during live RTH; optional luminance-balance tweak pending user call. (b) Server-side wall recording covers only the ~21 universe tickers (heatmap-allowlist); off-universe names build the rail client-side only while viewed (not persisted) — extending recording to any viewed ticker is the highest-value RTH-parity gap. (c) GEX magnitude ground-truth cross-check still pending before any "100% correct" claim.
+
+**Status:** SHIPPED (#172, #173, #174 all merged + deployed + live-verified).
+
 ## 🔴 P1 FOUND+FIXED 2026-07-12 — DTE toggle was INERT on the flagship tickers (SPX/SPY/QQQ): identical walls + flip for 0DTE/weekly/monthly
 
 **Surface:** `src/features/vector/lib/vector-snapshot.ts` (`getVectorGexWallsForHorizon` + `getVectorGammaFlipForHorizon`). Found in a **live 13-ticker end-to-end CTO audit** on staging (SPX, SPY, QQQ, NVDA, TSLA, AAPL, AMZN, META, RKLB, SNOW, CRWD, ASTS, EOSE — every DTE horizon + coherence + console/status).

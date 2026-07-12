@@ -41,6 +41,17 @@ Three properties separate top-tier from mere:
 - **Time-honest rail** *(2026-07-11)* — the wall rail renders ONLY what the live recorder captured
   point-in-time during RTH; where nothing was recorded, a single honest **as-of-close** snapshot,
   never a fabricated full-day rail. Dynamism you see is dynamism that happened.
+- **Skylit visual pass** *(2026-07-12, #172/#173/#174)* — member-driven, with Skylit Atlas
+  references: (1) bead **thickness now scales with wall strength** relative to the strongest wall
+  in view (per side), so a dominant wall is a fat band and stragglers are thin — and a band bulges
+  thicker over the session as the wall builds (#172); (2) **clean price axis** — wall + dark-pool
+  guide labels/lines removed, walls shown ONLY as beads, a single dashed gamma-flip line, and
+  right-edge whitespace so bands stop short of the axis (#173); (3) the **nearest put wall is
+  always pulled into view** (up to a 12% cap) so purple put beads render, not just yellow calls —
+  they were being clipped when the nearest put sat just past the old ±5% window (#174). Remaining:
+  purple reads faint OFF-HOURS (dimmed modeled underlay + lower purple luminance) — solid in live
+  RTH; server recording still covers only the ~21 universe tickers (record-any-viewed-ticker is
+  the next RTH-parity gap); GEX magnitude ground-truth cross-check still owed before "100% correct."
 - **Timeframe-scaled walls** *(2026-07-12, #169)* — the wall guides + beads showed a fixed 6
   near-spot walls at every zoom; now the server returns up to 12 per side and the client shows
   more, further-out walls as the candle timeframe widens (`1m→6, 3m→8, 5m→10, ≥15m→12`), with the
