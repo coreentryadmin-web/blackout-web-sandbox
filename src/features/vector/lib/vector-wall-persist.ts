@@ -9,13 +9,35 @@ function redisKey(ticker: string, sessionYmd: string): string {
   return `${KEY_PREFIX}:${ticker}:${sessionYmd}`;
 }
 
-/** Load the durable per-bar wall ladder for a session (shared across replicas). */
+/**
+ * Load the durable per-bar wall ladder for a session (shared across replicas).
+ *
+ * Redis-first (hot cache). On a Redis miss — cold replica, eviction, restart — fall back to
+ * the durable Postgres mirror and, if it has a rail, WARM Redis with it so the next read is hot
+ * again. Both the DB module import and the DB call are wrapped so a failure degrades to the
+ * legacy Redis-only behaviour (return []) rather than throwing into the caller.
+ */
 export async function loadSessionWallHistory(
   sessionYmd: string,
   ticker = "SPX"
 ): Promise<WallHistorySample[]> {
   if (!sessionYmd) return [];
   const hit = await sharedCacheGet<WallHistorySample[]>(redisKey(ticker, sessionYmd));
+  if (hit && hit.length) return hit;
+
+  // Redis empty/absent — try the durable Postgres mirror. Lazy dynamic import keeps the
+  // server-only DB module out of any client bundle that transitively reaches this file.
+  try {
+    const { loadSessionWallHistoryFromDb } = await import("./vector-wall-db");
+    const durable = await loadSessionWallHistoryFromDb(sessionYmd, ticker);
+    if (durable.length) {
+      // Re-warm the hot cache so subsequent reads skip Postgres. Best-effort.
+      await sharedCacheSet(redisKey(ticker, sessionYmd), durable, TTL_SEC).catch(() => {});
+      return durable;
+    }
+  } catch (err) {
+    console.warn(`[vector-wall-persist] db fallback failed ${ticker}:${sessionYmd}:`, err);
+  }
   return hit ?? [];
 }
 
@@ -41,6 +63,19 @@ export async function appendSessionWallSample(
     const next = mergeWallHistory(existing, [sample]);
     if (next === existing) return false; // no-op merge — nothing new to write
     await sharedCacheSet(redisKey(ticker, sessionYmd), next, TTL_SEC);
+    // Durable write-through: fan the SAME bucket out to Postgres so the rail survives Redis
+    // restarts. Non-blocking and best-effort — Redis stays authoritative for the boolean
+    // return, and a DB failure (or the server-only module failing to load in an unexpected
+    // context) must not affect the live recorder. Lazy dynamic import keeps the server-only
+    // DB module out of any client bundle that transitively reaches this file.
+    void (async () => {
+      try {
+        const { persistWallSampleToDb } = await import("./vector-wall-db");
+        await persistWallSampleToDb(sessionYmd, sample, ticker);
+      } catch (err) {
+        console.warn(`[vector-wall-persist] db write-through failed ${ticker}:${sessionYmd}:`, err);
+      }
+    })();
     return true;
   } catch (err) {
     // Persistence is a supplementary visual and must never block the live stream —

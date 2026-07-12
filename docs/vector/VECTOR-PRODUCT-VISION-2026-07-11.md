@@ -36,6 +36,13 @@ Three properties separate top-tier from mere:
 - **Time-honest rail** *(2026-07-11)* — the wall rail renders ONLY what the live recorder captured
   point-in-time during RTH; where nothing was recorded, a single honest **as-of-close** snapshot,
   never a fabricated full-day rail. Dynamism you see is dynamism that happened.
+- **Durable wall-history storage** *(2026-07-12)* — the rail was Redis-only (48h TTL): nothing
+  survived a Redis restart or older than ~2 days. Now **write-through to Postgres** — the recorder
+  fans each 15s/5min bucket to both Redis (hot cache, unchanged) and a `vector_wall_history` table
+  (durable). Reads are **Redis-first with a Postgres fallback** that re-warms the cache; **90-day
+  retention** pruned by the db-cleanup cron. This makes "the beads reliably persist and never
+  silently vanish" a structural guarantee — the class of failure behind the Jul 10 blank rail — and
+  gives replay ~3 months of history + a durable base for the strike×time heatmap (#14).
 
 ## Roadmap — ranked by (impact × differentiation × feasibility)
 
