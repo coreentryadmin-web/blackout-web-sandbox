@@ -1,5 +1,6 @@
 import type { GexWalls } from "@/lib/providers/gex-wall-levels";
 import type { VectorTimeframeMinutes } from "./vector-bar-timeframes";
+import type { VectorDteHorizon } from "./vector-dte-horizon";
 
 /** Wall overlay lens — GEX from live dealer-gamma ladder; VEX from shared heatmap vanna totals. */
 export type VectorWallLens = "gex" | "vex";
@@ -219,6 +220,27 @@ export function seedWallHistoryForDisplay(
     vexWalls: hasVex ? vexWalls : null,
     vexFlip: vexFlip ?? null,
   });
+}
+
+/**
+ * Bead-trail source for a NARROWED DTE horizon (0DTE/weekly/monthly), or null to signal "use the
+ * blended recorded rail instead". The recorded session rail is blended near-term only — there is no
+ * per-horizon point-in-time history — so under a narrowed toggle we draw the CURRENT horizon-scoped
+ * walls as a single point-in-time column at the latest bar (honest "current 0DTE/weekly/monthly
+ * structure"), genuinely distinct from "All". Returns null for the "all" horizon, the VEX lens
+ * (no horizon scope), an empty/absent scoped wall set, or a missing bar time — in every such case
+ * the caller falls back to the blended rail, so beads never blank on a toggle.
+ */
+export function narrowedHorizonTrail(
+  horizon: VectorDteHorizon,
+  lens: VectorWallLens,
+  scoped: GexWalls | null | undefined,
+  lastBarTime: number,
+  flip: number | null | undefined
+): WallHistorySample[] | null {
+  const hasNodes = Boolean(scoped && (scoped.callWalls.length > 0 || scoped.putWalls.length > 0));
+  if (horizon === "all" || lens !== "gex" || !hasNodes || !(lastBarTime > 0)) return null;
+  return [{ time: lastBarTime, walls: scoped!, gammaFlip: flip ?? null }];
 }
 
 /** Merge server-observed history into the client buffer — union by bar time, longer tail wins ties. */
