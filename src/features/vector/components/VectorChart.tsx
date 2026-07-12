@@ -81,6 +81,7 @@ import {
   type VectorIndicatorId,
 } from "@/features/vector/lib/vector-indicators-config";
 import { levelLinesFor, type LevelLine, type PriorDayOhlc } from "@/features/vector/lib/vector-key-levels";
+import { buildStructureMarkers } from "@/features/vector/lib/vector-structure-markers";
 import {
   buildReplayTimeline,
   clampTimelineIndex,
@@ -693,6 +694,8 @@ export function VectorChart({
   const lastDisplayBarsRef = useRef<VectorBar[]>(initialBars);
   const callBeadsRef = useRef<ISeriesMarkersPluginApi<Time> | null>(null);
   const putBeadsRef = useRef<ISeriesMarkersPluginApi<Time> | null>(null);
+  // Market-structure markers (pivot labels + BOS/CHOCH) — own instance, cleared with the beads.
+  const structureMarkersRef = useRef<ISeriesMarkersPluginApi<Time> | null>(null);
   const wallHistoryRef = useRef<WallHistorySample[]>(initialWallHistory);
   /** Canonical 1m session bars — SSE live ticks and Polygon seed write here only. */
   const minuteBarsRef = useRef<VectorBar[]>(initialBars);
@@ -976,6 +979,24 @@ export function VectorChart({
     // Draw the enabled "Key levels" horizontal lines from the SAME bars, on the candle series.
     if (seriesRef.current) {
       applyLevelLines(seriesRef.current, levelLinesRef.current, enabled, bars, priorDayRef.current);
+      // Market-structure markers (HH/HL labels + BOS/CHOCH flags) on their own markers instance —
+      // separate from the two bead instances, so beads and structure never clobber each other.
+      // Recomputed from the SAME displayed bars, so the structure re-detects per timeframe and, in
+      // replay, reflects only the bars up to the cursor (no future pivots leak into a scrub).
+      if (structureMarkersRef.current) {
+        structureMarkersRef.current.setMarkers(
+          enabled.has("market-structure")
+            ? buildStructureMarkers(bars, 3).map((m) => ({
+                time: m.time as Time,
+                position: m.position,
+                color: m.color,
+                shape: m.shape,
+                text: m.text,
+                size: m.size,
+              }))
+            : []
+        );
+      }
     }
   }, []);
 
@@ -1619,6 +1640,7 @@ export function VectorChart({
     setChartReady(true);
     callBeadsRef.current = createSeriesMarkers(series, []);
     putBeadsRef.current = createSeriesMarkers(series, []);
+    structureMarkersRef.current = createSeriesMarkers(series, []);
 
     refreshTrails("gex");
     refreshOverlays("gex", initialWalls, initialVexWalls, initialGammaFlip, initialVexFlip, initialDarkPoolLevels);
@@ -1695,6 +1717,7 @@ export function VectorChart({
       priorDayTickerRef.current = null;
       callBeadsRef.current = null;
       putBeadsRef.current = null;
+      structureMarkersRef.current = null;
       volumeSeriesRef.current = null;
       setChartReady(false);
     };
