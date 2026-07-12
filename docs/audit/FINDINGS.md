@@ -8,6 +8,32 @@ and required CI (`verify`) are green — no per-PR approval, no end-of-day hold.
 here and merge the PR in the same session. Supersedes all earlier "leave OPEN for review" notes
 in this file.
 
+## 🟡 P3 FOUND+FIXED 2026-07-12 — Desk terminal + regime banner described a DIFFERENT scope than the walls on the chart (DTE incoherence)
+
+**Surface:** `src/features/vector/components/VectorChart.tsx` (`emitRegime` / `emitProximity` / `emitMagnet` / `emitWallIntegrity`) + new pure helper `pickHorizonScopedValue` in `src/features/vector/lib/vector-dte-horizon.ts`. Found while live-verifying the DTE-for-all-tickers work (#168) on staging.
+
+**Symptom:** with the DTE toggle narrowed (0DTE/weekly/monthly), the wall beads + gamma-flip line re-scoped correctly, but the desk-terminal narration and the regime banner kept reading the near-term SSE stream — so the terminal could read *"gamma magnet 210 · 198P wall"* and the banner *"flip 197.65"* while the chart drew the **0DTE 190 put wall** and a **195.2 flip**. The terminal described a different scope than the chart beside it. Captured live on NVDA 0DTE (banner 197.65 vs 0DTE flip 195.2).
+
+**Root cause:** the four terminal derivations read the raw `gexWallsRef.current`/`gammaFlipRef.current` (near-term stream) instead of the horizon-scoped `liveGexWalls()`/`liveGammaFlip()` the overlays already use, and they only re-fired on an SSE tick — never on a DTE-toggle change (so off-hours, with no tick, they never re-scoped at all).
+
+**Fix (#170):** all four derivations now read `liveGexWalls()`/`liveGammaFlip()`, so regime/magnet/proximity/integrity describe exactly the walls+flip drawn for the selected horizon (`"all"` still resolves to the near-term stream, unchanged). The DTE-toggle effect re-derives all four the instant the horizon changes (self-deduped, no churn). The scope-selection rule is extracted to a pure, tested `pickHorizonScopedValue(horizon, scoped, stream)` (narrowed + scoped present → scoped, else stream; never blanks), routed through by both `liveGexWalls` and `liveGammaFlip`. Integrity persistence still reads the near-term rail (best-effort for a narrowed-horizon strike the rail never recorded) — called out in-code, left for a per-horizon-rail change.
+
+**Evidence:** `vector-dte-horizon.test.ts` (+6) — `"all"` uses stream; narrowed uses scoped; honest stream fallback on null/undefined; generic walls-object path; falsy-but-non-null (`0`) scoped-flip guard. `tsc` clean; 14/14 horizon tests; `@apply` guard clean. Live staging re-verification to follow post-deploy.
+
+**Status:** FIXED (`fix/vector-terminal-horizon-coherence`, PR #170).
+
+
+## 🟢 P4 SHIPPED 2026-07-12 — Wall count now scales with the candle timeframe (was a fixed 6 at every zoom)
+
+**Surface:** `src/features/vector/lib/vector-bar-timeframes.ts` (+ every Vector `computeGexWalls` call site) + `src/features/vector/components/VectorChart.tsx`. Product gap, not a correctness bug: a 15m chart spans a far wider price band than a 1m chart, but both drew the **same six near-spot walls** — the outer structure that only matters at a wider view was hidden by two independent caps (server `DEFAULT_WALL_NODES_PER_SIDE=6` never returned the 7th–12th walls; client `MAX_WALL_GUIDES=6` never drew them).
+
+**Fix (#169):** server returns up to `VECTOR_WALL_NODES_PER_SIDE=12` per side (all Vector sites: oracle WS ladder, blended fallback, VEX, per-expiry DTE, universe recorder, reconstruction rail — one source of truth). Client `wallCountForTimeframe(tf)` shows `1m→6, 3m→8, 5m→10, ≥15m→12` (monotonic, clamped to the cap); wall guides, bead strike-rows, and the autoscale range all key off the shown-count, so 1m stays tight while 15m widens. A pure timeframe switch repaints the guides (`refreshOverlays`) so the count grows on upshift and the now-extra price lines clear on downshift.
+
+**Evidence:** `vector-bar-timeframes.test.ts` (+3) — preset mapping (1→6…15→12), never-exceeds-cap for `[15,30,60,120,240]`, monotonic non-decreasing with sub-1m clamping to ≥1. `tsc` clean; 9/9 timeframe + related suites (dte-horizon/dte-walls-server/reconstruct/reconstruct-map) green; `@apply` guard clean.
+
+**Status:** SHIPPED (`feat/vector-walls-scale-timeframe`, merged #169).
+
+
 ## 🟡 P3 FOUND+FIXED 2026-07-12 — Non-SPX tickers mislabeled their own spot as "SPX" + integrity overclaimed "held 100% of session" off-hours
 
 **Surface:** `src/features/vector/components/VectorCrosshairLegend.tsx` + `src/features/vector/lib/vector-wall-integrity.ts`. Found during a deep-dive audit of 7 non-universe tickers (RKLB, NOW, ALAB, CRWD, EOSE, SNOW, IREN) the user asked for.
