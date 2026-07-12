@@ -46,8 +46,9 @@ import { extendRangeForWalls, DEFAULT_WALL_VIEW_MAX_PCT } from "@/features/vecto
 import { scoreTopWalls, type WallIntegrity } from "@/features/vector/lib/vector-wall-integrity";
 import {
   alphaForPct,
-  glowAlphaForPct,
-  markerSizeForPct,
+  alphaForPctRel,
+  glowAlphaForPctRel,
+  markerSizeForPctRel,
   widthForPct,
   MODELED_ALPHA_SCALE,
 } from "@/features/vector/lib/vector-wall-visual";
@@ -369,6 +370,19 @@ function buildWallBeadMarkers(
   baseColor: string
 ): SeriesMarker<Time>[] {
   const markers: SeriesMarker<Time>[] = [];
+  // Frame-relative strength: find the STRONGEST wall currently in view, and scale every bead's
+  // thickness/opacity against it (markerSizeForPctRel), NOT against a fixed 7% saturation. Per-
+  // strike gamma share is ~6-8% on the UW oracle ladder but 20-40% on the per-expiry chain path,
+  // so the old absolute cap clipped every stock wall to max → all beads looked identically fat
+  // ("all our beads feel the same"). Normalizing to the in-frame king restores the Skylit fat-
+  // king / thin-straggler contrast at any concentration, and — because a strike's pct varies
+  // over the session — also makes a wall's band bulge thicker in the stretch where it built up.
+  let maxPct = 0;
+  for (const strike of activeStrikes) {
+    const points = trails.get(strike);
+    if (!points) continue;
+    for (const p of points) if (p.pct > maxPct) maxPct = p.pct;
+  }
   for (const strike of activeStrikes) {
     const points = trails.get(strike);
     if (!points) continue;
@@ -381,9 +395,9 @@ function buildWallBeadMarkers(
       // Observed beads (modeled falsy) are unchanged.
       const modeled = p.modeled === true;
       const alphaScale = modeled ? MODELED_ALPHA_SCALE : 1;
-      const size = markerSizeForPct(p.pct) * (modeled ? 0.6 : 1);
-      const coreAlpha = alphaForPct(p.pct) * alphaScale;
-      const glowAlpha = glowAlphaForPct(p.pct) * alphaScale;
+      const size = markerSizeForPctRel(p.pct, maxPct) * (modeled ? 0.6 : 1);
+      const coreAlpha = alphaForPctRel(p.pct, maxPct) * alphaScale;
+      const glowAlpha = glowAlphaForPctRel(p.pct, maxPct) * alphaScale;
       // Halo + core — Skylit-style glow on dominant walls (per-bead size + opacity).
       markers.push({
         time,

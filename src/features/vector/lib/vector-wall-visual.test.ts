@@ -3,6 +3,9 @@ import assert from "node:assert/strict";
 import {
   alphaForPct,
   markerSizeForPct,
+  markerSizeForPctRel,
+  alphaForPctRel,
+  relStrengthT,
   radiusForPct,
   widthForPct,
   MODELED_ALPHA_SCALE,
@@ -55,8 +58,42 @@ test("radiusForPct: stays within the 2-6px trail-dot range and scales monotonica
 
 test("markerSizeForPct: per-bead sizes span the Skylit-style range", () => {
   assert.equal(markerSizeForPct(0), 0.5);
-  assert.equal(markerSizeForPct(7), 2.8);
+  assert.equal(markerSizeForPct(7), 3.4); // MARKER_SIZE_MAX — bumped for a fatter dominant-wall band
   assert.ok(markerSizeForPct(3) < markerSizeForPct(6));
+});
+
+test("relStrengthT: the frame's strongest wall is the full-weight reference; others scale down from it", () => {
+  assert.equal(relStrengthT(40, 40), 1, "the in-frame king is always full weight");
+  assert.equal(relStrengthT(0, 40), 0, "a zero-share wall is weightless");
+  assert.ok(relStrengthT(20, 40) < 1 && relStrengthT(20, 40) > 0, "half-strength scales between");
+  assert.ok(relStrengthT(10, 40) < relStrengthT(20, 40), "monotonic in pct for a fixed max");
+  // guards
+  assert.equal(relStrengthT(40, 0), 0, "maxPct <= 0 → 0 (no division blowup)");
+  assert.equal(relStrengthT(NaN, 40), 0, "non-finite pct → 0");
+  assert.equal(relStrengthT(-5, 40), 0, "negative pct → 0");
+});
+
+test("REGRESSION: two HIGH-concentration walls (41% vs 14%) render at clearly different sizes", () => {
+  // The bug: the per-expiry chain path concentrates gamma into 20-40% strikes, so under the fixed
+  // 7% absolute saturation BOTH a 41% and a 14% wall clipped to max size and looked identical
+  // ("all our beads feel the same"). Absolute path collapses them; the relative path separates.
+  assert.equal(
+    markerSizeForPct(41),
+    markerSizeForPct(14),
+    "absolute path: both clip to max (this is the bug being fixed)"
+  );
+  const king = markerSizeForPctRel(41, 41);
+  const lesser = markerSizeForPctRel(14, 41);
+  assert.ok(king > lesser, "relative path: 41% is fatter than 14%");
+  assert.ok(king / lesser >= 1.8, `relative path gives real contrast (${(king / lesser).toFixed(2)}×)`);
+});
+
+test("markerSizeForPctRel / alphaForPctRel: king is max weight, straggler near the floor", () => {
+  // In a frame whose strongest wall is 30%, a 3% straggler must read as a thin, faint dot.
+  assert.ok(markerSizeForPctRel(30, 30) >= markerSizeForPctRel(29, 30), "king at/above all others");
+  assert.ok(markerSizeForPctRel(3, 30) < markerSizeForPctRel(30, 30) * 0.4, "straggler stays thin");
+  assert.ok(alphaForPctRel(3, 30) < alphaForPctRel(30, 30), "straggler is fainter than the king");
+  assert.equal(alphaForPctRel(0, 30), 0.05, "zero-share keeps the faint floor, not invisible");
 });
 
 test("MODELED_ALPHA_SCALE: modeled beads render as a FAINT ghost (< observed) but not invisible", () => {
