@@ -1,12 +1,25 @@
 import { sharedCacheGet, sharedCacheSet } from "@/lib/shared-cache";
 import { mergeWallHistory, type WallHistorySample } from "./vector-wall-history";
+import type { VectorDteHorizon } from "./vector-dte-horizon";
 
 const KEY_PREFIX = "vector:wall-history";
 /** Keep through the next session for off-hours review + replay groundwork. */
 const TTL_SEC = 48 * 60 * 60;
 
-function redisKey(ticker: string, sessionYmd: string): string {
-  return `${KEY_PREFIX}:${ticker}:${sessionYmd}`;
+/**
+ * Storage identity for a (ticker, horizon) rail. Each DTE horizon records its OWN point-in-time
+ * trail so 0DTE/weekly/monthly show frozen clusters after close just like "All" — but rather than
+ * migrate the schema, a narrowed horizon is stored under a COMPOSITE ticker (`NVDA::weekly`) in
+ * both the Redis key and the Postgres `ticker` column. "all" keeps the bare ticker, so every rail
+ * recorded before per-horizon history existed (and every "all" read) is byte-for-byte unchanged —
+ * fully backward-compatible, no ALTER TABLE, no data backfill.
+ */
+export function wallRailStorageId(ticker: string, horizon: VectorDteHorizon = "all"): string {
+  return horizon === "all" ? ticker : `${ticker}::${horizon}`;
+}
+
+function redisKey(storageTicker: string, sessionYmd: string): string {
+  return `${KEY_PREFIX}:${storageTicker}:${sessionYmd}`;
 }
 
 /**
@@ -19,24 +32,26 @@ function redisKey(ticker: string, sessionYmd: string): string {
  */
 export async function loadSessionWallHistory(
   sessionYmd: string,
-  ticker = "SPX"
+  ticker = "SPX",
+  horizon: VectorDteHorizon = "all"
 ): Promise<WallHistorySample[]> {
   if (!sessionYmd) return [];
-  const hit = await sharedCacheGet<WallHistorySample[]>(redisKey(ticker, sessionYmd));
+  const st = wallRailStorageId(ticker, horizon);
+  const hit = await sharedCacheGet<WallHistorySample[]>(redisKey(st, sessionYmd));
   if (hit && hit.length) return hit;
 
   // Redis empty/absent — try the durable Postgres mirror. Lazy dynamic import keeps the
   // server-only DB module out of any client bundle that transitively reaches this file.
   try {
     const { loadSessionWallHistoryFromDb } = await import("./vector-wall-db");
-    const durable = await loadSessionWallHistoryFromDb(sessionYmd, ticker);
+    const durable = await loadSessionWallHistoryFromDb(sessionYmd, st);
     if (durable.length) {
       // Re-warm the hot cache so subsequent reads skip Postgres. Best-effort.
-      await sharedCacheSet(redisKey(ticker, sessionYmd), durable, TTL_SEC).catch(() => {});
+      await sharedCacheSet(redisKey(st, sessionYmd), durable, TTL_SEC).catch(() => {});
       return durable;
     }
   } catch (err) {
-    console.warn(`[vector-wall-persist] db fallback failed ${ticker}:${sessionYmd}:`, err);
+    console.warn(`[vector-wall-persist] db fallback failed ${st}:${sessionYmd}:`, err);
   }
   return hit ?? [];
 }
@@ -55,14 +70,16 @@ export async function loadSessionWallHistory(
 export async function appendSessionWallSample(
   sessionYmd: string,
   sample: WallHistorySample,
-  ticker = "SPX"
+  ticker = "SPX",
+  horizon: VectorDteHorizon = "all"
 ): Promise<boolean> {
   if (!sessionYmd) return false;
+  const st = wallRailStorageId(ticker, horizon);
   try {
-    const existing = await loadSessionWallHistory(sessionYmd, ticker);
+    const existing = await loadSessionWallHistory(sessionYmd, ticker, horizon);
     const next = mergeWallHistory(existing, [sample]);
     if (next === existing) return false; // no-op merge — nothing new to write
-    await sharedCacheSet(redisKey(ticker, sessionYmd), next, TTL_SEC);
+    await sharedCacheSet(redisKey(st, sessionYmd), next, TTL_SEC);
     // Durable write-through: fan the SAME bucket out to Postgres so the rail survives Redis
     // restarts. Non-blocking and best-effort — Redis stays authoritative for the boolean
     // return, and a DB failure (or the server-only module failing to load in an unexpected
@@ -71,9 +88,9 @@ export async function appendSessionWallSample(
     void (async () => {
       try {
         const { persistWallSampleToDb } = await import("./vector-wall-db");
-        await persistWallSampleToDb(sessionYmd, sample, ticker);
+        await persistWallSampleToDb(sessionYmd, sample, st);
       } catch (err) {
-        console.warn(`[vector-wall-persist] db write-through failed ${ticker}:${sessionYmd}:`, err);
+        console.warn(`[vector-wall-persist] db write-through failed ${st}:${sessionYmd}:`, err);
       }
     })();
     return true;
@@ -83,7 +100,7 @@ export async function appendSessionWallSample(
     // off-hours rail) behind a green {ok} cron for hours. Log it so the failure is
     // observable in CloudWatch without changing the non-blocking contract, and
     // return false so callers can tally how many samples actually landed.
-    console.warn(`[vector-wall-persist] append failed ${ticker}:${sessionYmd}:`, err);
+    console.warn(`[vector-wall-persist] append failed ${st}:${sessionYmd}:`, err);
     return false;
   }
 }
@@ -100,15 +117,19 @@ const lastPersistByTicker = new Map<string, { bucket: number; at: number }>();
 export function persistWallSampleDebounced(
   sessionYmd: string,
   sample: WallHistorySample,
-  ticker = "SPX"
+  ticker = "SPX",
+  horizon: VectorDteHorizon = "all"
 ): void {
   if (!sessionYmd) return;
   const now = Date.now();
   const bucket = sample.time;
-  const last = lastPersistByTicker.get(ticker);
+  // Debounce per (ticker, horizon) — each horizon's rail persists independently, so a weekly
+  // sample must not be suppressed by a same-bucket "all" write for the same ticker.
+  const key = wallRailStorageId(ticker, horizon);
+  const last = lastPersistByTicker.get(key);
   if (last && last.bucket === bucket && now - last.at < 2_000) return;
-  lastPersistByTicker.set(ticker, { bucket, at: now });
-  void appendSessionWallSample(sessionYmd, sample, ticker);
+  lastPersistByTicker.set(key, { bucket, at: now });
+  void appendSessionWallSample(sessionYmd, sample, ticker, horizon);
 }
 
 /** Test-only reset. */

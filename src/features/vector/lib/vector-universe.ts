@@ -10,6 +10,11 @@ import { roundFloats } from "@/lib/round-floats";
 import { bucketWallSampleTime, buildWallHistorySample } from "./vector-wall-sample";
 import { appendSessionWallSample } from "./vector-wall-persist";
 import { VECTOR_WALL_NODES_PER_SIDE } from "./vector-bar-timeframes";
+import { getVectorGexWallsForHorizon, getVectorGammaFlipForHorizon } from "./vector-snapshot";
+
+/** Narrowed DTE horizons recorded alongside the blended "all" rail so 0DTE/weekly/monthly show
+ *  frozen point-in-time clusters after close too (not the single current-column fallback). */
+const RECORDED_HORIZONS = ["0dte", "weekly", "monthly"] as const;
 
 /**
  * Options for the universe build. `recordWallHistory` makes the build ALSO
@@ -107,6 +112,35 @@ export async function buildVectorUniverseSnapshot(
         // Await so the cron only reports success once the rail is durable;
         // append is idempotent (union-by-time) and self-catching.
         if (sample) await appendSessionWallSample(sessionYmd, sample, ticker);
+
+        // Per-horizon rails: record the SAME bucket for 0DTE/weekly/monthly too, so those
+        // horizons accumulate their own point-in-time trail and show frozen clusters after close
+        // (not the single current-column). getVectorGexWallsForHorizon leads with the per-expiry
+        // Polygon chain (shared banded-chain cache across the three horizons → one fetch per
+        // ticker, not three); the flip shares that chain's memo. Best-effort per horizon: a miss
+        // never blocks the "all" rail (already durable above) or the scanner row (returned below).
+        if (spot && spot > 0) {
+          for (const horizon of RECORDED_HORIZONS) {
+            try {
+              const [hWalls, hFlip] = await Promise.all([
+                getVectorGexWallsForHorizon(ticker, horizon),
+                getVectorGammaFlipForHorizon(ticker, horizon),
+              ]);
+              if (hWalls && (hWalls.callWalls.length > 0 || hWalls.putWalls.length > 0)) {
+                const hSample = buildWallHistorySample({
+                  time: sampleTime,
+                  gexWalls: hWalls,
+                  gammaFlip: hFlip,
+                  vexWalls: null,
+                  vexFlip: null,
+                });
+                if (hSample) await appendSessionWallSample(sessionYmd, hSample, ticker, horizon);
+              }
+            } catch {
+              /* per-horizon recording is best-effort — never fail the build over it */
+            }
+          }
+        }
       }
 
       const asOfMs = hm?.asof ? Date.parse(hm.asof) : NaN;
