@@ -16,7 +16,7 @@ Member-driven UI pass (with Skylit Atlas screenshots) across three merged PRs:
 - **#173 — clean Skylit price axis.** Removed the full-width "Call/Put wall — %" guide price-lines + dark-pool level lines; walls render ONLY as beads. Gamma-flip promoted to the single dashed reference line (was axis-label-only). `rightOffset: 6` so bead bands stop short of the axis. Axis now carries only price scale + current price + flip. Live-verified AMD/NVDA/TSLA.
 - **#174 — nearest put wall always revealed (purple beads were clipped).** The candle autoscale only revealed walls within ±5% of spot; NVDA's nearest put wall (197.5) sits 6.2% below spot 210.58 → clipped off the bottom, so members saw only yellow call rails. `extendRangeForWalls` now always pulls the nearest call AND put wall into view up to a 12% hard cap. Tests: `vector-price-range.test.ts` 7/7 (NVDA regression + both-sides + hard-cap). Live-verified NVDA axis now extends to 197.65.
 
-**Known follow-ups (open):** (a) off-hours the put beads read faint because they're the dimmed modeled underlay AND purple `#b26bff` has lower luminance than gold `#ffd60a` at 0.15 alpha — solid during live RTH; optional luminance-balance tweak pending user call. (b) Server-side wall recording covers only the ~21 universe tickers (heatmap-allowlist); off-universe names build the rail client-side only while viewed (not persisted) — extending recording to any viewed ticker is the highest-value RTH-parity gap. (c) GEX magnitude ground-truth cross-check still pending before any "100% correct" claim.
+**Known follow-ups (open):** (a) off-hours the put beads read faint because they're the dimmed modeled underlay AND purple `#b26bff` had lower luminance than gold `#ffd60a` at 0.15 alpha — **fixed in #176** (put color → `#d97bff`, luminance parity); solid during live RTH. (b) **CORRECTION (initial claim was wrong):** recording is NOT universe-only. `buildVectorStreamPayload` (the SSE hub refresher, runs for ANY viewed ticker) calls `persistWallSampleDebounced` → Redis + Postgres, debounced per 15s bucket — so **any viewed ticker already records + persists server-side**, shared across viewers, surviving after they leave. The cron additionally covers the ~21 universe tickers with **zero viewers**. The only residual gap is a non-universe ticker that NOBODY is viewing (no rail accrues until the first viewer opens it) — a scaling/UW-budget decision, not a code gap. (c) GEX magnitude ground-truth cross-check still pending before any "100% correct" claim.
 
 **Status:** SHIPPED (#172, #173, #174 all merged + deployed + live-verified).
 
@@ -44,13 +44,13 @@ Member-driven UI pass (with Skylit Atlas screenshots) across three merged PRs:
 
 **Status:** LOGGED (P3, latent — not chart-facing).
 
-## 🟡 P3 INVESTIGATE 2026-07-12 — App shows "JUL 10 CLOSE" while Polygon's latest close is Jul 11 (possible session-date staleness / staging ingest lag)
+## ⚪ NOT A BUG 2026-07-12 — "JUL 10 CLOSE" is correct (Jul 10 2026 is a Friday; my earlier staleness flag was wrong)
 
-**Surface:** Vector session-date resolution / staging market-data ingest. Found cross-checking spots against Polygon ground truth (`/v2/aggs/ticker/{t}/prev`).
+**Original flag (retracted):** I flagged the app showing "JUL 10 CLOSE" while Polygon's prev-close looked like "Jul 11." **That was my error** — I assumed Jul 11 was a trading day. Jul 10 2026 is a **Friday**; Jul 11 = Saturday, Jul 12 (audit day) = Sunday. So Friday Jul 10 WAS the last session, and Polygon's `/prev` on a Sunday returns Jul 10's close too. The app is correct.
 
-**Evidence:** app NVDA banner reads "JUL 10 CLOSE" spot 210.58; Polygon's most-recent prev-close is **210.96 (Jul 11, Fri)**. All app spots are one session behind Polygon. Could be (a) staging's universe/ingest cron not having advanced to Jul 11, or (b) a real off-by-one in the "last session" resolution. Prices are otherwise sane (SPX 7575 ≈ 10× SPY 755). **Next:** confirm on staging whether the session-date logic or the data pipeline is a day behind before Monday RTH; if it's ingest lag it self-resolves live, if it's resolution logic it needs a fix. Low urgency (off-hours; numbers internally consistent).
+**Residual (minor):** app NVDA spot 210.58 vs Polygon Jul-10 close 210.96 — a ~0.18% difference, i.e. a close-price source difference (official settle vs last-trade), not a session-date bug. Folded into the GEX ground-truth cross-check (below) rather than tracked separately.
 
-**Status:** INVESTIGATE (P3).
+**Status:** NOT A BUG (retracted).
 
 ## 🟡 P3 FOUND+FIXED 2026-07-12 — Desk terminal + regime banner described a DIFFERENT scope than the walls on the chart (DTE incoherence)
 
