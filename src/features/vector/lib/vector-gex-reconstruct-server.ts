@@ -83,6 +83,57 @@ async function fetchReconstructChain(
   return out;
 }
 
+/** Redis key + TTL for the CURRENT (live) chain snapshot used by the DTE-walls path. */
+const CURRENT_CHAIN_PREFIX = "vector:dte-chain";
+/**
+ * Intraday OI is stable (settles overnight) but IV/coverage drift and the spot the band
+ * is centered on moves, so hold the current-chain snapshot only ~10min. This is the cache
+ * that stops every DTE-toggle click from re-hitting the paginated Polygon chain endpoint:
+ * the first horizon fetch for a ticker pays the fetch, subsequent toggles (and the interval
+ * re-fetch) reuse the same banded chain and only re-filter/re-compute per horizon.
+ */
+const CURRENT_CHAIN_TTL_SEC = 600;
+
+/**
+ * Load the CURRENT options-chain contracts for a ticker, banded around the live spot,
+ * Redis-cached. Powers the DTE-horizon walls for non-oracle tickers (per-expiry GEX from
+ * the Polygon chain). Wider band than the reconstruction rail (which bands to the traveled
+ * intraday range): here we band around a single spot and pull far enough OTM to include the
+ * heavy call/put walls that can sit well outside the day's range — lo = spot·0.7, hi = spot·1.35.
+ *
+ * Never throws; returns [] on any failure (unconfigured Polygon, non-optionable root, fetch
+ * error) so the caller falls back to the blended near-term walls rather than erroring a live
+ * overlay.
+ */
+export async function loadCurrentChainContracts(
+  ticker: string,
+  spot: number
+): Promise<ReconstructContract[]> {
+  const t = normalizeVectorTicker(ticker);
+  if (!(spot > 0)) return [];
+
+  const key = `${CURRENT_CHAIN_PREFIX}:${t}`;
+  const hit = await sharedCacheGet<ReconstructContract[]>(key).catch(() => null);
+  if (hit) return hit;
+
+  try {
+    const { optionsRoot } = resolveOptionsRoot(t);
+    if (!optionsRoot) return [];
+    // Band around the single live spot (not a traveled path): floor/ceil to whole strikes,
+    // wide enough (−30% / +35%) that far-OTM gamma walls are still inside the fetch.
+    const lo = Math.floor(spot * 0.7);
+    const hi = Math.ceil(spot * 1.35);
+    const rawChain = await fetchReconstructChain(optionsRoot, lo, hi);
+    const contracts = chainToReconstructContracts(rawChain);
+    if (contracts.length) {
+      await sharedCacheSet(key, contracts, CURRENT_CHAIN_TTL_SEC).catch(() => {});
+    }
+    return contracts;
+  } catch {
+    return [];
+  }
+}
+
 async function fetchUnderlyingBars(ticker: string, sessionYmd: string): Promise<AggBarLike[]> {
   const t = normalizeVectorTicker(ticker);
   if (isVectorIndexTicker(t)) {

@@ -22,7 +22,12 @@ Three properties separate top-tier from mere:
 - **#139** server-side wall-history recorder — bead rails persist after-hours + exist for *every*
   universe ticker, not just ones with a live viewer. The engine behind honest, dense rails.
 - **#140/#141** DTE-horizon walls (0DTE / weekly / monthly / all) — walls re-scope to the expiry
-  horizon the member trades, on-demand so the shared stream stays fast.
+  horizon the member trades, on-demand so the shared stream stays fast. **Extended to EVERY ticker
+  (2026-07-12):** was oracle-only (SPX/SPY/QQQ, which carry the UW per-expiry WS ladder); now the
+  Polygon options chain (per-contract expiry+OI+IV, Redis-cached ~10min) is filtered per horizon and
+  the GEX ladder recomputed at spot (same BSM math as the reconstruction engine), so 0DTE/weekly/
+  monthly walls **and** the gamma flip re-scope on any optionable name — the toggle is un-hidden and
+  real everywhere, with an honest blended fallback so walls never blank.
 - **#147 + reconstruct-server** honest intraday GEX reconstruction — gamma closed-form BSM
   recomputed along the session's TRUE observed spot path (Polygon minute bars) against the EOD
   options chain. Live-validated on SPX 2026-07-10: 395 min bars → 79 five-min beads, 9,351 usable
