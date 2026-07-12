@@ -12,9 +12,11 @@ import {
   getVectorVexWalls,
   getVectorWallHistory,
   loadSessionWallHistory,
+  mergeModeledUnderlay,
   mergeWallHistory,
   normalizeVectorTicker,
   primeVectorWallScope,
+  reconstructSessionRail,
   seedWallHistoryForDisplay,
   type WallHistorySample,
 } from "@/features/vector";
@@ -55,23 +57,30 @@ export default async function VectorPage({ searchParams }: PageProps) {
   const today = todayEt();
   const liveSession = sessionYmd === today && isEtCashRth();
 
-  // Time-honest rail (product decision 2026-07-11). The rail shows ONLY what the
-  // live universe recorder actually captured point-in-time during RTH — genuinely
-  // dynamic walls that shift/build/fade with the tape. We deliberately do NOT
-  // back-project the closing chain across the whole session: intraday OI history
-  // is not published by any provider (UW/Polygon are EOD-only), so a reconstruction
-  // can only replay the CLOSING ladder against the spot path, which paints a flat,
-  // full-width rail on a range-bound day (every bucket shows the same strikes at the
-  // same strength — proven with a live probe: the 7600 wall read 5.3% at every
-  // bucket). That reads as "walls everywhere, all session," the opposite of the
-  // point-in-time dynamism the rail is meant to show. Where nothing was recorded,
-  // seedWallHistoryForDisplay drops a single honest as-of-close snapshot instead of
-  // a fabricated full-day rail. The reconstruction module is kept for the strike×time
-  // GEX heatmap (#14), where a dense back-projected grid is the correct primitive.
+  // Observed rail: exactly what the live universe recorder captured point-in-time during RTH —
+  // genuinely dynamic walls that shift/build/fade with the tape (in-memory + persisted Redis rows).
   const baseHistory = mergeWallHistory(getVectorWallHistory(ticker), persistedHistory);
 
+  // Modeled underlay (product decision 2026-07-12, user-approved). The trail now shows the
+  // RECONSTRUCTED session instantly as DIM, clearly-labeled "modeled" beads, which the observed
+  // recorded samples above OVERWRITE with solid ones wherever they exist (mergeModeledUnderlay:
+  // observed wins its bucket). This gives a member the whole-day wall trail on LOAD for ANY ticker
+  // — fresh, off-hours, or non-universe — instead of a 1-dot trail that must build up over many
+  // 15s ticks. Crucially it is NOT the earlier #160 bug, where reconstruction was injected into the
+  // rail presented AS observed with no distinction: here modeled and observed are visually and
+  // textually separated (dim/ghosted + a "modeled vs recorded" legend), so honesty is preserved.
+  // reconstructSessionRail is Redis-cached (a past session's bars + EOD chain are final) and never
+  // throws — an empty array on any failure degrades gracefully to the observed-only rail.
+  const modeledHistory = await reconstructSessionRail({ ticker, sessionYmd }).catch(
+    () => [] as WallHistorySample[]
+  );
+  const combined = mergeModeledUnderlay(baseHistory, modeledHistory);
+
+  // seedWallHistoryForDisplay remains the empty-case fallback (a single as-of-close snapshot when
+  // there is genuinely nothing to show); it no-ops here whenever the modeled underlay filled the
+  // trail, since it only seeds when history is empty.
   const initialWallHistory = seedWallHistoryForDisplay(
-    baseHistory,
+    combined,
     bars.map((b) => b.time),
     walls,
     gammaFlip,

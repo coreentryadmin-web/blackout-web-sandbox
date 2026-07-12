@@ -12,6 +12,14 @@ export type WallHistorySample = {
   /** VEX (dealer vanna) walls — heatmap cache (~8s SPX). Omitted on legacy Redis rows. */
   vexWalls?: GexWalls | null;
   vexFlip?: number | null;
+  /**
+   * True = this sample was RECONSTRUCTED (modeled from the EOD chain along the observed
+   * price path), not OBSERVED by the live recorder. Absent/false = a real recorded sample.
+   * Threaded through to the marker layer so modeled beads render dim/ghosted and honestly
+   * labeled — a real recorded sample at the same bucket always overwrites it (see
+   * mergeModeledUnderlay). Honesty is the whole point: modeled ≠ observed must be visible.
+   */
+  modeled?: boolean;
 };
 
 export function wallsForLens(sample: WallHistorySample, lens: VectorWallLens): GexWalls | null {
@@ -28,7 +36,7 @@ export function hasVexInHistory(history: WallHistorySample[]): boolean {
   return history.some((s) => Boolean(s.vexWalls?.callWalls?.length || s.vexWalls?.putWalls?.length));
 }
 
-export type StrikeTrailPoint = { time: number; pct: number };
+export type StrikeTrailPoint = { time: number; pct: number; modeled?: boolean };
 
 // ~one RTH session at 15s trail cadence (390 min × 4 ≈ 1560) plus headroom.
 const MAX_HISTORY = 1920;
@@ -92,10 +100,12 @@ export function trailsByStrike(
         map.set(strike, pts);
       }
       const last = pts[pts.length - 1];
+      // Carry the sample's modeled flag onto the emitted point so the marker layer can
+      // render reconstructed beads dim/ghosted vs solid observed ones (same bucket time).
       if (last?.time === sample.time) {
-        pts[pts.length - 1] = { time: sample.time, pct: level.pct };
+        pts[pts.length - 1] = { time: sample.time, pct: level.pct, modeled: sample.modeled };
       } else {
-        pts.push({ time: sample.time, pct: level.pct });
+        pts.push({ time: sample.time, pct: level.pct, modeled: sample.modeled });
       }
     }
   }
@@ -221,6 +231,31 @@ export function mergeWallHistory(
   const byTime = new Map<number, WallHistorySample>();
   for (const sample of local) byTime.set(sample.time, sample);
   for (const sample of remote) byTime.set(sample.time, sample);
+  const merged = [...byTime.values()].sort((a, b) => a.time - b.time);
+  return merged.length > MAX_HISTORY ? merged.slice(merged.length - MAX_HISTORY) : merged;
+}
+
+/**
+ * Compose the instant "modeled underlay" trail with the real recorded rail, keyed by bucket
+ * time. Modeled (reconstructed) samples fill the whole session immediately; wherever the live
+ * recorder actually OBSERVED a sample, that observed row OVERWRITES the modeled one at the same
+ * bucket. Result: a member sees the full-day wall trail on load (dim modeled beads), which solid
+ * observed beads replace as/where they exist — honestly labeled modeled vs observed, never the
+ * earlier #160 bug where reconstruction was presented AS observed with no distinction.
+ *
+ * Precedence: insert every modeled sample first (tagged modeled:true), THEN every observed sample
+ * (tagged modeled:false) — a later Map.set at the same key wins, so observed always takes its
+ * bucket. Empty observed → all-modeled; empty modeled → all-observed. Never throws. Respects the
+ * same MAX_HISTORY tail cap as mergeWallHistory.
+ */
+export function mergeModeledUnderlay(
+  observed: WallHistorySample[],
+  modeled: WallHistorySample[]
+): WallHistorySample[] {
+  const byTime = new Map<number, WallHistorySample>();
+  for (const sample of modeled ?? []) byTime.set(sample.time, { ...sample, modeled: true });
+  // Observed inserted second → overwrites the modeled entry sharing its bucket time.
+  for (const sample of observed ?? []) byTime.set(sample.time, { ...sample, modeled: false });
   const merged = [...byTime.values()].sort((a, b) => a.time - b.time);
   return merged.length > MAX_HISTORY ? merged.slice(merged.length - MAX_HISTORY) : merged;
 }

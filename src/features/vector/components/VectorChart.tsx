@@ -49,6 +49,7 @@ import {
   glowAlphaForPct,
   markerSizeForPct,
   widthForPct,
+  MODELED_ALPHA_SCALE,
 } from "@/features/vector/lib/vector-wall-visual";
 import {
   bucketWallHistoryForInterval,
@@ -356,15 +357,22 @@ function buildWallBeadMarkers(
     if (!points) continue;
     for (const p of points) {
       const time = p.time as Time;
-      const size = markerSizeForPct(p.pct);
-      const coreAlpha = alphaForPct(p.pct);
+      // Modeled (reconstructed) beads read as a DIM, slightly smaller ghost of an observed bead:
+      // same color/shape, alpha scaled to MODELED_ALPHA_SCALE and size to 0.8×, so a real recorded
+      // sample (solid, full size) is unmistakably "more real" wherever it overwrites the modeled
+      // one. Observed beads (modeled falsy) are unchanged.
+      const modeled = p.modeled === true;
+      const alphaScale = modeled ? MODELED_ALPHA_SCALE : 1;
+      const size = markerSizeForPct(p.pct) * (modeled ? 0.8 : 1);
+      const coreAlpha = alphaForPct(p.pct) * alphaScale;
+      const glowAlpha = glowAlphaForPct(p.pct) * alphaScale;
       // Halo + core — Skylit-style glow on dominant walls (per-bead size + opacity).
       markers.push({
         time,
         position: "atPriceMiddle",
         price: strike,
         shape: "circle",
-        color: withAlpha(baseColor, glowAlphaForPct(p.pct)),
+        color: withAlpha(baseColor, glowAlpha),
         size: size * 2.2,
       });
       markers.push({
@@ -1282,6 +1290,12 @@ export function VectorChart({
   const cursorTime = timelineRef.current[cursorIndex] ?? 0;
   const clockLabel = cursorTime ? formatReplayClock(cursorTime) : "—";
 
+  // Honesty label: any modeled (reconstructed) bead currently in the trail means the member is
+  // looking at a mix of modeled + recorded structure — say so explicitly. As live observed
+  // samples overwrite the modeled buckets (mergeWallHistory in the SSE handler drops the modeled
+  // flag), a fully-observed trail flips this false and the caption disappears on its own.
+  const hasModeledBeads = sessionHistory.some((s) => s.modeled === true);
+
   useEffect(() => {
     if (replayMode) {
       // Lens buttons stay enabled in replay; without a repaint the toolbar/legend
@@ -1381,6 +1395,13 @@ export function VectorChart({
         <p className="pointer-events-none absolute bottom-2 left-2 z-10 font-mono text-[10px] uppercase tracking-wide text-sky-300">
           SPY vol
         </p>
+        {/* Honesty label — visible whenever any modeled (reconstructed) bead is on screen, absent
+            once the trail is fully observed. Matches the SPY-vol caption's font-mono/opacity style. */}
+        {hasModeledBeads && (
+          <p className="pointer-events-none absolute bottom-2 right-2 z-10 font-mono text-[10px] uppercase tracking-wide text-sky-300/70">
+            ◇ dim = modeled · ● solid = recorded
+          </p>
+        )}
         {/* Off-hours the candles are the last close's and the chart can read as
             empty. A quiet corner affordance names the state and points at the
             one useful off-hours action — replay the session. */}

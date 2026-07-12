@@ -92,11 +92,14 @@ Three properties separate top-tier from mere:
 
 ## Operating principles (non-negotiable)
 - **Honesty over cosmetics** — never fabricate history or carry stale readings forward; disclose
-  staleness, show honest gaps. The bead rail is **time-honest**: it shows only point-in-time walls
-  the recorder actually observed during RTH, and an as-of-close snapshot when nothing was recorded —
-  never a full-day rail back-projected from the closing chain (that reads as dynamic but isn't,
-  because intraday OI history doesn't exist). Reconstruction stays where it's honestly labelled as a
-  model — the strike×time heatmap (#14) — not the rail.
+  staleness, show honest gaps. The bead rail distinguishes **observed** from **modeled** and never
+  blurs them: recorded point-in-time samples render solid; the reconstructed session (modeled from
+  the EOD chain along the real spot path) renders as a **dim, labeled "modeled" underlay** that the
+  observed samples overwrite wherever they exist (modeled-underlay decision, 2026-07-12, user-
+  approved — see `mergeModeledUnderlay`). This gives an instant full-day trail for any ticker while
+  keeping modeled ≠ observed visible (dim/ghosted + a "modeled vs recorded" legend) — the opposite
+  of the #160 bug, where reconstruction was injected into the rail *presented as observed*. Model
+  where labeled (this underlay + the strike×time heatmap #14); observed everywhere else.
 - **Small, tested, verified PRs** — one concept per PR, `tsc`+tests+`@apply` guard green, live-
   verified on staging where there's a runtime surface.
 - **Keep the stream fast** — new interpretation layers are on-demand or client-derived; never bloat

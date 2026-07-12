@@ -1,6 +1,12 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { alphaForPct, markerSizeForPct, radiusForPct, widthForPct } from "./vector-wall-visual";
+import {
+  alphaForPct,
+  markerSizeForPct,
+  radiusForPct,
+  widthForPct,
+  MODELED_ALPHA_SCALE,
+} from "./vector-wall-visual";
 
 test("alphaForPct: a 0% wall gets the faint visual floor, not fully invisible", () => {
   assert.equal(alphaForPct(0), 0.05);
@@ -51,4 +57,11 @@ test("markerSizeForPct: per-bead sizes span the Skylit-style range", () => {
   assert.equal(markerSizeForPct(0), 0.5);
   assert.equal(markerSizeForPct(7), 2.8);
   assert.ok(markerSizeForPct(3) < markerSizeForPct(6));
+});
+
+test("MODELED_ALPHA_SCALE: modeled beads render dim (< observed) but not invisible", () => {
+  // Dim enough to read as a ghosted secondary underlay, but still on-screen.
+  assert.ok(MODELED_ALPHA_SCALE > 0 && MODELED_ALPHA_SCALE < 1);
+  // A modeled bead of any strength is dimmer than the SAME-strength observed bead.
+  assert.ok(alphaForPct(7) * MODELED_ALPHA_SCALE < alphaForPct(7));
 });
