@@ -11,7 +11,7 @@ const RADIUS_MIN = 2;
 const RADIUS_MAX = 6;
 /** createSeriesMarkers `size` — per-bead, unlike LineSeries pointMarkersRadius (series-wide). */
 const MARKER_SIZE_MIN = 0.5;
-const MARKER_SIZE_MAX = 2.8;
+const MARKER_SIZE_MAX = 3.4;
 
 /** A wall at/above this share of total |gamma| renders at full visual weight (alpha 1, max size).
  *  Real per-strike GEX share tops out around 6–8% even for the session king (gamma is spread across
@@ -56,6 +56,47 @@ export function markerSizeForPct(pct: number): number {
 /** Halo opacity multiplier for the outer glow ring drawn behind each bead. */
 export function glowAlphaForPct(pct: number): number {
   return alphaForPct(pct) * (0.22 + magnitudeT(pct) * 0.18);
+}
+
+// ── RELATIVE (frame-normalized) bead strength ──────────────────────────────────────────────
+//
+// The absolute magnitudeT above saturates at a FIXED PCT_SATURATION (7%). That's right for the
+// UW oracle ladder, where gamma spreads across ~20 strikes so even the session king is only
+// ~6-8%. But the per-expiry Polygon-chain path (banded, far fewer strikes) concentrates gamma
+// into 20-40% on a SINGLE strike — so on stocks EVERY top wall clears 7% and clips to max size,
+// and they all render at identical thickness. That is the "all our beads look the same" report:
+// a 41% wall and a 14% wall were drawn the same fat because both saturated.
+//
+// The fix: for the bead rail, scale each bead against the STRONGEST wall currently in view
+// (`maxPct`) instead of a fixed absolute cap. The dominant wall is always the reference (t=1,
+// full weight); everything scales down from it — the Skylit fat-king / thin-straggler contrast,
+// preserved at any absolute concentration (6% SPX or 40% AMD alike).
+
+/** Contrast exponent for relative strength. >1 widens the gap so a half-strength wall reads
+ *  clearly thinner than the king rather than nearly as fat. */
+const REL_CONTRAST_EXP = 1.4;
+
+/** Frame-normalized strength in [0,1]: `pct` relative to the strongest wall in view (`maxPct`),
+ *  raised to REL_CONTRAST_EXP for separation. 0 for non-positive/non-finite input or maxPct ≤ 0. */
+export function relStrengthT(pct: number, maxPct: number): number {
+  if (!Number.isFinite(pct) || pct <= 0 || !(maxPct > 0)) return 0;
+  return Math.pow(Math.min(1, pct / maxPct), REL_CONTRAST_EXP);
+}
+
+/** Per-bead size relative to the frame's strongest wall (the Skylit-contrast bead path). */
+export function markerSizeForPctRel(pct: number, maxPct: number): number {
+  return MARKER_SIZE_MIN + relStrengthT(pct, maxPct) * (MARKER_SIZE_MAX - MARKER_SIZE_MIN);
+}
+
+/** Per-bead core opacity relative to the frame's strongest wall. */
+export function alphaForPctRel(pct: number, maxPct: number): number {
+  return ALPHA_MIN + relStrengthT(pct, maxPct) * (ALPHA_MAX - ALPHA_MIN);
+}
+
+/** Per-bead halo opacity relative to the frame's strongest wall (glow grows with strength). */
+export function glowAlphaForPctRel(pct: number, maxPct: number): number {
+  const t = relStrengthT(pct, maxPct);
+  return (ALPHA_MIN + t * (ALPHA_MAX - ALPHA_MIN)) * (0.22 + t * 0.18);
 }
 
 /**
