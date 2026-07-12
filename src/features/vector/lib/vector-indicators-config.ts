@@ -150,11 +150,27 @@ export function isVectorStructureId(v: unknown): v is VectorStructureId {
 }
 
 /**
- * Every toggleable indicator id — a moving-average FAMILY (not an individual line), a level, or a
- * structure toggle. This is what the enabled Set and the menu deal in; the chart expands each to
- * its lines/markers at draw time.
+ * "Oscillators" — momentum studies drawn in their OWN sub-pane BELOW the price pane (not overlaid
+ * on price, whose scale is unrelated). Each maps to a `vector-indicators` computer and a dedicated
+ * lightweight-charts pane. RSI needs `period+1` bars, MACD needs the slow EMA's seed, so a coarse
+ * timeframe with too few bars simply draws nothing (honest, like the levels).
  */
-export type VectorIndicatorId = VectorOverlayFamilyId | VectorLevelId | VectorStructureId;
+export type VectorOscillatorId = "rsi" | "macd";
+
+export function isVectorOscillatorId(v: unknown): v is VectorOscillatorId {
+  return v === "rsi" || v === "macd";
+}
+
+/**
+ * Every toggleable indicator id — a moving-average FAMILY (not an individual line), a level, a
+ * structure toggle, or an oscillator. This is what the enabled Set and the menu deal in; the chart
+ * expands each to its lines/markers/panes at draw time.
+ */
+export type VectorIndicatorId =
+  | VectorOverlayFamilyId
+  | VectorLevelId
+  | VectorStructureId
+  | VectorOscillatorId;
 
 /** Menu structure — the toggle menu renders straight from this (title + its items). */
 export const VECTOR_INDICATOR_GROUPS: ReadonlyArray<{
@@ -172,5 +188,12 @@ export const VECTOR_INDICATOR_GROUPS: ReadonlyArray<{
   {
     title: "Structure",
     items: [{ id: "market-structure", label: "Market structure (HH/HL · BOS/CHOCH)", color: "#22d3ee" }],
+  },
+  {
+    title: "Oscillators",
+    items: [
+      { id: "rsi", label: "RSI (14)", color: "#c084fc" },
+      { id: "macd", label: "MACD (12/26/9)", color: "#38bdf8" },
+    ],
   },
 ];
