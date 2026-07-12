@@ -1835,6 +1835,13 @@ export function VectorChart({
       displayBarTimeRef.current = display[display.length - 1]?.time ?? 0;
       applyDisplayBars(series, volumeSeriesRef.current, display);
       paintOverlays(display);
+      // Re-fit the time scale to the new bar COUNT. A higher timeframe has far fewer bars (a 6.5h
+      // session ≈ 390 1m bars but only ~26 at 15m), and lightweight-charts keeps the previous
+      // per-bar pixel spacing — so without a refit those few bars stay crammed into the right edge
+      // with a huge empty gap on the left, and the price-following overlays (VWAP/EMA/SMA) get
+      // squished into that sliver and look absent. fitContent recomputes the spacing so the bars —
+      // and their overlays — fill the chart width at every timeframe.
+      chart?.timeScale().fitContent();
       refreshTrails(lensRef.current);
       // Repaint the wall GUIDES too: the shown-count (wallCountForTimeframe) changes with the
       // timeframe, so a pure timeframe switch (no lens/tick change) must redraw the call/put
