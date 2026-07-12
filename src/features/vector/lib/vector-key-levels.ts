@@ -10,7 +10,7 @@
  */
 
 import type { VectorLevelId } from "./vector-indicators-config";
-import { latestSwing, swingRetracement, goldenPocket } from "./vector-fib-swing";
+import { dominantSwing, swingRetracement } from "./vector-fib-swing";
 
 export type LevelBar = { time: number; high: number; low: number; close: number };
 
@@ -169,20 +169,21 @@ export function levelLinesFor(
     });
   }
   if (id === "fib-auto") {
-    // Auto-swing fib (CTO#1): retrace the LAST completed fractal swing of the DISPLAYED bars — so
-    // the swing (and pocket) re-detects per timeframe — with the 61.8–65% golden pocket as the
-    // marquee zone. k=3 is the standard 7-bar fractal; null swing (not enough structure) draws
-    // nothing rather than a bogus level.
-    const swing = latestSwing(bars, 3);
+    // Auto-swing fib (CTO#1): retrace the DOMINANT swing of the DISPLAYED bars (the largest recent
+    // impulse, not the last noise wiggle) — so it re-detects per timeframe — with the 61.8–65%
+    // golden pocket as the marquee zone. A 0.15%-of-price floor means we draw NOTHING until a
+    // genuine swing exists rather than a hairline pocket clinging to spot. Every line is labelled
+    // by what it IS (swing high/low, the exact fib ratios) so there are no duplicate labels.
+    const ref = bars.length ? bars[bars.length - 1]!.close : 0;
+    const swing = dominantSwing(bars, 3, ref > 0 ? ref * 0.0015 : 0);
     if (!swing) return [];
-    const gp = goldenPocket(swing);
-    const dir = swing.direction === "up" ? "↑" : "↓";
     return [
-      { key: "afib-0", price: swingRetracement(swing, 0), label: `Swing${dir} 0%`, color: FIB_SWING_COLOR, style: "solid" },
-      { key: "afib-50", price: swingRetracement(swing, 0.5), label: "Swing 50%", color: FIB_KEY_COLOR, style: "dashed" },
-      { key: "afib-gp-a", price: gp.top, label: "Golden pocket 61.8–65%", color: FIB_GOLDEN_COLOR, style: "solid" },
-      { key: "afib-gp-b", price: gp.bottom, label: "Golden pocket 61.8–65%", color: FIB_GOLDEN_COLOR, style: "solid" },
-      { key: "afib-100", price: swingRetracement(swing, 1), label: `Swing${dir} 100%`, color: FIB_SWING_COLOR, style: "solid" },
+      { key: "afib-high", price: swing.high, label: `Swing high ${swing.high}`, color: FIB_SWING_COLOR, style: "solid" },
+      { key: "afib-50", price: swingRetracement(swing, 0.5), label: "Fib 50%", color: FIB_KEY_COLOR, style: "dashed" },
+      // The golden pocket = the 61.8%→65% band; each bound labelled by its own ratio.
+      { key: "afib-gp618", price: swingRetracement(swing, 0.618), label: "Golden pocket 61.8%", color: FIB_GOLDEN_COLOR, style: "solid" },
+      { key: "afib-gp65", price: swingRetracement(swing, 0.65), label: "Golden pocket 65%", color: FIB_GOLDEN_COLOR, style: "dashed" },
+      { key: "afib-low", price: swing.low, label: `Swing low ${swing.low}`, color: FIB_SWING_COLOR, style: "solid" },
     ];
   }
   if (id === "pdh-pdl-pdc") {

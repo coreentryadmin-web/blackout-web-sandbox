@@ -100,28 +100,33 @@ test("levelLinesFor: pdh-pdl-pdc + pivots need priorDay; null → [] (never a bo
   assert.deepEqual(levelLinesFor("pivots", [], undefined), []);
 });
 
-test("levelLinesFor fib-auto: golden pocket + swing levels from the LAST fractal swing; [] without structure", async () => {
+test("levelLinesFor fib-auto: DOMINANT swing, distinct labels, golden-pocket band; [] on noise/structureless", async () => {
   const { levelLinesFor } = await import("./vector-key-levels");
-  // Down swing: pivot high 105.5 (idx 3), pivot low 96.5 (idx 9), then partial recovery. k=3 needs
-  // 3 confirming bars each side.
+  // Dominant down swing: pivot high 105.5 (idx 3) → pivot low 96.5 (idx 9), range 9 (well over the
+  // 0.15%-of-~100 ≈ 0.15 floor), then partial recovery. k=3 = 7-bar fractal.
   const path = [100, 101, 102, 105, 103, 101, 99, 98, 97.5, 97, 98, 99, 100];
   const bars = path.map((p, i) => ({ time: 60 * i, high: p + 0.5, low: p - 0.5, close: p }));
   const lines = levelLinesFor("fib-auto", bars);
   const by = (k) => lines.find((l) => l.key === k);
 
-  // Down swing 105.5→96.5 (range 9): 0% = 96.5, 50% = 101, pocket = 96.5 + {0.618,0.65}·9 =
-  // {102.062, 102.35}, 100% = 105.5.
+  // 5 lines, every label distinct (the two-golden-pockets bug fix).
   assert.equal(lines.length, 5);
-  assert.equal(by("afib-0").price, 96.5);
-  assert.equal(by("afib-100").price, 105.5);
+  assert.equal(new Set(lines.map((l) => l.label)).size, 5, "no duplicate labels");
+  // Swing high/low labelled by what they are; pocket band = 96.5 + {0.618,0.65}·9 = {102.062, 102.35}.
+  assert.equal(by("afib-high").price, 105.5);
+  assert.ok(by("afib-high").label.startsWith("Swing high"));
+  assert.equal(by("afib-low").price, 96.5);
+  assert.ok(by("afib-low").label.startsWith("Swing low"));
   assert.equal(by("afib-50").price, 101);
-  assert.ok(Math.abs(by("afib-gp-b").price - 102.062) < 1e-9);
-  assert.ok(Math.abs(by("afib-gp-a").price - 102.35) < 1e-9);
-  assert.ok(by("afib-0").label.includes("↓"), "direction marked on the swing bounds");
-  // Pocket sits strictly inside the swing.
-  assert.ok(by("afib-gp-b").price > 96.5 && by("afib-gp-a").price < 105.5);
+  assert.equal(by("afib-50").label, "Fib 50%");
+  assert.ok(Math.abs(by("afib-gp618").price - 102.062) < 1e-9 && by("afib-gp618").label === "Golden pocket 61.8%");
+  assert.ok(Math.abs(by("afib-gp65").price - 102.35) < 1e-9 && by("afib-gp65").label === "Golden pocket 65%");
 
-  // No structure (monotone rise → no confirmed pivot high) → no lines, never a bogus level.
+  // NOISE guard: a hairline oscillation (~0.03% legs, far under the 0.15% floor) → NO lines, so
+  // the pocket never collapses to a useless sliver clinging to spot (the reported bug).
+  const noise = Array.from({ length: 15 }, (_, i) => { const p = 754 + (i % 2 ? 0.1 : -0.1); return { time: 60 * i, high: p + 0.05, low: p - 0.05, close: p }; });
+  assert.deepEqual(levelLinesFor("fib-auto", noise), []);
+  // Structureless (monotone rise) → [] too.
   const flat = Array.from({ length: 13 }, (_, i) => ({ time: 60 * i, high: 100 + i + 0.5, low: 100 + i - 0.5, close: 100 + i }));
   assert.deepEqual(levelLinesFor("fib-auto", flat), []);
 });
