@@ -104,6 +104,9 @@ export function VectorPageShell({
     })
   );
   const [confluence, setConfluence] = useState<string[] | null>(null);
+  // Always-on technicals lines (VWAP/EMA/RSI/MACD/pocket/structure) — narrated by the terminal even
+  // when the member hasn't toggled the overlays on the chart.
+  const [technicals, setTechnicals] = useState<string[]>([]);
   const [magnet, setMagnet] = useState<GammaMagnet | null>(() =>
     deriveGammaMagnet({
       spot: initialBars.length ? initialBars[initialBars.length - 1]!.close : null,
@@ -209,6 +212,7 @@ export function VectorPageShell({
               onConfluenceChange={setConfluence}
               onWallIntegrityChange={setWallIntegrity}
               onDteHorizonChange={setDteHorizon}
+              onTechnicalsChange={setTechnicals}
               leadSlot={chartLead}
               trailSlot={chartFreshness}
               regimeSlot={<VectorRegimeBanner regime={regime} />}
@@ -226,6 +230,7 @@ export function VectorPageShell({
               proximity={proximity}
               magnet={magnet}
               confluence={confluence}
+              technicals={technicals}
               wallIntegrity={wallIntegrity}
             />
           </div>

@@ -24,6 +24,9 @@ type Props = {
   magnet?: GammaMagnet | null;
   /** Ranked confluence callouts (pre-formatted by the chart's emit) — null when no zones. */
   confluence?: string[] | null;
+  /** Always-on technicals lines (VWAP/EMA/RSI/MACD/pocket/structure) — narrated even with the chart
+   *  overlays toggled OFF. Empty while warming up. Pre-formatted by the chart (which knows spot). */
+  technicals?: string[];
   wallIntegrity?: { call: WallIntegrity | null; put: WallIntegrity | null };
 };
 
@@ -39,6 +42,7 @@ export function VectorDeskTerminal({
   proximity,
   magnet,
   confluence,
+  technicals,
   wallIntegrity,
 }: Props) {
   const normalized = normalizeVectorTicker(ticker);
@@ -119,9 +123,18 @@ export function VectorDeskTerminal({
         });
       }
     }
+    // TECHNICALS — the trend/momentum read (VWAP, EMA stack, RSI, MACD, golden pocket, structure),
+    // narrated CONTINUOUSLY even when the member hasn't toggled those overlays on the chart. The
+    // chart computes it from the shown bars regardless of the enabled-overlay set; empty = warming up.
+    if (technicals?.length) {
+      intel.push({ icon: "section", tone: "accent", text: "TECHNICALS — trend & momentum", indent: 1 });
+      for (const t of technicals) {
+        intel.push({ icon: "level", tone: "neutral", text: t, indent: 2 });
+      }
+    }
     if (intel.length) return [base[0]!, ...intel, ...base.slice(1)];
     return base;
-  }, [isSpx, spxPlay, spxPlayError, liveSession, normalized, lens, wallEvents, proximity, magnet, confluence, wallIntegrity]);
+  }, [isSpx, spxPlay, spxPlayError, liveSession, normalized, lens, wallEvents, proximity, magnet, confluence, technicals, wallIntegrity]);
 
   const cmd = isSpx ? "playbook --spx --vector-desk" : `vector --ticker ${normalized} --structure`;
 
