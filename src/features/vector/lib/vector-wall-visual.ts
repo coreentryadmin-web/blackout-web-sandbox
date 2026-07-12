@@ -60,10 +60,13 @@ export function glowAlphaForPct(pct: number): number {
 
 /**
  * Alpha multiplier for MODELED (reconstructed) beads vs OBSERVED (recorded) ones. Modeled beads
- * render at 40% of the observed alpha — dim enough to read as a "ghosted/modeled" underlay that
- * is clearly secondary to the solid recorded beads, without disappearing entirely. Honesty is the
- * whole point (modeled ≠ observed must be visible); a single dim/shrink pass keeps the marker
- * plugin simple (no second shape) while still separating the two visually. Kept as one shared
- * constant so the core bead, its glow halo, and the legend all agree on "dim = modeled."
+ * must read as a FAINT GHOST underlay — clearly secondary to solid recorded beads and to the
+ * candles — not a competing wall. The first pass used 0.4, but a 30%-share wall at 0.4 alpha still
+ * renders as a bright, solid full-width row (verified live on AMZN/TSLA: the modeled reconstruction
+ * back-projects the closing chain across every bucket → full-width rows, and at 0.4 they looked
+ * indistinguishable from observed walls — re-creating the "axis-to-axis walls" the modeled underlay
+ * was supposed to visually disown). 0.15 makes even the session-king strike a quiet ghost, so the
+ * moment a real observed sample overwrites it the solid bead is unmistakably "more real."
+ * Honesty is the whole point: modeled ≠ observed must be visible at a glance.
  */
-export const MODELED_ALPHA_SCALE = 0.4;
+export const MODELED_ALPHA_SCALE = 0.15;

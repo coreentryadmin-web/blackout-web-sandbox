@@ -59,9 +59,12 @@ test("markerSizeForPct: per-bead sizes span the Skylit-style range", () => {
   assert.ok(markerSizeForPct(3) < markerSizeForPct(6));
 });
 
-test("MODELED_ALPHA_SCALE: modeled beads render dim (< observed) but not invisible", () => {
-  // Dim enough to read as a ghosted secondary underlay, but still on-screen.
-  assert.ok(MODELED_ALPHA_SCALE > 0 && MODELED_ALPHA_SCALE < 1);
-  // A modeled bead of any strength is dimmer than the SAME-strength observed bead.
-  assert.ok(alphaForPct(7) * MODELED_ALPHA_SCALE < alphaForPct(7));
+test("MODELED_ALPHA_SCALE: modeled beads render as a FAINT ghost (< observed) but not invisible", () => {
+  // Faint enough to read as a ghosted secondary underlay — verified live that 0.4 was too bright
+  // (a 30% wall still looked solid/full-width). Must stay well under a quarter of observed weight,
+  // and above zero so it never fully vanishes.
+  assert.ok(MODELED_ALPHA_SCALE > 0 && MODELED_ALPHA_SCALE <= 0.2);
+  // Even the session-king strike is a quiet ghost: a full-strength modeled bead is dimmer than a
+  // MID-strength observed bead, so a real recorded sample always reads as "more real."
+  assert.ok(alphaForPct(100) * MODELED_ALPHA_SCALE < alphaForPct(3));
 });
