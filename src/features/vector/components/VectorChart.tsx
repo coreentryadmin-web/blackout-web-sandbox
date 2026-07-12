@@ -71,6 +71,7 @@ import {
   type VectorWallLens,
   type WallHistorySample,
 } from "@/features/vector/lib/vector-wall-history";
+import { pickKingStrikes, kingAnchorTitle } from "@/features/vector/lib/vector-king-anchor";
 import {
   buildReplayTimeline,
   clampTimelineIndex,
@@ -367,6 +368,52 @@ function applyFlipGuide(
   }
 }
 
+/**
+ * King anchor — a persistent SOLID line at the single dominant call/put wall (member ask: "mark
+ * the King node / anchor on the chart"). Distinct from the walls-as-beads treatment (#173) and the
+ * dashed flip line: only the two strongest strikes get a line, styled as an anchor (solid, brighter,
+ * ⚓ title), so a member always has the key level to trade against. The strike is chosen by
+ * pickKingStrikes from the HORIZON-SCOPED walls, so the anchor re-scopes with the DTE toggle and is
+ * redrawn every refreshOverlays (live + replay). Null strike → the line is removed.
+ */
+function applyKingAnchor(
+  series: ISeriesApi<"Candlestick">,
+  lineRef: React.MutableRefObject<IPriceLine | null>,
+  strike: number | null,
+  color: string
+): void {
+  if (strike == null || !Number.isFinite(strike) || strike <= 0) {
+    if (lineRef.current) {
+      series.removePriceLine(lineRef.current);
+      lineRef.current = null;
+    }
+    return;
+  }
+  const title = kingAnchorTitle(strike);
+  const lineColor = withAlpha(color, 0.85);
+  if (lineRef.current) {
+    lineRef.current.applyOptions({
+      price: strike,
+      title,
+      color: lineColor,
+      lineWidth: 2,
+      lineStyle: LineStyle.Solid,
+      lineVisible: true,
+      axisLabelVisible: true,
+    });
+  } else {
+    lineRef.current = series.createPriceLine({
+      price: strike,
+      color: lineColor,
+      lineWidth: 2,
+      lineStyle: LineStyle.Solid,
+      lineVisible: true,
+      axisLabelVisible: true,
+      title,
+    });
+  }
+}
+
 function applyWallsToSeries(
   series: ISeriesApi<"Candlestick">,
   callGuideRefs: React.MutableRefObject<(IPriceLine | null)[]>,
@@ -530,6 +577,11 @@ export function VectorChart({
   const beadStrikesRef = useRef<{ call: number[]; put: number[] }>({ call: [], put: [] });
   const dpGuideRefs = useRef<(IPriceLine | null)[]>([]);
   const flipGuideRef = useRef<IPriceLine | null>(null);
+  // King anchors — solid lines at the single dominant call/put wall (member ask). Re-scope with the
+  // DTE horizon (they read the same horizon-scoped walls refreshOverlays draws) and are cleared on
+  // ticker switch / unmount alongside the flip line.
+  const kingCallLineRef = useRef<IPriceLine | null>(null);
+  const kingPutLineRef = useRef<IPriceLine | null>(null);
   const callBeadsRef = useRef<ISeriesMarkersPluginApi<Time> | null>(null);
   const putBeadsRef = useRef<ISeriesMarkersPluginApi<Time> | null>(null);
   const wallHistoryRef = useRef<WallHistorySample[]>(initialWallHistory);
@@ -731,6 +783,11 @@ export function VectorChart({
       // axis keeps auto-widening to reveal the bead rows.
       applyWallsToSeries(series, callGuideRefs, putGuideRefs, EMPTY_WALLS, activeLens, 0);
       applyFlipGuide(series, flipGuideRef, flip, v.flipLabel, v.flipColor);
+      // King anchors: solid lines at the dominant call/put wall of the ACTIVE (horizon-scoped) walls,
+      // so the anchor re-scopes with the DTE toggle and redraws in replay (this runs there too).
+      const kings = pickKingStrikes(walls);
+      applyKingAnchor(series, kingCallLineRef, kings.call, v.callColor);
+      applyKingAnchor(series, kingPutLineRef, kings.put, v.putColor);
       applyDarkPoolGuides(series, dpGuideRefs, []);
       void dp; // dark-pool level lines intentionally not drawn (clean axis); kept in the signature
       //         so callers/consumers of dp elsewhere are unaffected.
@@ -1381,6 +1438,10 @@ export function VectorChart({
       putGuideRefs.current = emptyGuideRefs();
       dpGuideRefs.current = [];
       flipGuideRef.current = null;
+      // chart.remove() disposes the series (and its price lines) — just drop the stale refs so a
+      // remount (ticker switch) starts clean instead of calling removePriceLine on a dead series.
+      kingCallLineRef.current = null;
+      kingPutLineRef.current = null;
       callBeadsRef.current = null;
       putBeadsRef.current = null;
       volumeSeriesRef.current = null;
