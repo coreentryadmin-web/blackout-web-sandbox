@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   bucketWallHistoryForInterval,
+  composeHorizonTrail,
   liveTrailAnchorSec,
   mergeModeledUnderlay,
   mergeWallHistory,
@@ -379,4 +380,36 @@ test("narrowedHorizonTrail: narrowed GEX horizon → single scoped column; all/v
   assert.equal(narrowedHorizonTrail("weekly", "gex", null, 1_700_000_000, 100.5), null);
   // No last-bar time → null.
   assert.equal(narrowedHorizonTrail("weekly", "gex", scoped, 0, 100.5), null);
+});
+
+test("composeHorizonTrail: recorded per-horizon trail preferred, current column unioned in", () => {
+  const w = walls([105], [95]);
+  const recorded: WallHistorySample[] = [
+    { time: 1_700_000_000, walls: w, gammaFlip: 100 },
+    { time: 1_700_000_900, walls: w, gammaFlip: 100 },
+  ];
+  const current: WallHistorySample[] = [{ time: 1_700_001_800, walls: w, gammaFlip: 101 }];
+
+  // Recorded + current → the frozen clusters plus the newest live column, unioned by time.
+  const both = composeHorizonTrail(recorded, current);
+  assert.ok(both && both.length === 3, "recorded (2) + fresher current column (1) → 3 buckets");
+  assert.equal(both![both!.length - 1]!.time, 1_700_001_800, "newest bucket is the current column");
+
+  // Current column at a time the recorder already wrote → overwrites, never duplicates.
+  const overlap: WallHistorySample[] = [{ time: 1_700_000_900, walls: w, gammaFlip: 102 }];
+  const merged = composeHorizonTrail(recorded, overlap);
+  assert.equal(merged!.length, 2, "same-bucket current column overwrites, not appends");
+  assert.equal(merged![1]!.gammaFlip, 102, "current column wins its bucket");
+
+  // No recorded trail → fall back to the single current column (pre-recording behaviour).
+  assert.deepEqual(composeHorizonTrail([], current), current);
+  assert.deepEqual(composeHorizonTrail(null, current), current);
+
+  // Recorded only (e.g. after close, no live column) → the frozen recorded trail as-is.
+  assert.equal(composeHorizonTrail(recorded, null), recorded);
+  assert.equal(composeHorizonTrail(recorded, []), recorded);
+
+  // Neither → null so the caller draws the blended "All" rail (beads never blank on a toggle).
+  assert.equal(composeHorizonTrail([], []), null);
+  assert.equal(composeHorizonTrail(null, null), null);
 });

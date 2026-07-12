@@ -58,6 +58,7 @@ import {
 } from "@/features/vector/lib/vector-wall-visual";
 import {
   bucketWallHistoryForInterval,
+  composeHorizonTrail,
   hasVexInHistory,
   liveTrailAnchorSec,
   mergeWallHistory,
@@ -549,6 +550,12 @@ export function VectorChart({
   // active the flip line re-scopes to the same per-expiry ladder the walls came from
   // (server returns it on /api/market/vector/walls). null = follow the live stream flip.
   const horizonFlipRef = useRef<number | null>(null);
+  // Recorded per-horizon bead trail (the FROZEN point-in-time clusters for the active narrowed
+  // horizon), fetched from /api/market/vector/wall-history on each DTE toggle. Empty for "all"
+  // (that rail is SSR-seeded into wallHistoryRef) or when nothing was recorded for the horizon.
+  // refreshTrails prefers this over the single-column narrowedHorizonTrail so weekly/monthly show
+  // the accumulated clusters after close — the after-hours analogue of the live "All" rail.
+  const horizonHistoryRef = useRef<WallHistorySample[]>([]);
   const dteHorizonRef = useRef<VectorDteHorizon>("all");
   // Dedupe regime emissions — the read only changes when posture/flip/levels
   // shift, not every tick, so we skip identical reads to avoid re-rendering the
@@ -657,16 +664,31 @@ export function VectorChart({
     const series = seriesRef.current;
     if (!series) return;
     const v = lensVisuals(activeLens);
-    // NARROWED DTE HORIZON (0DTE/weekly/monthly): the recorded session rail is BLENDED near-term
-    // only — no per-horizon point-in-time history exists — so replaying it under a narrowed toggle
-    // would (wrongly) show the same beads as "All" (member finding: "select 0DTE, still shows All's
-    // walls"). narrowedHorizonTrail returns the CURRENT horizon-scoped walls (fetched into
-    // horizonWallsRef by the DTE effect) as a single point-in-time column at the latest bar — the
-    // honest "current 0DTE/weekly/monthly structure", distinct from All, refreshed each 15s in RTH.
-    // It returns null for All / VEX / empty-scope, in which case we draw the blended rail as before.
+    // NARROWED DTE HORIZON (0DTE/weekly/monthly) — two sources, in precedence order:
+    //   1. horizonHistoryRef: the RECORDED per-horizon trail (composite-keyed rail, PR #186),
+    //      fetched by the DTE effect. This is the full point-in-time cluster history for the
+    //      horizon — the after-close analogue of the blended "All" rail — so weekly/monthly show
+    //      accumulated frozen clusters, not a single column (member ask). Merged with (2) so the
+    //      newest live structure paints even before the 5-min recorder writes the current bucket.
+    //   2. narrowedHorizonTrail: the CURRENT horizon-scoped walls (fetched into horizonWallsRef by
+    //      the DTE effect, refreshed each 15s in RTH) as ONE column at the latest bar — the honest
+    //      "current 0DTE/weekly/monthly structure", used alone before any history is recorded.
+    // Both are null/empty for All / VEX / empty-scope, in which case we draw the blended rail as
+    // before (member finding "select 0DTE, still shows All's walls" is still fixed either way).
     const lastBarTime = minuteBarsRef.current[minuteBarsRef.current.length - 1]?.time ?? 0;
+    const horizon = dteHorizonRef.current;
+    const currentColumn = narrowedHorizonTrail(
+      horizon,
+      activeLens,
+      horizonWallsRef.current,
+      lastBarTime,
+      horizonFlipRef.current
+    );
+    // Gate the recorded trail on horizon+lens here; composeHorizonTrail owns the merge precedence.
+    const recordedTrail =
+      horizon !== "all" && activeLens === "gex" ? horizonHistoryRef.current : null;
     const history: WallHistorySample[] =
-      narrowedHorizonTrail(dteHorizonRef.current, activeLens, horizonWallsRef.current, lastBarTime, horizonFlipRef.current) ??
+      composeHorizonTrail(recordedTrail, currentColumn) ??
       (liveSessionRef.current && !replayModeRef.current
         ? trimHistoryForLiveTrails(
             wallHistoryRef.current,
@@ -905,9 +927,34 @@ export function VectorChart({
     if (dteHorizon === "all") {
       horizonWallsRef.current = null;
       horizonFlipRef.current = null;
+      horizonHistoryRef.current = [];
       repaintLive();
       return;
     }
+
+    // Clear any prior horizon's recorded trail up front so a toggle never briefly shows the
+    // previous horizon's clusters while this fetch is in flight.
+    horizonHistoryRef.current = [];
+
+    // Fetch the RECORDED per-horizon trail (frozen clusters) in parallel with the current walls.
+    // Separate from fetchScoped so a slow/empty history read never delays the current-structure
+    // repaint. Guarded on the still-active horizon + not cancelled, same as fetchScoped.
+    const fetchHistory = async () => {
+      try {
+        const res = await fetch(
+          `/api/market/vector/wall-history?ticker=${encodeURIComponent(ticker)}&dte=${dteHorizon}` +
+            `&session=${encodeURIComponent(sessionYmd)}`
+        );
+        if (cancelled || dteHorizonRef.current !== dteHorizon || !res.ok) return;
+        const data = (await res.json()) as { history?: WallHistorySample[] };
+        if (cancelled || dteHorizonRef.current !== dteHorizon) return;
+        horizonHistoryRef.current = Array.isArray(data.history) ? data.history : [];
+        repaintLive();
+      } catch {
+        // History is a supplementary overlay — on any failure keep the single-column fallback
+        // (horizonHistoryRef stays []), which refreshTrails already draws. No repaint needed.
+      }
+    };
 
     const fetchScoped = async () => {
       try {
@@ -938,14 +985,20 @@ export function VectorChart({
     };
 
     void fetchScoped();
+    void fetchHistory();
+    // Only the current walls need the 15s cadence; the recorded trail advances at the recorder's
+    // 5-min bucket, so refresh it on a slower interval in RTH (and once, above, off-hours).
     const id = liveSession ? setInterval(fetchScoped, 15_000) : null;
+    const histId = liveSession ? setInterval(fetchHistory, 60_000) : null;
     return () => {
       cancelled = true;
       if (id) clearInterval(id);
+      if (histId) clearInterval(histId);
     };
   }, [
     dteHorizon,
     ticker,
+    sessionYmd,
     liveSession,
     // chartReady: at mount this effect runs BEFORE the chart-creation effect builds the series, so
     // repaintLive() bails on !seriesRef.current and the terminal stays blank until the first SSE
