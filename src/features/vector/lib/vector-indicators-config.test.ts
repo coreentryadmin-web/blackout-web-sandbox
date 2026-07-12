@@ -87,11 +87,12 @@ test("overlayFamilyAvailability: full / partial / none track the bar count vs me
   assert.equal(overlayFamilyAvailability("sma", 200).status, "full");
 });
 
-test("VECTOR_INDICATOR_GROUPS: covers every family + level id exactly once (the toggle space)", () => {
+test("VECTOR_INDICATOR_GROUPS: covers every family + level + structure id exactly once (the toggle space)", () => {
   const grouped = VECTOR_INDICATOR_GROUPS.flatMap((g) => g.items.map((i) => i.id));
   const expected = [
     ...VECTOR_OVERLAY_FAMILIES.map((f) => f.id),
     ...VECTOR_LEVELS.map((l) => l.id),
+    "market-structure",
   ];
   assert.deepEqual([...grouped].sort(), [...expected].sort());
 });

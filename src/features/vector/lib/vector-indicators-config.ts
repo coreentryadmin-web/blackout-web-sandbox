@@ -139,11 +139,22 @@ export function isVectorLevelId(v: unknown): v is VectorLevelId {
 }
 
 /**
- * Every toggleable indicator id — a moving-average FAMILY (not an individual line) plus a level.
- * This is what the enabled Set and the menu deal in; the chart expands each family to its member
- * lines at draw time.
+ * "Structure" indicators — chart MARKERS (pivot labels + BOS/CHOCH flags), not lines or series.
+ * One toggle; the chart maps it to a dedicated series-markers instance fed by
+ * `buildStructureMarkers`. Same opt-in/default-off contract as everything else in the menu.
  */
-export type VectorIndicatorId = VectorOverlayFamilyId | VectorLevelId;
+export type VectorStructureId = "market-structure";
+
+export function isVectorStructureId(v: unknown): v is VectorStructureId {
+  return v === "market-structure";
+}
+
+/**
+ * Every toggleable indicator id — a moving-average FAMILY (not an individual line), a level, or a
+ * structure toggle. This is what the enabled Set and the menu deal in; the chart expands each to
+ * its lines/markers at draw time.
+ */
+export type VectorIndicatorId = VectorOverlayFamilyId | VectorLevelId | VectorStructureId;
 
 /** Menu structure — the toggle menu renders straight from this (title + its items). */
 export const VECTOR_INDICATOR_GROUPS: ReadonlyArray<{
@@ -157,5 +168,9 @@ export const VECTOR_INDICATOR_GROUPS: ReadonlyArray<{
   {
     title: "Key levels",
     items: VECTOR_LEVELS.map((l) => ({ id: l.id, label: l.label, color: l.color })),
+  },
+  {
+    title: "Structure",
+    items: [{ id: "market-structure", label: "Market structure (HH/HL · BOS/CHOCH)", color: "#22d3ee" }],
   },
 ];
