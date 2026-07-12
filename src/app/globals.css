@@ -8459,10 +8459,11 @@ body::before {
   }
 
   @media (min-width: 1280px) {
-    /* Thin ladder · flexible chart · wide terminal. The ladder holds only a few dense rows so it can
-       be narrow; the terminal is the main scroll surface so it gets the width. */
+    /* Proportions per member spec: ~10% ladder · ~60% chart · ~30% terminal. The ladder holds only a
+       few dense rows so it stays thin (min 96px so it never collapses); the terminal is the main
+       scroll surface so it gets ~30%; the chart takes the remaining ~60%. */
     .vector-chart-terminal-grid {
-      grid-template-columns: minmax(128px, 156px) minmax(0, 1fr) minmax(340px, 420px);
+      grid-template-columns: minmax(96px, 10%) minmax(0, 1fr) minmax(300px, 30%);
     }
     .vector-ladder-rail,
     .vector-chart-terminal-chart,
