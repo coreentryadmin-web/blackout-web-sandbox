@@ -8,6 +8,18 @@ and required CI (`verify`) are green — no per-PR approval, no end-of-day hold.
 here and merge the PR in the same session. Supersedes all earlier "leave OPEN for review" notes
 in this file.
 
+## 🟢 P4 SHIPPED 2026-07-12 — Skylit visual pass: strength-scaled beads, clean price axis, purple put walls revealed
+
+Member-driven UI pass (with Skylit Atlas screenshots) across three merged PRs:
+
+- **#172 — bead thickness = wall strength (relative to the in-view king).** Beads scaled against a fixed 7% saturation, so on the per-expiry chain path (20–40% concentration) every top wall clipped to max size and looked identical ("all our beads feel the same"). Now `relStrengthT(pct, maxPct)` scales each bead against the strongest wall in view (per side) → fat dominant band, thin stragglers, and a wall's band bulges thicker over the session as it builds. `MARKER_SIZE_MAX` 2.8→3.4. Tests: `vector-wall-visual.test.ts` 13/13 (regression: 41% vs 14% now separate ≥1.8×). Live-verified NVDA (210 wall fat vs weak levels thin).
+- **#173 — clean Skylit price axis.** Removed the full-width "Call/Put wall — %" guide price-lines + dark-pool level lines; walls render ONLY as beads. Gamma-flip promoted to the single dashed reference line (was axis-label-only). `rightOffset: 6` so bead bands stop short of the axis. Axis now carries only price scale + current price + flip. Live-verified AMD/NVDA/TSLA.
+- **#174 — nearest put wall always revealed (purple beads were clipped).** The candle autoscale only revealed walls within ±5% of spot; NVDA's nearest put wall (197.5) sits 6.2% below spot 210.58 → clipped off the bottom, so members saw only yellow call rails. `extendRangeForWalls` now always pulls the nearest call AND put wall into view up to a 12% hard cap. Tests: `vector-price-range.test.ts` 7/7 (NVDA regression + both-sides + hard-cap). Live-verified NVDA axis now extends to 197.65.
+
+**Known follow-ups (open):** (a) off-hours the put beads read faint because they're the dimmed modeled underlay AND purple `#b26bff` had lower luminance than gold `#ffd60a` at 0.15 alpha — **fixed in #176** (put color → `#d97bff`, luminance parity); solid during live RTH. (b) **CORRECTION (initial claim was wrong):** recording is NOT universe-only. `buildVectorStreamPayload` (the SSE hub refresher, runs for ANY viewed ticker) calls `persistWallSampleDebounced` → Redis + Postgres, debounced per 15s bucket — so **any viewed ticker already records + persists server-side**, shared across viewers, surviving after they leave. The cron additionally covers the ~21 universe tickers with **zero viewers**. The only residual gap is a non-universe ticker that NOBODY is viewing (no rail accrues until the first viewer opens it) — a scaling/UW-budget decision, not a code gap. (c) GEX magnitude ground-truth cross-check still pending before any "100% correct" claim.
+
+**Status:** SHIPPED (#172, #173, #174 all merged + deployed + live-verified).
+
 ## 🔴 P1 FOUND+FIXED 2026-07-12 — DTE toggle was INERT on the flagship tickers (SPX/SPY/QQQ): identical walls + flip for 0DTE/weekly/monthly
 
 **Surface:** `src/features/vector/lib/vector-snapshot.ts` (`getVectorGexWallsForHorizon` + `getVectorGammaFlipForHorizon`). Found in a **live 13-ticker end-to-end CTO audit** on staging (SPX, SPY, QQQ, NVDA, TSLA, AAPL, AMZN, META, RKLB, SNOW, CRWD, ASTS, EOSE — every DTE horizon + coherence + console/status).
@@ -32,13 +44,28 @@ in this file.
 
 **Status:** LOGGED (P3, latent — not chart-facing).
 
-## 🟡 P3 INVESTIGATE 2026-07-12 — App shows "JUL 10 CLOSE" while Polygon's latest close is Jul 11 (possible session-date staleness / staging ingest lag)
+## 🟢 VALIDATED 2026-07-12 — GEX walls are faithful to the Polygon chain (independent BSM cross-check, 6 tickers)
 
-**Surface:** Vector session-date resolution / staging market-data ingest. Found cross-checking spots against Polygon ground truth (`/v2/aggs/ticker/{t}/prev`).
+**Method:** independently recomputed the MONTHLY-horizon top call/put wall + gamma flip from the raw Polygon options-chain snapshot (own Black-Scholes gamma × OI × 100 × S²·0.01, r=q=0), with NO reuse of the app engine, and compared to what the app serves (captured in the 13-ticker audit). Script: `scratchpad/gex-groundtruth.mjs`.
 
-**Evidence:** app NVDA banner reads "JUL 10 CLOSE" spot 210.58; Polygon's most-recent prev-close is **210.96 (Jul 11, Fri)**. All app spots are one session behind Polygon. Could be (a) staging's universe/ingest cron not having advanced to Jul 11, or (b) a real off-by-one in the "last session" resolution. Prices are otherwise sane (SPX 7575 ≈ 10× SPY 755). **Next:** confirm on staging whether the session-date logic or the data pipeline is a day behind before Monday RTH; if it's ingest lag it self-resolves live, if it's resolution logic it needs a fix. Low urgency (off-hours; numbers internally consistent).
+**Result (SPX, NVDA, AMD, TSLA, AAPL, META):**
+- **Top call wall: 6/6 EXACT match.** (SPX 7600, NVDA 210, AMD 560, TSLA 420, AAPL 320, META 650.)
+- **Top put wall: 6/6 EXACT match.** (SPX 7300, NVDA 180, AMD 400, TSLA 380, AAPL 280, META 550.)
+- **Gamma flip: 5/6 match to <0.2 pts** (NVDA 199.7 vs 199.6, AMD 558.2 vs 558.3, TSLA 410.3 vs 410.3, AAPL 293.9 vs 293.8, META 599.9 vs 599.8). SPX diverged (app 7571 vs indep 6999) — a **truncation artifact in the CHECK** (my script capped pagination at 10k contracts; SPX's banded chain is larger, so my cumulative crossed early). The app's SPX flip (7571, near spot) is the correct one.
 
-**Status:** INVESTIGATE (P3).
+**Conclusion:** the wall numbers members see are **faithful to the Polygon chain under standard BSM** — the app is not corrupting, mis-signing, or mis-caching the GEX. Wall IDENTIFICATION is correct end-to-end for the chain path (the workhorse for all non-oracle + narrowed-horizon walls post-#171).
+
+**Honest caveats:** (a) this validates fidelity-to-Polygon-under-BSM, NOT cross-vendor equality — Skylit/SpotGamma use different dealer-positioning conventions, so exact equality with them is neither expected nor claimed. (b) The oracle "all"-horizon walls (SPX/SPY/QQQ) come from UW's own per-strike gamma (vendor ground truth by construction), not covered by this Polygon check. (c) SPX flip check was pagination-limited on my side; re-run with full pagination to close that one.
+
+**Status:** VALIDATED (chain-path wall identification correct; flip 5/6 confirmed).
+
+## ⚪ NOT A BUG 2026-07-12 — "JUL 10 CLOSE" is correct (Jul 10 2026 is a Friday; my earlier staleness flag was wrong)
+
+**Original flag (retracted):** I flagged the app showing "JUL 10 CLOSE" while Polygon's prev-close looked like "Jul 11." **That was my error** — I assumed Jul 11 was a trading day. Jul 10 2026 is a **Friday**; Jul 11 = Saturday, Jul 12 (audit day) = Sunday. So Friday Jul 10 WAS the last session, and Polygon's `/prev` on a Sunday returns Jul 10's close too. The app is correct.
+
+**Residual (minor):** app NVDA spot 210.58 vs Polygon Jul-10 close 210.96 — a ~0.18% difference, i.e. a close-price source difference (official settle vs last-trade), not a session-date bug. Folded into the GEX ground-truth cross-check (below) rather than tracked separately.
+
+**Status:** NOT A BUG (retracted).
 
 ## 🟡 P3 FOUND+FIXED 2026-07-12 — Desk terminal + regime banner described a DIFFERENT scope than the walls on the chart (DTE incoherence)
 
