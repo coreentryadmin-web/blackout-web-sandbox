@@ -17,6 +17,7 @@
     "test": "PLAYBOOK_VERDICT_GUARD_ASSERT=1 node --import tsx --experimental-test-module-mocks --test \"src/**/*.test.ts\"",
     "validate:deploy": "node scripts/validate-deploy.mjs",
     "validate:vector-push-gate": "node scripts/vector-staging-e2e.mjs",
+    "validate:vector-hardcore": "node scripts/vector-hardcore-e2e.mjs",
     "validate:staging": "node scripts/staging-validate.mjs",
     "validate:staging-rth": "node scripts/staging-rth-check.mjs",
     "validate:staging-live": "node scripts/staging-live-check.mjs",
