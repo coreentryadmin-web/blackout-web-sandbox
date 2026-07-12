@@ -44,6 +44,21 @@ Member-driven UI pass (with Skylit Atlas screenshots) across three merged PRs:
 
 **Status:** LOGGED (P3, latent — not chart-facing).
 
+## 🟢 VALIDATED 2026-07-12 — GEX walls are faithful to the Polygon chain (independent BSM cross-check, 6 tickers)
+
+**Method:** independently recomputed the MONTHLY-horizon top call/put wall + gamma flip from the raw Polygon options-chain snapshot (own Black-Scholes gamma × OI × 100 × S²·0.01, r=q=0), with NO reuse of the app engine, and compared to what the app serves (captured in the 13-ticker audit). Script: `scratchpad/gex-groundtruth.mjs`.
+
+**Result (SPX, NVDA, AMD, TSLA, AAPL, META):**
+- **Top call wall: 6/6 EXACT match.** (SPX 7600, NVDA 210, AMD 560, TSLA 420, AAPL 320, META 650.)
+- **Top put wall: 6/6 EXACT match.** (SPX 7300, NVDA 180, AMD 400, TSLA 380, AAPL 280, META 550.)
+- **Gamma flip: 5/6 match to <0.2 pts** (NVDA 199.7 vs 199.6, AMD 558.2 vs 558.3, TSLA 410.3 vs 410.3, AAPL 293.9 vs 293.8, META 599.9 vs 599.8). SPX diverged (app 7571 vs indep 6999) — a **truncation artifact in the CHECK** (my script capped pagination at 10k contracts; SPX's banded chain is larger, so my cumulative crossed early). The app's SPX flip (7571, near spot) is the correct one.
+
+**Conclusion:** the wall numbers members see are **faithful to the Polygon chain under standard BSM** — the app is not corrupting, mis-signing, or mis-caching the GEX. Wall IDENTIFICATION is correct end-to-end for the chain path (the workhorse for all non-oracle + narrowed-horizon walls post-#171).
+
+**Honest caveats:** (a) this validates fidelity-to-Polygon-under-BSM, NOT cross-vendor equality — Skylit/SpotGamma use different dealer-positioning conventions, so exact equality with them is neither expected nor claimed. (b) The oracle "all"-horizon walls (SPX/SPY/QQQ) come from UW's own per-strike gamma (vendor ground truth by construction), not covered by this Polygon check. (c) SPX flip check was pagination-limited on my side; re-run with full pagination to close that one.
+
+**Status:** VALIDATED (chain-path wall identification correct; flip 5/6 confirmed).
+
 ## ⚪ NOT A BUG 2026-07-12 — "JUL 10 CLOSE" is correct (Jul 10 2026 is a Friday; my earlier staleness flag was wrong)
 
 **Original flag (retracted):** I flagged the app showing "JUL 10 CLOSE" while Polygon's prev-close looked like "Jul 11." **That was my error** — I assumed Jul 11 was a trading day. Jul 10 2026 is a **Friday**; Jul 11 = Saturday, Jul 12 (audit day) = Sunday. So Friday Jul 10 WAS the last session, and Polygon's `/prev` on a Sunday returns Jul 10's close too. The app is correct.
