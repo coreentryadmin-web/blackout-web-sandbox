@@ -107,6 +107,79 @@ export function reconstructGexRail(
 }
 
 /**
+ * Strike×time GEX surface (task #14 — the positioning heatmap behind the candles).
+ *
+ * Same physics as `reconstructGexRail`, but instead of collapsing each spot's ladder
+ * to its top walls, it KEEPS the full per-strike net GEX and stacks the ladders into a
+ * dense matrix — one column per time sample, one row per strike. That grid is the raw
+ * material a heatmap renders: colour = signed intensity (call-dominated + vs put-dominated
+ * −), so a member sees the whole gamma wall structure migrate through the session, not
+ * just the single strongest bead. `reconstructGexRail` answers "where is the wall now";
+ * this answers "where is ALL the dealer gamma, and how is it moving".
+ *
+ * The strike axis is capped to the `maxStrikes` heaviest strikes (by peak |GEX| across the
+ * session) so the grid stays bounded on a wide chain, then sorted ascending for the y axis.
+ * Cells are signed net GEX; `maxAbs` is the normaliser the renderer scales colour against.
+ */
+export type GexHeatmapGrid = {
+  /** Time buckets (unix seconds), ascending — the x axis, aligned to spot samples. */
+  times: number[];
+  /** Strike rows, ascending — the y axis (union of significant strikes, capped). */
+  strikes: number[];
+  /** cells[timeIndex][strikeIndex] = signed net dealer GEX (+ call, − put); 0 where absent. */
+  cells: number[][];
+  /** Max |cell| across the grid — colour-intensity normaliser (0 when the grid is empty). */
+  maxAbs: number;
+};
+
+export function reconstructGexHeatmapGrid(
+  contracts: readonly ReconstructContract[],
+  spotSamples: readonly SpotSample[],
+  sessionYmd: string,
+  maxStrikes = 60
+): GexHeatmapGrid {
+  // Pass 1: full ladder at each spot; track each strike's PEAK |GEX| so the axis cap keeps
+  // the strikes that mattered most at any point, not just at the close.
+  const ladders: Array<{ time: number; ladder: Map<number, number> }> = [];
+  const peakAbsByStrike = new Map<number, number>();
+  for (const { time, spot } of spotSamples) {
+    const ladder = gexLadderAtSpot(contracts, spot, sessionYmd);
+    if (ladder.size === 0) continue;
+    ladders.push({ time, ladder });
+    for (const [k, v] of ladder) {
+      const a = Math.abs(v);
+      if (a > (peakAbsByStrike.get(k) ?? 0)) peakAbsByStrike.set(k, a);
+    }
+  }
+
+  const strikes = [...peakAbsByStrike.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, maxStrikes)
+    .map(([k]) => k)
+    .sort((a, b) => a - b);
+  const strikeIndex = new Map(strikes.map((k, i) => [k, i]));
+
+  // Pass 2: stack each ladder into a dense signed column, keyed to the capped strike axis.
+  const times: number[] = [];
+  const cells: number[][] = [];
+  let maxAbs = 0;
+  for (const { time, ladder } of ladders) {
+    const row = new Array<number>(strikes.length).fill(0);
+    for (const [k, v] of ladder) {
+      const si = strikeIndex.get(k);
+      if (si === undefined) continue; // strike dropped by the axis cap
+      row[si] = v;
+      const a = Math.abs(v);
+      if (a > maxAbs) maxAbs = a;
+    }
+    times.push(time);
+    cells.push(row);
+  }
+
+  return { times, strikes, cells, maxAbs };
+}
+
+/**
  * Gamma flip — the strike nearest spot where cumulative net GEX (summed low→high)
  * crosses zero. Approximate but honest: it's the boundary between the net-short
  * and net-long gamma regions of the reconstructed ladder.

@@ -7,7 +7,13 @@ import {
   normalizeVectorTicker,
   vectorPolygonMinuteSymbol,
 } from "./vector-ticker";
-import { reconstructGexRail } from "./vector-gex-reconstruct";
+import {
+  reconstructGexRail,
+  reconstructGexHeatmapGrid,
+  type ReconstructContract,
+  type SpotSample,
+  type GexHeatmapGrid,
+} from "./vector-gex-reconstruct";
 import {
   barsToSpotSamples,
   chainToReconstructContracts,
@@ -97,6 +103,38 @@ export type ReconstructRailOptions = {
 };
 
 /**
+ * Shared network fetch for BOTH the rail and the heatmap reconstructions — the two
+ * differ only in how they collapse the same (contracts, spot-path) inputs, so the
+ * expensive Polygon calls (bars + banded chain snapshot) live here once. Returns null
+ * (never throws, never fabricates) when the ticker isn't optionable, Polygon isn't
+ * configured, or the session has no bars/chain.
+ */
+async function loadReconstructInputs(
+  opts: ReconstructRailOptions
+): Promise<{ contracts: ReconstructContract[]; spots: SpotSample[]; sessionYmd: string } | null> {
+  const ticker = normalizeVectorTicker(opts.ticker);
+  const sessionYmd = String(opts.sessionYmd ?? "");
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(sessionYmd)) return null;
+
+  const { optionsRoot } = resolveOptionsRoot(ticker);
+  if (!optionsRoot) return null;
+
+  // 1) real intraday spot path
+  const bars = await fetchUnderlyingBars(ticker, sessionYmd);
+  const spots = barsToSpotSamples(bars, opts.everySec ?? 300);
+  if (!spots.length) return null;
+
+  // 2) chain snapshot banded to exactly the strikes the session traveled through
+  const band = reconstructStrikeBand(spots);
+  if (!band) return null;
+  const rawChain = await fetchReconstructChain(optionsRoot, band.lo, band.hi);
+  const contracts = chainToReconstructContracts(rawChain);
+  if (!contracts.length) return null;
+
+  return { contracts, spots, sessionYmd };
+}
+
+/**
  * Reconstruct a dense wall-history rail for one ticker + past session. Returns an
  * empty array (never throws, never fabricates) when the ticker isn't optionable,
  * Polygon isn't configured, or the session has no bars/chain.
@@ -114,25 +152,49 @@ export async function reconstructSessionRail(
     if (hit) return hit;
   }
 
-  const { optionsRoot } = resolveOptionsRoot(ticker);
-  if (!optionsRoot) return [];
+  const inputs = await loadReconstructInputs(opts);
+  if (!inputs) return [];
 
-  // 1) real intraday spot path
-  const bars = await fetchUnderlyingBars(ticker, sessionYmd);
-  const spots = barsToSpotSamples(bars, opts.everySec ?? 300);
-  if (!spots.length) return [];
-
-  // 2) chain snapshot banded to exactly the strikes the session traveled through
-  const band = reconstructStrikeBand(spots);
-  if (!band) return [];
-  const rawChain = await fetchReconstructChain(optionsRoot, band.lo, band.hi);
-  const contracts = chainToReconstructContracts(rawChain);
-  if (!contracts.length) return [];
-
-  // 3) reconstruct the dense rail along the true price path (pure, deterministic)
-  const rail = reconstructGexRail(contracts, spots, sessionYmd);
+  // reconstruct the dense rail along the true price path (pure, deterministic)
+  const rail = reconstructGexRail(inputs.contracts, inputs.spots, inputs.sessionYmd);
   if (rail.length) {
     await sharedCacheSet(key, rail, CACHE_TTL_SEC).catch(() => {});
   }
   return rail;
+}
+
+const HEATMAP_CACHE_PREFIX = "vector:gex-heatmap";
+
+function heatmapCacheKey(ticker: string, sessionYmd: string): string {
+  return `${HEATMAP_CACHE_PREFIX}:${ticker}:${sessionYmd}`;
+}
+
+/**
+ * Reconstruct the strike×time GEX surface (task #14 heatmap) for one ticker + past
+ * session — the full per-strike gamma grid, not just the top walls. Shares the exact
+ * fetch + spot-path the rail uses (`loadReconstructInputs`), then keeps every strike's
+ * signed net GEX per time bucket. Returns null (never throws, never fabricates) when
+ * inputs are unavailable. Redis-cached like the rail: a past session's inputs are final.
+ */
+export async function reconstructSessionHeatmap(
+  opts: ReconstructRailOptions
+): Promise<GexHeatmapGrid | null> {
+  const ticker = normalizeVectorTicker(opts.ticker);
+  const sessionYmd = String(opts.sessionYmd ?? "");
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(sessionYmd)) return null;
+
+  const key = heatmapCacheKey(ticker, sessionYmd);
+  if (!opts.forceRefresh) {
+    const hit = await sharedCacheGet<GexHeatmapGrid>(key).catch(() => null);
+    if (hit) return hit;
+  }
+
+  const inputs = await loadReconstructInputs(opts);
+  if (!inputs) return null;
+
+  const grid = reconstructGexHeatmapGrid(inputs.contracts, inputs.spots, inputs.sessionYmd);
+  if (grid.times.length) {
+    await sharedCacheSet(key, grid, CACHE_TTL_SEC).catch(() => {});
+  }
+  return grid;
 }
