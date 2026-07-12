@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   bucketWallHistoryForInterval,
   liveTrailAnchorSec,
+  mergeModeledUnderlay,
   mergeWallHistory,
   pickActiveStrikes,
   recordWallSample,
@@ -185,6 +186,88 @@ test("mergeWallHistory: keeps local-only bars when remote is shorter", () => {
   ];
   const remote = [{ time: 100, walls: walls([6800], [6700]) }];
   assert.equal(mergeWallHistory(local, remote).length, 3);
+});
+
+test("mergeModeledUnderlay: an observed sample overwrites the modeled one at a shared bucket", () => {
+  const observed: WallHistorySample[] = [{ time: 100, walls: walls([6800], [6700]) }];
+  const modeled: WallHistorySample[] = [{ time: 100, walls: walls([6805], [6700]) }];
+  const merged = mergeModeledUnderlay(observed, modeled);
+  assert.equal(merged.length, 1);
+  // Observed wins the bucket: its strike survives and it's tagged modeled:false.
+  assert.equal(merged[0].walls.callWalls[0].strike, 6800);
+  assert.equal(merged[0].modeled, false);
+});
+
+test("mergeModeledUnderlay: modeled fills gap buckets the recorder never observed", () => {
+  const observed: WallHistorySample[] = [{ time: 100, walls: walls([6800], [6700]) }];
+  const modeled: WallHistorySample[] = [
+    { time: 100, walls: walls([6805], [6700]) },
+    { time: 160, walls: walls([6810], [6700]) },
+    { time: 220, walls: walls([6820], [6700]) },
+  ];
+  const merged = mergeModeledUnderlay(observed, modeled);
+  assert.deepEqual(merged.map((s) => [s.time, s.modeled]), [
+    [100, false], // observed
+    [160, true], // modeled gap-fill
+    [220, true], // modeled gap-fill
+  ]);
+});
+
+test("mergeModeledUnderlay: empty observed → an all-modeled trail", () => {
+  const modeled: WallHistorySample[] = [
+    { time: 100, walls: walls([6800], [6700]) },
+    { time: 160, walls: walls([6810], [6700]) },
+  ];
+  const merged = mergeModeledUnderlay([], modeled);
+  assert.equal(merged.length, 2);
+  assert.ok(merged.every((s) => s.modeled === true));
+});
+
+test("mergeModeledUnderlay: empty modeled → all observed, tagged modeled:false", () => {
+  const observed: WallHistorySample[] = [
+    { time: 100, walls: walls([6800], [6700]) },
+    { time: 160, walls: walls([6810], [6700]) },
+  ];
+  const merged = mergeModeledUnderlay(observed, []);
+  assert.equal(merged.length, 2);
+  assert.ok(merged.every((s) => s.modeled === false));
+});
+
+test("mergeModeledUnderlay: result is sorted by time regardless of input ordering", () => {
+  const observed: WallHistorySample[] = [{ time: 220, walls: walls([6820], [6700]) }];
+  const modeled: WallHistorySample[] = [
+    { time: 160, walls: walls([6810], [6700]) },
+    { time: 100, walls: walls([6800], [6700]) },
+  ];
+  const merged = mergeModeledUnderlay(observed, modeled);
+  assert.deepEqual(merged.map((s) => s.time), [100, 160, 220]);
+});
+
+test("mergeModeledUnderlay: caps to MAX_HISTORY by keeping the newest tail", () => {
+  // 2100 modeled buckets (> the 1920 cap) → tail-sliced to the most recent 1920.
+  const modeled: WallHistorySample[] = Array.from({ length: 2100 }, (_, i) => ({
+    time: i * 15,
+    walls: walls([6800], [6700]),
+  }));
+  const merged = mergeModeledUnderlay([], modeled);
+  assert.equal(merged.length, 1920);
+  assert.equal(merged[0].time, (2100 - 1920) * 15);
+  assert.equal(merged[merged.length - 1].time, 2099 * 15);
+});
+
+test("trailsByStrike: threads the sample's modeled flag onto each emitted trail point", () => {
+  const history: WallHistorySample[] = [
+    { time: 100, walls: walls([6800], []), modeled: true },
+    { time: 160, walls: walls([6800], []) }, // observed (modeled absent)
+  ];
+  const trail = trailsByStrike(history, "callWalls").get(6800)!;
+  assert.deepEqual(
+    trail.map((p) => [p.time, p.modeled]),
+    [
+      [100, true],
+      [160, undefined],
+    ]
+  );
 });
 
 test("trailForGammaFlip: horizontal bead row when flip is present", () => {

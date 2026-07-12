@@ -57,3 +57,13 @@ export function markerSizeForPct(pct: number): number {
 export function glowAlphaForPct(pct: number): number {
   return alphaForPct(pct) * (0.22 + magnitudeT(pct) * 0.18);
 }
+
+/**
+ * Alpha multiplier for MODELED (reconstructed) beads vs OBSERVED (recorded) ones. Modeled beads
+ * render at 40% of the observed alpha — dim enough to read as a "ghosted/modeled" underlay that
+ * is clearly secondary to the solid recorded beads, without disappearing entirely. Honesty is the
+ * whole point (modeled ≠ observed must be visible); a single dim/shrink pass keeps the marker
+ * plugin simple (no second shape) while still separating the two visually. Kept as one shared
+ * constant so the core bead, its glow halo, and the legend all agree on "dim = modeled."
+ */
+export const MODELED_ALPHA_SCALE = 0.4;
