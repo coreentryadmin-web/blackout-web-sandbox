@@ -267,6 +267,27 @@ export function composeHorizonTrail(
   return current && current.length > 0 ? current : null;
 }
 
+/**
+ * Choose the wall-history rail to REPLAY for a DTE horizon: the recorded per-horizon trail
+ * (frozen point-in-time samples, PR #186) when a narrowed GEX horizon has one, else the blended
+ * "All" rail the caller passes. This makes replay reconstruct how the SELECTED horizon's clusters
+ * built through the session, not always the "All" rail.
+ *
+ * Unlike {@link composeHorizonTrail} there is deliberately NO current-column union: replay slices
+ * this to the cursor and must never surface structure newer than the cursor (the recorded trail is
+ * already point-in-time; the live "current" column is future data relative to a past cursor). "all"
+ * and the VEX lens (no per-horizon recording) always replay the blended rail.
+ */
+export function pickReplayTrailSource(
+  horizon: VectorDteHorizon,
+  lens: VectorWallLens,
+  recorded: WallHistorySample[] | null | undefined,
+  blended: WallHistorySample[]
+): WallHistorySample[] {
+  if (horizon !== "all" && lens === "gex" && recorded && recorded.length > 0) return recorded;
+  return blended;
+}
+
 /** Merge server-observed history into the client buffer — union by bar time, longer tail wins ties. */
 export function mergeWallHistory(
   local: WallHistorySample[],

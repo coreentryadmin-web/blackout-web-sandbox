@@ -64,6 +64,7 @@ import {
   mergeWallHistory,
   narrowedHorizonTrail,
   pickActiveStrikes,
+  pickReplayTrailSource,
   trailsByStrike,
   trimHistoryForLiveTrails,
   type StrikeTrailPoint,
@@ -756,7 +757,21 @@ export function VectorChart({
       const visibleBars = displayBarsFromMinute(bars, timeframeRef.current, cursorTime);
       applyDisplayBars(series, volumeSeriesRef.current, visibleBars);
 
-      const visibleHistory = sliceHistoryToTime(history, cursorTime);
+      // Horizon-aware replay: when the member has narrowed the DTE (GEX lens) and that horizon
+      // has a recorded trail, replay THAT horizon's beads forming point-in-time — not the blended
+      // "All" rail the callsites pass. So hitting replay on 0DTE/weekly/monthly reconstructs how
+      // that specific horizon's clusters built through the session, matching what the live toggle
+      // now draws (#187). VEX / "all" / no-recorded-trail fall back to the passed blended history.
+      // Unlike the live composeHorizonTrail there is NO current-column union — replay must never
+      // draw structure newer than the cursor, and the recorded trail is already point-in-time.
+      const sourceHistory = pickReplayTrailSource(
+        dteHorizonRef.current,
+        activeLens,
+        horizonHistoryRef.current,
+        history
+      );
+
+      const visibleHistory = sliceHistoryToTime(sourceHistory, cursorTime);
       const v = lensVisuals(activeLens);
       const callStrikes = applyWallBeadMarkers(callBeadsRef.current, visibleHistory, "callWalls", v.callColor, activeLens, timeframeRef.current);
       const putStrikes = applyWallBeadMarkers(putBeadsRef.current, visibleHistory, "putWalls", v.putColor, activeLens, timeframeRef.current);
@@ -769,11 +784,12 @@ export function VectorChart({
       // return from wallsAtReplayTime/flipAtReplayTime means cursorTime predates the
       // earliest sample; falling back to the seed would misattribute today's page-load-time
       // walls to that earlier point on the replay timeline (same bug shape as
-      // wallsAtCrosshairTime above).
-      const gexAt = history.length > 0 ? wallsAtReplayTime(history, cursorTime, "gex") : initialWalls;
-      const vexAt = history.length > 0 ? wallsAtReplayTime(history, cursorTime, "vex") : initialVexWalls;
-      const gammaAt = history.length > 0 ? flipAtReplayTime(history, cursorTime, "gex") : initialGammaFlip;
-      const vexFlipAt = history.length > 0 ? flipAtReplayTime(history, cursorTime, "vex") : initialVexFlip;
+      // wallsAtCrosshairTime above). Reads from sourceHistory so the flip line + wall guides
+      // stay coherent with the horizon-scoped beads drawn above.
+      const gexAt = sourceHistory.length > 0 ? wallsAtReplayTime(sourceHistory, cursorTime, "gex") : initialWalls;
+      const vexAt = sourceHistory.length > 0 ? wallsAtReplayTime(sourceHistory, cursorTime, "vex") : initialVexWalls;
+      const gammaAt = sourceHistory.length > 0 ? flipAtReplayTime(sourceHistory, cursorTime, "gex") : initialGammaFlip;
+      const vexFlipAt = sourceHistory.length > 0 ? flipAtReplayTime(sourceHistory, cursorTime, "vex") : initialVexFlip;
       // Dark pool has no per-time history — darkPoolRef is TODAY's live ladder. Drawing
       // it on a historical frame mislabels live levels under the cursor timestamp
       // (walls/flip above are carefully time-honest; DP must not be the exception).
@@ -924,11 +940,25 @@ export function VectorChart({
       emitWallIntegrity();
     };
 
+    // Repaint dispatcher: in replay a DTE toggle must redraw the CURRENT cursor frame (not the
+    // live tape) so the horizon-scoped beads swap in immediately — applyFrame picks the per-horizon
+    // source from dteHorizonRef + horizonHistoryRef, so re-applying the frame is all that's needed.
+    // Mirrors the lens effect's in-replay applyFrame call. Off replay this is the live repaint.
+    const repaint = () => {
+      if (replayModeRef.current) {
+        if (!seriesRef.current) return;
+        const t = timelineRef.current[cursorIndexRef.current];
+        if (t != null) applyFrame(t, minuteBarsRef.current, wallHistoryRef.current, lensRef.current);
+        return;
+      }
+      repaintLive();
+    };
+
     if (dteHorizon === "all") {
       horizonWallsRef.current = null;
       horizonFlipRef.current = null;
       horizonHistoryRef.current = [];
-      repaintLive();
+      repaint();
       return;
     }
 
@@ -949,7 +979,7 @@ export function VectorChart({
         const data = (await res.json()) as { history?: WallHistorySample[] };
         if (cancelled || dteHorizonRef.current !== dteHorizon) return;
         horizonHistoryRef.current = Array.isArray(data.history) ? data.history : [];
-        repaintLive();
+        repaint();
       } catch {
         // History is a supplementary overlay — on any failure keep the single-column fallback
         // (horizonHistoryRef stays []), which refreshTrails already draws. No repaint needed.
@@ -1005,6 +1035,7 @@ export function VectorChart({
     // frame — which never arrives in a closed session (→ "had to refresh"). Re-running once the
     // series exists fires the initial emits against the SSR-seeded walls/spot refs.
     chartReady,
+    applyFrame,
     refreshOverlays,
     refreshTrails,
     liveGexWalls,
