@@ -26,21 +26,29 @@ export const VECTOR_INTERVAL_MAX = 240;
  * return those further-out walls for the client to reveal them. The client never draws more
  * than this many per side; wallCountForTimeframe() picks how many of them to SHOW per timeframe.
  */
-export const VECTOR_WALL_NODES_PER_SIDE = 12;
+export const VECTOR_WALL_NODES_PER_SIDE = 20;
 
 /**
  * How many wall nodes (guides + beads) to SHOW per side at a given candle timeframe. Higher
  * timeframe → wider visible price band → more, further-out walls are worth showing. Bounded by
  * VECTOR_WALL_NODES_PER_SIDE (the server cap) so we never ask to draw walls the server didn't
- * return. Monotonic non-decreasing in tf. Anything above 15m (custom large intervals) stays at
- * the cap.
+ * return. Monotonic non-decreasing in tf.
+ *
+ * The higher timeframes (30m/60m and custom 2h/4h) previously saturated at 12 alongside 15m, so a
+ * 60m/4h chart — which spans a far wider price range — showed the same handful of near-spot walls
+ * and left the top/bottom of the visible band bare. They now step up to 20 so the wider view fills
+ * with the further-out walls that actually matter at that horizon (the server returns up to 20/side).
  */
 export function wallCountForTimeframe(tf: VectorTimeframeMinutes): number {
   let count: number;
   if (tf <= 1) count = 6;
   else if (tf <= 3) count = 8;
   else if (tf <= 5) count = 10;
-  else count = 12; // tf >= 15, and any larger custom interval, saturates at the cap
+  else if (tf <= 15) count = 12;
+  else if (tf <= 30) count = 14;
+  else if (tf <= 60) count = 16;
+  else if (tf <= 120) count = 18;
+  else count = 20; // 2h+ custom intervals — widest view, saturates at the cap
   return Math.max(1, Math.min(VECTOR_WALL_NODES_PER_SIDE, count));
 }
 
