@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { extendRangeForWalls, NEAREST_WALL_VIEW_MAX_PCT } from "./vector-price-range";
+import { extendRangeForWalls, NEAREST_WALL_VIEW_MAX_PCT, BEAD_VIEW_MAX_PCT } from "./vector-price-range";
 
 // Candle band ~7510–7600 around spot 7575 (the live staging case), put walls far below.
 const base = { minValue: 7510, maxValue: 7600 };
@@ -53,4 +53,34 @@ test("null/zero spot or empty walls → returns base untouched, never throws", (
   assert.deepEqual(extendRangeForWalls(base, null, [7400], [7300], 0.05), base);
   assert.deepEqual(extendRangeForWalls(base, 7575, [], [], 0.05), base);
   assert.deepEqual(extendRangeForWalls(base, 7575, [NaN, 0], [NaN], 0.05), base);
+});
+
+test("drawn-bead pass reveals an ORPHAN bead (drawn from the trail, absent from the live ladder)", () => {
+  // The zoom-disappear bug, modeled as the chart composes it: the live LADDER pass only knows the
+  // current top-N ladder strikes. A bead drawn from the session TRAIL at a strike the ladder no
+  // longer lists ("orphan") is passed to NEITHER ladder list → the ladder pass leaves it clipped,
+  // and on zoom-in (tight candle band) it vanishes. The second pass over the DRAWN bead strikes is
+  // what rescues it.
+  const spot = 100;
+  const candle = { minValue: 99, maxValue: 101 }; // zoomed-in: a narrow band around spot
+  const orphanCall = 108; // +8% bead present in the trail but not in the current ladder
+  const orphanPut = 92; //  −8%
+
+  // Ladder pass gets EMPTY lists (the orphan isn't a current ladder wall) → range unchanged → clipped.
+  const ladderOnly = extendRangeForWalls(candle, spot, [], [], 0.05);
+  assert.deepEqual(ladderOnly, candle, "orphan bead absent from the ladder pass → still clipped");
+
+  // Drawn-bead pass over the orphan strikes reveals both, at every zoom.
+  const withBeads = extendRangeForWalls(ladderOnly, spot, [orphanCall], [orphanPut], BEAD_VIEW_MAX_PCT, BEAD_VIEW_MAX_PCT);
+  assert.ok(withBeads.maxValue >= 108, "bead pass reveals the +8% orphan call bead");
+  assert.ok(withBeads.minValue <= 92, "bead pass reveals the -8% orphan put bead");
+});
+
+test("BEAD_VIEW_MAX_PCT still bounds a pathologically far bead so candles aren't squashed", () => {
+  const spot = 100;
+  const candle = { minValue: 99, maxValue: 101 };
+  // A garbage/very-far strike 40% away must NOT widen the axis (would squash candles to a sliver).
+  const out = extendRangeForWalls(candle, spot, [140], [60], BEAD_VIEW_MAX_PCT, BEAD_VIEW_MAX_PCT);
+  assert.ok(out.maxValue < 140, "a +40% outlier stays clipped by the 20% bead cap");
+  assert.ok(out.minValue > 60, "a -40% outlier stays clipped by the 20% bead cap");
 });

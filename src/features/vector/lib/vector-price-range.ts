@@ -30,6 +30,17 @@ export const DEFAULT_WALL_VIEW_MAX_PCT = 0.05;
  *  pathologically far wall squish the candles into a sliver. */
 export const NEAREST_WALL_VIEW_MAX_PCT = 0.12;
 
+/** Reveal cap for the ACTUALLY-DRAWN bead rows (the session-trail strikes the chart renders as
+ *  beads), independent of the current-ladder wall caps above. The bug it fixes: the axis widened
+ *  only for the LIVE ladder's top-N strikes, but beads are drawn from the whole-session trail —
+ *  so a bead at a strike not in the current ladder was clipped, and because zoom re-runs autoscale
+ *  off the now-fewer visible candles, those beads would VANISH on zoom-in and reappear on zoom-out.
+ *  Feeding the drawn-bead strikes through this wider cap keeps every drawn bead in view at every
+ *  zoom level (the Skylit "wide rail" look), while still bounding a pathological outlier so it
+ *  can't squash the candles to a sliver. Wider than the ladder caps because the drawn set is
+ *  already curated (top-N by strength per side), so revealing all of it is intended, not noise. */
+export const BEAD_VIEW_MAX_PCT = 0.2;
+
 export function extendRangeForWalls(
   base: PriceRange,
   spot: number | null | undefined,
