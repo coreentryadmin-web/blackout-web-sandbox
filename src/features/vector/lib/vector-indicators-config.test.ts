@@ -2,7 +2,10 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   VECTOR_OVERLAYS,
+  VECTOR_LEVELS,
+  VECTOR_INDICATOR_GROUPS,
   isVectorOverlayId,
+  isVectorLevelId,
 } from "./vector-indicators-config";
 
 test("VECTOR_OVERLAYS: unique ids, ema/sma carry a positive period, vwap does not need one", () => {
@@ -22,4 +25,21 @@ test("isVectorOverlayId: accepts registry ids, rejects anything else", () => {
   assert.ok(!isVectorOverlayId("rsi"));
   assert.ok(!isVectorOverlayId(""));
   assert.ok(!isVectorOverlayId(null));
+});
+
+test("VECTOR_LEVELS + isVectorLevelId: hex colours, unique ids, disjoint from overlays", () => {
+  const ids = VECTOR_LEVELS.map((l) => l.id);
+  assert.equal(new Set(ids).size, ids.length, "level ids unique");
+  for (const l of VECTOR_LEVELS) assert.ok(/^#[0-9a-f]{6}$/i.test(l.color), `${l.id} hex colour`);
+  assert.ok(isVectorLevelId("fib") && isVectorLevelId("hod-lod"));
+  assert.ok(!isVectorLevelId("vwap"), "overlay id is not a level id");
+  assert.ok(!isVectorLevelId(null));
+  // overlay/level id spaces don't collide (the enabled Set holds both).
+  for (const id of ids) assert.ok(!isVectorOverlayId(id), `${id} not also an overlay id`);
+});
+
+test("VECTOR_INDICATOR_GROUPS: covers every overlay + level id exactly once", () => {
+  const grouped = VECTOR_INDICATOR_GROUPS.flatMap((g) => g.items.map((i) => i.id));
+  const expected = [...VECTOR_OVERLAYS.map((o) => o.id), ...VECTOR_LEVELS.map((l) => l.id)];
+  assert.deepEqual([...grouped].sort(), [...expected].sort());
 });

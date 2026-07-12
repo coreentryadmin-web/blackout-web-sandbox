@@ -76,8 +76,11 @@ import { pickKingStrikes, kingAnchorTitle } from "@/features/vector/lib/vector-k
 import { smaSeries, emaSeries, vwapSeries } from "@/features/vector/lib/vector-indicators";
 import {
   VECTOR_OVERLAYS,
+  VECTOR_LEVELS,
   type VectorOverlayId,
+  type VectorIndicatorId,
 } from "@/features/vector/lib/vector-indicators-config";
+import { levelLinesFor, type LevelLine } from "@/features/vector/lib/vector-key-levels";
 import {
   buildReplayTimeline,
   clampTimelineIndex,
@@ -420,6 +423,53 @@ function applyKingAnchor(
   }
 }
 
+const LEVEL_LINE_STYLE = {
+  solid: LineStyle.Solid,
+  dashed: LineStyle.Dashed,
+  dotted: LineStyle.Dotted,
+} as const;
+
+/**
+ * Draw/diff the enabled "Key levels" price lines (HOD/LOD, opening range, fib) on the candle series.
+ * Each enabled level id expands to one or more {@link LevelLine}s via `levelLinesFor(bars)`; the map
+ * (keyed `levelId:lineKey`) is reconciled against the desired set so lines are added/updated/removed
+ * without churn. Computed from the CURRENTLY-shown bars, so levels track the timeframe and, in
+ * replay, reflect the bars up to the cursor (HOD/LOD-so-far). Nothing drawn when the set is empty.
+ */
+function applyLevelLines(
+  series: ISeriesApi<"Candlestick">,
+  map: Map<string, IPriceLine>,
+  enabled: Set<VectorIndicatorId>,
+  bars: VectorBar[]
+): void {
+  const desired = new Map<string, LevelLine>();
+  for (const def of VECTOR_LEVELS) {
+    if (!enabled.has(def.id)) continue;
+    for (const line of levelLinesFor(def.id, bars)) desired.set(`${def.id}:${line.key}`, line);
+  }
+  // Remove lines no longer wanted (toggled off, or a level that now yields fewer lines).
+  for (const [k, pl] of map) {
+    if (!desired.has(k)) {
+      series.removePriceLine(pl);
+      map.delete(k);
+    }
+  }
+  for (const [k, line] of desired) {
+    const opts = {
+      price: line.price,
+      color: withAlpha(line.color, 0.9),
+      lineWidth: 1 as const,
+      lineStyle: LEVEL_LINE_STYLE[line.style],
+      lineVisible: true,
+      axisLabelVisible: true,
+      title: line.label,
+    };
+    const existing = map.get(k);
+    if (existing) existing.applyOptions(opts);
+    else map.set(k, series.createPriceLine(opts));
+  }
+}
+
 function applyWallsToSeries(
   series: ISeriesApi<"Candlestick">,
   callGuideRefs: React.MutableRefObject<(IPriceLine | null)[]>,
@@ -593,7 +643,10 @@ export function VectorChart({
   // mirrors the state for the imperative paint path; `lastDisplayBarsRef` lets a toggle repaint
   // against the currently-shown bars without waiting for the next tick/timeframe change.
   const overlaySeriesRef = useRef<Map<VectorOverlayId, ISeriesApi<"Line">>>(new Map());
-  const indicatorsRef = useRef<Set<VectorOverlayId>>(new Set());
+  // Horizontal price-line overlays for the "Key levels" group (HOD/LOD, opening range, fib), keyed
+  // by `${levelId}:${lineKey}` so each line is diffed/kept/removed independently across repaints.
+  const levelLinesRef = useRef<Map<string, IPriceLine>>(new Map());
+  const indicatorsRef = useRef<Set<VectorIndicatorId>>(new Set());
   const lastDisplayBarsRef = useRef<VectorBar[]>(initialBars);
   const callBeadsRef = useRef<ISeriesMarkersPluginApi<Time> | null>(null);
   const putBeadsRef = useRef<ISeriesMarkersPluginApi<Time> | null>(null);
@@ -680,7 +733,7 @@ export function VectorChart({
   const [timeframe, setTimeframe] = useState<VectorTimeframeMinutes>(1);
   const [chartReady, setChartReady] = useState(false);
   // Enabled overlay indicators (default none — the chart stays clean until the member opts in).
-  const [indicators, setIndicators] = useState<Set<VectorOverlayId>>(() => new Set());
+  const [indicators, setIndicators] = useState<Set<VectorIndicatorId>>(() => new Set());
 
   useEffect(() => {
     // Replay honesty for the structure feed: while scrubbed to 9:35 the ticker
@@ -869,6 +922,11 @@ export function VectorChart({
       }
       line.setData(data);
     }
+
+    // Draw the enabled "Key levels" horizontal lines from the SAME bars, on the candle series.
+    if (seriesRef.current) {
+      applyLevelLines(seriesRef.current, levelLinesRef.current, enabled, bars);
+    }
   }, []);
 
   // Sync the enabled-indicator set to the ref the imperative paint reads, and repaint immediately
@@ -879,7 +937,7 @@ export function VectorChart({
     paintOverlays(lastDisplayBarsRef.current);
   }, [indicators, paintOverlays]);
 
-  const toggleIndicator = useCallback((id: VectorOverlayId) => {
+  const toggleIndicator = useCallback((id: VectorIndicatorId) => {
     setIndicators((prev) => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
@@ -1532,6 +1590,7 @@ export function VectorChart({
       // chart.remove() disposes the overlay line series too — swap in a fresh map so a remount
       // rebuilds instead of touching the now-disposed series (matches the sibling ref resets).
       overlaySeriesRef.current = new Map();
+      levelLinesRef.current = new Map();
       callBeadsRef.current = null;
       putBeadsRef.current = null;
       volumeSeriesRef.current = null;

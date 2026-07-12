@@ -8,7 +8,7 @@ import { VectorIndicatorMenu } from "@/features/vector/components/VectorIndicato
 import type { VectorWallLens } from "@/features/vector/lib/vector-wall-history";
 import type { VectorTimeframeMinutes } from "@/features/vector/lib/vector-bar-timeframes";
 import type { VectorDteHorizon } from "@/features/vector/lib/vector-dte-horizon";
-import type { VectorOverlayId } from "@/features/vector/lib/vector-indicators-config";
+import type { VectorIndicatorId } from "@/features/vector/lib/vector-indicators-config";
 
 type Props = {
   interval: VectorTimeframeMinutes;
@@ -39,8 +39,8 @@ type Props = {
   onJumpOpen: () => void;
   onJumpClose: () => void;
   onToggleLoop: () => void;
-  indicators: Set<VectorOverlayId>;
-  onToggleIndicator: (id: VectorOverlayId) => void;
+  indicators: Set<VectorIndicatorId>;
+  onToggleIndicator: (id: VectorIndicatorId) => void;
   onClearIndicators: () => void;
 };
 

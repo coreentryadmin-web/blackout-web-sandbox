@@ -3,13 +3,13 @@
 import { useEffect, useRef, useState } from "react";
 import clsx from "clsx";
 import {
-  VECTOR_OVERLAYS,
-  type VectorOverlayId,
+  VECTOR_INDICATOR_GROUPS,
+  type VectorIndicatorId,
 } from "@/features/vector/lib/vector-indicators-config";
 
 type Props = {
-  enabled: Set<VectorOverlayId>;
-  onToggle: (id: VectorOverlayId) => void;
+  enabled: Set<VectorIndicatorId>;
+  onToggle: (id: VectorIndicatorId) => void;
   onClear: () => void;
 };
 
@@ -57,37 +57,41 @@ export function VectorIndicatorMenu({ enabled, onToggle, onClear }: Props) {
 
       {open ? (
         <div className="vector-ind-panel" role="menu">
-          <div className="vector-ind-panel-head">
-            <span>Moving averages</span>
-            {count > 0 ? (
-              <button type="button" className="vector-ind-clear" onClick={onClear}>
-                Clear
-              </button>
-            ) : null}
-          </div>
-          {VECTOR_OVERLAYS.map((o) => {
-            const on = enabled.has(o.id);
-            return (
-              <button
-                key={o.id}
-                type="button"
-                role="menuitemcheckbox"
-                aria-checked={on}
-                className={clsx("vector-ind-item", on && "vector-ind-item-on")}
-                onClick={() => onToggle(o.id)}
-              >
-                <span
-                  className="vector-ind-dot"
-                  style={{ backgroundColor: on ? o.color : "transparent", borderColor: o.color }}
-                  aria-hidden="true"
-                />
-                <span className="vector-ind-label">{o.label}</span>
-                <span className="vector-ind-check" aria-hidden="true">
-                  {on ? "✓" : ""}
-                </span>
-              </button>
-            );
-          })}
+          {VECTOR_INDICATOR_GROUPS.map((group, gi) => (
+            <div key={group.title}>
+              <div className="vector-ind-panel-head">
+                <span>{group.title}</span>
+                {gi === 0 && count > 0 ? (
+                  <button type="button" className="vector-ind-clear" onClick={onClear}>
+                    Clear
+                  </button>
+                ) : null}
+              </div>
+              {group.items.map((it) => {
+                const on = enabled.has(it.id);
+                return (
+                  <button
+                    key={it.id}
+                    type="button"
+                    role="menuitemcheckbox"
+                    aria-checked={on}
+                    className={clsx("vector-ind-item", on && "vector-ind-item-on")}
+                    onClick={() => onToggle(it.id)}
+                  >
+                    <span
+                      className="vector-ind-dot"
+                      style={{ backgroundColor: on ? it.color : "transparent", borderColor: it.color }}
+                      aria-hidden="true"
+                    />
+                    <span className="vector-ind-label">{it.label}</span>
+                    <span className="vector-ind-check" aria-hidden="true">
+                      {on ? "✓" : ""}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          ))}
         </div>
       ) : null}
     </div>
