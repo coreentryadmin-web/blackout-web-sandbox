@@ -34,7 +34,6 @@ import {
   type VectorWallEvent,
 } from "@/features/vector/lib/vector-wall-events";
 import { VECTOR_CHART_LOCALE } from "@/features/vector/lib/vector-chart-config";
-import { vectorHasWsOracle } from "@/features/vector/lib/vector-ticker";
 import {
   normalizeDteHorizon,
   type VectorDteHorizon,
@@ -481,6 +480,10 @@ export function VectorChart({
   // (the per-second SSE stream keeps carrying the full near-term walls into
   // gexWallsRef untouched). null = follow the live stream. See liveGexWalls().
   const horizonWallsRef = useRef<VectorWalls | null>(null);
+  // Horizon-scoped gamma flip, paired with horizonWallsRef: when a narrower DTE is
+  // active the flip line re-scopes to the same per-expiry ladder the walls came from
+  // (server returns it on /api/market/vector/walls). null = follow the live stream flip.
+  const horizonFlipRef = useRef<number | null>(null);
   const dteHorizonRef = useRef<VectorDteHorizon>("all");
   // Dedupe regime emissions — the read only changes when posture/flip/levels
   // shift, not every tick, so we skip identical reads to avoid re-rendering the
@@ -516,8 +519,12 @@ export function VectorChart({
   const [crosshair, setCrosshair] = useState<VectorCrosshairState | null>(null);
   const [lens, setLens] = useState<VectorWallLens>("gex");
   const [dteHorizon, setDteHorizon] = useState<VectorDteHorizon>("all");
-  // Only oracle tickers carry the per-expiry gamma ladder the horizon re-scopes.
-  const dteAvailable = vectorHasWsOracle(ticker);
+  // Per-expiry walls are now computed from the Polygon options chain for EVERY ticker
+  // (per-contract expiry + OI + IV → BSM GEX ladder at spot), not just the 3 UW-oracle
+  // names, so the horizon toggle is real everywhere. Vector only ever loads optionable
+  // tickers, and getVectorGexWallsForHorizon's honest fallback guarantees walls never
+  // blank, so the toggle is always available.
+  const dteAvailable = true;
   // appendVectorWallEvents enforces the display cap — a bare concat of both
   // lenses' seeds could hold up to 2× the cap.
   const [wallEvents, setWallEvents] = useState<VectorWallEvent[]>(() =>
@@ -679,6 +686,17 @@ export function VectorChart({
     []
   );
 
+  // Gamma flip to DRAW right now — the horizon-scoped flip when the member has narrowed
+  // the DTE (so the flip line re-scopes with the walls), else the live stream flip. Same
+  // live-view-only scope as liveGexWalls: replay/history paths use time-sliced recorded flips.
+  const liveGammaFlip = useCallback(
+    (): number | null =>
+      dteHorizonRef.current !== "all" && horizonFlipRef.current != null
+        ? horizonFlipRef.current
+        : gammaFlipRef.current,
+    []
+  );
+
   // Compute the gamma regime from the current spot / flip / near-term walls and
   // emit it up to the page banner. Uses the canonical near-term walls (not the
   // DTE-scoped view) since the gamma flip is itself a near-term measure — regime
@@ -758,7 +776,7 @@ export function VectorChart({
         lensRef.current,
         liveGexWalls(),
         vexWallsRef.current,
-        gammaFlipRef.current,
+        liveGammaFlip(),
         vexFlipRef.current,
         darkPoolRef.current
       );
@@ -766,6 +784,7 @@ export function VectorChart({
 
     if (dteHorizon === "all") {
       horizonWallsRef.current = null;
+      horizonFlipRef.current = null;
       repaintLive();
       return;
     }
@@ -776,12 +795,16 @@ export function VectorChart({
           `/api/market/vector/walls?ticker=${encodeURIComponent(ticker)}&dte=${dteHorizon}`
         );
         if (!res.ok || cancelled) return;
-        const data = (await res.json()) as { walls?: VectorWalls | null };
+        const data = (await res.json()) as { walls?: VectorWalls | null; flip?: number | null };
         if (cancelled || dteHorizonRef.current !== dteHorizon) return;
         horizonWallsRef.current = data.walls ?? null;
+        // Re-scope the flip line with the horizon too. A null flip (e.g. no ladder
+        // zero-crossing in the scoped expiries) falls back to the live stream flip
+        // via liveGammaFlip, so the flip never vanishes just because a horizon narrowed.
+        horizonFlipRef.current = data.flip ?? null;
         repaintLive();
       } catch {
-        /* keep last-known scoped walls; the stream walls still draw if none */
+        /* keep last-known scoped walls/flip; the stream values still draw if none */
       }
     };
 
@@ -791,7 +814,7 @@ export function VectorChart({
       cancelled = true;
       if (id) clearInterval(id);
     };
-  }, [dteHorizon, ticker, liveSession, refreshOverlays, liveGexWalls]);
+  }, [dteHorizon, ticker, liveSession, refreshOverlays, liveGexWalls, liveGammaFlip]);
 
   const connectLive = useCallback(() => {
     if (!liveSessionRef.current) return;
@@ -934,7 +957,7 @@ export function VectorChart({
           lensRef.current,
           liveGexWalls(),
           vexWallsRef.current,
-          gammaFlipRef.current,
+          liveGammaFlip(),
           vexFlipRef.current,
           darkPoolRef.current
         );
@@ -944,7 +967,7 @@ export function VectorChart({
         emitWallIntegrity();
       }
     });
-  }, [sessionYmd, refreshTrails, refreshOverlays, onFreshness, ticker, liveGexWalls, emitRegime, emitProximity, emitMagnet, emitWallIntegrity]);
+  }, [sessionYmd, refreshTrails, refreshOverlays, onFreshness, ticker, liveGexWalls, liveGammaFlip, emitRegime, emitProximity, emitMagnet, emitWallIntegrity]);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -1311,11 +1334,11 @@ export function VectorChart({
       lens,
       liveGexWalls(),
       vexWallsRef.current,
-      gammaFlipRef.current,
+      liveGammaFlip(),
       vexFlipRef.current,
       darkPoolRef.current
     );
-  }, [lens, replayMode, refreshTrails, refreshOverlays, applyFrame, liveGexWalls]);
+  }, [lens, replayMode, refreshTrails, refreshOverlays, applyFrame, liveGexWalls, liveGammaFlip]);
 
   useEffect(() => {
     const series = seriesRef.current;

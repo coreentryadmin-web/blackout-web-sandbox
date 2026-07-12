@@ -25,6 +25,7 @@ import {
   vectorHasWsOracle,
 } from "./vector-ticker";
 import { expiriesForHorizon, type VectorDteHorizon } from "./vector-dte-horizon";
+import { getPerExpiryGexWalls } from "./vector-dte-walls-server";
 
 const WALL_SCOPE_REFRESH_MS = 15_000;
 const VEX_WALLS_CACHE_MS = 8_000;
@@ -196,34 +197,71 @@ export function getVectorVexWalls(ticker: string = VECTOR_DEFAULT_TICKER): GexWa
 }
 
 /**
- * GEX walls scoped to a DTE horizon (Phase 2 — timeframe/expiry-aware walls).
+ * GEX walls scoped to a DTE horizon (timeframe/expiry-aware walls).
  *
- * Only oracle tickers (SPX/SPY/QQQ) carry the per-expiry gamma ladder needed to
- * re-scope by expiry (`getGexStrikeExpiryLadder(ticker, expiries)`); for every
- * other ticker the walls come from the heatmap fallback, which is already a
- * near-term blend with no per-expiry breakdown to slice. So for non-oracle
- * tickers — and for the "all" horizon — this returns the same walls as
- * `getVectorGexWalls`. Every narrowing also falls back to the default rather
- * than ever returning null walls, so the overlay never blanks just because a
- * horizon was empty or the WS ladder hasn't populated yet.
+ * Two per-expiry data sources, both real (no fabrication):
+ *  - ORACLE tickers (SPX/SPY/QQQ) slice the live UW per-expiry gamma ladder
+ *    (`getGexStrikeExpiryLadder(ticker, expiries)`) to the horizon's expiries.
+ *  - EVERY OTHER optionable ticker now computes per-expiry walls from the Polygon
+ *    options chain (per-contract expiry + OI + IV → BSM GEX ladder at spot), via
+ *    `getPerExpiryGexWalls`. This is the "DTE for all tickers" path: previously
+ *    non-oracle tickers had no per-expiry breakdown and the toggle was hidden.
  *
- * Intentionally NOT cached per-horizon and NOT on the per-second stream path —
- * it's an on-demand read behind the DTE toggle, so it awaits the wall scope
- * (expiry list) rather than racing a background refresh.
+ * The "all" horizon short-circuits to the existing blended near-term aggregate
+ * (`getVectorGexWalls`) for BOTH paths — it's the fast, already-warmed read and
+ * needs no chain fetch. Every narrowing falls back to that same blended aggregate
+ * rather than ever returning null walls, so the overlay never blanks just because a
+ * horizon was empty, the WS ladder hasn't populated, or a chain fetch hiccuped.
+ *
+ * Intentionally NOT on the per-second stream path — it's an on-demand read behind
+ * the DTE toggle; the non-oracle chain fetch is Redis-cached (10min) so repeated
+ * toggles don't re-hit Polygon.
  */
 export async function getVectorGexWallsForHorizon(
   ticker: string,
   horizon: VectorDteHorizon
 ): Promise<GexWalls | null> {
   const t = normalizeVectorTicker(ticker);
-  if (horizon === "all" || !vectorHasWsOracle(t)) return getVectorGexWalls(t);
-  await primeVectorWallScope(t);
-  const s = state(t);
-  const scoped = expiriesForHorizon(s.wallScope.expiries ?? [], horizon, todayEtYmd());
-  if (!scoped.length) return getVectorGexWalls(t);
-  const ws = getGexStrikeExpiryLadder(t, scoped);
-  if (!ws || ws.ladder.size === 0) return getVectorGexWalls(t);
-  return computeGexWalls(ws.ladder);
+
+  if (vectorHasWsOracle(t)) {
+    if (horizon === "all") return getVectorGexWalls(t);
+    await primeVectorWallScope(t);
+    const s = state(t);
+    const scoped = expiriesForHorizon(s.wallScope.expiries ?? [], horizon, todayEtYmd());
+    if (!scoped.length) return getVectorGexWalls(t);
+    const ws = getGexStrikeExpiryLadder(t, scoped);
+    if (!ws || ws.ladder.size === 0) return getVectorGexWalls(t);
+    return computeGexWalls(ws.ladder);
+  }
+
+  // NON-ORACLE: per-expiry walls from the Polygon chain (DTE for all tickers).
+  if (horizon === "all") return getVectorGexWalls(t); // blended aggregate — fast, no chain fetch
+  const perExpiry = await getPerExpiryGexWalls(t, horizon).catch(() => null);
+  if (perExpiry?.walls && (perExpiry.walls.callWalls.length || perExpiry.walls.putWalls.length)) {
+    return perExpiry.walls;
+  }
+  return getVectorGexWalls(t); // honest fallback: never blank the walls
+}
+
+/**
+ * Gamma flip scoped to a DTE horizon — the companion to getVectorGexWallsForHorizon so the
+ * gamma-flip overlay line re-scopes with the toggle too, not just the walls.
+ *
+ * For oracle tickers and the "all" horizon this is the canonical near-term flip
+ * (`getVectorGammaFlip`) — the oracle per-expiry WS ladder doesn't expose a per-horizon flip
+ * here, and "all" is the whole-chain view. For a non-oracle narrowed horizon it's the flip
+ * derived from the SAME per-expiry ladder the walls came from (shares getPerExpiryGexWalls's
+ * short memo, so this is not a second chain fetch), falling back to the near-term flip when the
+ * per-expiry ladder yields no crossing.
+ */
+export async function getVectorGammaFlipForHorizon(
+  ticker: string,
+  horizon: VectorDteHorizon
+): Promise<number | null> {
+  const t = normalizeVectorTicker(ticker);
+  if (horizon === "all" || vectorHasWsOracle(t)) return getVectorGammaFlip(t);
+  const perExpiry = await getPerExpiryGexWalls(t, horizon).catch(() => null);
+  return perExpiry?.flip ?? getVectorGammaFlip(t);
 }
 
 /** Zero-gamma flip from the shared GEX positioning cache. */
