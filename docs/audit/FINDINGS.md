@@ -18,7 +18,7 @@ in this file.
 
 **Evidence:** live suite run 92/94 with exactly these 2 fails pre-fix (`banner 7475 vs ladder kings 7480`, `banner 190 vs 195`); `vector-gex-ladder.test.ts` +2 — a reconstruction of the SPX shape (41 strikes, true put king 5 below the band floor → force-retained + crowned, cap held at 40, farthest non-king evicted, maxAbs renormalised) and the tie-break case (all-equal |gex| → kings nearest spot, nothing off-band dragged in), 8/8. Full vector lib suite 246/246; tsc clean.
 
-**Status:** FIXED — pending merge + deploy, then the hardcore suite's cross-surface check must go green (94/94) as the live proof.
+**Status:** FIXED + LIVE-VERIFIED — merged (#205, `9470888`), deployed, and the hardcore suite re-ran **94/94** at 2026-07-12 19:23 UTC: `banner 7575/7475 vs ladder kings 7575/7475` (SPX) and NVDA aligned — all three surfaces now cite the same walls.
 
 ## 🟡 P2 FOUND+FIXED 2026-07-12 — Vector DTE toggle re-scoped everything EXCEPT the beads (0DTE still showed "All" walls)
 
