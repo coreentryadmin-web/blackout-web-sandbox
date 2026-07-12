@@ -55,9 +55,25 @@ on when it's green. This is a hard gate, repeated per push — never a one-time 
   PR) before starting the next feature. Deploys take a few min — validate after the deploy settles,
   not mid-deploy (mid-deploy chunk-hash races produce transient `_next` 404/MIME noise).
 
+## Vector HARDCORE suite (deep value + dynamism + wall/bead dynamics — RTH-reusable)
+Beyond the render gate: `scripts/vector-hardcore-e2e.mjs` (`npm run validate:vector-hardcore`) asserts
+the ACTUAL values are correct AND re-render dynamically on every selection change (the "stale data
+didn't update" class), plus that the wall/bead rail forms/updates/grows/fades over time. Per
+ticker × DTE × TF it checks (via the clean JSON APIs + DOM + canvas-hash diffs): ladder rows
+finite/descending/magnitude∈[0,1]/one-king-per-side/no-malformed-floats/spot-in-band; regime wording
+matches spot-vs-flip; max-pain within band; DTE re-scopes maxPain/flip/regime/terminal; timeframe
+redraws the canvas + re-aggregates bars; indicator toggles redraw + badge tracks; replay frame count
+(rail formed over time) + start≠end (beads change); narrowed-horizon wall strength growth/fade; and
+zero console errors; plus cross-ticker SPX≈10×SPY. **Reusable during RTH:** `RTH=1` adds a live-poll
+that asserts the wall rail advances within 35s (real forming/growing/fading). Run with
+`env -u AWS_ACCESS_KEY_ID -u AWS_SECRET_ACCESS_KEY`. KEEP GROWING IT — add a case whenever a new
+value/mapping/surface ships. Off-hours the narrowed-horizon rail can be empty (recorder idle); that's
+a SKIP not a fail, and the replay frame count covers the temporal aspect.
+
 ## Audit toolkit (committed)
 - `scripts/audit/data-validator.mjs` — cross-provider validator (Polygon+UW ground truth vs the numbers members see: prices/indices, GEX/greeks, track-record math, malformed-number scan). Secrets from env only; one temp Clerk user per run, always deleted. Exits non-zero on any FAIL.
 - `scripts/vector-staging-e2e.mjs` — the Vector per-push E2E gate (see the section above).
+- `scripts/vector-hardcore-e2e.mjs` — the deep value/dynamism/wall-dynamics suite (see the section above).
 - `docs/audit/MARKET-OPEN-VALIDATION.md` — runbook + the daily market-open **Claude scheduled-trigger** prompt + secrets checklist (13:32 UTC weekdays).
 - `docs/audit/BASELINE-2026-07-01.md` — pre-open baseline to diff the live run against.
 - `docs/audit/FINDINGS.md` — living issue log (keep updating).
