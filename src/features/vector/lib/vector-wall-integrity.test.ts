@@ -70,6 +70,18 @@ test("scoreWallIntegrity: no history → persistence is neutral 0.5 (never fabri
   assert.match(r.note, /no rail yet/);
 });
 
+test("scoreWallIntegrity: a seed-only rail (< 3 samples) reads 'as-of-close', not 'held 100% of session'", () => {
+  // Off-hours for an unrecorded ticker, seedWallHistoryForDisplay drops ONE as-of-close
+  // sample. A one-sample rail used to make every wall claim "held 100% of session" — an
+  // overclaim (nothing was observed holding over time). Persistence must stay neutral and
+  // the note must not assert session-long holding.
+  const seed = [sample(0, { callWalls: [{ strike: 7600, pct: 90 }], putWalls: [] })];
+  const r = scoreWallIntegrity(walls.callWalls[0]!, "call", walls.callWalls, seed, REF)!;
+  assert.equal(r.factors.persistence, 0.5, "one-sample rail is unknown, not proven");
+  assert.match(r.note, /as-of-close/);
+  assert.doesNotMatch(r.note, /held \d+% of session/);
+});
+
 test("scoreWallIntegrity: single-wall side is fully isolated", () => {
   const one = scoreWallIntegrity({ strike: 7600, pct: 80 }, "call", [{ strike: 7600, pct: 80 }], [], 80);
   assert.equal(one!.factors.isolation, 1);
