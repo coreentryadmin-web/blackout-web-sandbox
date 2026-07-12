@@ -4,6 +4,7 @@ import {
   bucketWallHistoryForInterval,
   composeHorizonTrail,
   liveTrailAnchorSec,
+  pickReplayTrailSource,
   mergeModeledUnderlay,
   mergeWallHistory,
   narrowedHorizonTrail,
@@ -380,6 +381,27 @@ test("narrowedHorizonTrail: narrowed GEX horizon → single scoped column; all/v
   assert.equal(narrowedHorizonTrail("weekly", "gex", null, 1_700_000_000, 100.5), null);
   // No last-bar time → null.
   assert.equal(narrowedHorizonTrail("weekly", "gex", scoped, 0, 100.5), null);
+});
+
+test("pickReplayTrailSource: narrowed GEX horizon replays the recorded trail; else the blended rail", () => {
+  const w = walls([105], [95]);
+  const recorded: WallHistorySample[] = [
+    { time: 1_700_000_000, walls: w, gammaFlip: 100 },
+    { time: 1_700_000_900, walls: w, gammaFlip: 100 },
+  ];
+  const blended: WallHistorySample[] = [{ time: 1_700_000_500, walls: w, gammaFlip: 99 }];
+
+  // Narrowed GEX horizon with a recorded trail → replay THAT trail (not the blended "All" rail).
+  assert.equal(pickReplayTrailSource("weekly", "gex", recorded, blended), recorded);
+  assert.equal(pickReplayTrailSource("0dte", "gex", recorded, blended), recorded);
+
+  // "all" → always the blended rail (no per-horizon recording for "all").
+  assert.equal(pickReplayTrailSource("all", "gex", recorded, blended), blended);
+  // VEX lens → blended (per-horizon rails are GEX-only).
+  assert.equal(pickReplayTrailSource("weekly", "vex", recorded, blended), blended);
+  // Narrowed horizon but nothing recorded yet → blended fallback (replay never blanks).
+  assert.equal(pickReplayTrailSource("weekly", "gex", [], blended), blended);
+  assert.equal(pickReplayTrailSource("monthly", "gex", null, blended), blended);
 });
 
 test("composeHorizonTrail: recorded per-horizon trail preferred, current column unioned in", () => {
