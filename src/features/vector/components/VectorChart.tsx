@@ -113,6 +113,13 @@ const WALL_VIEW_MAX_PCT = (() => {
   return Number.isFinite(raw) && raw > 0 && raw <= 0.2 ? raw : DEFAULT_WALL_VIEW_MAX_PCT;
 })();
 const MAX_DP_GUIDES = 6;
+/** Empty walls used to CLEAR the wall guide price-lines each refresh — walls now render only as
+ *  strength-scaled beads (Skylit-clean axis), so the full-width "Call/Put wall — %" guide lines
+ *  are gone; the axis carries just the current price + the gamma-flip line. */
+const EMPTY_WALLS: VectorWalls = { callWalls: [], putWalls: [] };
+/** Trailing whitespace (in bars) between the last candle and the price axis — so the bead bands
+ *  stop short of the axis with breathing room instead of running flush into it (Skylit-style). */
+const VECTOR_RIGHT_OFFSET_BARS = 6;
 /** Re-poll cadence for the SPY volume backfill — Polygon only publishes one new closed
  *  minute bar per minute, so anything faster than that would just refetch the same data. */
 const SPY_VOLUME_BACKFILL_MS = 60_000;
@@ -322,6 +329,9 @@ function applyFlipGuide(
   }
   const title = `${label} ${Math.round(flip)}`;
   const lineColor = withAlpha(color, 0.9);
+  // The gamma flip is now the ONE analytical line on the chart (walls became beads, dark-pool
+  // lines removed), so draw it as a real dashed line — not just an axis label — the single
+  // regime-boundary reference the member kept.
   if (lineRef.current) {
     lineRef.current.applyOptions({
       price: flip,
@@ -329,7 +339,7 @@ function applyFlipGuide(
       color: lineColor,
       lineWidth: 1,
       lineStyle: LineStyle.Dashed,
-      lineVisible: false,
+      lineVisible: true,
       axisLabelVisible: true,
     });
   } else {
@@ -338,7 +348,7 @@ function applyFlipGuide(
       color: lineColor,
       lineWidth: 1,
       lineStyle: LineStyle.Dashed,
-      lineVisible: false,
+      lineVisible: true,
       axisLabelVisible: true,
       title,
     });
@@ -661,9 +671,16 @@ export function VectorChart({
       // more, further-out walls drawn → wider axis (extendRangeForWalls keys off these SHOWN
       // strikes below, so 1m stays tight while 15m widens).
       const maxGuides = wallCountForTimeframe(timeframeRef.current);
-      applyWallsToSeries(series, callGuideRefs, putGuideRefs, walls ?? undefined, activeLens, maxGuides);
+      // Walls are shown ONLY as strength-scaled beads now (the Skylit-clean look) — clear any
+      // wall guide price-lines rather than drawing them, so the price axis is not stacked with
+      // "Call/Put wall — %" labels. The gamma-flip line stays (member kept it); dark-pool level
+      // lines are removed from the axis too. rangeWallsRef below still keys off the walls, so the
+      // axis keeps auto-widening to reveal the bead rows.
+      applyWallsToSeries(series, callGuideRefs, putGuideRefs, EMPTY_WALLS, activeLens, 0);
       applyFlipGuide(series, flipGuideRef, flip, v.flipLabel, v.flipColor);
-      applyDarkPoolGuides(series, dpGuideRefs, dp);
+      applyDarkPoolGuides(series, dpGuideRefs, []);
+      void dp; // dark-pool level lines intentionally not drawn (clean axis); kept in the signature
+      //         so callers/consumers of dp elsewhere are unaffected.
       // Feed the just-drawn strikes to the autoscale provider and nudge a rescale, so
       // the axis widens to reveal support/resistance walls the moment the lens/horizon
       // changes (off-hours there's no tick to trigger the recompute otherwise). Sliced to the
@@ -1059,6 +1076,9 @@ export function VectorChart({
         secondsVisible: true,
         // Subtle live follow when the last bar is visible — do not call scrollToRealTime on every new bar.
         shiftVisibleRangeOnNewBar: true,
+        // Leave whitespace between the last candle and the price axis so the bead bands stop short
+        // of the axis (Skylit-style) instead of running flush into it.
+        rightOffset: VECTOR_RIGHT_OFFSET_BARS,
       },
       rightPriceScale: { borderColor: "rgba(255,255,255,0.12)" },
       crosshair: {
