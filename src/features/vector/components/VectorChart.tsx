@@ -270,6 +270,35 @@ function applyDisplayBars(
   volumeSeries?.setData(volumeHistogramData(bars));
 }
 
+/**
+ * Re-seed the candle+volume data for a BACKGROUND refresh (the 60s SPY-volume backfill, any
+ * non-user-initiated re-seed) WITHOUT disturbing the member's zoom/pan. Members reported the
+ * zoom "flashes and resets to the default/loading view" — that happens when a background path
+ * refits the whole range (fitContent) or lets setData nudge the visible logical range.
+ *
+ * We snapshot the exact visible logical range before swapping the data and restore it after —
+ * UNLESS the chart is currently following the live edge, in which case we defer to the same
+ * maybeScrollToLive() follow behavior the live-tick path uses (pinning a stale range there
+ * would fight the live follow). First load and explicit timeframe switches deliberately keep
+ * their fitContent() refit and must NOT route through here.
+ */
+function applyDisplayBarsPreservingView(
+  chart: IChartApi | null,
+  candleSeries: ISeriesApi<"Candlestick">,
+  volumeSeries: ISeriesApi<"Histogram"> | null,
+  bars: VectorBar[]
+): void {
+  const timeScale = chart?.timeScale() ?? null;
+  const following = chart ? chartIsFollowingLive(chart) : false;
+  const prevRange = timeScale && !following ? timeScale.getVisibleLogicalRange() : null;
+  applyDisplayBars(candleSeries, volumeSeries, bars);
+  if (following) {
+    maybeScrollToLive(chart);
+  } else if (prevRange && timeScale) {
+    timeScale.setVisibleLogicalRange(prevRange);
+  }
+}
+
 function applyPriceGuides(
   series: ISeriesApi<"Candlestick">,
   guideRefs: React.MutableRefObject<(IPriceLine | null)[]>,
@@ -911,6 +940,10 @@ export function VectorChart({
   const minuteBarsRef = useRef<VectorBar[]>(initialBars);
   const displayBarTimeRef = useRef<number>(0);
   const timeframeRef = useRef<VectorTimeframeMinutes>(1);
+  // Tracks the timeframe the time scale was last fitContent()'d to, so the timeframe effect can
+  // tell a GENUINE timeframe switch (refit expected) from a re-run triggered by a dependency's
+  // identity change or a liveSession flip (must preserve the member's zoom/pan). See BUG 2.
+  const lastFittedTimeframeRef = useRef<VectorTimeframeMinutes>(1);
   const gammaFlipRef = useRef<number | null>(initialGammaFlip);
   const vexFlipRef = useRef<number | null>(initialVexFlip);
   const darkPoolRef = useRef<VectorDarkPoolLevel[]>(initialDarkPoolLevels);
@@ -1955,7 +1988,9 @@ export function VectorChart({
         if (!replayModeRef.current && seriesRef.current) {
           const display = displayBarsFromMinute(merged, timeframeRef.current);
           displayBarTimeRef.current = display[display.length - 1]?.time ?? 0;
-          applyDisplayBars(seriesRef.current, volumeSeriesRef.current, display);
+          // BUG 2: closed-bar backfill on (re)connect is a background re-seed — must not reset
+          // the member's zoom/pan. Preserve the viewport (or follow live if at the edge).
+          applyDisplayBarsPreservingView(chartRef.current, seriesRef.current, volumeSeriesRef.current, display);
           paintOverlays(display);
         }
       })
@@ -2189,6 +2224,9 @@ export function VectorChart({
     applyDisplayBars(series, volumeSeries, initialDisplay);
     paintOverlays(initialDisplay);
     displayBarTimeRef.current = initialBars[initialBars.length - 1]?.time ?? 0;
+    // Deliberate refit on FIRST load only — there is no prior viewport to preserve here, so
+    // fitting the seeded bars to the width is the correct default. Background re-seeds route
+    // through applyDisplayBarsPreservingView instead (see BUG 2).
     if (initialBars.length) chart.timeScale().fitContent();
 
     chartRef.current = chart;
@@ -2346,7 +2384,11 @@ export function VectorChart({
         // display picks it up); the paint must be live-mode only.
         if (replayModeRef.current) return;
         const display = displayBarsFromMinute(merged, timeframeRef.current);
-        applyDisplayBars(seriesRef.current!, volumeSeriesRef.current, display);
+        // BUG 2: this is a purely BACKGROUND re-seed (fires every 60s). Preserve the member's
+        // zoom/pan across it — a plain applyDisplayBars/fitContent here is what made the zoom
+        // "flash and reset" once a minute. The helper restores the prior viewport, or follows
+        // live if the chart was at the edge.
+        applyDisplayBarsPreservingView(chartRef.current, seriesRef.current!, volumeSeriesRef.current, display);
         paintOverlays(display);
       } catch {
         /* best-effort */
@@ -2430,6 +2472,9 @@ export function VectorChart({
       flipAtReplayTime(history, tail, "vex") ?? initialVexFlip,
       darkPoolRef.current
     );
+    // User-initiated transition (member clicked out of replay back to live): a refit to the
+    // full live range is the expected reset here, not a background update — so fitContent is
+    // correct and intentionally NOT routed through the viewport-preserving path.
     chartRef.current?.timeScale().fitContent();
     // Connection was kept open through replay; only reconnect if it actually dropped.
     if (!connRef.current) connectLive();
@@ -2542,15 +2587,34 @@ export function VectorChart({
     } else {
       const display = displayBarsFromMinute(minuteBarsRef.current, timeframe);
       displayBarTimeRef.current = display[display.length - 1]?.time ?? 0;
+      // This effect re-runs not only on a real timeframe switch but whenever one of its
+      // callback deps (refreshTrails/refreshOverlays/applyFrame/liveGexWalls/liveGammaFlip) or
+      // liveSession changes identity. Those re-runs must NOT wipe the member's zoom/pan — that
+      // was the reported "zoom flashes and resets to the default view" bug. So we only fitContent
+      // on a GENUINE timeframe change; otherwise we snapshot the visible logical range and
+      // restore it across the setData (unless the chart is following the live edge, where
+      // maybeScrollToLive below keeps the existing follow behavior instead).
+      const timeframeChanged = timeframe !== lastFittedTimeframeRef.current;
+      const timeScale = chart?.timeScale() ?? null;
+      const following = chart ? chartIsFollowingLive(chart) : false;
+      const prevRange =
+        timeScale && !timeframeChanged && !following ? timeScale.getVisibleLogicalRange() : null;
       applyDisplayBars(series, volumeSeriesRef.current, display);
       paintOverlays(display);
-      // Re-fit the time scale to the new bar COUNT. A higher timeframe has far fewer bars (a 6.5h
-      // session ≈ 390 1m bars but only ~26 at 15m), and lightweight-charts keeps the previous
-      // per-bar pixel spacing — so without a refit those few bars stay crammed into the right edge
-      // with a huge empty gap on the left, and the price-following overlays (VWAP/EMA/SMA) get
-      // squished into that sliver and look absent. fitContent recomputes the spacing so the bars —
-      // and their overlays — fill the chart width at every timeframe.
-      chart?.timeScale().fitContent();
+      if (timeframeChanged) {
+        // Re-fit the time scale to the new bar COUNT. A higher timeframe has far fewer bars (a 6.5h
+        // session ≈ 390 1m bars but only ~26 at 15m), and lightweight-charts keeps the previous
+        // per-bar pixel spacing — so without a refit those few bars stay crammed into the right edge
+        // with a huge empty gap on the left, and the price-following overlays (VWAP/EMA/SMA) get
+        // squished into that sliver and look absent. fitContent recomputes the spacing so the bars —
+        // and their overlays — fill the chart width at every timeframe. This is the deliberate,
+        // user-expected refit; the create effect's fitContent is the only other one (first load).
+        chart?.timeScale().fitContent();
+        lastFittedTimeframeRef.current = timeframe;
+      } else if (prevRange && timeScale) {
+        // Background re-run: pin the exact viewport the member had so zoom/pan survives.
+        timeScale.setVisibleLogicalRange(prevRange);
+      }
       refreshTrails(lensRef.current);
       // Repaint the wall GUIDES too: the shown-count (wallCountForTimeframe) changes with the
       // timeframe, so a pure timeframe switch (no lens/tick change) must redraw the call/put
