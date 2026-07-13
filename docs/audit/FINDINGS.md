@@ -26,6 +26,25 @@ call site. **Test:** `spx-emphasis.test.ts` — a Watch item `γflip {{7,543}}` 
 `spx-ai-key` emphasis span with **no** literal braces; multi-marker + passthrough + empty cases.
 `tsc` clean, spx lib sweep 434/434, opacity clean. **Deliberately untouched:** the play GATES
 (`spx-play-gates.ts`) — the "no plays" issue is a separate policy call. **Status:** FIXED — PR open.
+## 🔴 P1 FOUND+FIXED 2026-07-13 (RTH) — SPX weekly/monthly flip/walls leaked the 0DTE aggregate (BIE routing)
+
+**Severity:** P1 (member-facing wrong number). **Root cause:** the SPX Slayer desk (and the BIE SPX
+composers that read it) serve `fetchGexHeatmap`'s ~8-nearest-expiry AGGREGATE for **every** horizon —
+there is no `dte` param on that path — so "SPX weekly flip" / "SPX monthly walls / max pain" answered
+with the 0DTE/aggregate number. Live four-way RTH scan: the aggregate **7,554** was served as the
+weekly flip when the true weekly flip was **7,622** and monthly **7,647** (Vector re-scopes per-DTE
+correctly and returned those). **Evidence:** `scratchpad/spx-slayer-scan.json` (coordinator's live
+scan). **Fix (this PR, BIE routing lane):** `src/lib/bie/router.ts` — a new
+`isSpxHorizonScopedStructureQuestion` guard routes a weekly/monthly SPX structure figure
+(flip/walls/max pain/levels/magnet/expected move) to the per-DTE-correct **Vector** engine
+(`vector_read`, ticker SPX, requested horizon) instead of the aggregate SPX desk, in both
+`classifyBieIntent` and `classifyBieStagingFallback`. A bare (no-horizon) SPX structure ask and a
+plain "SPX weekly setup" (no structure figure) are unchanged — only the specific per-horizon numbers
+that would otherwise leak are re-routed. Never presents a 0DTE number as the monthly.
+**Deliberately not in this PR:** a full horizon-aware re-scope of the SPX desk itself (flip/walls/
+maxpain by dte) — larger, desk-internal; this PR is the small routing fix the coordinator scoped as
+the minimum. **Test:** `src/lib/bie/router.test.ts` — weekly/monthly → Vector with the right horizon;
+bare/no-figure asks stay on the desk; staging fallback likewise. **Status:** FIXED — PR open.
 
 ## ✅ AUDIT 2026-07-13 — De-Claude coverage map: staging is 100% BIE, no surface silently returns empty (task #61)
 
