@@ -3,6 +3,7 @@
 import { useEffect, useRef } from "react";
 import { clsx } from "clsx";
 import type { PlayTerminalIcon, PlayTerminalLine } from "@/features/spx/lib/spx-play-terminal-lines";
+import { renderEmphasis } from "@/features/spx/lib/spx-emphasis";
 
 const ICON_GLYPH: Record<PlayTerminalIcon, string> = {
   prompt: "❯",
@@ -31,7 +32,9 @@ function TerminalLine({ line }: { line: PlayTerminalLine }) {
       <span className={clsx("spx-play-terminal-glyph", `spx-play-terminal-glyph--${line.icon}`)} aria-hidden>
         {ICON_GLYPH[line.icon]}
       </span>
-      <span className="spx-play-terminal-text">{line.text}</span>
+      {/* Strip any {{…}} desk-brief emphasis markers — latent guard: the play terminal doesn't
+          carry them today, but this ensures a future BIE-sourced line can never leak literal braces. */}
+      <span className="spx-play-terminal-text">{renderEmphasis(line.text)}</span>
     </div>
   );
 }

@@ -1,7 +1,8 @@
 ﻿"use client";
 
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { clsx } from "clsx";
+import { renderEmphasis } from "@/features/spx/lib/spx-emphasis";
 
 const BODY_PREVIEW_LINES = 12;
 import type { SpxCommentaryResult, SpxDeskPayload } from "@/lib/api";
@@ -48,28 +49,6 @@ function shouldRefresh(desk: SpxDeskPayload, prev: Partial<SpxDeskPayload> | nul
   if (nextStacks && prevStacks !== nextStacks) return true;
 
   return Date.now() - lastAt >= MIN_INTERVAL_MS * 2;
-}
-
-/** Render {{...}} white-emphasis markup: numbers + verbatim news render WHITE, the rest
- *  stays neon-yellow (the .spx-commentary-body color). The model wraps every number and
- *  every literal headline in {{ }} so the renderer never has to guess. */
-function renderEmphasis(text: string): ReactNode[] {
-  const out: ReactNode[] = [];
-  const re = /\{\{([^}]*)\}\}/g;
-  let last = 0;
-  let m: RegExpExecArray | null;
-  let k = 0;
-  while ((m = re.exec(text)) !== null) {
-    if (m.index > last) out.push(text.slice(last, m.index));
-    out.push(
-      <span key={k++} className="spx-ai-key">
-        {m[1]}
-      </span>
-    );
-    last = m.index + m[0].length;
-  }
-  if (last < text.length) out.push(text.slice(last));
-  return out;
 }
 
 /** One commentary line: peel a leading UPPERCASE label (followed by 2+ spaces) into a
@@ -354,7 +333,8 @@ export function SpxCommentaryRail({
                   {entry.changed.length > 0 && (
                     <ul className="spx-commentary-changed mb-2">
                       {entry.changed.map((c) => (
-                        <li key={c}>{c}</li>
+                        // Strip {{}} like the headline/body — the desk brief wraps numbers in {{ }}.
+                        <li key={c}>{renderEmphasis(c)}</li>
                       ))}
                     </ul>
                   )}
@@ -366,7 +346,9 @@ export function SpxCommentaryRail({
                       </p>
                       <ul className="spx-commentary-watch">
                         {entry.watch.map((w) => (
-                          <li key={w}>{w}</li>
+                          // The live leak: watch strings carry {{…}} (e.g. "γflip {{7,543}}") and
+                          // were rendered raw, bypassing renderEmphasis — strip them here too.
+                          <li key={w}>{renderEmphasis(w)}</li>
                         ))}
                       </ul>
                     </div>
