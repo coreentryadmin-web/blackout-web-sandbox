@@ -28,5 +28,22 @@
 - [ ] BIE Largo bias card + triggers + feed: could not be exercised post-close — MUST verify live at open (14:05).
 
 ## Added post-replay-questions (2026-07-13 night) — replay coverage gaps
-- [ ] **Replay button missing on desk embed after-hours** (P1, blocks the next two): `scratchpad/replay-embed-test.mjs` timed out at "find replay btn" on `.spx-sniper-vector-col`, contradicting sweep #5 (~90 min earlier) which clicked enter/play/exit successfully. Suspects: after-hours conditional (canReplay), stale replica, or embed regression from 941b6ff/145d080. Re-run the script at the 13:00 gate; fix before open if a real regression.
-- [ ] **Replay bead-formation × MULTIPLE TIMEFRAMES — never tested** (honest gap, user asked 07-13): hardcore suite verified replay formation (frame count >1, start≠end canvas hash) once per ticker at the DEFAULT TF only; TF checks verified live-chart redraw/aggregation but never replay. Untested combos: (a) enter replay while on 5m/15m/1H — does the rail slice + repaint at that aggregation; (b) switch TF mid-replay — stale-frame risk at the sliceHistoryToTime × bar-rebuild seam. Extend replay-embed-test.mjs to loop TFs (3m default, 5m, 15m) on BOTH standalone /vector and the desk embed, asserting distinct canvas hashes at 5%/50%/95% cursor per TF + bead-pixel accumulation. Then fold a `REPLAY_TFS` sweep into vector-hardcore-e2e.mjs so it stays covered ("KEEP GROWING IT").
+- [x] ~~Replay button missing on desk embed after-hours (P1)~~ **RESOLVED same night — NOT an app bug.**
+  Two probe bugs stacked: (1) a full-screen modal (`fixed inset-0 z-[100]`) intercepted the click →
+  Playwright TimeoutError read as "button not found"; (2) the scrub set `el.value=` directly, which
+  React's value tracker dedupes → cursor stuck at frame 1 (screenshot showed `9:30:00 AM · 1/1722`).
+  Fixed probe (modal dismissal + native value setter): embed replay FULLY VERIFIED —
+  1,721 frames, beads 0→5,835→13,933 at 5%/50%/95%, rail visibly formed in late-frame screenshot.
+- [x] **Replay bead-formation × MULTIPLE TIMEFRAMES — TESTED 07-13 night** (`scratchpad/replay-multitf-test.mjs`,
+  standalone /vector SPX): 3m PASS (0→5,308→12,910 beads), 5m PASS (0→5,079→9,654), 15m PASS
+  (0→3,659→3,727), all 3/3 distinct frames. Note: TF switching is DISABLED during replay by design
+  (`VectorChart.tsx:2730` `timeframeDisabled={replayMode}`) so the mid-replay-switch seam doesn't exist.
+- [ ] **1H replay bead-count anomaly (P3, watch)**: at 60m the bead-pixel count DROPPED mid→late
+  (5,245→2,982) while frames stayed distinct. Could be legit wall fade/autoscale compression at
+  coarse aggregation, could be a rail-scaling bug at 1H. Eyeball screenshots at the gate; if real,
+  file as fix branch.
+- [ ] Fold a `REPLAY_TFS` sweep (3m/5m/15m × replay 5/50/95) into `vector-hardcore-e2e.mjs` so the
+  combination stays covered permanently ("KEEP GROWING IT").
+- [ ] Replay flip-line historicity sanity: during embed replay at ~3:15 PM the on-chart flip label read
+  7528 while the (live) banner read 7,519.56 — expected if the chart shows the replay-time flip and the
+  banner stays live, but confirm that's the intended split rather than a desync.
