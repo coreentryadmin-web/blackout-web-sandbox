@@ -8,6 +8,7 @@
 
 import { KNOWN_TICKERS } from "@/lib/largo/question-intent";
 import { lookupGlossary } from "./glossary";
+import { namesUnsupportedHorizon } from "./vector-read-fallback";
 
 export type BieIntent =
   | "zerodte_plays"
@@ -227,6 +228,13 @@ export function classifyBieIntent(question: string, ledgerTickers: Set<string>):
   // signals. MUST be before REASONING_RE (and before the vector branch, whose "forming" overlaps),
   // or "why" bails to Claude / the surface gets read as a normal Vector question.
   if (isDiagnosticQuestion(q)) return { intent: "system_diagnostic", ticker: extractKnownTicker(q) };
+
+  // An explicitly UNSUPPORTED horizon (LEAP / multi-year / quarterly) can't be scoped by any desk.
+  // Route to the Vector composer, which returns an HONEST "unsupported horizon" message rather than
+  // letting the SPX desk / Vector "all" answer the whole-chain aggregate as if it were the LEAP.
+  if (namesUnsupportedHorizon(q)) {
+    return { intent: "vector_read", ticker: extractKnownTicker(q) ?? "SPX", horizon: "all" };
+  }
 
   // Explicit "vector" mention → the deterministic Vector desk read, for ANY ticker (incl. SPX on
   // Vector). Placed first so the Vector product wins over the SPX-Sniper branches when named.

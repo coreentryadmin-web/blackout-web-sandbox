@@ -58,6 +58,32 @@ describe("lookupGlossary", () => {
     assert.match(lookupGlossary("what is a put wall")!.term, /Put wall/i);
   });
 
+  // Regression guard for the RTH-scan-flagged "definition mismatch" class (VWAP→GEX, NightHawk→Helix,
+  // Thermal→Helix, Largo→NightHawk). These DID NOT reproduce on trunk — the entries are correct — but
+  // term-name assertions alone wouldn't catch a swapped DEFINITION body, so pin each definition to a
+  // phrase unique to the RIGHT product/concept and NEGATIVE-assert the wrong one it was said to leak.
+  test("definitions are NOT swapped — each term's body describes the right thing (not its look-alike)", () => {
+    const vwap = lookupGlossary("what is VWAP")!;
+    assert.match(vwap.term, /VWAP/);
+    assert.match(vwap.definition, /volume[- ]weighted average price/i);
+    assert.doesNotMatch(vwap.definition, /gamma exposure|dealer gamma/i); // not the GEX def
+
+    const nh = lookupGlossary("what does Night Hawk do")!;
+    assert.match(nh.term, /Night Hawk/i);
+    assert.match(nh.definition, /evening|swing|edition/i);
+    assert.doesNotMatch(nh.definition, /live tape of large option prints/i); // not the Helix def
+
+    const thermal = lookupGlossary("what is Thermal")!;
+    assert.match(thermal.term, /Thermal/i);
+    assert.match(thermal.definition, /heatmap|GEX \/ VEX \/ DEX \/ CHARM/i);
+    assert.doesNotMatch(thermal.definition, /market-wide options FLOW product/i); // not Helix
+
+    const largo = lookupGlossary("what is Largo")!;
+    assert.match(largo.term, /Largo/i);
+    assert.match(largo.definition, /desk AI|assistant/i);
+    assert.doesNotMatch(largo.definition, /evening swing-pick/i); // not the Night Hawk def
+  });
+
   test("plural + alias tolerance", () => {
     assert.match(lookupGlossary("what are call walls")!.term, /Call wall/i);
     assert.match(lookupGlossary("explain the flip")!.term, /Gamma flip/i);
