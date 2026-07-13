@@ -44,6 +44,15 @@ export const MARKET_BIAS_MAX_AGE_MS = 15 * 60 * 1000;
 export const OPENING_WINDOW_UNLOCK_ET_MINUTES = 10 * 60 + 30;
 export const OPENING_WINDOW_UNLOCK_LABEL = "10:30 ET";
 
+// ── G-3 · Score floor ───────────────────────────────────────────────────────────
+// Evidence (F-2): the engine's OWN 14-day calibration (38 graded plays) says the
+// 55-64 band is where the money dies — 18.8% WR, avg −24.5% premium (n=16), far
+// below the 33.3% breakeven of the fixed −50/+100 payoff. 65-74 ran 50% WR/+21.1%
+// (n=10), 75+ 50%/+9.9% (n=12). The API's own calibration recommendation agrees:
+// raise the floor above the 55-64 band. Judged AFTER the intraday edge layer, so a
+// raw-evidence 70 that the tape/time-of-day layer marked down to 62 does NOT clear.
+export const ZERODTE_SCORE_FLOOR = 65;
+
 export type ZeroDteGateBlock = {
   /** Machine-readable code — same namespace as the evidence gates' gate_failed. */
   code: ZeroDteGateFailure;
@@ -119,6 +128,19 @@ export function evaluateZeroDteGates(input: ZeroDteGateInput): ZeroDteGateVerdic
         `Watching; commits unlock at ${OPENING_WINDOW_UNLOCK_LABEL} if the setup is still live.`,
       threshold: OPENING_WINDOW_UNLOCK_ET_MINUTES,
       unlock_et: OPENING_WINDOW_UNLOCK_LABEL,
+    });
+  }
+
+  // G-3 — score floor, judged on the FINAL post-edge-layer score.
+  if (input.score < ZERODTE_SCORE_FLOOR) {
+    blocks.push({
+      code: "score_floor",
+      reason:
+        `Score ${Math.round(input.score)} is below the ${ZERODTE_SCORE_FLOOR} commit floor — ` +
+        "the 55-64 band ran 18.8% WR / −24.5% avg premium (n=16) on this engine's own calibration, " +
+        "under the 33% breakeven of the −50/+100 payoff.",
+      threshold: ZERODTE_SCORE_FLOOR,
+      unlock_et: null,
     });
   }
 

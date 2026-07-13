@@ -103,6 +103,24 @@ test("G-1 + G-2: a counter-tape long at 09:55 collects BOTH blocks (all reasons 
   );
 });
 
+// ── G-3 · score floor ──────────────────────────────────────────────────────────────
+
+test("G-3: score 64 blocks, 65 commits (the 55-64 band is below breakeven)", () => {
+  const blocked = evaluateZeroDteGates(input({ score: 64 }));
+  assert.equal(blocked.verdict, "BLOCKED");
+  assert.equal(blocked.blocks[0]!.code, "score_floor");
+  assert.equal(blocked.blocks[0]!.threshold, 65);
+  assert.match(blocked.blocks[0]!.reason, /18\.8% WR/);
+
+  assert.equal(evaluateZeroDteGates(input({ score: 65 })).verdict, "COMMIT");
+});
+
+test("G-3: judged on the POST-edge-layer score — 7/13's INTC short (61) blocks even though aligned and mid-day", () => {
+  const v = evaluateZeroDteGates(input({ ticker: "INTC", score: 61, nowEtMinutes: 12 * 60 + 51 }));
+  assert.equal(v.verdict, "BLOCKED");
+  assert.deepEqual(v.blocks.map((b) => b.code), ["score_floor"]);
+});
+
 // ── rejection-row bridge ───────────────────────────────────────────────────────────
 
 const rejectionSource = {
