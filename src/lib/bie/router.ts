@@ -19,7 +19,8 @@ export type BieIntent =
   | "ticker_ecosystem"
   | "ticker_advice"
   | "ticker_compare"
-  | "vector_read";
+  | "vector_read"
+  | "concept_read";
 
 export type BieRoute = {
   intent: BieIntent;
@@ -77,6 +78,34 @@ const VECTOR_RE = /\bvector\b/i;
 const VECTOR_STRUCTURE_RE =
   /\b(gamma\s*(flip|wall|walls|magnet|regime)|call wall|put wall|gamma[- ]?walls?|walls?|expected move|max ?pain|wall integrity|beads?|fad(?:e|ing|eness)|build(?:ing)?|forming|dissolv\w*|stacking|dealer walls?|dte walls?|dtes|expir(?:y|ies)|weekly|monthly|timeframe|technicals?|vwap|ema|rsi|macd|market structure|vex|vanna|dark[- ]?pool|magnet|(?:1|3|5|15|30)\s?m|(?:1|2|4)\s?h)\b/i;
 
+// Concept/definition questions — "what is GEX", "define the gamma flip", "explain a king node",
+// "what does Night Hawk do". These are answered from the deterministic glossary (composeConceptRead
+// → lookupGlossary), NOT the live desk. Gated below so a question that names a ticker or asks for a
+// LIVE value ("what is NVDA's flip", "what is the market doing") is NOT stolen — those stay numeric.
+// Definitional lead-ins only (NOT "what do you think" — that's opinion/reasoning, kept out on
+// purpose so it still falls through to Claude).
+const CONCEPT_RE =
+  /\b(what(?:'|’)?s|what\s+is|what\s+are|whats|define|definition of|explain|what does|meaning of|tell me about|describe)\b/i;
+/** Live/status hints — a "what's X doing / the setup / the play" is a live read, not a definition.
+ *  Deliberately status VERBS + product-state nouns, NOT bare "market" (so "what is market structure"
+ *  stays a concept). */
+const CONCEPT_LIVE_HINT_RE =
+  /\b(doing|happening|going on|right now|look(ing)? like|the setup|the play|the trade|the bias|the read)\b/i;
+/** Teach/opinion/reasoning shapes that belong with Claude, not a glossary lookup. */
+const CONCEPT_TEACH_EXCLUDE_RE =
+  /\bin general\b|\bshould i\b|\bwould you\b|\bthink\b|\bworried\b|\bopinion\b|\bpredict\b|\bforecast\b|\bhow\b[^?]{0,40}\bwork/i;
+
+/** True when a question is a plain definitional ask — no ticker, no live-status hint, not a
+ *  teach/opinion question. Unknown TERMS still count (composeConceptRead answers them honestly and
+ *  gap-logs); only ticker/live/teach shapes are filtered out here. */
+function isConceptQuestion(q: string): boolean {
+  if (!CONCEPT_RE.test(q)) return false;
+  if (extractKnownTicker(q) != null) return false; // a named ticker → live read, not a definition
+  if (CONCEPT_LIVE_HINT_RE.test(q)) return false; // "what is the market doing" → live
+  if (CONCEPT_TEACH_EXCLUDE_RE.test(q)) return false; // "explain how gamma hedging works" → Claude
+  return true;
+}
+
 /** Vector DTE horizon named in the question, defaulting to "all" (whole-chain view). */
 function extractHorizon(q: string): string {
   if (/\b0\s*dte\b/i.test(q)) return "0dte";
@@ -117,6 +146,11 @@ export function extractCompareTickers(question: string): [string, string] | null
 export function classifyBieIntent(question: string, ledgerTickers: Set<string>): BieRoute | null {
   const q = question.trim();
   if (q.length > 160 || q.split(/[.?!]/).filter((s) => s.trim()).length > 2) return null;
+
+  // Definitional/concept question → the glossary read. Placed FIRST (even before the explicit
+  // "vector" branch) so "what is Vector" / "what is GEX" / "what does Night Hawk do" resolve to a
+  // DEFINITION, while a live "vector setup on NVDA" (has a ticker) still routes to vector_read below.
+  if (isConceptQuestion(q)) return { intent: "concept_read", ticker: null };
 
   // Explicit "vector" mention → the deterministic Vector desk read, for ANY ticker (incl. SPX on
   // Vector). Placed first so the Vector product wins over the SPX-Sniper branches when named.
@@ -183,6 +217,7 @@ export function isSpxDeskFallbackQuestion(question: string): boolean {
 
 export function classifyBieStagingFallback(question: string): BieRoute {
   const q = question.trim();
+  if (isConceptQuestion(q)) return { intent: "concept_read", ticker: null };
   if (VECTOR_RE.test(q)) {
     return { intent: "vector_read", ticker: extractKnownTicker(q) ?? "SPX", horizon: extractHorizon(q) };
   }
@@ -249,5 +284,7 @@ export function bieFollowups(intent: BieIntent): string[] {
         "What's the play and where does it invalidate?",
         "Show the 0DTE horizon instead",
       ];
+    case "concept_read":
+      return ["What is a King node?", "What is the gamma flip?", "What does Night Hawk do?"];
   }
 }

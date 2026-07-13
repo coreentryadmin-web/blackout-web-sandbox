@@ -61,3 +61,50 @@ describe("router: vector_read intent", () => {
     assert.ok(Array.isArray(f) && f.length === 3);
   });
 });
+
+describe("router: concept_read intent", () => {
+  test("definitional questions route to concept_read", () => {
+    for (const q of [
+      "what is GEX",
+      "what is a King node",
+      "define the gamma flip",
+      "explain a call wall",
+      "what does Night Hawk do",
+      "what is max pain",
+      "what is VEX",
+      "tell me about wall integrity",
+      "what is Vector", // the PRODUCT — not a live vector read
+      "what is Largo",
+    ]) {
+      assert.equal(classifyBieIntent(q, NO_LEDGER)?.intent, "concept_read", `expected concept for: ${q}`);
+    }
+  });
+
+  test("unknown definitional term still routes to concept_read (honest miss + gap-log, not a dump)", () => {
+    assert.equal(classifyBieIntent("what is the flongle indicator", NO_LEDGER)?.intent, "concept_read");
+  });
+
+  test("BOUNDARY: a NUMERIC question naming a ticker is NOT stolen by concept_read", () => {
+    // "what is the SPX flip" is a live number → SPX desk, not a definition.
+    assert.notEqual(classifyBieIntent("what is the SPX flip", NO_LEDGER)?.intent, "concept_read");
+    // "what is NVDA's max pain" → live Vector read, not a definition.
+    assert.equal(classifyBieIntent("what is NVDA max pain", NO_LEDGER)?.intent, "vector_read");
+    // "what is the market doing" → market context, not a definition.
+    assert.notEqual(classifyBieIntent("what is the market doing", NO_LEDGER)?.intent, "concept_read");
+  });
+
+  test("'what is the vector setup on NVDA' → vector_read (live), not concept", () => {
+    assert.equal(classifyBieIntent("what is the vector setup on NVDA", NO_LEDGER)?.intent, "vector_read");
+  });
+
+  test("staging fallback routes definitional questions to concept_read", () => {
+    assert.equal(classifyBieStagingFallback("what is a gamma flip").intent, "concept_read");
+    assert.equal(classifyBieStagingFallback("explain VEX").intent, "concept_read");
+    // Boundary holds in the fallback too.
+    assert.notEqual(classifyBieStagingFallback("what is the SPX flip").intent, "concept_read");
+  });
+
+  test("bieFollowups has a concept_read branch", () => {
+    assert.equal(bieFollowups("concept_read").length, 3);
+  });
+});
