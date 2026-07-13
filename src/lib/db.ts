@@ -427,6 +427,14 @@ async function runMigrations(): Promise<void> {
     CREATE INDEX IF NOT EXISTS idx_spx_play_outcomes_entry_path
     ON spx_play_outcomes(entry_path, outcome);
   `);
+  // Context-at-entry (decision doc C-2), mirrored from zerodte_setup_log: day-open
+  // VIX + SPY session bias + ET stamp captured by the outcome writer at entry.
+  // Placed AFTER the CREATE TABLE above (unlike the playbook_id ALTERs) so a fresh
+  // bootstrap can't ALTER a table that doesn't exist yet.
+  await p.query(`
+    ALTER TABLE spx_play_outcomes
+    ADD COLUMN IF NOT EXISTS entry_context JSONB;
+  `);
   await p.query(`
     CREATE TABLE IF NOT EXISTS lotto_plays (
       id BIGSERIAL PRIMARY KEY,
@@ -656,6 +664,14 @@ async function runMigrations(): Promise<void> {
   `);
   await p.query(`
     ALTER TABLE zerodte_setup_log ADD COLUMN IF NOT EXISTS trough_premium NUMERIC;
+  `);
+  // Context-at-entry (decision doc C-2): day-open VIX, SPY session bias, gamma
+  // regime, commit-time score, ET commit stamp — pinned at FIRST flag like the
+  // plan columns, because the whole point is what the desk looked like when the
+  // play committed. The 7/13 forensics' strongest factor (day-open VIX band) was
+  // only derivable day-level because nothing persisted context per-play.
+  await p.query(`
+    ALTER TABLE zerodte_setup_log ADD COLUMN IF NOT EXISTS entry_context JSONB;
   `);
   // BLACKOUT Intelligence Engine — every answered question logged with its route
   // (deterministic router vs Claude fallback) and numeric-claim verification, so
@@ -3419,6 +3435,9 @@ export async function insertOpenSpxPlay(
     option_ticket: unknown;
     playbook_id?: string | null;
     playbook_instance_id?: string | null;
+    /** Context-at-entry blob (C-2) — optional/additive so existing callers compile
+     *  unchanged; null persists as SQL NULL. */
+    entry_context?: Record<string, unknown> | null;
   }
 ): Promise<{ id: number; created: boolean }> {
   await ensureSchema();
@@ -3476,9 +3495,9 @@ export async function insertOpenSpxPlay(
     INSERT INTO spx_play_outcomes (
       open_play_id, session_date, direction, entry_path, grade, score, confidence,
       entry_price, stop, target, headline, factors, confirmations, mtf, claude,
-      option_ticket, opened_at, outcome, playbook_id, playbook_instance_id
+      option_ticket, opened_at, outcome, playbook_id, playbook_instance_id, entry_context
     )
-    VALUES ($1,$2::date,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12::jsonb,$13::jsonb,$14::jsonb,$15::jsonb,$16::jsonb,$17,'open',$18,$19)
+    VALUES ($1,$2::date,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12::jsonb,$13::jsonb,$14::jsonb,$15::jsonb,$16::jsonb,$17,'open',$18,$19,$20::jsonb)
     ON CONFLICT (open_play_id) WHERE outcome = 'open' DO NOTHING
     RETURNING id
     `,
@@ -3502,6 +3521,10 @@ export async function insertOpenSpxPlay(
             row.opened_at,
             outcome.playbook_id ?? row.playbook_id ?? null,
             outcome.playbook_instance_id ?? row.playbook_instance_id ?? null,
+            // C-2 context-at-entry — JSON.stringify like the other jsonb params
+            // (top-level pg param serialization of objects is fine, but stay
+            // consistent with this INSERT's existing ::jsonb convention).
+            JSON.stringify(outcome.entry_context ?? null),
           ]
         );
         if (!outcomeRes.rows[0]?.id) {
@@ -3623,6 +3646,8 @@ export async function insertPlayOutcomeEntry(row: {
   option_ticket: unknown;
   opened_at: string;
   playbook_instance_id?: string | null;
+  /** Context-at-entry blob (C-2) — optional/additive, mirrors insertOpenSpxPlay. */
+  entry_context?: Record<string, unknown> | null;
 }): Promise<number> {
   await ensureSchema();
   const res = await (await getPool()).query<{ id: string }>(
@@ -3630,9 +3655,9 @@ export async function insertPlayOutcomeEntry(row: {
     INSERT INTO spx_play_outcomes (
       open_play_id, session_date, direction, entry_path, grade, score, confidence,
       entry_price, stop, target, headline, factors, confirmations, mtf, claude,
-      option_ticket, opened_at, outcome, playbook_instance_id
+      option_ticket, opened_at, outcome, playbook_instance_id, entry_context
     )
-    VALUES ($1,$2::date,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12::jsonb,$13::jsonb,$14::jsonb,$15::jsonb,$16::jsonb,$17,'open',$18)
+    VALUES ($1,$2::date,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12::jsonb,$13::jsonb,$14::jsonb,$15::jsonb,$16::jsonb,$17,'open',$18,$19::jsonb)
     ON CONFLICT (open_play_id) WHERE outcome = 'open' DO NOTHING
     RETURNING id
     `,
@@ -3655,6 +3680,7 @@ export async function insertPlayOutcomeEntry(row: {
       JSON.stringify(row.option_ticket ?? null),
       row.opened_at,
       row.playbook_instance_id ?? null,
+      JSON.stringify(row.entry_context ?? null),
     ]
   );
   return Number(res.rows[0]?.id ?? 0);
@@ -4251,6 +4277,10 @@ export type ZeroDteSetupLogRow = {
   last_mark: number | null;
   peak_premium: number | null;
   trough_premium: number | null;
+  /** Context-at-entry (C-2): vix_open / spy_bias / gamma_regime / score /
+   *  committed_at_et as of FIRST flag — see zerodte/entry-context.ts. NULL on
+   *  every row committed before the column shipped; consumers must not assume it. */
+  entry_context: Record<string, unknown> | null;
 };
 
 export type ZeroDteSetupLogUpsert = {
@@ -4269,6 +4299,9 @@ export type ZeroDteSetupLogUpsert = {
   entry_premium: number | null;
   flow_avg_fill: number | null;
   plan_json: Record<string, unknown> | null;
+  /** Context-at-entry blob (C-2). Optional so existing callers/tests are untouched;
+   *  pinned at first flag by the upsert below (never re-stamped by a refresh tick). */
+  entry_context?: Record<string, unknown> | null;
 };
 
 /** Upsert scanner finds — one row per (session, ticker). First sighting pins
@@ -4295,8 +4328,8 @@ export async function upsertZeroDteSetupLog(rows: ZeroDteSetupLogUpsert[]): Prom
         session_date, ticker, direction, top_strike, expiry, score, score_max,
         dossier_score, conviction, gross_premium, spike, underlying_at_flag,
         underlying_latest, flags_json, entry_premium, flow_avg_fill, plan_json,
-        first_flagged_at, last_seen_at
-      ) VALUES ($1,$2,$3,$4,$5,$6,$6,$7,$8,$9,$10,$11,$11,$12,$13,$14,$15,NOW(),NOW())
+        entry_context, first_flagged_at, last_seen_at
+      ) VALUES ($1,$2,$3,$4,$5,$6,$6,$7,$8,$9,$10,$11,$11,$12,$13,$14,$15,$16,NOW(),NOW())
       ON CONFLICT (session_date, ticker) DO UPDATE SET
         score = EXCLUDED.score,
         score_max = GREATEST(zerodte_setup_log.score_max, EXCLUDED.score),
@@ -4317,6 +4350,9 @@ export async function upsertZeroDteSetupLog(rows: ZeroDteSetupLogUpsert[]): Prom
         entry_premium = COALESCE(zerodte_setup_log.entry_premium, EXCLUDED.entry_premium),
         flow_avg_fill = COALESCE(zerodte_setup_log.flow_avg_fill, EXCLUDED.flow_avg_fill),
         plan_json = COALESCE(zerodte_setup_log.plan_json, EXCLUDED.plan_json),
+        -- entry_context is PINNED with the plan fields: "what did the desk look like
+        -- at commit" must never be re-stamped by a later refresh tick (C-2).
+        entry_context = COALESCE(zerodte_setup_log.entry_context, EXCLUDED.entry_context),
         last_seen_at = NOW()
       RETURNING (xmax = 0) AS inserted
       `,
@@ -4336,6 +4372,7 @@ export async function upsertZeroDteSetupLog(rows: ZeroDteSetupLogUpsert[]): Prom
         r.entry_premium,
         r.flow_avg_fill,
         r.plan_json,
+        r.entry_context ?? null,
       ]
     );
     if (res.rows[0]?.inserted === true) freshlyFlagged.add(ticker);
@@ -4870,6 +4907,7 @@ function mapZeroDteLogRow(r: QueryResultRow): ZeroDteSetupLogRow {
     last_mark: r.last_mark != null ? Number(r.last_mark) : null,
     peak_premium: r.peak_premium != null ? Number(r.peak_premium) : null,
     trough_premium: r.trough_premium != null ? Number(r.trough_premium) : null,
+    entry_context: (r.entry_context as Record<string, unknown>) ?? null,
   };
 }
 
@@ -4909,6 +4947,63 @@ export async function fetchUngradedZeroDteRows(beforeDate: string, limit = 12): 
     [normalized, limit]
   );
   return res.rows.map(mapZeroDteLogRow);
+}
+
+/**
+ * P-6 backfill: un-stamp `graded_at` on historical index-root rows that carry the
+ * null-grade signature of the pre-polygonSpotTicker bug (graded_at set, close_price
+ * NULL — see zerodte/regrade.ts's needsIndexRootRegrade, the executable spec this
+ * WHERE clause mirrors), so the EXISTING lazy grader re-grades them through the
+ * fixed mapping. Nothing else is touched: move_pct/direction_hit are already NULL
+ * on every matching row, and the grader owns re-stamping.
+ *
+ * Idempotent (a cleared row has graded_at NULL and can never match again) and
+ * bounded (LIMIT inside the CTE; deterministic oldest-first order). dry_run runs
+ * the identical SELECT without the UPDATE so an admin can preview the blast radius.
+ */
+export async function resetNullGradedZeroDteRows(opts: {
+  tickers: readonly string[];
+  beforeDate: string;
+  limit: number;
+  dryRun: boolean;
+}): Promise<{ rows: Array<{ session_date: string; ticker: string }>; cleared: number }> {
+  await ensureSchema();
+  const normalized = normalizeIsoDateInput(opts.beforeDate);
+  if (!normalized || opts.tickers.length === 0 || opts.limit <= 0) return { rows: [], cleared: 0 };
+  const tickers = opts.tickers.map((t) => t.toUpperCase());
+  const pool = await getPool();
+  const selectSql = `
+    SELECT session_date, ticker FROM zerodte_setup_log
+    WHERE graded_at IS NOT NULL
+      AND close_price IS NULL
+      AND ticker = ANY($1::text[])
+      AND session_date < $2::date
+    ORDER BY session_date ASC, ticker ASC
+    LIMIT $3`;
+  if (opts.dryRun) {
+    const res = await pool.query<QueryResultRow>(selectSql, [tickers, normalized, opts.limit]);
+    return {
+      rows: res.rows.map((r) => ({
+        session_date: isoDateString(r.session_date),
+        ticker: String(r.ticker),
+      })),
+      cleared: 0,
+    };
+  }
+  const res = await pool.query<QueryResultRow>(
+    `WITH target AS (${selectSql} FOR UPDATE SKIP LOCKED)
+     UPDATE zerodte_setup_log z
+     SET graded_at = NULL
+     FROM target t
+     WHERE z.session_date = t.session_date AND z.ticker = t.ticker
+     RETURNING z.session_date, z.ticker`,
+    [tickers, normalized, opts.limit]
+  );
+  const rows = res.rows.map((r) => ({
+    session_date: isoDateString(r.session_date),
+    ticker: String(r.ticker),
+  }));
+  return { rows, cleared: rows.length };
 }
 
 export async function gradeZeroDteSetupRow(
