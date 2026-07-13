@@ -35,6 +35,7 @@ import {
   type VectorWallEvent,
 } from "@/features/vector/lib/vector-wall-events";
 import { VECTOR_CHART_LOCALE } from "@/features/vector/lib/vector-chart-config";
+import { reassertPriceAutoScale } from "@/features/vector/lib/vector-price-autoscale";
 import {
   normalizeDteHorizon,
   pickHorizonScopedValue,
@@ -250,6 +251,7 @@ function pinCandlesOnTop(candleSeries: ISeriesApi<"Candlestick">): void {
   const count = candleSeries.getPane().getSeries().length;
   if (count > 0) candleSeries.setSeriesOrder(count - 1);
 }
+
 
 const VOLUME_UP = "rgba(0, 230, 118, 0.72)";
 const VOLUME_DOWN = "rgba(255, 45, 85, 0.72)";
@@ -1145,7 +1147,9 @@ export function VectorChart({
     // Record what was actually drawn so the autoscale provider widens to reveal these exact beads
     // at every zoom level, then nudge a rescale (off-hours there is no tick to trigger it).
     beadStrikesRef.current = { call: callStrikes, put: putStrikes };
-    series.priceScale().applyOptions({ autoScale: true });
+    // Respect a manual vertical zoom — only nudge autoscale when the member hasn't taken the
+    // price axis over (see reassertPriceAutoScale; this was the residual "zooms out" reset).
+    reassertPriceAutoScale(series.priceScale());
     pinCandlesOnTop(series);
   }, []);
 
@@ -1196,7 +1200,9 @@ export function VectorChart({
         call: (walls?.callWalls ?? []).slice(0, maxGuides).map((w) => w.strike),
         put: (walls?.putWalls ?? []).slice(0, maxGuides).map((w) => w.strike),
       };
-      series.priceScale().applyOptions({ autoScale: true });
+      // Same guard as refreshTrails: a live tick re-running this must not override the member's
+      // manual price-axis zoom (the split-second "zooms out" bug).
+      reassertPriceAutoScale(series.priceScale());
     },
     []
   );
