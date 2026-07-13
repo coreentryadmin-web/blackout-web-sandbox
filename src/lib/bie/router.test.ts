@@ -107,6 +107,17 @@ describe("router: concept_read intent", () => {
   test("bieFollowups has a concept_read branch", () => {
     assert.equal(bieFollowups("concept_read").length, 3);
   });
+
+  test("BOUNDARY: a live-EDITION/temporal question is NOT stolen by concept_read", () => {
+    // "what is tonight's Night Hawk edition" is a LIVE request — it must not return the Night Hawk
+    // DEFINITION. It falls through (→ Claude → get_nighthawk_edition), not concept_read.
+    assert.notEqual(classifyBieIntent("what is tonight's Night Hawk edition", NO_LEDGER)?.intent, "concept_read");
+    assert.notEqual(classifyBieIntent("what's the latest Night Hawk edition", NO_LEDGER)?.intent, "concept_read");
+    assert.notEqual(classifyBieIntent("what is today's edition", NO_LEDGER)?.intent, "concept_read");
+    // The plain PRODUCT definition still resolves to concept_read.
+    assert.equal(classifyBieIntent("what is Night Hawk", NO_LEDGER)?.intent, "concept_read");
+    assert.equal(classifyBieIntent("what does Night Hawk do", NO_LEDGER)?.intent, "concept_read");
+  });
 });
 
 describe("router: universal_lookup intent", () => {

@@ -91,7 +91,7 @@ const CONCEPT_RE =
  *  Deliberately status VERBS + product-state nouns, NOT bare "market" (so "what is market structure"
  *  stays a concept). */
 const CONCEPT_LIVE_HINT_RE =
-  /\b(doing|happening|going on|right now|look(ing)? like|the setup|the play|the trade|the bias|the read)\b/i;
+  /\b(doing|happening|going on|right now|look(ing)? like|the setup|the play|the trade|the bias|the read|tonight|tonight's|today's|latest|current|this week|edition)\b/i;
 /** Teach/opinion/reasoning shapes that belong with Claude, not a glossary lookup. */
 const CONCEPT_TEACH_EXCLUDE_RE =
   /\bin general\b|\bshould i\b|\bwould you\b|\bthink\b|\bworried\b|\bopinion\b|\bpredict\b|\bforecast\b|\bhow\b[^?]{0,40}\bwork/i;
