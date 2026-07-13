@@ -1,5 +1,7 @@
-import { anthropicConfigured, anthropicText } from "@/lib/providers/anthropic";
+import { anthropicText } from "@/lib/providers/anthropic";
+import { claudeEnabled } from "@/lib/ai-env";
 import type { TickerDossier } from "./dossier";
+import { buildDeterministicEditionPlays } from "./deterministic-edition";
 import { buildClaudePrompt, buildMarketRecap, type EngineState } from "./format";
 import type { MarketWideContext } from "./market-wide";
 import type { SpxDeskSummary, FlowTapeSummary } from "@/lib/platform/types";
@@ -29,7 +31,6 @@ import {
   PLAYBOOK_PREMIUM_CAP_LINE,
 } from "./constants";
 import { groundPlays, type GroundingSummary } from "./grounding";
-import { buildDirectionalStockLevels } from "./play-levels";
 import type { ScoredCandidate } from "./scorer";
 import { convictionFromScore, convictionRank } from "./scorer";
 import type { PlaybookPlay } from "./types";
@@ -167,32 +168,46 @@ export async function generateEditionPlays(params: {
   const recap = buildMarketRecap(params.ctx);
   const dossierMap = Object.fromEntries(params.dossiers.map((d) => [d.ticker, d]));
 
-  if (!anthropicConfigured()) {
-    const fallback = params.ranked.slice(0, 5).map((s, i) => {
-      const dossier = dossierMap[s.ticker];
-      const levels = buildDirectionalStockLevels({
-        direction: s.direction,
-        support: dossier?.tech?.support_levels?.[0],
-        resistance: dossier?.tech?.resistance_levels?.[0],
-      });
-      return mapClaudePlayToEdition(
-        {
-          ticker: s.ticker,
-          type: "stock",
-          direction: s.direction === "long" ? "LONG" : "SHORT",
-          conviction: s.conviction,
-          key_signal: dossier?.tech?.summary ?? "Mechanical fallback — Claude unavailable.",
-          entry_range: levels.entry_range,
-          target: levels.target,
-          stop: levels.stop,
-          options_play: "-",
-          score: s.score,
-        },
-        i + 1,
-        dossierMap
-      );
+  // DE-CLAUDE (task #61). When Claude is OFF — staging (claudeEnabled()===false, ai-env.ts:9) or any
+  // deploy where Anthropic isn't configured — the synthesis call below returns null and the edition
+  // zeroed to recap-only (Night Hawk's ONE remaining Claude-only step was play GENERATION; ranking,
+  // geometry, premium caps, and grounding were all already deterministic). Route through the
+  // deterministic selector instead: it rebuilds the pick + geometry + contract step from the SAME
+  // scored data + prefetched chain, enforcing the SAME premium-cap / validatePlayGeometry / groundPlays
+  // gates. This REPLACES the old !anthropicConfigured() mechanical fallback (a bare levels-only card
+  // with options_play "-") — the selector is strictly stronger (real liquid grounded contracts) and,
+  // gated on !claudeEnabled(), it now also covers the staging case the old gate missed (staging HAS
+  // Anthropic configured, so !anthropicConfigured() was false and control fell through to the Claude
+  // call that returned null). The Claude path below is untouched and still runs when claudeEnabled().
+  if (!claudeEnabled()) {
+    const detTickers = params.ranked.slice(0, EDITION_CHAIN_PREFETCH).map((s) => s.ticker);
+    const detChains = await fetchEditionChains({ stockTickers: detTickers, dossiers: params.dossiers });
+    const { plays: detPlays, funnel: detFunnel } = buildDeterministicEditionPlays({
+      ranked: params.ranked,
+      dossierMap,
+      chains: detChains,
+      // Overshoot like the Claude path so the downstream critic + thin-edition backfill have headroom
+      // (edition-builder slices to EDITION_TARGET_PLAYS after critiquePlays).
+      target: EDITION_SYNTHESIS_OVERSHOOT,
     });
-    return { plays: fallback, recap, raw: null };
+    return {
+      plays: detPlays,
+      recap,
+      raw: null,
+      // Map the selector's funnel into the shared shape so a 0-play deterministic edition is just as
+      // self-diagnosing as the Claude path (which stage zeroed it). No parse/strike stages exist here
+      // — every emitted play came off a real chain — so parsed==candidates and strike_ok==contract_ok.
+      funnel: {
+        parsed: detFunnel.candidates,
+        stock: detFunnel.contract_ok,
+        geometry_ok: detFunnel.geometry_ok,
+        premium_ok: detFunnel.premium_ok,
+        strike_ok: detFunnel.contract_ok,
+        grounded: detFunnel.grounded,
+        dropped_ungrounded: detFunnel.dropped_ungrounded,
+        flagged: 0,
+      },
+    };
   }
 
   const chainTickers = params.ranked.slice(0, EDITION_CHAIN_PREFETCH).map((s) => s.ticker);
