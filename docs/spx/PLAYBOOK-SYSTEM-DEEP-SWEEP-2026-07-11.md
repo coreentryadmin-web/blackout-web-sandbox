@@ -141,11 +141,11 @@ None of this overturns the standing verdict that staging is correctly positioned
 | 21–23 | **FIXED** | Desk `roundDeskNum`; IV rank #22; `useMergedDesk` `deskLaneFailed` |
 | 24–25 | **FIXED** | Bar h/l validation; technicals cache returns fresh `price` |
 | 26 | **FIXED** | `SPX_CLAUDE_DAILY_MAX_CALLS` wired with meta-backed counter |
-| 27 | **FIXED** | Ambiguity-safe play-outcome join + grade filter; `spx_claude_play` alert_type aligned |
+| 27 | **PARTIAL** | Ambiguity gate + grade filter close the documented two-closed-candidates case (#112), but a wrong-match class survives: uniqueness `COUNT` runs over *closed-only* candidates, so a still-open true match + one closed decoy → count=1 → wrong play graded. SQL fix also untested (sync test mocks the DB function). See #112 verification below |
 | 28 | **FIXED** | `topGexWalls` trims to `limit` when anchors overflow |
 | 29 | **FIXED** | `rsi()` already returns null on flat window (verified) |
 | 30 | **FIXED** | `strikeTotalsToLevels` validates `net` finiteness |
-| 31–32 | **FIXED** | Labeled UW REST supplemental fetch; flow lane skips GEX at spot=0 |
+| 31–32 | **FIXED** | Labeled UW REST supplemental fetch (#31 desync now impossible by construction); flow lane skips GEX at spot=0 (#32). Note: #32 fix also drops sticky walls/dark-pool/greeks + Redis sticky publish in the spot=0 path — availability trade during Polygon outages, see #112 verification below |
 | 33 | **FIXED** | Invalidation staleness note |
 | 34 | **FIXED** | spx-signal-observe docblock |
 | 35 | **FIXED** | Staggered cron TOMLs (+2 / +4 min) |
@@ -196,3 +196,24 @@ Spot-checked directly against current code rather than trusting the table:
 ### Full verification run (this pass)
 
 `npx tsc --noEmit` — clean. `PLAYBOOK_VERDICT_GUARD_ASSERT=1 npm test` — **2081/2081 pass, 0 failures**, 94 suites (full repo suite, not just the touched files). **F4 (RTH live proof):** not runnable this pass — market is fully closed (Saturday 02:05 ET at time of this review); `validate:staging-rth` and `GET /api/admin/playbook/fsm-today` both require live RTH state to produce meaningful output, so neither was run rather than fabricating a result. Still outstanding — needs a weekday-RTH window.
+
+---
+
+## Claude — verification of #112 residual-sweep closure (2026-07-11)
+
+Adversarial re-check of PR #112 ("close residual sweep #27/#31-32/#38 + staging gate default") against the merged code. Touched tests: 20/20 pass; `tsc --noEmit` clean.
+
+### #31 — genuinely fixed
+`fetchUwDeskRestSupplemental` (`spx-desk.ts:202-231`) captures slot indices mechanically at push time (`maxPainSlot = tasks.length` immediately before each conditional push) and the call site destructures a named object. A push-order/extract-order desync is now impossible by construction. Caveat: `runUwPooled` still returns `unknown[]` with `as` casts internally, so the protection is structural rather than compiler-enforced — acceptable, since it's 30 lines in one place.
+
+### #32 — genuinely fixed, with an unclaimed availability trade
+`price <= 0` now early-returns the `empty` payload before `resolveCanonicalDeskGex` can run, so the bogus spot-0 regime/hysteresis path is unreachable and `available:false` semantics are preserved. **Unclaimed behavior change:** the early return also skips the entire UW pooled fetch and the Redis sticky publish, so during a Polygon snapshot outage the flow lane now loses sticky `gex_walls`, `dark_pool`, `greek_exposure`, flow-by-expiry, and net-prem ticks — previously those still flowed alongside the (bogus) regime. Defensible trade, but consumer-visible during outages; logged in FINDINGS as an accepted-risk note.
+
+### #38 — genuinely fixed; retention interaction verified SAFE
+`db.ts:1117-1149`: orphan cleanup then guarded ALTERs — events → instances `ON DELETE CASCADE`, outcomes → instances `ON DELETE SET NULL`. The interaction with the same-day retention tasks was the highest-risk question and it holds up: every event writer upserts the instance first (bumping `updated_at = NOW()`), so any event under a 365d-stale instance is itself >180d old and already purged by the 180d events task — the CASCADE is a correct no-op in practice. Outcomes' `SET NULL` lands on a nullable column with a supporting partial index; evidence joins already tolerate NULL. Two low-severity deploy caveats: the orphan-cleanup anti-joins run unconditionally on every cold boot (per-boot table scans under the migration advisory lock — could be gated behind the constraint-existence check), and a one-time rollout race exists where an old-version writer commits an orphan event between cleanup and ALTER (transient boot error, self-retries via `schemaReady` reset).
+
+### Gate default — as claimed, no production change
+`spx-play-config.ts:85-91`: explicit `0/false` → off, `1/true` → on, else on only when `NEXT_PUBLIC_SITE_URL` contains `staging.`. Prod and unset envs behave identically to before; the explicit-`0`-overrides-staging case is genuinely tested. **Operational follow-up:** with the gate on, the BIE precedent check fails closed — staging must have `VOYAGE_API_KEY` + `DATABASE_URL` configured or the staging engine is entry-dead by default. Confirm staging env.
+
+### #27 — PARTIAL (reopened at reduced severity)
+The rewritten join (`db.ts:4751-4783`) adds a CTE uniqueness gate (`COUNT(*) = 1` → refuse to match when ambiguous), a grade filter (`confidence_label` ↔ `grade`, same object same cycle at both write sites), and a −2min pre-window. This genuinely closes the documented scenario — two closed same-direction/price/grade candidates now match nothing rather than the wrong one. **Surviving wrong-match class:** the uniqueness count runs over *closed-only* candidates. If the true match (opened seconds after the verdict) is still `open` at sync time while a same-direction/price/grade decoy opened later has already closed, candidates = {decoy}, count = 1 → the verdict is graded against the wrong play. Correct close: count all direction/price/window matches and only grade when the unique match is also closed. **Test gap:** the only new sync test exercises legacy alert-type routing against an argument-ignoring DB mock — the uniqueness SQL, grade filter, and window changes have zero coverage. Fix-batch table row corrected from FIXED to PARTIAL.
