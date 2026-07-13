@@ -24,6 +24,10 @@ export type IntradayRead = {
   last: number | null;
   day_high: number | null;
   day_low: number | null;
+  /** Epoch-ms of the newest RTH bar in the read — how FRESH this read actually is.
+   *  The G-1 tape-alignment gate (./gates.ts) fails closed on a stale SPY read: a
+   *  bias computed from bars that stopped arriving isn't a bias, it's a memory. */
+  last_bar_ms: number | null;
 };
 
 const RTH_OPEN = 9 * 60 + 30;
@@ -46,6 +50,7 @@ export function computeIntradayRead(bars: IntradayBar[]): IntradayRead {
       last: null,
       day_high: null,
       day_low: null,
+      last_bar_ms: null,
     };
   }
 
@@ -94,6 +99,7 @@ export function computeIntradayRead(bars: IntradayBar[]): IntradayRead {
     last,
     day_high: Number.isFinite(dayHigh) ? Math.round(dayHigh * 100) / 100 : null,
     day_low: Number.isFinite(dayLow) ? Math.round(dayLow * 100) / 100 : null,
+    last_bar_ms: rth[rth.length - 1]!.t,
   };
 }
 

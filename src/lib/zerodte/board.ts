@@ -654,6 +654,9 @@ export function rankEngineCards(
 import { computeFibLevels, nearestFibNote, type FibNote } from "./fib";
 import type { ContractPlan } from "./plan";
 import type { IntradayRead } from "./intraday";
+// Type-only (erased at compile time — no runtime cycle with ./gates, which imports
+// only types back from this module).
+import type { ZeroDteGateVerdict } from "./gates";
 
 /** Structural subset of TickerDossier the enrichment reads (keeps this module
  *  provider-import-free and the merge testable with plain objects). */
@@ -748,6 +751,11 @@ export type EnrichedZeroDteSetup = ZeroDteSetup & {
   /** Entry/exit contract plan (premium band + exits) — attached by the scan when a
    *  live quote or real fill exists; null = evidence only, never a guessed plan. */
   plan: ContractPlan | null;
+  /** Hard-gate verdict for a FRESH find (./gates.ts): BLOCKED setups stay visible
+   *  as WATCH/SKIP cards with every failing gate's reason (+ unlock time when the
+   *  block is clock-based). Null = not evaluated (already-committed ticker, or the
+   *  gate context couldn't be built — persist fails closed on that). */
+  gate: ZeroDteGateVerdict | null;
   halted: boolean;
   /** Reports today/next session — a 0DTE into an earnings print is a different trade. */
   earnings: EarningsFlag | null;
@@ -940,6 +948,7 @@ export function enrichSetup(
     analyst_note: dossier?.price_target ?? null,
     fib_note: fibNote,
     plan: null,
+    gate: null,
     halted: dossier?.trading_halt === true,
     earnings: extras?.earnings ?? null,
     news_hot: extras?.news_hot ?? null,

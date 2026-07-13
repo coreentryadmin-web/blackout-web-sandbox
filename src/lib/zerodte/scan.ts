@@ -47,6 +47,7 @@ import {
   type ZeroDteGateRejection,
 } from "./board";
 import { persistZeroDteRejections } from "./rejections";
+import { evaluateZeroDteGates, gateRejectionFor } from "./gates";
 import {
   computeIntradayRead,
   intradayScoreAdjust,
@@ -54,6 +55,7 @@ import {
   marketBias,
   timeOfDayFactor,
   type IntradayRead,
+  type MarketBias,
 } from "./intraday";
 import {
   buildContractPlan,
@@ -191,7 +193,11 @@ export async function scanZeroDteBoard(flags?: {
   );
 
   await attachContractPlans(setups);
-  await attachIntradayEdge(setups);
+  const tape = await attachIntradayEdge(setups);
+  // Hard-gate verdicts LAST — G-3 judges the final post-edge-layer score, and G-1
+  // reuses the same SPY read the edge layer just fetched (one bias per scan cycle,
+  // scoring and gating can never disagree about what the tape said).
+  await attachGateVerdicts(setups, tape.bias, tape.biasAsOfMs);
 
   return { setups, nighthawk_covered: nighthawkCovered, upstream_ok: upstreamOk, rejections };
 }
@@ -216,9 +222,13 @@ async function intradayReadFor(ticker: string, today: string): Promise<IntradayR
 /** The "is it working RIGHT NOW" layer: each top play's own minute-bar read
  *  (session VWAP / opening range / 5m trend), SPY as the market tape, and the
  *  time-of-day edge window — all folded into the score, with hard intraday
- *  conflicts flagged for the A-tier gate. Best-effort: missing bars = no adjust. */
-async function attachIntradayEdge(setups: EnrichedZeroDteSetup[]): Promise<void> {
-  if (setups.length === 0) return;
+ *  conflicts flagged for the A-tier gate. Best-effort: missing bars = no adjust.
+ *  Returns the SPY bias (+ its freshness) so the hard-gate layer judges the SAME
+ *  tape read the scores were adjusted with. */
+async function attachIntradayEdge(
+  setups: EnrichedZeroDteSetup[]
+): Promise<{ bias: MarketBias | null; biasAsOfMs: number | null }> {
+  if (setups.length === 0) return { bias: null, biasAsOfMs: null };
   const today = todayEt();
   const { hour, minute } = etNowParts();
   const nowEt = hour * 60 + minute;
@@ -241,6 +251,42 @@ async function attachIntradayEdge(setups: EnrichedZeroDteSetup[]): Promise<void>
     s.tod_label = tod.label;
     s.score = Math.max(0, Math.min(100, s.score + adj.delta + align + tod.delta));
   });
+  return { bias, biasAsOfMs: spyRead?.last_bar_ms ?? null };
+}
+
+/** Hard-gate verdicts (G-1.. — ./gates.ts) for every FRESH find this cycle.
+ *  Already-committed ledger tickers are refreshes and are never re-gated (a printed
+ *  play is managed to its exit, not retro-blocked). If the committed set can't be
+ *  read, gates stay null and persistZeroDteScan fails closed on every fresh commit —
+ *  the same "unreadable input is a block, not a pass" rule the evidence gates follow. */
+async function attachGateVerdicts(
+  setups: EnrichedZeroDteSetup[],
+  bias: MarketBias | null,
+  biasAsOfMs: number | null
+): Promise<void> {
+  if (setups.length === 0) return;
+  const { hour, minute } = etNowParts();
+  const nowEtMinutes = hour * 60 + minute;
+  const nowMs = Date.now();
+  const committed = dbConfigured()
+    ? await fetchZeroDteSetupLog(todayEt())
+        .then((rows) => new Set(rows.map((r) => r.ticker.toUpperCase())))
+        .catch(() => null)
+    : new Set<string>();
+  if (committed == null) return; // gates stay null → fresh commits fail closed downstream
+
+  for (const s of setups) {
+    if (committed.has(s.ticker.toUpperCase())) continue;
+    s.gate = evaluateZeroDteGates({
+      ticker: s.ticker,
+      direction: s.direction,
+      score: s.score,
+      nowEtMinutes,
+      nowMs,
+      bias,
+      biasAsOfMs,
+    });
+  }
 }
 
 /** One batched quote snapshot for every find's top-strike contract, then a pure
@@ -282,18 +328,50 @@ async function attachContractPlans(setups: EnrichedZeroDteSetup[]): Promise<void
 }
 
 /** Persist a scan's finds into the session ledger (no-op without a database).
+ *
+ *  Two lanes, split against the committed set:
+ *  - REFRESH (ticker already in today's ledger): always upserted — a committed play
+ *    is managed to its exit, never retro-blocked, and the upsert's COALESCE pins
+ *    keep its plan/entry immutable anyway.
+ *  - FRESH commit: must clear the hard gate stack (setup.gate, ./gates.ts). Blocked
+ *    finds are persisted to zerodte_scan_rejections (machine code + human sentence)
+ *    instead — visible SKIP, never a silent drop. A missing verdict (gate context
+ *    unreadable) fails closed, and an unreadable committed set fails the whole
+ *    persist closed (can't tell fresh from committed → nothing new may print).
+ *
  *  After the 15:00 ET cutoff only EXISTING plays are refreshed — a fresh flag in
- *  power hour never opens a new 0DTE play. */
+ *  power hour never opens a new 0DTE play (this predates and stays alongside the
+ *  gate stack's own opening-window rule). */
 export async function persistZeroDteScan(setups: EnrichedZeroDteSetup[]): Promise<number> {
   if (!dbConfigured() || setups.length === 0) return 0;
   const today = todayEt();
   const { hour, minute } = etNowParts();
-  let eligible = setups;
-  if (hour * 60 + minute >= NEW_PLAY_CUTOFF_ET_MINUTES) {
-    const existing = new Set((await fetchZeroDteSetupLog(today).catch(() => [])).map((r) => r.ticker));
-    eligible = setups.filter((s) => existing.has(s.ticker));
-    if (eligible.length === 0) return 0;
+  const pastCutoff = hour * 60 + minute >= NEW_PLAY_CUTOFF_ET_MINUTES;
+
+  const existingRows = await fetchZeroDteSetupLog(today).catch(() => null);
+  if (existingRows == null) return 0; // fail closed: fresh vs committed is unknowable
+  const existing = new Set(existingRows.map((r) => r.ticker.toUpperCase()));
+
+  const refresh = setups.filter((s) => existing.has(s.ticker.toUpperCase()));
+  const freshCandidates = pastCutoff ? [] : setups.filter((s) => !existing.has(s.ticker.toUpperCase()));
+
+  const committedFresh: EnrichedZeroDteSetup[] = [];
+  const gateRejections: import("./board").ZeroDteGateRejection[] = [];
+  for (const s of freshCandidates) {
+    if (s.gate?.verdict === "COMMIT") committedFresh.push(s);
+    else gateRejections.push(gateRejectionFor(s, s.gate));
   }
+  if (gateRejections.length > 0) {
+    // Fail-visible half of the block: best-effort durable record (same throttled
+    // write path the evidence-gate near-misses use), logged loudly on failure but
+    // never allowed to break the scan itself.
+    void persistZeroDteRejections(gateRejections).catch((err) => {
+      console.warn("[zerodte-gates] failed to persist gate rejections:", err);
+    });
+  }
+
+  const eligible = [...committedFresh, ...refresh];
+  if (eligible.length === 0) return 0;
   const rows: ZeroDteSetupLogUpsert[] = eligible.map((s) => ({
     session_date: today,
     ticker: s.ticker,
