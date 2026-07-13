@@ -5,6 +5,7 @@ import { queryLargoStream, fetchLargoSession, LargoStreamAborted } from "@/lib/a
 import { LARGO_SESSION_KEY } from "@/lib/session-cache";
 import { isIosAppShell } from "@/lib/ios-app-shell";
 import { largoStreamErrorMessage } from "@/lib/largo-stream-errors";
+import type { BieAnswerEnvelope } from "@/lib/bie/answer-envelope";
 import {
   conversationTitle,
   loadConversations,
@@ -19,6 +20,12 @@ export type LargoMessage = {
   role: "user" | "assistant";
   content: string;
   tools?: string[];
+  /**
+   * Populated structured answer from synthesis (#59), when the query API returns
+   * one. Preferred over the markdown shim by LargoAnswerMessage; absent on trivial
+   * answers, historical (rehydrated) turns, and until the server PR deploys.
+   */
+  envelope?: BieAnswerEnvelope | null;
 };
 
 const TOOL_LABEL: Record<string, string> = {
@@ -263,6 +270,9 @@ export function useLargoChat() {
           upsertAssistantMessage(m, assistantId, {
             content: res.answer,
             tools: res.tools_used,
+            // Prefer the real structured envelope when synthesis (#59) returns one;
+            // null keeps LargoAnswerMessage on the markdown shim (no regression).
+            envelope: res.envelope ?? null,
           })
         );
         setFollowups(Array.isArray(res.followups) ? res.followups.slice(0, 3) : []);
