@@ -33,14 +33,21 @@ import {
 import {
   composeBiasHeaderLine,
   composeBiasVoice,
+  composeCatalystLine,
+  composeExpectedMoveContext,
+  composeSessionCharacter,
+  composeVwapPosture,
   deriveSpxBias,
   deriveTriggerLevels,
+  deriveWatchLevels,
   detectPlayVoiceEvents,
   detectSpxVoiceEvents,
   filterFreshVoiceEvents,
+  fmtEtTime,
   voiceSnapshotFromDesk,
   type SpxBiasDirection,
   type SpxTriggerLevel,
+  type SpxVoiceEvent,
   type SpxVoiceEventTone,
   type SpxVoicePlayState,
   type SpxVoiceSnapshot,
@@ -78,7 +85,12 @@ type PinnedBias = {
 // spx-largo-feed-cache.ts — alias it so a drift here is a type error, not a silent skew.
 type FeedItem = LargoFeedItem;
 
-type PersistedRail = { pinned: PinnedBias | null; feed: FeedItem[] };
+/** How many king-migration / flip-crossing shifts the rail remembers (enhancement d). */
+const MAX_SHIFT_MEMORY = 3;
+/** Event kinds that count as a structural "shift" worth remembering. */
+const SHIFT_KINDS: ReadonlySet<SpxVoiceEvent["kind"]> = new Set(["king-migrate", "flip-cross"]);
+
+type PersistedRail = { pinned: PinnedBias | null; feed: FeedItem[]; shifts?: FeedItem[] };
 
 function toneTextClass(tone: SpxVoiceEventTone): string {
   switch (tone) {
@@ -120,6 +132,9 @@ export function SpxCommentaryRail({
 }) {
   const [pinned, setPinned] = useState<PinnedBias | null>(null);
   const [feed, setFeed] = useState<FeedItem[]>([]);
+  // Wall-migration memory: the last 3 king-migration/flip-cross transitions with their
+  // ET timestamps. Sourced ONLY from detectSpxVoiceEvents output — never re-derived.
+  const [shifts, setShifts] = useState<FeedItem[]>([]);
   const [railCollapsed, setRailCollapsed] = useState(false);
 
   const prevSnapRef = useRef<SpxVoiceSnapshot | null>(null);
@@ -129,13 +144,19 @@ export function SpxCommentaryRail({
   const lastBiasAtRef = useRef(0);
   const idSeqRef = useRef(0);
   const hydratedRef = useRef(false);
+  // Mirror of `shifts` so persist() calls from other effects never write a stale closure.
+  const shiftsRef = useRef<FeedItem[]>([]);
 
   // useSpxPlay shares its SWR key with SpxTradeAlerts, so this adds no polling — it just
   // observes the same payload for armed/fired/closed lifecycle lines.
   const { play } = useSpxPlay(Boolean(live && desk?.available));
 
   const persist = (nextPinned: PinnedBias | null, nextFeed: FeedItem[]) => {
-    writeSessionCache<PersistedRail>(FEED_CACHE_KEY, { pinned: nextPinned, feed: nextFeed.slice(0, MAX_FEED_ITEMS) });
+    writeSessionCache<PersistedRail>(FEED_CACHE_KEY, {
+      pinned: nextPinned,
+      feed: nextFeed.slice(0, MAX_FEED_ITEMS),
+      shifts: shiftsRef.current.slice(0, MAX_SHIFT_MEMORY),
+    });
     // Same-tab consumers (the session time bar's event dots) refresh on this — storage
     // events only fire in OTHER tabs.
     announceLargoFeedUpdated();
@@ -155,6 +176,10 @@ export function SpxCommentaryRail({
         // the state moved while the tab was away.
       }
       if (cached.feed?.length) setFeed(cached.feed.slice(0, MAX_FEED_ITEMS));
+      if (cached.shifts?.length) {
+        shiftsRef.current = cached.shifts.slice(0, MAX_SHIFT_MEMORY);
+        setShifts(shiftsRef.current);
+      }
     }
   }, [live]);
 
@@ -189,6 +214,24 @@ export function SpxCommentaryRail({
       };
       lastBiasKeyRef.current = bias.key;
       lastBiasAtRef.current = now;
+    }
+
+    // Wall-migration memory: remember the last 3 king/flip transitions with timestamps.
+    // Reads the SAME fresh events the feed gets — no re-derivation, no extra events.
+    const freshShifts = fresh.filter((ev) => SHIFT_KINDS.has(ev.kind));
+    if (freshShifts.length) {
+      const next = [
+        ...freshShifts.map((ev) => ({
+          id: `s${now}-${idSeqRef.current++}`,
+          at: ev.at,
+          tone: ev.tone,
+          line: ev.line,
+          kind: ev.kind,
+        })),
+        ...shiftsRef.current,
+      ].slice(0, MAX_SHIFT_MEMORY);
+      shiftsRef.current = next;
+      setShifts(next);
     }
 
     const newItems: FeedItem[] = [];
@@ -252,7 +295,8 @@ export function SpxCommentaryRail({
   const offlineTone = commentaryOfflineTone(desk);
 
   // FOCUS MODE rail — rendered AFTER all hooks so the component never remounts on toggle:
-  // the bias/event effects above keep accumulating while collapsed.
+  // the bias/event effects above keep accumulating while collapsed. Placed before the
+  // context-strip derivations below since the collapsed rail renders none of them.
   if (focus) {
     const dir = pinned?.direction ?? "neutral";
     return (
@@ -268,6 +312,21 @@ export function SpxCommentaryRail({
       </aside>
     );
   }
+
+  // Live context strip — recomputed every desk tick straight from the payload snapshot
+  // (deterministic composers; each returns null when its inputs are missing, so Largo
+  // says less rather than guessing). Distances stay live even while the pinned bias
+  // card holds between re-voicings.
+  const renderSnap = live && desk?.available && largoEnabled() ? voiceSnapshotFromDesk(desk) : null;
+  const watchLevels = renderSnap ? deriveWatchLevels(renderSnap) : [];
+  const contextChips = renderSnap
+    ? [
+        composeVwapPosture(renderSnap),
+        composeExpectedMoveContext(renderSnap),
+        composeSessionCharacter(renderSnap),
+      ].filter((c): c is string => c != null)
+    : [];
+  const catalyst = renderSnap ? composeCatalystLine(renderSnap) : null;
 
   return (
     <aside
@@ -355,6 +414,18 @@ export function SpxCommentaryRail({
                 {pinned.headerLine}
               </h3>
               <p className="spx-commentary-body text-[12px] leading-relaxed">{pinned.voice}</p>
+              {(contextChips.length > 0 || catalyst) && (
+                <div id="spx-largo-context-chips" className="mt-2 flex flex-col gap-1">
+                  {contextChips.map((c) => (
+                    <p key={c} className="font-mono text-[10px] leading-snug text-white/70">
+                      {c}
+                    </p>
+                  ))}
+                  {catalyst && (
+                    <p className="font-mono text-[10px] leading-snug text-sky-300/80">{catalyst}</p>
+                  )}
+                </div>
+              )}
               {pinned.triggers.length > 0 && (
                 <div className="mt-3 pt-2 border-t border-white/10">
                   <p className="font-syne text-[10px] tracking-[0.2em] uppercase text-sky-300 mb-1.5">
@@ -372,7 +443,44 @@ export function SpxCommentaryRail({
                   </ul>
                 </div>
               )}
+              {/* LEVELS TO WATCH — nearest ≤3 levels with LIVE point distances. */}
+              {watchLevels.length > 0 && (
+                <div id="spx-largo-watch-levels" className="mt-3 pt-2 border-t border-white/10">
+                  <p className="font-syne text-[10px] tracking-[0.2em] uppercase text-sky-300 mb-1.5">
+                    Levels to watch
+                  </p>
+                  <ul className="space-y-1">
+                    {watchLevels.map((w) => (
+                      <li
+                        key={`${w.label}-${w.level}`}
+                        className={clsx("font-mono text-[11px] leading-snug", toneTextClass(w.tone))}
+                      >
+                        ◆ {w.line}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
             </article>
+
+            {/* RECENT SHIFTS — last 3 king-migrations/flip-crossings with ET stamps. */}
+            {shifts.length > 0 && (
+              <div id="spx-largo-recent-shifts" className="spx-commentary-card">
+                <p className="font-syne text-[10px] tracking-[0.2em] uppercase text-sky-300 mb-1">
+                  Recent shifts
+                </p>
+                {shifts.map((item) => (
+                  <div key={item.id} className="flex items-baseline gap-2 py-0.5">
+                    <time className="font-mono text-[9px] text-white/40 shrink-0 tabular-nums">
+                      {fmtEtTime(item.at)}
+                    </time>
+                    <p className={clsx("font-mono text-[10px] leading-snug", toneTextClass(item.tone))}>
+                      {item.line}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            )}
 
             {/* EVENT FEED — transition-only, newest on top. */}
             {feed.length > 0 ? (

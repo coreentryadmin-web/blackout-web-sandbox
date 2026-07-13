@@ -31,7 +31,11 @@ export type SpxVoiceSnapshot = {
   at: number;
   price: number | null;
   vwap: number | null;
+  /** True when the desk VWAP is genuinely volume-weighted (SPY minute-volume proxy). */
+  vwapVolumeWeighted: boolean;
   gammaFlip: number | null;
+  /** UW/desk max-pain strike; null when the chain didn't produce one — never guessed. */
+  maxPain: number | null;
   /** price >= gammaFlip; null when either side is unknown. */
   aboveFlip: boolean | null;
   aboveVwap: boolean | null;
@@ -51,6 +55,17 @@ export type SpxVoiceSnapshot = {
   lod: number | null;
   pdh: number | null;
   pdl: number | null;
+  /**
+   * First-30-min opening range from the desk (computeIntradayRead) — high/low are real
+   * session prices, `break` is the desk's own read, `forming` true during 9:30–10:00 ET.
+   * Null whenever the desk didn't serve one (pre-open, missing bars) — never synthesized.
+   */
+  openingRange: {
+    high: number;
+    low: number;
+    break: "above" | "below" | "inside" | null;
+    forming: boolean;
+  } | null;
   vix: number | null;
   vixChangePct: number | null;
   tideBias: string | null;
@@ -64,6 +79,12 @@ export type SpxVoiceSnapshot = {
   rsi: number | null;
   /** Top news titles (for new-headline detection). */
   newsTitles: string[];
+  /**
+   * Most recent catalyst headline (desk Benzinga feed), by parseable `published` stamp.
+   * `publishedAt` null = the feed gave no parseable timestamp (title still real, time
+   * simply not shown). Null when the desk carried no headlines — no fabricated events.
+   */
+  latestHeadline: { title: string; publishedAt: number | null } | null;
   gexStale: boolean;
   feedStalled: boolean;
 };
@@ -121,6 +142,33 @@ export function voiceSnapshotFromDesk(
     expMove = { low: Math.round(close - move), high: Math.round(close + move) };
   }
 
+  // Opening range: only surfaced when the desk served BOTH real prices. `break`/`forming`
+  // are passed through verbatim — the voice never re-derives OR state from price.
+  const orRaw = desk.opening_range;
+  const orHigh = num(orRaw?.high);
+  const orLow = num(orRaw?.low);
+  const openingRange: SpxVoiceSnapshot["openingRange"] =
+    orRaw && orHigh != null && orLow != null
+      ? { high: orHigh, low: orLow, break: orRaw.break ?? null, forming: orRaw.forming === true }
+      : null;
+
+  // Latest catalyst = max parseable `published` stamp; a title with no parseable stamp is
+  // only used when nothing timestamped exists (and then rendered without a time).
+  let latestHeadline: SpxVoiceSnapshot["latestHeadline"] = null;
+  for (const n of desk.news_headlines ?? []) {
+    const title = n.title?.trim();
+    if (!title) continue;
+    const ts = n.published ? Date.parse(n.published) : NaN;
+    const publishedAt = Number.isFinite(ts) ? ts : null;
+    if (
+      !latestHeadline ||
+      (publishedAt != null &&
+        (latestHeadline.publishedAt == null || publishedAt > latestHeadline.publishedAt))
+    ) {
+      latestHeadline = { title, publishedAt };
+    }
+  }
+
   // NaN is falsy, so an unparseable/missing stamp falls through the || chain honestly.
   const fromDesk =
     (desk.polled_at ? new Date(desk.polled_at).getTime() : NaN) ||
@@ -132,7 +180,9 @@ export function voiceSnapshotFromDesk(
     at,
     price,
     vwap,
+    vwapVolumeWeighted: desk.vwap_volume_weighted === true,
     gammaFlip: flip,
+    maxPain: num(desk.max_pain),
     aboveFlip: price != null && flip != null ? price >= flip : null,
     aboveVwap: price != null && vwap != null ? price >= vwap : null,
     ema20,
@@ -148,6 +198,7 @@ export function voiceSnapshotFromDesk(
     lod: num(desk.lod),
     pdh: num(desk.pdh),
     pdl: num(desk.pdl),
+    openingRange,
     vix,
     vixChangePct: num(desk.vix_change_pct),
     tideBias: desk.tide_bias || null,
@@ -157,6 +208,7 @@ export function voiceSnapshotFromDesk(
       .map((n) => n.title?.trim())
       .filter((t): t is string => Boolean(t))
       .slice(0, 8),
+    latestHeadline,
     gexStale: desk.gex_stale ?? false,
     feedStalled: desk.feed_stalled ?? false,
   };
@@ -467,6 +519,268 @@ export function composeBiasVoice(s: SpxVoiceSnapshot, bias: SpxBiasRead): string
   }
 
   return sentences.join(" ");
+}
+
+// ---------------------------------------------------------------------------
+// Context composers — deterministic, grounded add-ons (2026-07-13 hardening).
+//
+// Every function below returns null (or []) when its inputs are missing/stale —
+// "say less, never guess". The ONLY arithmetic ever applied to a desk number is:
+//   • point distance:  |spot − level|, rounded to 1 decimal (ptsAway)
+//   • expected-move geometry: half-width (high−low)/2, midpoint (high+low)/2,
+//     and %-of-band-used |spot − mid| / half · 100 (rounded)
+// These are the documented allowed derivations enforced by the
+// spx-live-voice.guard test — anything else in an output string is a bug.
+// ---------------------------------------------------------------------------
+
+/** |spot − level| in index points, 1-decimal — the only distance math in this module. */
+function ptsAway(price: number, level: number): number {
+  return Math.round(Math.abs(price - level) * 10) / 10;
+}
+
+function fmtPts(v: number): string {
+  return v.toLocaleString("en-US", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+}
+
+/** Deterministic ET clock rendering for timestamps that came in as epoch ms. */
+export function fmtEtTime(ms: number): string {
+  return (
+    new Date(ms).toLocaleTimeString("en-US", {
+      hour: "numeric",
+      minute: "2-digit",
+      timeZone: "America/New_York",
+    }) + " ET"
+  );
+}
+
+export type SpxWatchLevel = {
+  label: string;
+  level: number;
+  /** Where the level sits relative to spot (ties count as above). */
+  side: "above" | "below";
+  /** ptsAway(spot, level) — live point distance, 1 decimal. */
+  distancePts: number;
+  tone: "bull" | "bear" | "warn";
+  line: string;
+};
+
+/**
+ * Levels-to-watch (enhancement a): the ≤3 NEAREST actionable levels with live point
+ * distance + a deterministic "what it means if crossed" template per level type.
+ * Proximity-sorted, deduped by rounded strike so VWAP==flip doesn't print twice.
+ * GEX-derived levels (flip / max pain / king walls) are DROPPED while positioning is
+ * stale — say less, never present a frozen wall as a live line in the sand.
+ */
+export function deriveWatchLevels(s: SpxVoiceSnapshot, max = 3): SpxWatchLevel[] {
+  const p = s.price;
+  if (p == null) return [];
+
+  type Cand = {
+    label: string;
+    level: number;
+    tone: SpxWatchLevel["tone"];
+    meaning: (side: "above" | "below") => string;
+  };
+  const cands: Cand[] = [];
+  const push = (c: Cand | null) => {
+    if (c && Number.isFinite(c.level)) cands.push(c);
+  };
+
+  if (!s.gexStale) {
+    push(
+      s.gammaFlip != null
+        ? {
+            label: "γ-flip",
+            level: s.gammaFlip,
+            tone: "warn",
+            meaning: (side) =>
+              side === "above"
+                ? "cross back above it and dealers flip to dampening moves — chop-friendly tape"
+                : "lose it and dealers flip to amplifying moves — momentum cuts loose lower",
+          }
+        : null
+    );
+    push(
+      s.maxPain != null
+        ? {
+            label: "max pain",
+            level: s.maxPain,
+            tone: "warn",
+            meaning: () => "the pin magnet — drift gravitates here into the close",
+          }
+        : null
+    );
+    push(
+      s.kingCall
+        ? {
+            label: "call wall",
+            level: s.kingCall.strike,
+            tone: "bull",
+            meaning: (side) =>
+              side === "above"
+                ? "break it and dealer hedging chases the move higher"
+                : "now first support — holding above it keeps the squeeze alive",
+          }
+        : null
+    );
+    push(
+      s.kingPut
+        ? {
+            label: "put wall",
+            level: s.kingPut.strike,
+            tone: "bear",
+            meaning: (side) =>
+              side === "below"
+                ? "lose it and dealer hedging accelerates the drop"
+                : "now first resistance — rejections there keep sellers in control",
+          }
+        : null
+    );
+  }
+  push(
+    s.vwap != null
+      ? {
+          label: "VWAP",
+          level: s.vwap,
+          tone: s.vwap >= p ? "bull" : "bear",
+          meaning: (side) =>
+            side === "above"
+              ? "reclaim it and buyers take back the session average"
+              : "lose it and sellers own the session average — pops become supply",
+        }
+      : null
+  );
+  push(
+    s.hod != null
+      ? {
+          label: "HOD",
+          level: s.hod,
+          tone: "bull",
+          meaning: (side) =>
+            side === "above"
+              ? "break it and the range extends higher — momentum buyers join"
+              : "now support — the old high should hold if buyers are real",
+        }
+      : null
+  );
+  push(
+    s.lod != null
+      ? {
+          label: "LOD",
+          level: s.lod,
+          tone: "bear",
+          meaning: (side) =>
+            side === "below"
+              ? "break it and the range extends lower — momentum sellers join"
+              : "reclaimed low — holding above it repairs the tape",
+        }
+      : null
+  );
+  push(
+    s.pdh != null
+      ? {
+          label: "PDH",
+          level: s.pdh,
+          tone: "bull",
+          meaning: (side) =>
+            side === "above"
+              ? "break it and it's a multi-day breakout — shorts overhead become fuel"
+              : "yesterday's high is now support — holding above keeps the breakout alive",
+        }
+      : null
+  );
+  push(
+    s.pdl != null
+      ? {
+          label: "PDL",
+          level: s.pdl,
+          tone: "bear",
+          meaning: (side) =>
+            side === "below"
+              ? "lose it and it's a multi-day breakdown — longs above become supply"
+              : "yesterday's low reclaimed — holding above it repairs the damage",
+        }
+      : null
+  );
+
+  const seen = new Set<number>();
+  const out: SpxWatchLevel[] = [];
+  for (const c of cands.sort((a, b) => ptsAway(p, a.level) - ptsAway(p, b.level))) {
+    const key = Math.round(c.level);
+    if (seen.has(key)) continue; // coincident levels (e.g. VWAP≈flip) print once, nearest label wins
+    seen.add(key);
+    const side: "above" | "below" = c.level >= p ? "above" : "below";
+    const d = ptsAway(p, c.level);
+    out.push({
+      label: c.label,
+      level: c.level,
+      side,
+      distancePts: d,
+      tone: c.tone,
+      line: `${c.label} ${fmtLevel(c.level)} · ${fmtPts(d)} pts ${side === "above" ? "overhead" : "below"} — ${c.meaning(side)}`,
+    });
+    if (out.length >= max) break;
+  }
+  return out;
+}
+
+/**
+ * Expected-move context (enhancement b): where spot sits inside today's ±1σ band.
+ * Uses only the snapshot's own expMove band (prior close × VIX, derived at snapshot
+ * time) — half-width, midpoint and %-used are the documented derivations.
+ */
+export function composeExpectedMoveContext(s: SpxVoiceSnapshot): string | null {
+  if (s.price == null || !s.expMove) return null;
+  const half = (s.expMove.high - s.expMove.low) / 2;
+  if (!(half > 0)) return null;
+  const mid = (s.expMove.high + s.expMove.low) / 2;
+  const usedPct = Math.round((Math.abs(s.price - mid) / half) * 100);
+  const inside = s.price >= s.expMove.low && s.price <= s.expMove.high;
+  const band = `${fmtLevel(s.expMove.low)}–${fmtLevel(s.expMove.high)}`;
+  return inside
+    ? `🎯 ${usedPct}% of the ±${Math.round(half)} pt expected move used — inside the 1σ band ${band}`
+    : `🎯 OUTSIDE the ±${Math.round(half)} pt expected move (${band}) at ${usedPct}% of 1σ — tail territory: trail stops, don't fade blindly`;
+}
+
+/**
+ * Session character (enhancement c): opening-range status + trend-vs-chop framing,
+ * straight from the desk's own opening_range read — never re-derived from price.
+ */
+export function composeSessionCharacter(s: SpxVoiceSnapshot): string | null {
+  const or = s.openingRange;
+  if (!or) return null;
+  const range = `${fmtLevel(or.low)}–${fmtLevel(or.high)}`;
+  if (or.forming) {
+    return `⏳ Opening range still forming (${range} so far) — let the first 30 min set the frame before leaning on OR breaks`;
+  }
+  if (or.break === "above") {
+    return `📐 Broke ABOVE the ${range} opening range — trend-day odds improve while ${fmtLevel(or.high)} holds as support`;
+  }
+  if (or.break === "below") {
+    return `📐 Broke BELOW the ${range} opening range — downside-trend odds improve while ${fmtLevel(or.low)} caps bounces`;
+  }
+  return `📐 Still INSIDE the ${range} opening range — no commitment yet, chop rules until it breaks`;
+}
+
+/** VWAP posture (enhancement e): one clause, only when both spot and VWAP are real. */
+export function composeVwapPosture(s: SpxVoiceSnapshot): string | null {
+  if (s.price == null || s.vwap == null) return null;
+  const above = s.price >= s.vwap;
+  const d = ptsAway(s.price, s.vwap);
+  const vwapLabel = s.vwapVolumeWeighted ? "VWAP (true volume-weighted)" : "VWAP";
+  return `${above ? "▲" : "▼"} ${fmtPts(d)} pts ${above ? "above" : "below"} ${vwapLabel} ${fmtLevel(s.vwap)}`;
+}
+
+/**
+ * Catalyst line (enhancement f): the single most-recent desk headline with its ET
+ * timestamp. No fetches, no synthesis — title and stamp come verbatim from the payload;
+ * a headline with no parseable stamp renders without a time rather than inventing one.
+ */
+export function composeCatalystLine(s: SpxVoiceSnapshot): string | null {
+  const h = s.latestHeadline;
+  if (!h?.title) return null;
+  const time = h.publishedAt != null ? ` · ${fmtEtTime(h.publishedAt)}` : "";
+  return `📰 ${h.title.slice(0, 110)}${time}`;
 }
 
 // ---------------------------------------------------------------------------

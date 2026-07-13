@@ -4,8 +4,13 @@ import { describe, test } from "node:test";
 import {
   composeBiasHeaderLine,
   composeBiasVoice,
+  composeCatalystLine,
+  composeExpectedMoveContext,
+  composeSessionCharacter,
+  composeVwapPosture,
   deriveSpxBias,
   deriveTriggerLevels,
+  deriveWatchLevels,
   detectPlayVoiceEvents,
   detectSpxVoiceEvents,
   filterFreshVoiceEvents,
@@ -23,7 +28,9 @@ function mkSnap(over: Partial<SpxVoiceSnapshot> = {}): SpxVoiceSnapshot {
     at: 1_800_000_000_000,
     price: null,
     vwap: null,
+    vwapVolumeWeighted: false,
     gammaFlip: null,
+    maxPain: null,
     aboveFlip: null,
     aboveVwap: null,
     ema20: null,
@@ -37,12 +44,14 @@ function mkSnap(over: Partial<SpxVoiceSnapshot> = {}): SpxVoiceSnapshot {
     lod: null,
     pdh: null,
     pdl: null,
+    openingRange: null,
     vix: null,
     vixChangePct: null,
     tideBias: null,
     expMove: null,
     rsi: null,
     newsTitles: [],
+    latestHeadline: null,
     gexStale: false,
     feedStalled: false,
     ...over,
@@ -95,7 +104,26 @@ function assertGrounded(text: string, snap: SpxVoiceSnapshot): void {
   add(snap.kingPut?.strike);
   add(snap.expMove?.low);
   add(snap.expMove?.high);
+  add(snap.maxPain);
+  add(snap.openingRange?.high);
+  add(snap.openingRange?.low);
   for (const w of snap.walls) add(w.strike);
+
+  // Documented derivations (see spx-live-voice.ts context-composer header):
+  // point distances |spot − level| (1dp) and expected-move half-width / %-used.
+  if (snap.price != null) {
+    for (const k of Array.from(known)) {
+      known.add(Math.round(Math.abs(snap.price - k) * 10) / 10);
+    }
+  }
+  if (snap.expMove) {
+    const half = (snap.expMove.high - snap.expMove.low) / 2;
+    const mid = (snap.expMove.high + snap.expMove.low) / 2;
+    if (half > 0) {
+      known.add(Math.round(half));
+      if (snap.price != null) known.add(Math.round((Math.abs(snap.price - mid) / half) * 100));
+    }
+  }
 
   // "20/50 EMAs" is an indicator NAME, not a numeric claim.
   const cleaned = text.replace(/20\/50/g, "").replace(/(\d),(\d{3})\b/g, "$1$2");
@@ -548,6 +576,148 @@ describe("detectPlayVoiceEvents", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Context composers (2026-07-13 hardening) — watch levels, expected move,
+// session character, VWAP posture, catalyst line
+// ---------------------------------------------------------------------------
+
+describe("deriveWatchLevels", () => {
+  const rich = () =>
+    bearishSnap({ maxPain: 7520, hod: 7538, lod: 7502, pdh: 7560, pdl: 7490 });
+
+  test("nearest 3 by live point distance, side + meaning per level type", () => {
+    const levels = deriveWatchLevels(rich());
+    assert.deepEqual(
+      levels.map((l) => l.line),
+      [
+        "max pain 7,520 · 7.7 pts overhead — the pin magnet — drift gravitates here into the close",
+        "LOD 7,502 · 10.3 pts below — break it and the range extends lower — momentum sellers join",
+        "γ-flip 7,528 · 15.7 pts overhead — cross back above it and dealers flip to dampening moves — chop-friendly tape",
+      ]
+    );
+    assert.deepEqual(levels.map((l) => l.side), ["above", "below", "above"]);
+    assert.deepEqual(levels.map((l) => l.distancePts), [7.7, 10.3, 15.7]);
+    for (const l of levels) assertGrounded(l.line, rich());
+  });
+
+  test("coincident levels dedupe to one line (nearest label wins)", () => {
+    // VWAP parked exactly on the flip: 7528 must print once, not twice.
+    const levels = deriveWatchLevels({ ...rich(), vwap: 7528 });
+    const at7528 = levels.filter((l) => Math.round(l.level) === 7528);
+    assert.ok(at7528.length <= 1, `7528 printed ${at7528.length} times`);
+  });
+
+  test("stale GEX drops flip/max-pain/wall levels — say less, never guess", () => {
+    const levels = deriveWatchLevels({ ...rich(), gexStale: true });
+    for (const l of levels) {
+      assert.ok(
+        !["γ-flip", "max pain", "call wall", "put wall"].includes(l.label),
+        `stale GEX leaked level: ${l.line}`
+      );
+    }
+    assert.ok(levels.length > 0, "structure levels (LOD/HOD/VWAP/PD*) still shown");
+  });
+
+  test("no price → empty; all-null snapshot → empty", () => {
+    assert.deepEqual(deriveWatchLevels(mkSnap()), []);
+    assert.deepEqual(deriveWatchLevels(mkSnap({ price: 7500 })), []);
+  });
+});
+
+describe("composeExpectedMoveContext", () => {
+  test("inside the band → % used of ±half-width", () => {
+    // half = 76, mid = 7540, |7512.3−7540|/76 = 36.4% → 36
+    const line = composeExpectedMoveContext(bearishSnap({ expMove: { low: 7464, high: 7616 } }));
+    assert.equal(line, "🎯 36% of the ±76 pt expected move used — inside the 1σ band 7,464–7,616");
+  });
+
+  test("outside the band → tail-territory warning with the same derivations", () => {
+    const line = composeExpectedMoveContext(
+      bearishSnap({ price: 7620, expMove: { low: 7464, high: 7616 } })
+    );
+    assert.equal(
+      line,
+      "🎯 OUTSIDE the ±76 pt expected move (7,464–7,616) at 105% of 1σ — tail territory: trail stops, don't fade blindly"
+    );
+  });
+
+  test("missing band or price → null, never a guessed sigma", () => {
+    assert.equal(composeExpectedMoveContext(bearishSnap()), null); // fixture has no expMove
+    assert.equal(composeExpectedMoveContext(mkSnap({ expMove: { low: 7464, high: 7616 } })), null);
+    assert.equal(
+      composeExpectedMoveContext(bearishSnap({ expMove: { low: 7500, high: 7500 } })),
+      null
+    ); // degenerate zero-width band
+  });
+});
+
+describe("composeSessionCharacter", () => {
+  test("forming / break-above / break-below / inside — desk read passed through verbatim", () => {
+    const or = (over: Partial<NonNullable<SpxVoiceSnapshot["openingRange"]>>) =>
+      bearishSnap({ openingRange: { high: 7530, low: 7510, break: null, forming: false, ...over } });
+    assert.equal(
+      composeSessionCharacter(or({ forming: true })),
+      "⏳ Opening range still forming (7,510–7,530 so far) — let the first 30 min set the frame before leaning on OR breaks"
+    );
+    assert.equal(
+      composeSessionCharacter(or({ break: "above" })),
+      "📐 Broke ABOVE the 7,510–7,530 opening range — trend-day odds improve while 7,530 holds as support"
+    );
+    assert.equal(
+      composeSessionCharacter(or({ break: "below" })),
+      "📐 Broke BELOW the 7,510–7,530 opening range — downside-trend odds improve while 7,510 caps bounces"
+    );
+    assert.equal(
+      composeSessionCharacter(or({ break: "inside" })),
+      "📐 Still INSIDE the 7,510–7,530 opening range — no commitment yet, chop rules until it breaks"
+    );
+  });
+
+  test("no opening range on the desk → null (pre-open honesty)", () => {
+    assert.equal(composeSessionCharacter(bearishSnap()), null);
+  });
+});
+
+describe("composeVwapPosture", () => {
+  test("below VWAP with live distance", () => {
+    assert.equal(composeVwapPosture(bearishSnap()), "▼ 31.9 pts below VWAP 7,544");
+  });
+
+  test("volume-weighted flag changes the label, not the numbers", () => {
+    assert.equal(
+      composeVwapPosture(bearishSnap({ vwapVolumeWeighted: true })),
+      "▼ 31.9 pts below VWAP (true volume-weighted) 7,544"
+    );
+  });
+
+  test("null vwap or price → null", () => {
+    assert.equal(composeVwapPosture(bearishSnap({ vwap: null })), null);
+    assert.equal(composeVwapPosture(mkSnap({ vwap: 7500 })), null);
+  });
+});
+
+describe("composeCatalystLine", () => {
+  test("most recent headline with ET timestamp, verbatim title", () => {
+    const line = composeCatalystLine(
+      bearishSnap({
+        latestHeadline: { title: "Fed's Waller: cuts on the table", publishedAt: Date.parse("2026-07-13T13:45:00Z") },
+      })
+    );
+    assert.equal(line, "📰 Fed's Waller: cuts on the table · 9:45 AM ET");
+  });
+
+  test("unparseable stamp → title without a time (never an invented clock)", () => {
+    const line = composeCatalystLine(
+      bearishSnap({ latestHeadline: { title: "CPI beat", publishedAt: null } })
+    );
+    assert.equal(line, "📰 CPI beat");
+  });
+
+  test("no headlines on the desk → null", () => {
+    assert.equal(composeCatalystLine(bearishSnap()), null);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Snapshot extraction from the desk payload
 // ---------------------------------------------------------------------------
 
@@ -569,7 +739,14 @@ describe("voiceSnapshotFromDesk", () => {
         { strike: 7495, net_gex: -2_800_000, kind: "support", distance_pts: -17.3 },
         { strike: 7480, net_gex: -1_000_000, kind: "support", distance_pts: -32.3 },
       ],
-      news_headlines: [{ title: "Fed speaker at 2pm", published: "", tickers: [] }],
+      news_headlines: [
+        { title: "Fed speaker at 2pm", published: "", tickers: [] },
+        { title: "Chip rally extends", published: "2026-07-13T14:10:00Z", tickers: ["NVDA"] },
+        { title: "Old story", published: "2026-07-13T12:00:00Z", tickers: [] },
+      ],
+      max_pain: 7515,
+      vwap_volume_weighted: true,
+      opening_range: { high: 7531.2, low: 7509.8, break: "below", forming: false },
       polled_at: "2026-07-13T14:30:00.000Z",
     } as unknown as SpxDeskPayload;
 
@@ -582,8 +759,17 @@ describe("voiceSnapshotFromDesk", () => {
     // 1σ = 7540 · 0.16 / √252 ≈ 75.99 → band [7464, 7616]
     assert.equal(snap.expMove?.low, 7464);
     assert.equal(snap.expMove?.high, 7616);
-    assert.deepEqual(snap.newsTitles, ["Fed speaker at 2pm"]);
+    assert.equal(snap.newsTitles.length, 3);
     assert.equal(snap.at, Date.parse("2026-07-13T14:30:00.000Z"));
+    // New hardening fields — all verbatim from the payload.
+    assert.equal(snap.maxPain, 7515);
+    assert.equal(snap.vwapVolumeWeighted, true);
+    assert.deepEqual(snap.openingRange, { high: 7531.2, low: 7509.8, break: "below", forming: false });
+    // Latest catalyst = max PARSEABLE published stamp, not array order.
+    assert.deepEqual(snap.latestHeadline, {
+      title: "Chip rally extends",
+      publishedAt: Date.parse("2026-07-13T14:10:00Z"),
+    });
   });
 
   test("missing inputs degrade to null — never fabricated", () => {
@@ -593,5 +779,18 @@ describe("voiceSnapshotFromDesk", () => {
     assert.equal(snap.emaStack, null);
     assert.equal(snap.expMove, null);
     assert.equal(snap.kingCall, null);
+    assert.equal(snap.maxPain, null);
+    assert.equal(snap.openingRange, null);
+    assert.equal(snap.latestHeadline, null);
+    assert.equal(snap.vwapVolumeWeighted, false);
+  });
+
+  test("opening range with a malformed high/low is dropped whole, not half-served", () => {
+    const snap = voiceSnapshotFromDesk({
+      available: true,
+      price: 7500,
+      opening_range: { high: Number.NaN, low: 7480, break: "inside", forming: false },
+    } as unknown as SpxDeskPayload, { at: 1 });
+    assert.equal(snap.openingRange, null);
   });
 });
