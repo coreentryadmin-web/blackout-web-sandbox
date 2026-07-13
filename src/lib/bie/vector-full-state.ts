@@ -58,6 +58,11 @@ import { confluenceZones, type ConfluenceLevel } from "@/features/vector/lib/vec
 import { scoreTopWalls } from "@/features/vector/lib/vector-wall-integrity";
 import { todayEtYmd } from "@/lib/providers/spx-session";
 import { roundFloats } from "@/lib/round-floats";
+import { readVectorFullStateCache, writeVectorFullStateCache } from "@/lib/bie/vector-full-state-cache";
+
+/** The default chart timeframe (minutes) a cached snapshot is computed at — the cron warms this TF;
+ *  a reader asking for a different TF must recompute live (its technicals differ). */
+export const VECTOR_FULL_STATE_DEFAULT_TIMEFRAME_MIN = 5;
 
 /**
  * Compact presence summary of the strike×time GEX positioning heatmap. The full grid
@@ -123,13 +128,16 @@ export type VectorFullState = VectorSnapshot & {
  * `buildVectorPlay` to attach the single concrete play. Returns null only when there is no live
  * spot for the ticker (no honest state to state); otherwise degrades field-by-field.
  *
- * `timeframeMin` feeds only the play's invalidation "close" reference label (e.g. "5m" vs "1H");
- * server-side there is no chart timeframe, so it defaults to a 5-minute intraday reference.
+ * `timeframeMin` drives the server-computed technicals (bar aggregation) and the play's
+ * invalidation "close" reference label; defaults to a 5-minute intraday reference.
+ *
+ * This is the LIVE compute (the full fan-out). The cache-first entry point is `fetchVectorFullState`
+ * below — it serves the cron-warmed snapshot when present and only calls this on a miss.
  */
-export async function fetchVectorFullState(
+export async function computeVectorFullState(
   ticker: string,
   horizon: VectorDteHorizon = VECTOR_DEFAULT_DTE_HORIZON,
-  timeframeMin = 5
+  timeframeMin = VECTOR_FULL_STATE_DEFAULT_TIMEFRAME_MIN
 ): Promise<VectorFullState | null> {
   const t = normalizeVectorTicker(ticker);
 
@@ -257,6 +265,40 @@ export async function fetchVectorFullState(
   } catch {
     return null; // whole-state failure is a no-surface, never a throw into the caller
   }
+}
+
+/**
+ * Cache-first entry point — what every reader (get_ecosystem_context, the get_vector_full_state
+ * Largo tool, composeVectorRead) calls. Serves the cron-warmed Redis snapshot for (ticker, horizon)
+ * when present, so BIE reads the current Vector state instantly without paying the full fan-out on
+ * the hot path. On a miss it computes live and self-warms the cache (so the first reader after an
+ * expiry re-primes it even off-hours when the cron isn't running).
+ *
+ * The cache is keyed on (ticker, horizon) at the DEFAULT timeframe only: nearly all of the state
+ * (walls / flip / regime / magnet / max-pain / expected-move / ladder / heatmap / flow / beads /
+ * VEX / dark-pool) is timeframe-INDEPENDENT — only the technicals + the play's invalidation label
+ * vary with the timeframe. So a request for a NON-default timeframe bypasses the cache and computes
+ * live, guaranteeing its technicals are the right timeframe rather than the 5m snapshot's.
+ */
+export async function fetchVectorFullState(
+  ticker: string,
+  horizon: VectorDteHorizon = VECTOR_DEFAULT_DTE_HORIZON,
+  timeframeMin: number = VECTOR_FULL_STATE_DEFAULT_TIMEFRAME_MIN
+): Promise<VectorFullState | null> {
+  const cacheable = timeframeMin === VECTOR_FULL_STATE_DEFAULT_TIMEFRAME_MIN;
+
+  if (cacheable) {
+    const cached = await readVectorFullStateCache(ticker, horizon);
+    if (cached) return cached;
+  }
+
+  const live = await computeVectorFullState(ticker, horizon, timeframeMin);
+
+  // Self-warm on a default-TF miss so the next reader hits cache even if the cron hasn't run
+  // (off-hours, cold task). Fire-and-forget — a cache write must never delay or fail the read.
+  if (live && cacheable) void writeVectorFullStateCache(ticker, horizon, live);
+
+  return live;
 }
 
 function num(n: number | null | undefined): number | null {

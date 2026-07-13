@@ -146,10 +146,28 @@ export const BLACKOUT_GLOSSARY: GlossaryEntry[] = [
   },
   {
     term: "Gamma regime",
-    aliases: ["regime", "gamma regime", "long gamma", "short gamma", "transition regime"],
+    aliases: [
+      "regime",
+      "gamma regime",
+      "long gamma",
+      "short gamma",
+      "positive gamma",
+      "negative gamma",
+      "pos gamma",
+      "neg gamma",
+      "transition regime",
+    ],
     category: "concept",
     definition:
       "The gamma regime is the single highest-leverage interpretation layer: spot ABOVE the gamma flip = LONG gamma (dealers hedge against moves → calm, range-bound, fade extremes); spot BELOW = SHORT gamma (dealers hedge with moves → volatile, trends run, respect breaks); within ±0.1% of the flip = TRANSITION (undecided, sharpest moves as dealers flip hedging direction).",
+  },
+
+  {
+    term: "0DTE",
+    aliases: ["0dte", "zero dte", "zero-dte", "0 dte", "same-day expiry", "same day options", "same-day options"],
+    category: "concept",
+    definition:
+      "0DTE = zero days to expiry — options expiring the SAME trading day. With no time left, they're almost pure gamma/theta: value swings violently with small spot moves and decays fast, so dealer gamma hedging dominates the intraday tape. 0DTE is the basis for SPX Slayer (the SPX 0DTE play engine) and 0DTE Command (the multi-ticker 0DTE scanner) — it's where the gamma flip, walls, and charm pin have the most immediate effect.",
   },
 
   // ── Technicals ───────────────────────────────────────────────────────────
