@@ -234,6 +234,33 @@ async function composeVectorRead(
   return { answer, context: { state, known: knownVectorNumbers(state) } };
 }
 
+/**
+ * Deterministic concept/definition read — answers "what is GEX / a King node / VEX / max pain",
+ * "what does Night Hawk do" from the code-grounded glossary, zero LLM cost. On a known term it
+ * returns the clean definition; on an UNKNOWN term it returns an HONEST "not in my glossary yet"
+ * message (never a desk-dump) and records the miss via the gap-logger so the glossary can grow.
+ */
+async function composeConceptRead(question: string): Promise<BieComposed | null> {
+  const { lookupGlossary } = await import("@/lib/bie/glossary");
+  const entry = lookupGlossary(question);
+  if (!entry) {
+    const { recordBieGap } = await import("@/lib/bie/gap-log");
+    void recordBieGap({ question, intent: "concept_read", reason: "no_definition" });
+    return {
+      answer:
+        "I don't have a solid definition for that in my glossary yet — I've logged it so it can be added. " +
+        "I can define the core desk concepts though: GEX, VEX, DEX, charm, the gamma flip, a King node, " +
+        "call/put walls, max pain, expected move, the gamma magnet, wall integrity, the bead rail, confluence, " +
+        "the gamma regime, VWAP/EMA/RSI/MACD, or any BlackOut product (Vector, SPX Slayer, Thermal, Helix, " +
+        "Night Hawk, Largo, BIE).",
+      context: { reason: "no_definition", question },
+    };
+  }
+  // Glossary definitions carry no {{…}} markers, so no stripping needed.
+  const answer = `**${entry.term}**\n\n${entry.definition}`;
+  return { answer, context: { term: entry.term, category: entry.category } };
+}
+
 async function composeSpxInvalidation(): Promise<BieComposed | null> {
   const platform = await getCachedBiePlatformContext({ scope: "desk" });
   const desk = platform.desk;
@@ -439,6 +466,8 @@ async function composeBieAnswerUncached(route: BieRoute, opts?: ComposeBieOpts):
         return route.ticker
           ? await composeVectorRead(route.ticker, route.horizon ?? "all", opts?.question)
           : null;
+      case "concept_read":
+        return await composeConceptRead(opts?.question ?? "");
       default:
         return null;
     }
