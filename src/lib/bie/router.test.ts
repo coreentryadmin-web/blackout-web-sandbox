@@ -256,3 +256,39 @@ describe("router: verdict intent (cross-tool synthesis, task #59)", () => {
     assert.equal(bieFollowups("verdict").length, 3);
   });
 });
+
+describe("router: SPX weekly/monthly horizon-scope (never present a 0DTE number as the monthly)", () => {
+  test("a weekly SPX structure figure routes to the horizon-scoped Vector engine, NOT the 0DTE desk", () => {
+    for (const q of ["SPX weekly flip", "where's the SPX weekly gamma flip", "SPX weekly walls", "SPX weekly max pain"]) {
+      const r = classifyBieIntent(q, NO_LEDGER);
+      assert.equal(r?.intent, "vector_read", `weekly → vector: ${q}`);
+      assert.equal(r?.ticker, "SPX");
+      assert.equal(r?.horizon, "weekly");
+    }
+  });
+
+  test("a monthly SPX structure figure routes to Vector with the monthly horizon", () => {
+    const r = classifyBieIntent("SPX monthly flip and walls", NO_LEDGER);
+    assert.equal(r?.intent, "vector_read");
+    assert.equal(r?.ticker, "SPX");
+    assert.equal(r?.horizon, "monthly");
+  });
+
+  test("a bare (no-horizon) SPX structure ask still uses the SPX desk — unchanged", () => {
+    assert.equal(classifyBieIntent("where's the SPX gamma flip", NO_LEDGER)?.intent, "spx_structure");
+    assert.equal(classifyBieIntent("SPX walls and max pain", NO_LEDGER)?.intent, "spx_structure");
+  });
+
+  test("a weekly SPX question WITHOUT a structure figure is NOT re-routed (stays a desk read)", () => {
+    // "SPX weekly setup" has no flip/wall/maxpain figure to leak → the desk read is fine.
+    assert.notEqual(classifyBieIntent("what's the SPX weekly setup", NO_LEDGER)?.intent, "vector_read");
+  });
+
+  test("staging fallback also horizon-scopes weekly/monthly SPX structure to Vector", () => {
+    assert.equal(classifyBieStagingFallback("SPX weekly flip").intent, "vector_read");
+    assert.equal(classifyBieStagingFallback("SPX weekly flip").horizon, "weekly");
+    assert.equal(classifyBieStagingFallback("SPX monthly max pain").horizon, "monthly");
+    // A bare SPX structure ask still falls to the SPX desk read in staging.
+    assert.equal(classifyBieStagingFallback("SPX gamma flip").intent, "spx_desk_read");
+  });
+});

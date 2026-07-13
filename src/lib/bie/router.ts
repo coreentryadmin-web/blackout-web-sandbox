@@ -181,6 +181,25 @@ function extractHorizon(q: string): string {
   return "all";
 }
 
+/** A structure figure (flip/walls/max pain/levels/magnet/expected move) that is HORIZON-SPECIFIC. */
+const SPX_HORIZON_STRUCTURE_RE =
+  /\b(flip|call wall|put wall|walls?|max ?pain|gamma|structure|levels?|magnet|expected move)\b/i;
+
+/**
+ * True for a weekly/monthly SPX structure ask ("SPX weekly flip", "SPX monthly walls / max pain").
+ * The SPX Slayer desk (and the BIE SPX composers that read it) serve fetchGexHeatmap's ~8-nearest-
+ * expiry AGGREGATE for EVERY horizon — it has no dte param — so it would report the 0DTE/aggregate
+ * flip as the "weekly"/"monthly" number (live scan: aggregate 7,554 leaked as weekly, when the true
+ * weekly flip was 7,622 and monthly 7,647). Vector re-scopes per-DTE correctly, so these route to the
+ * horizon-scoped Vector engine instead of the desk. A plain "SPX weekly setup" (no structure figure)
+ * is NOT caught — only the specific per-horizon numbers that would otherwise leak.
+ */
+function isSpxHorizonScopedStructureQuestion(q: string, horizon: string): boolean {
+  if (horizon !== "weekly" && horizon !== "monthly") return false;
+  if (!/\b(spx|spxw|s&p|es)\b/i.test(q)) return false;
+  return SPX_HORIZON_STRUCTURE_RE.test(q);
+}
+
 /** Questions with these shapes need REASONING, not lookup — Claude unless a narrower BIE branch matched first. */
 const REASONING_RE =
   /\b(why|explain|compare|versus|vs\.?|should i|would you|what if|predict|forecast|think|opinion|strategy|teach|how do(es)? .{0,20}work)\b/i;
@@ -275,6 +294,17 @@ export function classifyBieIntent(question: string, ledgerTickers: Set<string>):
   const hit = caps.map((c) => c.replace(/^\$/, "")).find((c) => ledgerTickers.has(c));
   if (hit && PLAY_STATE_RE.test(q)) return { intent: "ticker_play_state", ticker: hit };
 
+  // HORIZON-SCOPE guard — a weekly/monthly SPX structure ask must NOT be answered by the SPX Slayer
+  // desk (which serves the 0DTE/nearest-expiry aggregate for every horizon and would present a 0DTE
+  // number as the monthly). Route to the per-DTE-correct Vector engine. Placed AFTER the why/explain
+  // SPX branches (those are reasoning, handled above) but BEFORE the plain SPX structure/desk reads.
+  {
+    const horizon = extractHorizon(q);
+    if (isSpxHorizonScopedStructureQuestion(q, horizon)) {
+      return { intent: "vector_read", ticker: "SPX", horizon };
+    }
+  }
+
   if (SPX_STRUCTURE_RE.test(q)) return { intent: "spx_structure", ticker: "SPX" };
   if (SPX_DESK_READ_RE.test(q)) return { intent: "spx_desk_read", ticker: "SPX" };
   if (MARKET_CONTEXT_RE.test(q) || MARKET_CONTEXT_LOOSE_RE.test(q)) {
@@ -307,6 +337,14 @@ export function classifyBieStagingFallback(question: string): BieRoute {
   if (ZERODTE_RE.test(q)) return { intent: "zerodte_plays", ticker: null };
   if (SPX_INVALIDATION_RE.test(q)) return { intent: "spx_invalidation", ticker: "SPX" };
   if (isVerdictQuestion(q)) return { intent: "verdict", ticker: extractKnownTicker(q) };
+  // Same horizon-scope guard as the primary classifier — a weekly/monthly SPX structure figure must
+  // come from the per-DTE Vector engine, never the aggregate SPX desk fallback.
+  {
+    const horizon = extractHorizon(q);
+    if (isSpxHorizonScopedStructureQuestion(q, horizon)) {
+      return { intent: "vector_read", ticker: "SPX", horizon };
+    }
+  }
   if (SPX_STRUCTURE_RE.test(q) || SPX_DESK_READ_RE.test(q) || SPX_WHY_RE.test(q) || SPX_EXPLAIN_RE.test(q)) {
     return { intent: "spx_desk_read", ticker: "SPX" };
   }
