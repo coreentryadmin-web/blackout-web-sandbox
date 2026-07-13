@@ -112,6 +112,9 @@ export function VectorPageShell({
   // Always-on technicals lines (VWAP/EMA/RSI/MACD/pocket/structure) — narrated by the terminal even
   // when the member hasn't toggled the overlays on the chart.
   const [technicals, setTechnicals] = useState<string[]>([]);
+  // Options-implied EXPECTED MOVE callouts (±1σ/2σ range) — narrated by the terminal, horizon-scoped
+  // (#15 cone, slice 3a). Empty when the chain has no real ATM IV to price the move.
+  const [expectedMove, setExpectedMove] = useState<string[]>([]);
   // Alerts (in-page delivery): the member's rules (persisted per ticker), recent fires (for the
   // panel + terminal), and the transient toast for the newest fire.
   const [alertRules, setAlertRules] = useState<AlertRule[]>([]);
@@ -291,6 +294,7 @@ export function VectorPageShell({
               onWallIntegrityChange={setWallIntegrity}
               onDteHorizonChange={setDteHorizon}
               onTechnicalsChange={setTechnicals}
+              onExpectedMoveChange={setExpectedMove}
               alertRules={alertRules}
               onAlertsFired={handleAlertsFired}
               leadSlot={chartLead}
@@ -311,6 +315,7 @@ export function VectorPageShell({
               magnet={magnet}
               confluence={confluence}
               technicals={technicals}
+              expectedMove={expectedMove}
               alerts={recentAlerts.slice(0, 5).map((f) => f.message)}
               wallIntegrity={wallIntegrity}
             />
