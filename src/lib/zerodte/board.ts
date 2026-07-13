@@ -234,11 +234,26 @@ export type ZeroDteGateFailure =
   | "min_dominance"
   | "max_itm_pct"
   | "no_dominant_strike"
-  | "no_underlying_price";
+  | "no_underlying_price"
+  // ── Hard entry-gate stack (G-1/G-2/G-3/G-5, docs/audit/NIGHTHAWK-0DTE-DECISION.md §2) —
+  // evaluated in ./gates.ts AFTER the four evidence gates above, i.e. only for candidates
+  // that already qualified as setups. Persisted through the same rejection log so "why
+  // didn't ticker X commit" is one queryable surface for both gate families.
+  | "tape_alignment" // G-1: direction fights the SPY session bias
+  | "no_market_bias" // G-1 fail-closed: bias read missing or stale
+  | "opening_window" // G-2: no new commits before 10:30 ET
+  | "score_floor" // G-3: post-edge-layer score below 65
+  | "governor_max_concurrent" // G-5: 3 plans already open
+  | "governor_session_stops" // G-5: 3 stops today — halted for the session
+  | "governor_reentry_lock" // G-5: same-direction re-entry within 20m of that ticker's stop
+  | "gate_context_unavailable"; // fail-closed: gate inputs (ledger/governor) unreadable
 
 export type ZeroDteGateRejection = {
   ticker: string;
   gate_failed: ZeroDteGateFailure;
+  /** Human-readable block sentence (hard-gate rows; the UI's SKIP card copy). Null for
+   *  the four evidence gates, whose numeric columns already carry the whole story. */
+  reason?: string | null;
   /** The real threshold constant this candidate was measured against (cited live,
    *  same discipline buildZeroDteAuditRow uses, so a future threshold tune can't
    *  retroactively relabel a historical rejection). `null` for the structural

@@ -312,6 +312,7 @@ export async function persistZeroDteScan(setups: EnrichedZeroDteSetup[]): Promis
     entry_premium: resolveLedgerEntryPremium(s.plan?.entry_max, s.top_strike_avg_fill),
     flow_avg_fill: s.top_strike_avg_fill,
     plan_json: s.plan ? ({ ...s.plan } as unknown as Record<string, unknown>) : null,
+    gate_calibration_json: null,
     flags_json: {
       ...(s.earnings ? { earnings: s.earnings } : {}),
       ...(s.news_hot ? { news_hot: s.news_hot.title } : {}),
