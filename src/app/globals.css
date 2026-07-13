@@ -8385,6 +8385,21 @@ body::before {
     min-height: 0;
   }
 
+  /* WEB PANEL STRETCH (2026-07-13, member-directed "stretch the three bottom panels"): the
+     site nav is FIXED and cleared by the shell's own padding-top, i.e. the nav clearance
+     lives INSIDE the border box — so min-height must be the full 100dvh for the flex chain
+     (shell → desk-fill → triple) to reach the viewport bottom. The previous
+     calc(100dvh - var(--nav-offset)) double-counted the nav and ended the desk 88px short
+     (dead band under the panels on every screen taller than the content). pb-8's 2rem was
+     likewise dead space on a full-bleed desk — keep a slim 0.75rem edge. This also makes the
+     grid absorb whatever height the (independently compacting) header ribbon gives back:
+     panels grow via flex, not via any header-height assumption. iOS native shell keeps its
+     own --ios-viewport-h fill (ios-native-viewport.css), hence the :not() scope. */
+  html:not(.ios-native-shell) .ios-desk-shell.ios-native-page-spx {
+    min-height: 100dvh;
+    padding-bottom: 0.75rem;
+  }
+
   .spx-sniper-desk-fill {
     @apply flex flex-1 flex-col min-h-0 w-full gap-0;
   }
@@ -8418,8 +8433,13 @@ body::before {
 
   .spx-sniper-desk-fill .spx-sniper-triple {
     @apply flex-1 min-h-0 gap-1;
-    /* flex-1 fills the shell above; keep a viewport floor when chrome math drifts */
-    min-height: min(78vh, calc(100dvh - var(--nav-offset) - 7.5rem));
+    /* flex-1 does the REAL filling now that the shell is a full 100dvh — this floor is only
+       a collapse guard for when chrome math drifts. It must stay BELOW the space actually
+       available under the header + session time bar (even pre-header-compaction), or the
+       floor itself forces page-level scroll at 1080p. In the calc, var(--nav-offset) is the
+       shell's own padding-top; 13rem budgets the header ribbon + time bar + bottom edge
+       (measured 12.1rem with the pre-compaction header — 11rem forced a 2px scroll at 900px). */
+    min-height: min(70vh, calc(100dvh - var(--nav-offset) - 13rem));
   }
 
   /* Compact desk — tighter stats, panel chrome, matrix cells, column gutters */
@@ -8846,6 +8866,10 @@ body::before {
      desk header — playbook/macro window bands (two lanes), Largo event dots, now-cursor. ── */
   .spx-desk-timebar-row {
     @apply flex w-full items-center gap-2 min-w-0;
+    /* The desk-fill stack is gap-0 — the bar owns its own slim gutter so the header above
+       and the panel grid below don't butt against it (and nothing more: every extra px
+       here is height the three panels lose). */
+    margin: 0.3rem 0 0.35rem;
   }
 
   .spx-desk-timebar {
