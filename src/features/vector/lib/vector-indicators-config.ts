@@ -176,6 +176,19 @@ export function isVectorConfluenceId(v: unknown): v is VectorConfluenceId {
 }
 
 /**
+ * "Flow" — chart MARKERS at the strike + time of notable LARGE option prints (institutional-size
+ * trades), so the member sees WHERE big money is hitting relative to the candles and gamma walls.
+ * One toggle (default OFF, like everything else here); the chart maps it to a dedicated
+ * createSeriesMarkers instance fed by the horizon-scoped `/api/market/vector/flow` read. Distinct
+ * from the wall-bead and structure-marker instances so the three never clobber each other.
+ */
+export type VectorFlowId = "flow-markers";
+
+export function isVectorFlowId(v: unknown): v is VectorFlowId {
+  return v === "flow-markers";
+}
+
+/**
  * Every toggleable indicator id — a moving-average FAMILY (not an individual line), a level, a
  * structure toggle, or an oscillator. This is what the enabled Set and the menu deal in; the chart
  * expands each to its lines/markers/panes at draw time.
@@ -185,7 +198,8 @@ export type VectorIndicatorId =
   | VectorLevelId
   | VectorStructureId
   | VectorOscillatorId
-  | VectorConfluenceId;
+  | VectorConfluenceId
+  | VectorFlowId;
 
 /** Menu structure — the toggle menu renders straight from this (title + its items). */
 export const VECTOR_INDICATOR_GROUPS: ReadonlyArray<{
@@ -214,5 +228,10 @@ export const VECTOR_INDICATOR_GROUPS: ReadonlyArray<{
   {
     title: "Confluence",
     items: [{ id: "confluence-band", label: "Confluence zone (strongest stack)", color: "#f59e0b" }],
+  },
+  {
+    title: "Flow",
+    // Green matches the call-print marker colour (calls green ↑ / puts red ↓ on the chart).
+    items: [{ id: "flow-markers", label: "Options flow (large trades at strike)", color: "#34d399" }],
   },
 ];
