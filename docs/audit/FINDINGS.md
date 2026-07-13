@@ -140,3 +140,22 @@ evidence / fix / status per the CLAUDE.md policy.)
   0→5,835→13,933 across 5/50/95% cursors, rail visible in late-frame screenshot.
 - Multi-TF replay (standalone SPX): 3m/5m/15m PASS; 1H bead-pixel count dropped mid→late
   (5,245→2,982) — P3 watch, eyeballing via the DTE×TF matrix screenshots.
+
+### P1 — Vector terminal/overlay VWAP spans ALL seeded sessions, not today's (FIXED)
+- **Found**: 2026-07-13 night, replay-matrix screenshot — Vector terminal read "VWAP 7,542.28"
+  while the (independently validated) desk session VWAP was 7,529.98.
+- **Root cause**: `vwapSeries` (`src/features/vector/lib/vector-indicators.ts`) accumulated
+  Σ(typical×vol) from the FIRST bar with a doc'd assumption "bars are one session" — written
+  before the multi-day chart seed shipped. With 3 seeded sessions the terminal + chart VWAP
+  overlay + server technicals all served a 3-day cumulative VWAP. VWAP is session-anchored by
+  definition.
+- **Blast radius**: `VectorChart.tsx:1274` (VWAP overlay line), `vector-technicals.ts:84`
+  (terminal summary → "VWAP … — price X% above/below"), `vector-server-technicals-core.ts`
+  (play engine technicals) — all through the one shared series; single-point fix.
+- **Fix**: `IndicatorBar` gains optional `time` (epoch s); `vwapSeries` resets accumulation at
+  ET calendar-day boundaries. Bars without `time` keep legacy behavior. 3 new regression tests
+  (cross-day reset, same-day no-reset, no-time legacy) — vector-indicators 11/11,
+  vector-technicals + server-technicals 11/11, tsc clean.
+- **Why missed earlier**: the ribbon validation checked the DESK VWAP (correct); the terminal's
+  VWAP line was never numerically cross-checked against it — surfaces validated in isolation.
+  Added to the morning gate: cross-surface indicator equality (desk ribbon vs Vector terminal).
