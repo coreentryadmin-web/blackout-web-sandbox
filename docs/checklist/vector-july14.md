@@ -26,3 +26,24 @@
 - [ ] N5-2 (P2): Largo NEWS line leaks raw HTML entity (&#34;) — decode entities in the news composer.
 - [ ] N5-3 (P2): Largo offline "SESSION WRAPPED" headline clips at 1920/1440 — CSS fix.
 - [ ] BIE Largo bias card + triggers + feed: could not be exercised post-close — MUST verify live at open (14:05).
+
+## Added post-replay-questions (2026-07-13 night) — replay coverage gaps
+- [x] ~~Replay button missing on desk embed after-hours (P1)~~ **RESOLVED same night — NOT an app bug.**
+  Two probe bugs stacked: (1) a full-screen modal (`fixed inset-0 z-[100]`) intercepted the click →
+  Playwright TimeoutError read as "button not found"; (2) the scrub set `el.value=` directly, which
+  React's value tracker dedupes → cursor stuck at frame 1 (screenshot showed `9:30:00 AM · 1/1722`).
+  Fixed probe (modal dismissal + native value setter): embed replay FULLY VERIFIED —
+  1,721 frames, beads 0→5,835→13,933 at 5%/50%/95%, rail visibly formed in late-frame screenshot.
+- [x] **Replay bead-formation × MULTIPLE TIMEFRAMES — TESTED 07-13 night** (`scratchpad/replay-multitf-test.mjs`,
+  standalone /vector SPX): 3m PASS (0→5,308→12,910 beads), 5m PASS (0→5,079→9,654), 15m PASS
+  (0→3,659→3,727), all 3/3 distinct frames. Note: TF switching is DISABLED during replay by design
+  (`VectorChart.tsx:2730` `timeframeDisabled={replayMode}`) so the mid-replay-switch seam doesn't exist.
+- [ ] **1H replay bead-count anomaly (P3, watch)**: at 60m the bead-pixel count DROPPED mid→late
+  (5,245→2,982) while frames stayed distinct. Could be legit wall fade/autoscale compression at
+  coarse aggregation, could be a rail-scaling bug at 1H. Eyeball screenshots at the gate; if real,
+  file as fix branch.
+- [ ] Fold a `REPLAY_TFS` sweep (3m/5m/15m × replay 5/50/95) into `vector-hardcore-e2e.mjs` so the
+  combination stays covered permanently ("KEEP GROWING IT").
+- [ ] Replay flip-line historicity sanity: during embed replay at ~3:15 PM the on-chart flip label read
+  7528 while the (live) banner read 7,519.56 — expected if the chart shows the replay-time flip and the
+  banner stays live, but confirm that's the intended split rather than a desync.

@@ -112,3 +112,31 @@ evidence / fix / status per the CLAUDE.md policy.)
   serve old+new builds for several minutes; per-navigation results flip). Rule going forward:
   after a trunk push, wait ≥6 min AND confirm a marker (e.g. the toggle testids) before treating
   any UI run as evidence.
+
+## 2026-07-13 night — ribbon indicator validation (three-way: displayed == API == Polygon recompute)
+
+### RESOLVED (not a bug) — "VWAP mismatch" from the earlier frozen-tape run was validator error
+- **Evidence** (`scratchpad/ribbon-validate.mjs`, 29/30 PASS): displayed VWAP 7,529.98 ==
+  `/api/market/spx/desk` 7,529.98 == independent Polygon recompute 7,529.98 (today-only RTH
+  bars, typical price × SPY minute volume — the exact staging spec in
+  `spx-desk.ts sessionStatsWithProxyVwap`). The equal-weight variant computes 7,533.19, proving
+  the desk genuinely serves the volume-weighted number (`vwap_volume_weighted:true`).
+- Earlier "mismatch" had two validator bugs: greedy body-regex scraped the wrong element for
+  spot, and the recompute spanned all 3 seeded sessions equal-weight instead of today-only
+  SPY-weighted.
+- Also exact: HOD/LOD/PDH/PDL (vs raw Polygon bars), EMA20/50/200 + SMA50/200 (vs Polygon
+  indicator endpoint AND vs from-scratch recompute over raw daily closes), VIX, Max Pain.
+
+### P3 — ribbon γ-flip penny skew (7,519.55 shown vs 7,519.56 API at fetch time)
+- Timing skew between the ribbon's SWR snapshot and the validator's API fetch — the flip drifts
+  pennies between recomputes. Not a math bug; folds into the one-flip-source / shared-asOf
+  decision already queued for the `fix/vector-surface-sync` merge at the 07-14 gate.
+
+### Replay probe corrections (embed "missing button" P1 closed as NOT-A-BUG)
+- Probe bug 1: full-screen modal (`fixed inset-0 z-[100]`) intercepted clicks → read as "button
+  not found". Probe bug 2: scrub wrote `el.value=` directly and React's value tracker deduped
+  it → cursor stuck at frame 1/1722 (`9:30:00 AM` clock in screenshot). Fixed with modal
+  dismissal + native value setter. Embed replay then verified end-to-end: 1,721 frames, beads
+  0→5,835→13,933 across 5/50/95% cursors, rail visible in late-frame screenshot.
+- Multi-TF replay (standalone SPX): 3m/5m/15m PASS; 1H bead-pixel count dropped mid→late
+  (5,245→2,982) — P3 watch, eyeballing via the DTE×TF matrix screenshots.
