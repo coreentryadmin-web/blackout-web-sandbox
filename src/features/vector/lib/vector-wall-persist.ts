@@ -4,7 +4,11 @@ import type { VectorDteHorizon } from "./vector-dte-horizon";
 
 const KEY_PREFIX = "vector:wall-history";
 /** Keep through the next session for off-hours review + replay groundwork. */
-const TTL_SEC = 48 * 60 * 60;
+// 72h hot-cache (was 48h): bridges weekends so Monday's first reads of Friday rails stay hot.
+// LONG-TERM RETENTION IS POSTGRES, NOT THIS TTL — every sample write-throughs to the durable DB
+// mirror (no deletion), and loadSessionWallHistory falls back to it and re-warms Redis, so
+// 15-day replay reads work regardless of this TTL. Do not bump this to "fix" retention.
+const TTL_SEC = 72 * 60 * 60;
 
 /**
  * Storage identity for a (ticker, horizon) rail. Each DTE horizon records its OWN point-in-time

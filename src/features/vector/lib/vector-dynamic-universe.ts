@@ -26,7 +26,10 @@ const KEY = "vector:universe:dynamic";
 /** Redis TTL — comfortably beyond retention so the map never silently vanishes mid-window. */
 const KEY_TTL_SEC = 45 * 24 * 3600;
 export const DYNAMIC_UNIVERSE_RETENTION_DAYS = 14;
-export const DYNAMIC_UNIVERSE_CAP = 30;
+// 100, not 30 (user-directed): many members will be opening names. Recording is Polygon-cache
+// work per ticker per 5 min; at 100 the cron still fits its window because fetchGexHeatmap is
+// Redis-cache-first (warm names are near-free). Chunked cron processing is queued as hardening.
+export const DYNAMIC_UNIVERSE_CAP = 100;
 /** Per-process debounce: a hot ticker with many viewers touches Redis at most once per window. */
 const TOUCH_DEBOUNCE_MS = 10 * 60 * 1000;
 
