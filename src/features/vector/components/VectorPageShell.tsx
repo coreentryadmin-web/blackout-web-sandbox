@@ -23,6 +23,7 @@ import { deriveVectorRegime, type VectorRegime } from "@/features/vector/lib/vec
 import { deriveWallProximity, type WallProximity } from "@/features/vector/lib/vector-wall-proximity";
 import { deriveGammaMagnet, type GammaMagnet } from "@/features/vector/lib/vector-gamma-magnet";
 import { scoreTopWalls, type WallIntegrity } from "@/features/vector/lib/vector-wall-integrity";
+import type { VectorPlay } from "@/features/vector/lib/vector-play-engine";
 import type { VectorWallEvent } from "@/features/vector/lib/vector-wall-events";
 import { VECTOR_DEFAULT_TICKER } from "@/features/vector/lib/vector-ticker";
 
@@ -115,6 +116,11 @@ export function VectorPageShell({
   // Options-implied EXPECTED MOVE callouts (±1σ/2σ range) — narrated by the terminal, horizon-scoped
   // (#15 cone, slice 3a). Empty when the chain has no real ATM IV to price the move.
   const [expectedMove, setExpectedMove] = useState<string[]>([]);
+  // The synthesized top-of-terminal PLAY — the one concrete, timeframe-aware trade idea the chart
+  // builds from the full Vector snapshot (regime + walls + flip + magnet + proximity + expected move
+  // + confluence + integrity + technicals). Re-emitted on every selection change; null until the
+  // first emit (or when there's genuinely nothing to say).
+  const [play, setPlay] = useState<VectorPlay | null>(null);
   // Alerts (in-page delivery): the member's rules (persisted per ticker), recent fires (for the
   // panel + terminal), and the transient toast for the newest fire.
   const [alertRules, setAlertRules] = useState<AlertRule[]>([]);
@@ -295,6 +301,7 @@ export function VectorPageShell({
               onDteHorizonChange={setDteHorizon}
               onTechnicalsChange={setTechnicals}
               onExpectedMoveChange={setExpectedMove}
+              onPlayChange={setPlay}
               alertRules={alertRules}
               onAlertsFired={handleAlertsFired}
               leadSlot={chartLead}
@@ -311,6 +318,7 @@ export function VectorPageShell({
               wallEvents={wallEvents}
               liveSession={liveSession}
               streamUpdatedAt={streamUpdatedAt}
+              play={play}
               proximity={proximity}
               magnet={magnet}
               confluence={confluence}

@@ -86,7 +86,13 @@ import { levelLinesFor, type LevelLine, type PriorDayOhlc } from "@/features/vec
 import { buildStructureMarkers } from "@/features/vector/lib/vector-structure-markers";
 import { buildFlowMarkers, DEFAULT_FLOW_MAX_MARKERS, type FlowPrint } from "@/features/vector/lib/vector-flow-markers";
 import { confluenceZones, confluenceCallouts, topConfluenceBand, type ConfluenceLevel } from "@/features/vector/lib/vector-confluence";
-import { summarizeTechnicals, technicalsCallouts } from "@/features/vector/lib/vector-technicals";
+import { summarizeTechnicals, technicalsCallouts, type TechnicalsSummary } from "@/features/vector/lib/vector-technicals";
+import {
+  buildVectorPlay,
+  type VectorSnapshot,
+  type VectorPlay,
+  type PlayTechnicals,
+} from "@/features/vector/lib/vector-play-engine";
 import { expectedMoveCallouts, type ExpectedMove } from "@/features/vector/lib/vector-expected-move";
 import { evaluateAlerts, type AlertRule, type AlertState, type FiredAlert } from "@/features/vector/lib/vector-alerts";
 import { sessionHodLod } from "@/features/vector/lib/vector-key-levels";
@@ -199,6 +205,10 @@ type Props = {
   /** Options-implied EXPECTED MOVE callout lines (±1σ/2σ range), horizon-scoped. Empty when the
    *  chain has no real ATM IV to price it. Narrated by the terminal (#15 cone, slice 3a). */
   onExpectedMoveChange?: (lines: string[]) => void;
+  /** The synthesized top-of-terminal PLAY — one concrete, timeframe-aware trade idea built by the
+   *  pure `buildVectorPlay` engine from the full Vector snapshot. Re-emitted on every selection change
+   *  (DTE / timeframe / ticker / tick), deduped by a signature so an unchanged play doesn't churn. */
+  onPlayChange?: (play: VectorPlay | null) => void;
   /** Member-defined alert rules for THIS ticker (wall-touch / flip-cross). Evaluated on each live tick. */
   alertRules?: AlertRule[];
   /** Fired alerts from the latest tick (already deduped/cooled-down by the engine) — for toast + terminal. */
@@ -259,6 +269,27 @@ function volumeHistogramData(bars: VectorBar[]): HistogramData<Time>[] {
     });
   }
   return out;
+}
+
+/**
+ * Map the rich always-on technicals summary (bullish/bearish wording) into the compact
+ * `PlayTechnicals` shape the pure play engine consumes (up/down, bull/bear). Kept a plain,
+ * side-effect-free function so the play engine's input stays a serializable data bundle.
+ */
+function toPlayTechnicals(s: TechnicalsSummary): PlayTechnicals {
+  const emaStack =
+    s.emaStack === "bullish" ? "up" : s.emaStack === "bearish" ? "down" : s.emaStack === "mixed" ? "mixed" : null;
+  const macd = s.macdState === "bullish" ? "bull" : s.macdState === "bearish" ? "bear" : null;
+  return {
+    vwap: s.vwap,
+    emaStack,
+    rsi: s.rsi,
+    macd,
+    goldenPocket: s.goldenPocket,
+    structure: s.structure
+      ? { type: s.structure.type, direction: s.structure.direction, level: s.structure.level }
+      : null,
+  };
 }
 
 function applyDisplayBars(
@@ -793,6 +824,7 @@ export function VectorChart({
   onDteHorizonChange,
   onTechnicalsChange,
   onExpectedMoveChange,
+  onPlayChange,
   alertRules,
   onAlertsFired,
   leadSlot,
@@ -817,6 +849,16 @@ export function VectorChart({
   const lastExpectedMoveRef = useRef<string>("");
   useEffect(() => {
     onExpectedMoveChangeRef.current = onExpectedMoveChange;
+  });
+  // Top-of-terminal PLAY → terminal. Same ref pattern as the technicals/expected-move emits so the
+  // []-dep imperative paint path can emit it: `onPlayChangeRef` keeps the latest callback,
+  // `lastPlayRef` dedupes by a play signature, and `emitPlayRef` lets `paintOverlays` (which reruns
+  // on every tick/timeframe/toggle/replay-frame) refresh the play without depending on the callback.
+  const onPlayChangeRef = useRef(onPlayChange);
+  const lastPlayRef = useRef<string>("");
+  const emitPlayRef = useRef<(() => void) | null>(null);
+  useEffect(() => {
+    onPlayChangeRef.current = onPlayChange;
   });
   // Alerts: the member's rules + the engine's per-rule state + the prior spot (for flip-cross), all
   // in refs so the []-dep tick handler reads the latest without re-subscribing the SSE stream.
@@ -1272,6 +1314,12 @@ export function VectorChart({
         techCb(lines);
       }
     }
+
+    // Refresh the top-of-terminal PLAY from THIS paint too: paintOverlays reruns on every tick,
+    // timeframe switch, indicator toggle, and replay frame — all of which can change the bars-derived
+    // technicals (and thus the play). Routed through emitPlayRef so this []-dep callback stays stable;
+    // emitPlay self-dedupes, so the DTE/lens/SSE call sites calling it directly is harmless overlap.
+    emitPlayRef.current?.();
   }, []);
 
   // Rebuild oscillator panes when the enabled set changes; always refresh their data. Kept a plain
@@ -1612,6 +1660,64 @@ export function VectorChart({
     onConfluenceChange(callouts.length ? callouts : null);
   }, [onConfluenceChange, gatherConfluenceLevels]);
 
+  // Assemble the full VectorSnapshot from the chart's already-computed structured signals and emit
+  // the synthesized PLAY. Everything here is derived from the SAME horizon-scoped walls/flip
+  // (liveGexWalls/liveGammaFlip) as the regime banner / magnet / proximity, so the play can never
+  // describe a different scope than the chart shows. Deduped by a play signature so an unchanged play
+  // (common on a quiet tick) doesn't re-render the terminal. Absent callback → no-op.
+  const emitPlay = useCallback(() => {
+    const cb = onPlayChangeRef.current;
+    if (!cb) return;
+    const spot = spotRef.current;
+    const walls = liveGexWalls();
+    const flip = liveGammaFlip();
+    // Recompute the regime here (cheap, pure) rather than threading the last-emitted one through a
+    // ref — the magnet's honest wording already depends on posture, so this mirrors emitMagnet.
+    const regime = deriveVectorRegime({
+      spot,
+      gammaFlip: flip,
+      topCallWall: walls?.callWalls?.[0]?.strike ?? null,
+      topPutWall: walls?.putWalls?.[0]?.strike ?? null,
+    });
+    const magnet = deriveGammaMagnet({ spot, walls, posture: regime.posture });
+    const proximity = deriveWallProximity({ spot, walls, gammaFlip: flip });
+    const integrity = scoreTopWalls(walls, wallHistoryRef.current);
+    const bars = lastDisplayBarsRef.current;
+    const technicals = toPlayTechnicals(summarizeTechnicals(bars, spot));
+    const zones = spot && spot > 0 ? confluenceZones(gatherConfluenceLevels(spot), spot) : [];
+
+    const snapshot: VectorSnapshot = {
+      ticker,
+      horizon: dteHorizonRef.current,
+      timeframeMin: timeframeRef.current,
+      spot,
+      regime: { posture: regime.posture },
+      gexWalls: walls,
+      gammaFlip: flip,
+      magnet,
+      proximity,
+      expectedMove: expectedMoveBandsRef.current,
+      maxPain: maxPainValueRef.current,
+      confluenceZones: zones,
+      wallIntegrity: integrity,
+      technicals,
+    };
+    const play = buildVectorPlay(snapshot);
+    // Signature over the fields that actually change what's rendered — grade/conviction move the
+    // header, the text fields move the body; keeping it tight avoids churn on identical reads.
+    const sig = play
+      ? `${play.style}|${play.bias}|${play.grade}|${play.conviction}|${play.headline}|${play.thesis}|${play.entryZone ?? ""}|${play.targets.join(",")}|${play.invalidation ?? ""}|${play.starred.join("~")}`
+      : "none";
+    if (sig === lastPlayRef.current) return;
+    lastPlayRef.current = sig;
+    cb(play);
+  }, [liveGexWalls, liveGammaFlip, gatherConfluenceLevels, ticker]);
+
+  // Keep the ref paintOverlays reads in sync with the latest emitPlay closure.
+  useEffect(() => {
+    emitPlayRef.current = emitPlay;
+  }, [emitPlay]);
+
   // Repaint the strongest-confluence-zone band on the price pane. Reads the enabled set + the SAME
   // gathered levels as the terminal, so the band and the ranked callout always describe one zone.
   // Cheap and idempotent (reconciles the ≤3 band lines), so it's safe to call from every place the
@@ -1687,6 +1793,7 @@ export function VectorChart({
     lastProximityRef.current = "";
     lastMagnetRef.current = "";
     lastWallIntegrityRef.current = "";
+    lastPlayRef.current = "";
 
     const repaintLive = () => {
       if (replayModeRef.current || !seriesRef.current) return;
@@ -1712,6 +1819,7 @@ export function VectorChart({
       emitConfluence();
       paintConfluenceBand(); // keep the on-chart band in lockstep with the re-scoped terminal zone
       emitWallIntegrity();
+      emitPlay(); // re-synthesize the top-of-terminal play against the just-scoped walls/flip
     };
 
     // Repaint dispatcher: in replay a DTE toggle must redraw the CURRENT cursor frame (not the
@@ -1912,6 +2020,7 @@ export function VectorChart({
     emitMagnet, emitConfluence,
     paintConfluenceBand,
     emitWallIntegrity,
+    emitPlay,
     onDteHorizonChange,
   ]);
 
@@ -1926,13 +2035,15 @@ export function VectorChart({
     lastProximityRef.current = "";
     lastMagnetRef.current = "";
     lastWallIntegrityRef.current = "";
+    lastPlayRef.current = "";
     emitRegime();
     emitProximity();
     emitMagnet();
     emitConfluence();
     paintConfluenceBand();
     emitWallIntegrity();
-  }, [lens, chartReady, emitRegime, emitProximity, emitMagnet, emitConfluence, paintConfluenceBand, emitWallIntegrity]);
+    emitPlay();
+  }, [lens, chartReady, emitRegime, emitProximity, emitMagnet, emitConfluence, paintConfluenceBand, emitWallIntegrity, emitPlay]);
 
   const connectLive = useCallback(() => {
     if (!liveSessionRef.current) return;
@@ -2086,10 +2197,11 @@ export function VectorChart({
         emitConfluence();
         paintConfluenceBand(); // live SSE tick moved the walls — re-fit the band to the new stack
         emitWallIntegrity();
+        emitPlay(); // walls/flip/spot advanced — re-synthesize the play (paintOverlays also refreshes it)
         evaluateAlertsNow(); // spot/walls/flip just advanced — check the member's alert rules
       }
     });
-  }, [sessionYmd, refreshTrails, refreshOverlays, onFreshness, ticker, liveGexWalls, liveGammaFlip, emitRegime, emitProximity, emitMagnet, emitConfluence, paintConfluenceBand, emitWallIntegrity, evaluateAlertsNow, paintOverlays]);
+  }, [sessionYmd, refreshTrails, refreshOverlays, onFreshness, ticker, liveGexWalls, liveGammaFlip, emitRegime, emitProximity, emitMagnet, emitConfluence, paintConfluenceBand, emitWallIntegrity, emitPlay, evaluateAlertsNow, paintOverlays]);
 
   useEffect(() => {
     const container = containerRef.current;
