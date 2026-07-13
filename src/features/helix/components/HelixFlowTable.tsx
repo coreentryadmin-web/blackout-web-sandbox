@@ -9,6 +9,7 @@ import {
   groupHeaderSpans,
   groupStartIds,
   tableMinWidth,
+  tableColWidths,
   type HelixColumnDef,
   type HelixTableDensity,
 } from "@/features/helix/lib/helix-table-columns";
@@ -264,6 +265,9 @@ export function HelixFlowTable({
   const groupSpans = useMemo(() => groupHeaderSpans(cols), [cols]);
   const groupStarts = useMemo(() => groupStartIds(cols), [cols]);
   const gridMinWidth = useMemo(() => tableMinWidth(cols), [cols]);
+  // Percentage col widths so the fixed-layout table fills the container (no right gutter) while
+  // keeping each column's relative proportion; gridMinWidth stays the scroll floor. See task #48.
+  const colWidths = useMemo(() => tableColWidths(cols), [cols]);
 
   const [sortKey, setSortKey] = useState<HelixFlowSortKey>("time");
   const [sortDir, setSortDir] = useState<HelixFlowSortDir>("desc");
@@ -341,8 +345,8 @@ export function HelixFlowTable({
           style={{ minWidth: gridMinWidth }}
         >
           <colgroup>
-            {cols.map((col) => (
-              <col key={col.id} style={{ width: col.width }} />
+            {cols.map((col, i) => (
+              <col key={col.id} style={{ width: colWidths[i] }} />
             ))}
           </colgroup>
           <thead>

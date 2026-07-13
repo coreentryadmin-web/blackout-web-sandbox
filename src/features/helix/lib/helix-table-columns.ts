@@ -195,6 +195,26 @@ export function tableMinWidth(cols: HelixColumnDef[]): string {
   return `${rem}rem`;
 }
 
+/**
+ * Per-column widths as PERCENTAGES of the fixed-width total, for the `<colgroup>`.
+ *
+ * WHY: the tape is `table-layout: fixed` with `width: 100%`. With every column carrying an absolute
+ * `rem` width whose sum (~72rem ≈ 1150px) is LESS than the desktop table width (~1870px at 1920),
+ * fixed-layout does NOT stretch the fixed columns to fill — it leaves the ~700px of slack as EMPTY
+ * trailing space inside the table (measured live: table 1870px, column content ends at ~853px → a
+ * right gutter). Converting the same rem values into percentages that sum to 100% makes fixed-layout
+ * distribute the full table width across the columns in the SAME relative proportions, so the tape
+ * fills edge-to-edge on wide screens. The rem values are retained by `tableMinWidth` as the
+ * horizontal-scroll floor, so on a narrow viewport the table still scrolls instead of crushing.
+ */
+export function tableColWidths(cols: HelixColumnDef[]): string[] {
+  const weights = cols.map((c) => parseFloat(c.width));
+  const total = weights.reduce((sum, w) => sum + (Number.isFinite(w) && w > 0 ? w : 0), 0);
+  // Degenerate guard (no parseable widths) → equal split so the table still fills, never NaN%.
+  if (!(total > 0)) return cols.map(() => `${(100 / cols.length).toFixed(4)}%`);
+  return weights.map((w) => `${(((Number.isFinite(w) && w > 0 ? w : 0) / total) * 100).toFixed(4)}%`);
+}
+
 /** First column id in each group — used for vertical group dividers. */
 export function groupStartIds(cols: HelixColumnDef[]): Set<string> {
   const starts = new Set<string>();

@@ -6,6 +6,7 @@ import {
   groupStartIds,
   matchesDteFilter,
   tableMinWidth,
+  tableColWidths,
 } from "./helix-table-columns.ts";
 
 describe("columnsForDensity", () => {
@@ -100,6 +101,34 @@ describe("groupHeaderSpans", () => {
       ["Print", "Contract", "Notional", "Chain", "Intel"]
     );
     assert.equal(spans.find((s) => s.group === "contract")?.span, 3);
+  });
+});
+
+describe("tableColWidths", () => {
+  it("returns one percentage per column, summing to 100% (fills the table, no gutter)", () => {
+    for (const density of ["essential", "standard", "full"] as const) {
+      const cols = columnsForDensity(density);
+      const widths = tableColWidths(cols);
+      assert.equal(widths.length, cols.length, `${density}: one width per column`);
+      assert.ok(widths.every((w) => w.endsWith("%")), `${density}: all percentages`);
+      const sum = widths.reduce((s, w) => s + parseFloat(w), 0);
+      assert.ok(Math.abs(sum - 100) < 0.01, `${density}: widths sum to 100% (got ${sum})`);
+    }
+  });
+
+  it("preserves relative proportion — the widest rem column stays the widest percentage", () => {
+    const cols = columnsForDensity("full");
+    const widths = tableColWidths(cols).map(parseFloat);
+    const widestRemIdx = cols.reduce((mi, c, i) => (parseFloat(c.width) > parseFloat(cols[mi].width) ? i : mi), 0);
+    const widestPctIdx = widths.reduce((mi, w, i) => (w > widths[mi] ? i : mi), 0);
+    assert.equal(widestPctIdx, widestRemIdx, "signals (widest rem) is also the widest percentage");
+    // Ratio preserved: a 2× rem column is ~2× the percentage.
+    const time = cols.findIndex((c) => c.id === "time");
+    const signals = cols.findIndex((c) => c.id === "signals");
+    const remRatio = parseFloat(cols[signals].width) / parseFloat(cols[time].width);
+    const pctRatio = widths[signals] / widths[time];
+    // Tolerance accommodates the 4-decimal rounding in the percentage strings (~1e-4 ratio error).
+    assert.ok(Math.abs(remRatio - pctRatio) < 1e-2, `rem ratio ${remRatio} ≈ pct ratio ${pctRatio}`);
   });
 });
 
