@@ -19,6 +19,7 @@ import {
   vexBriefLine,
   darkPoolBriefLine,
   wallDynamicsBriefLine,
+  technicalsBriefLine,
 } from "@/lib/bie/vector-desk-intel";
 
 export type VectorDeskBriefResult = {
@@ -86,6 +87,7 @@ export function composeVectorDeskBrief(
     magnetBriefLine(state),
     maxPainBriefLine(state),
     expectedMoveBriefLine(state),
+    technicalsBriefLine(state),
     ladderBriefLine(state),
     vexBriefLine(state),
     darkPoolBriefLine(state),

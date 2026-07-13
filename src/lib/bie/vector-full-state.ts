@@ -44,6 +44,7 @@ import { getHorizonStrikeTotals } from "@/features/vector/lib/vector-dte-walls-s
 import { getVectorMaxPainForHorizon } from "@/features/vector/lib/vector-max-pain-server";
 import { getVectorExpectedMove } from "@/features/vector/lib/vector-expected-move-server";
 import { getVectorGexHeatmap } from "@/features/vector/lib/vector-gex-heatmap-server";
+import { computeServerTechnicals } from "@/features/vector/lib/vector-server-technicals";
 import { getVectorFlowMarkers, type VectorFlowMarkers } from "@/features/vector/lib/vector-flow-markers-server";
 import { buildGexLadder, type GexLadder } from "@/features/vector/lib/vector-gex-ladder";
 import { eventsFromWallHistory, type VectorWallEvent } from "@/features/vector/lib/vector-wall-events";
@@ -165,9 +166,14 @@ export async function fetchVectorFullState(
       num(positioning?.spot) ?? num(maxPainRes?.spot) ?? num(expectedMove?.spot) ?? null;
     if (spot == null) return null;
 
-    // Heaviest read (session spot path + grid reconstruction) — kept out of the Promise.all so it
-    // can't slow the core fan-out, and reduced to a compact summary rather than the full grid.
-    const heatmapGrid = await getVectorGexHeatmap(t, horizon, todayEtYmd()).catch(() => null);
+    // Second batch, parallelized, run once spot is known: the heaviest heatmap read (session spot
+    // path + grid reconstruction, reduced to a compact summary) and the server-side chart technicals
+    // (VWAP/EMA/RSI/MACD/structure over the timeframe's bars — the read the chart computes
+    // client-side; now real server-side so BIE isn't blind to it).
+    const [heatmapGrid, technicals] = await Promise.all([
+      getVectorGexHeatmap(t, horizon, todayEtYmd()).catch(() => null),
+      computeServerTechnicals(t, timeframeMin, spot).catch(() => null),
+    ]);
 
     const topCallWall = num(gexWalls?.callWalls?.[0]?.strike);
     const topPutWall = num(gexWalls?.putWalls?.[0]?.strike);
@@ -186,15 +192,18 @@ export async function fetchVectorFullState(
       ? buildGexLadder(strikeTotalsRes.strikeTotals, strikeTotalsRes.spot)
       : null;
 
-    // Confluence over the INDEPENDENT price levels this state has (walls + flip + max pain). The
-    // pure engine only ranks a cluster when ≥2 DISTINCT kinds agree, so a single wall repeated is
-    // never mislabeled confluence. Session/technical levels (golden pocket / HOD / LOD / PDH / PDL)
-    // are chart-bar-derived and absent server-side — see the `technicals: null` note below.
+    // Confluence over the INDEPENDENT price levels this state has: dealer walls + flip + max pain,
+    // PLUS the golden pocket (now that technicals are computed server-side). The pure engine only
+    // ranks a cluster when ≥2 DISTINCT kinds agree, so a single wall repeated is never mislabeled
+    // confluence. (HOD/LOD/PDH/PDL session levels remain a chart-only enrichment — the desk brief
+    // cites the walls/flip/max-pain/golden-pocket agreement, which is the highest-signal cluster.)
     const confluenceLevels: ConfluenceLevel[] = [];
     for (const w of gexWalls?.callWalls ?? []) confluenceLevels.push({ price: w.strike, kind: "call-wall" });
     for (const w of gexWalls?.putWalls ?? []) confluenceLevels.push({ price: w.strike, kind: "put-wall" });
     if (gammaFlip != null) confluenceLevels.push({ price: gammaFlip, kind: "gamma-flip" });
     if (maxPain != null) confluenceLevels.push({ price: maxPain, kind: "max-pain" });
+    const gp = technicals?.goldenPocket;
+    if (gp) confluenceLevels.push({ price: (gp.low + gp.high) / 2, kind: "golden-pocket" });
     const zones = confluenceZones(confluenceLevels, spot);
 
     const snapshot: VectorSnapshot = {
@@ -213,11 +222,11 @@ export async function fetchVectorFullState(
       maxPain,
       confluenceZones: zones,
       wallIntegrity,
-      // Server-side there are no displayed chart bars to run summarizeTechnicals over (EMA/VWAP/RSI
-      // are computed client-side from the drawn candles), so technicals is honestly null here rather
-      // than fabricated. buildVectorPlay degrades gracefully — it keys the play off regime / proximity
-      // / walls / magnet, using technicals only as a tie-breaker when present.
-      technicals: null,
+      // Real server-side chart technicals (VWAP / EMA stack / RSI / MACD / golden-pocket / structure),
+      // computed from the SAME seed bars + summarizer the chart uses (vector-server-technicals.ts), so
+      // BIE reads the same read a member sees. Null when there are no bars — buildVectorPlay still
+      // degrades gracefully, keying the play off regime / proximity / walls / magnet.
+      technicals,
       bie: null,
     };
 
