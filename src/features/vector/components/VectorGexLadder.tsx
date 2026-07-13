@@ -1,9 +1,14 @@
 "use client";
 
 import clsx from "clsx";
-import { useEffect, useRef, useState } from "react";
-import { buildGexLadder, type GexLadder, type GexLadderRow } from "@/features/vector/lib/vector-gex-ladder";
+import { useEffect, useRef } from "react";
+import { buildGexLadder, type GexLadderRow } from "@/features/vector/lib/vector-gex-ladder";
 import { dteHorizonLabel, type VectorDteHorizon } from "@/features/vector/lib/vector-dte-horizon";
+import {
+  formatSnapshotClock,
+  snapshotMatches,
+  type VectorHorizonSnapshot,
+} from "@/features/vector/lib/vector-horizon-snapshot";
 
 // Match the chart's bead colours exactly (VectorChart CALL_WALL_COLOR / PUT_WALL_COLOR) so the
 // ladder and the beads read as the same object: gold = call/resistance, purple = put/support.
@@ -23,67 +28,38 @@ function fmtGex(gex: number): string {
 
 type Props = {
   ticker: string;
-  liveSession: boolean;
-  /** SSR-seeded spot so the header + empty state aren't blank before the first fetch. */
+  /** SSR-seeded spot so the header + empty state aren't blank before the first snapshot. */
   initialSpot?: number | null;
-  /** DTE horizon from the chart's toggle — the ladder re-scopes to the SAME expiries so it matches
-   *  the walls on the chart. "all" = near-term aggregate (default). */
+  /** DTE horizon from the chart's toggle — label + re-centre key; the snapshot carries the
+   *  horizon-scoped data itself. "all" = near-term aggregate (default). */
   dteHorizon?: VectorDteHorizon;
+  /** The SHARED per-(ticker,horizon) snapshot (one fetch cycle, one asOf — see
+   *  vector-horizon-snapshot.ts). The ladder renders THIS object — it no longer runs its own
+   *  poll, so its rows can never describe a different instant than the chart's walls/banner or
+   *  the terminal citations consuming the same snapshot. */
+  snapshot: VectorHorizonSnapshot | null;
 };
-
-type LadderResponse = { spot: number | null; asOf: string | null; ladder: GexLadder };
 
 /**
  * Strike-ladder side panel — the dense per-strike net-GEX column a member scans alongside the
  * chart (Skylit-Atlas parity). The chart collapses each strike to one bead; this shows the whole
  * near-spot gamma structure at once: every strike, its signed net GEX as a magnitude bar (gold
- * call / purple put), and the single dominant "king" per side. Polls /api/market/vector/gex-ladder
- * on its own cadence (off the per-second SSE payload). Horizon-scoping to the chart's DTE toggle is
- * a documented follow-up — this first slice shows the near-term ("all") aggregate the chart
- * defaults to.
+ * call / purple put), and the single dominant "king" per side. Data comes EXCLUSIVELY from the
+ * shared VectorHorizonSnapshot (cross-surface sync): the panel previously polled
+ * /api/market/vector/gex-ladder on its own cadence, which let its numbers drift up to a cycle
+ * away from the chart/terminal — the "three different numbers" member report. The shared `asOf`
+ * is displayed in the header so the sync is visible.
  */
-export function VectorGexLadder({ ticker, liveSession, initialSpot = null, dteHorizon = "all" }: Props) {
-  const [ladder, setLadder] = useState<GexLadder>(() => buildGexLadder(null, initialSpot));
-  const [spot, setSpot] = useState<number | null>(initialSpot);
-  const [asOf, setAsOf] = useState<string | null>(null);
-  const [state, setState] = useState<"loading" | "ready" | "error">("loading");
-  // Guard against a slow response for a PREVIOUS ticker landing after a switch and overwriting the
-  // new ticker's ladder (same staleness class the chart's fetches guard with a ref check).
-  const tickerRef = useRef(ticker);
-
-  useEffect(() => {
-    tickerRef.current = ticker;
-    let cancelled = false;
-
-    const load = async () => {
-      try {
-        const res = await fetch(
-          `/api/market/vector/gex-ladder?ticker=${encodeURIComponent(ticker)}&dte=${encodeURIComponent(dteHorizon)}`
-        );
-        if (cancelled || tickerRef.current !== ticker) return;
-        if (!res.ok) {
-          setState("error");
-          return;
-        }
-        const data = (await res.json()) as LadderResponse;
-        if (cancelled || tickerRef.current !== ticker) return;
-        setLadder(data.ladder ?? buildGexLadder(null, data.spot ?? null));
-        setSpot(data.spot ?? null);
-        setAsOf(data.asOf ?? null);
-        setState("ready");
-      } catch {
-        if (!cancelled && tickerRef.current === ticker) setState("error");
-      }
-    };
-
-    void load();
-    // Live: refresh with the walls cadence (15s). Off-hours: one fetch — the ladder is static.
-    const id = liveSession ? setInterval(load, 15_000) : null;
-    return () => {
-      cancelled = true;
-      if (id) clearInterval(id);
-    };
-  }, [ticker, liveSession, dteHorizon]);
+export function VectorGexLadder({ ticker, initialSpot = null, dteHorizon = "all", snapshot }: Props) {
+  // Only a snapshot for THIS exact (ticker, horizon) may render — during a switch the stale
+  // snapshot for the previous selection shows as "loading", never as the wrong ticker's rows
+  // (same staleness class the old fetch guarded with a ticker ref).
+  const matched = snapshotMatches(snapshot, ticker, dteHorizon) ? snapshot : null;
+  const ladder = matched?.ladder ?? buildGexLadder(null, initialSpot);
+  const spot = matched?.spot ?? initialSpot;
+  const asOf = matched?.asOf ?? null;
+  const state: "loading" | "ready" | "error" =
+    matched == null ? "loading" : matched.ladder == null ? "error" : "ready";
 
   const rows = ladder.rows;
   // Index of the first row at/below spot — the spot marker slots ABOVE it (rows are strike-desc, so
@@ -123,6 +99,11 @@ export function VectorGexLadder({ ticker, liveSession, initialSpot = null, dteHo
         <span className="vector-gex-ladder-sub">
           {spot != null ? `spot ${spot.toLocaleString("en-US", { maximumFractionDigits: 2 })}` : "—"}
           <span className="vector-gex-ladder-scope"> · {dteHorizon === "all" ? "near-term" : dteHorizonLabel(dteHorizon)}</span>
+          {/* Shared-snapshot stamp: the SAME asOf the terminal shows — visible proof the ladder,
+              chart levels, and narration all cite one fetch cycle. */}
+          {asOf != null ? (
+            <span className="vector-gex-ladder-scope"> · as of {formatSnapshotClock(asOf)}</span>
+          ) : null}
         </span>
       </header>
 

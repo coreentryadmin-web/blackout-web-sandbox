@@ -13,6 +13,7 @@ import type { GammaMagnet } from "@/features/vector/lib/vector-gamma-magnet";
 import type { WallIntegrity } from "@/features/vector/lib/vector-wall-integrity";
 import type { PlayTerminalLine } from "@/features/spx/lib/spx-play-terminal-lines";
 import { normalizeVectorTicker } from "@/features/vector/lib/vector-ticker";
+import { formatSnapshotClock } from "@/features/vector/lib/vector-horizon-snapshot";
 
 type Props = {
   ticker: string;
@@ -20,6 +21,9 @@ type Props = {
   wallEvents: VectorWallEvent[];
   liveSession: boolean;
   streamUpdatedAt?: number | null;
+  /** asOf (ms) of the SHARED horizon snapshot every narrated level cites — displayed subtly so a
+   *  member can see the terminal, ladder, and chart levels describe the same instant. */
+  snapshotAsOf?: number | null;
   proximity?: WallProximity | null;
   magnet?: GammaMagnet | null;
   /** Ranked confluence callouts (pre-formatted by the chart's emit) — null when no zones. */
@@ -43,6 +47,7 @@ export function VectorDeskTerminal({
   wallEvents,
   liveSession,
   streamUpdatedAt,
+  snapshotAsOf,
   proximity,
   magnet,
   confluence,
@@ -88,6 +93,18 @@ export function VectorDeskTerminal({
     // (dealer-hedging center of mass). Each is absent when there's nothing real
     // to say (spot in open space / no gamma structure) — never a filler line.
     const intel: PlayTerminalLine[] = [];
+    // Shared-snapshot stamp (cross-surface sync): the SAME asOf shown on the GEX ladder header —
+    // every level narrated below (walls, flip, max pain, expected move) comes from that one fetch
+    // cycle, so a member can verify the three surfaces are telling one story. Absent until the
+    // first cycle lands (never a fabricated stamp).
+    if (snapshotAsOf != null) {
+      intel.push({
+        icon: "level",
+        tone: "neutral",
+        text: `levels as of ${formatSnapshotClock(snapshotAsOf)} — synced with chart + ladder`,
+        indent: 1,
+      });
+    }
     if (proximity) {
       intel.push({
         icon: "pulse",
@@ -157,7 +174,7 @@ export function VectorDeskTerminal({
     }
     if (intel.length) return [base[0]!, ...intel, ...base.slice(1)];
     return base;
-  }, [isSpx, spxPlay, spxPlayError, liveSession, normalized, lens, wallEvents, proximity, magnet, confluence, technicals, expectedMove, alerts, wallIntegrity]);
+  }, [isSpx, spxPlay, spxPlayError, liveSession, normalized, lens, wallEvents, snapshotAsOf, proximity, magnet, confluence, technicals, expectedMove, alerts, wallIntegrity]);
 
   const cmd = isSpx ? "playbook --spx --vector-desk" : `vector --ticker ${normalized} --structure`;
 

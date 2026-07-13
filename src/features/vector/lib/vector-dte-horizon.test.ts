@@ -72,9 +72,12 @@ test("every horizon has a label", () => {
   for (const h of VECTOR_DTE_HORIZONS) assert.ok(dteHorizonLabel(h).length > 0);
 });
 
-test("pickHorizonScopedValue: 'all' always uses the live stream value, ignoring any scoped value", () => {
-  assert.equal(pickHorizonScopedValue("all", 190, 197), 197);
-  assert.equal(pickHorizonScopedValue("all", null, 197), 197);
+test("pickHorizonScopedValue: 'all' uses the shared-snapshot scoped value when present (cross-surface sync)", () => {
+  // Changed with the VectorHorizonSnapshot: the scoped slot is fed by the ONE shared snapshot for
+  // every horizon including "all", so a non-null scoped value must win everywhere — otherwise the
+  // chart would render 1s stream walls while the ladder/terminal render the snapshot's numbers.
+  assert.equal(pickHorizonScopedValue("all", 190, 197), 190);
+  assert.equal(pickHorizonScopedValue("all", null, 197), 197, "stream fallback when no snapshot yet");
 });
 
 test("pickHorizonScopedValue: a narrowed horizon uses the scoped value when present", () => {
@@ -93,7 +96,7 @@ test("pickHorizonScopedValue: narrowed horizon with no scoped value falls back t
 test("pickHorizonScopedValue: works for walls objects, not just numbers (generic)", () => {
   const stream = { callWalls: [{ strike: 210, pct: 5 }], putWalls: [{ strike: 197.5, pct: 4 }] };
   const scoped = { callWalls: [{ strike: 210, pct: 9 }], putWalls: [{ strike: 190, pct: 7 }] };
-  assert.equal(pickHorizonScopedValue("all", scoped, stream), stream);
+  assert.equal(pickHorizonScopedValue("all", scoped, stream), scoped); // shared snapshot wins on "all" too
   assert.equal(pickHorizonScopedValue("0dte", scoped, stream), scoped);
   assert.equal(pickHorizonScopedValue("0dte", null, stream), stream);
 });

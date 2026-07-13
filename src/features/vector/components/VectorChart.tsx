@@ -89,6 +89,7 @@ import { buildFlowMarkers, DEFAULT_FLOW_MAX_MARKERS, type FlowPrint } from "@/fe
 import { confluenceZones, confluenceCallouts, topConfluenceBand, type ConfluenceLevel } from "@/features/vector/lib/vector-confluence";
 import { summarizeTechnicals, technicalsCallouts } from "@/features/vector/lib/vector-technicals";
 import { expectedMoveCallouts, type ExpectedMove } from "@/features/vector/lib/vector-expected-move";
+import { snapshotMatches, type VectorHorizonSnapshot } from "@/features/vector/lib/vector-horizon-snapshot";
 import { evaluateAlerts, type AlertRule, type AlertState, type FiredAlert } from "@/features/vector/lib/vector-alerts";
 import { sessionHodLod } from "@/features/vector/lib/vector-key-levels";
 import { dominantSwing, goldenPocket } from "@/features/vector/lib/vector-fib-swing";
@@ -207,6 +208,12 @@ type Props = {
   /** Options-implied EXPECTED MOVE callout lines (±1σ/2σ range), horizon-scoped. Empty when the
    *  chain has no real ATM IV to price it. Narrated by the terminal (#15 cone, slice 3a). */
   onExpectedMoveChange?: (lines: string[]) => void;
+  /** The SHARED per-(ticker,horizon) snapshot (one fetch cycle, one asOf — see
+   *  vector-horizon-snapshot.ts). Every displayed/narrated level (horizon walls + flip, max-pain
+   *  line, expected-move cone, and the terminal reads derived from them) comes from THIS object,
+   *  so the chart can never disagree with the GEX ladder consuming the same snapshot. The live
+   *  SSE stream remains the source for candles/bead ticks only. */
+  horizonSnapshot?: VectorHorizonSnapshot | null;
   /** Member-defined alert rules for THIS ticker (wall-touch / flip-cross). Evaluated on each live tick. */
   alertRules?: AlertRule[];
   /** Fired alerts from the latest tick (already deduped/cooled-down by the engine) — for toast + terminal. */
@@ -871,6 +878,7 @@ export function VectorChart({
   onDteHorizonChange,
   onTechnicalsChange,
   onExpectedMoveChange,
+  horizonSnapshot,
   alertRules,
   onAlertsFired,
   leadSlot,
@@ -895,6 +903,13 @@ export function VectorChart({
   const lastExpectedMoveRef = useRef<string>("");
   useEffect(() => {
     onExpectedMoveChangeRef.current = onExpectedMoveChange;
+  });
+  // Latest shared snapshot for reads OUTSIDE the snapshot effect (the DTE effect seeds the
+  // horizon refs from it on a selection change so a toggle doesn't blank levels that are
+  // already known for the new selection).
+  const horizonSnapshotRef = useRef<VectorHorizonSnapshot | null>(horizonSnapshot ?? null);
+  useEffect(() => {
+    horizonSnapshotRef.current = horizonSnapshot ?? null;
   });
   // Alerts: the member's rules + the engine's per-rule state + the prior spot (for flip-cross), all
   // in refs so the []-dep tick handler reads the latest without re-subscribing the SSE stream.
@@ -1818,66 +1833,15 @@ export function VectorChart({
       repaintLive();
     };
 
-    // Max-pain and the expected-move cone are HORIZON-INDEPENDENT reads: each has its own endpoint
-    // that accepts ?dte= and returns a value for EVERY horizon, including "all" (verified live — the
-    // "all" response carries a real band/strike). They must therefore fire on every selection and are
-    // defined + invoked HERE, ABOVE the "all" early-return below. The early-return only skips the
-    // horizon-SCOPED walls/history fetch (on "all" the chart follows the live SSE stream, so there's
-    // nothing scoped to fetch). Before this move both reads sat AFTER the return, so on the DEFAULT
-    // "all" view they never ran — the max-pain line and the ±1σ/2σ cone silently never rendered until
-    // the member toggled to a narrower DTE. Same root cause, both fixed together.
-    const fetchMaxPain = async () => {
-      try {
-        const res = await fetch(
-          `/api/market/vector/max-pain?ticker=${encodeURIComponent(ticker)}&dte=${dteHorizon}`
-        );
-        if (cancelled || dteHorizonRef.current !== dteHorizon) return;
-        const strike =
-          res.ok && seriesRef.current
-            ? ((await res.json()) as { maxPain?: number | null }).maxPain ?? null
-            : null;
-        if (cancelled || dteHorizonRef.current !== dteHorizon || !seriesRef.current) return;
-        maxPainValueRef.current = strike;
-        applyMaxPainLine(seriesRef.current, maxPainLineRef, strike);
-        emitConfluence(); // the max-pain level just landed — the zone stack may have changed
-        paintConfluenceBand();
-      } catch {
-        // Network throw: keep the last-drawn line rather than blank it on a transient blip.
-      }
-    };
-
-    // Options-implied EXPECTED MOVE for the current (ticker, horizon) — the ±1σ/2σ range the chain
-    // is pricing through the horizon's front expiry. Emits pre-formatted callouts to the terminal
-    // (#15 cone, slice 3a) and stores the band for the chart draw (slice 3b). Best-effort: on any
-    // failure or a null (no real ATM IV) it emits [] so the terminal drops the section rather than
-    // showing stale, and the band clears.
-    const fetchExpectedMove = async () => {
-      const cb = onExpectedMoveChangeRef.current;
-      if (!cb) return;
-      try {
-        const res = await fetch(
-          `/api/market/vector/expected-move?ticker=${encodeURIComponent(ticker)}&dte=${dteHorizon}`
-        );
-        if (cancelled || dteHorizonRef.current !== dteHorizon) return;
-        const em = res.ok
-          ? ((await res.json()) as { expectedMove?: ExpectedMove | null }).expectedMove ?? null
-          : null;
-        if (cancelled || dteHorizonRef.current !== dteHorizon) return;
-        const lines = expectedMoveCallouts(em);
-        const key = lines.join("|");
-        if (key !== lastExpectedMoveRef.current) {
-          lastExpectedMoveRef.current = key;
-          cb(lines);
-        }
-        // Store the band + repaint so the chart lines redraw when the toggle is on (slice 3b). The
-        // repaint is a no-op for the band's sig-check when nothing changed; paintOverlays gates the
-        // actual draw on the "expected-move" toggle.
-        expectedMoveBandsRef.current = em;
-        paintOverlays(lastDisplayBarsRef.current);
-      } catch {
-        // Network throw: keep the last-emitted lines rather than blank the section on a blip.
-      }
-    };
+    // Max-pain, the expected-move cone, and the horizon-scoped walls/flip NO LONGER fetch here.
+    // They arrive TOGETHER in the shared VectorHorizonSnapshot (one Promise.all cycle, one asOf —
+    // see vector-horizon-snapshot.ts) and are applied by the snapshot effect below this one. That
+    // is the cross-surface sync fix: when this effect owned three independent fetches on their own
+    // cadences, the chart, the GEX ladder (its own poll), and the terminal (derived from these
+    // refs) could each show a DIFFERENT instant's numbers. On a selection change this effect only
+    // SEEDS the refs from the current snapshot when it already matches the new (ticker, horizon) —
+    // otherwise it clears them so pickHorizonScopedValue falls back to the live stream until the
+    // hook's immediate re-fetch lands (same fallback contract the old in-flight window had).
 
     // GEX positioning heatmap (#14) — the horizon-scoped strike×time surface behind the candles.
     // HORIZON-INDEPENDENT in the same sense as max-pain/expected-move: /api/market/vector/gex-heatmap
@@ -1907,13 +1871,18 @@ export function VectorChart({
       }
     };
 
-    void fetchMaxPain();
-    void fetchExpectedMove();
     void fetchGexHeatmap();
 
+    // Seed the horizon walls/flip from the shared snapshot when it already describes this exact
+    // (ticker, horizon) — e.g. toggling away and back within a cycle. A mismatched/absent snapshot
+    // clears the refs (live-stream fallback) rather than leaving the PREVIOUS selection's scoped
+    // values painted under the new label.
+    const seed = horizonSnapshotRef.current;
+    const seedMatch = snapshotMatches(seed, ticker, dteHorizon) ? seed : null;
+    horizonWallsRef.current = seedMatch?.walls ?? null;
+    horizonFlipRef.current = seedMatch?.flip ?? null;
+
     if (dteHorizon === "all") {
-      horizonWallsRef.current = null;
-      horizonFlipRef.current = null;
       horizonHistoryRef.current = [];
       repaint();
       return;
@@ -1923,9 +1892,11 @@ export function VectorChart({
     // previous horizon's clusters while this fetch is in flight.
     horizonHistoryRef.current = [];
 
-    // Fetch the RECORDED per-horizon trail (frozen clusters) in parallel with the current walls.
-    // Separate from fetchScoped so a slow/empty history read never delays the current-structure
-    // repaint. Guarded on the still-active horizon + not cancelled, same as fetchScoped.
+    // Fetch the RECORDED per-horizon trail (frozen clusters). Deliberately NOT part of the shared
+    // horizon snapshot: it's the bead-trail history overlay, not a narrated level, and it advances
+    // at the recorder's 5-min bucket — folding it into the 15s cycle would just re-download an
+    // unchanged rail 20× per bucket. Kept separate so a slow/empty history read never delays the
+    // current-structure repaint. Guarded on the still-active horizon + not cancelled.
     const fetchHistory = async () => {
       try {
         const res = await fetch(
@@ -1943,43 +1914,16 @@ export function VectorChart({
       }
     };
 
-    const fetchScoped = async () => {
-      try {
-        const res = await fetch(
-          `/api/market/vector/walls?ticker=${encodeURIComponent(ticker)}&dte=${dteHorizon}`
-        );
-        if (cancelled || dteHorizonRef.current !== dteHorizon) return;
-        if (!res.ok) {
-          // Fetch reachable but errored (e.g. 5xx). Still repaint against the live stream values
-          // (liveGexWalls/liveGammaFlip fall back to the un-scoped stream), so the terminal reflects
-          // the CURRENT selection instead of freezing on the previous horizon's narration.
-          repaintLive();
-          return;
-        }
-        const data = (await res.json()) as { walls?: VectorWalls | null; flip?: number | null };
-        if (cancelled || dteHorizonRef.current !== dteHorizon) return;
-        horizonWallsRef.current = data.walls ?? null;
-        // Re-scope the flip line with the horizon too. A null flip (e.g. no ladder
-        // zero-crossing in the scoped expiries) falls back to the live stream flip
-        // via liveGammaFlip, so the flip never vanishes just because a horizon narrowed.
-        horizonFlipRef.current = data.flip ?? null;
-        repaintLive();
-      } catch {
-        // Network throw: keep last-known scoped walls/flip, but STILL repaint so the terminal
-        // re-derives against the current selection (stream fallback) rather than staying stale.
-        if (!cancelled && dteHorizonRef.current === dteHorizon) repaintLive();
-      }
-    };
-
-    void fetchScoped();
     void fetchHistory();
-    // Only the current walls need the 15s cadence; the recorded trail advances at the recorder's
-    // 5-min bucket, so refresh it on a slower interval in RTH (and once, above, off-hours).
-    const id = liveSession ? setInterval(fetchScoped, 15_000) : null;
+    // Repaint immediately against the seeded/cleared refs so the terminal narrates the CURRENT
+    // selection now (live-stream fallback while the snapshot cycle is in flight) — the walls/flip
+    // themselves refresh via the shared snapshot effect, not a per-surface 15s interval here.
+    repaintLive();
+    // The recorded trail advances at the recorder's 5-min bucket, so refresh it on a slower
+    // interval in RTH (and once, above, off-hours).
     const histId = liveSession ? setInterval(fetchHistory, 60_000) : null;
     return () => {
       cancelled = true;
-      if (id) clearInterval(id);
       if (histId) clearInterval(histId);
     };
   }, [
@@ -2003,6 +1947,74 @@ export function VectorChart({
     paintConfluenceBand,
     emitWallIntegrity,
     onDteHorizonChange,
+  ]);
+
+  // SHARED HORIZON SNAPSHOT → every displayed/narrated level. One object per fetch cycle
+  // (walls+flip, max-pain, expected-move — the GEX ladder consumes the SAME object in the shell),
+  // so the banner kings, flip line, max-pain line, cone, and terminal citations can never mix
+  // instants with the ladder panel — the "three different numbers" class. Runs on every new
+  // snapshot (the hook swaps a fresh frozen object per successful 15s cycle; a failed cycle keeps
+  // the previous reference so this effect stays quiet). The live SSE stream remains the source
+  // for candles/bead ticks and the fallback (via pickHorizonScopedValue) when the snapshot has no
+  // walls yet.
+  useEffect(() => {
+    if (!horizonSnapshot) return;
+    // Never apply a snapshot for a selection the member has already left — the hook re-keys and
+    // guards its own cycles, but the prop can lag a render behind a fast toggle (belt & braces).
+    if (!snapshotMatches(horizonSnapshot, ticker, dteHorizon)) return;
+
+    horizonWallsRef.current = horizonSnapshot.walls;
+    horizonFlipRef.current = horizonSnapshot.flip;
+    maxPainValueRef.current = horizonSnapshot.maxPain;
+    expectedMoveBandsRef.current = horizonSnapshot.expectedMove;
+
+    // Terminal cone lines — same dedupe key as the old per-endpoint fetch, so an unchanged cycle
+    // doesn't re-push the section.
+    const lines = expectedMoveCallouts(horizonSnapshot.expectedMove);
+    const emKey = lines.join("|");
+    if (emKey !== lastExpectedMoveRef.current) {
+      lastExpectedMoveRef.current = emKey;
+      onExpectedMoveChangeRef.current?.(lines);
+    }
+
+    if (!chartReady || !seriesRef.current) return;
+    applyMaxPainLine(seriesRef.current, maxPainLineRef, horizonSnapshot.maxPain);
+    // In replay only the REFS update (so exit-replay resumes on the fresh shared numbers) — every
+    // paint below is live-view; replay frames draw exclusively from time-sliced history.
+    if (replayModeRef.current) return;
+
+    refreshOverlays(
+      lensRef.current,
+      liveGexWalls(),
+      vexWallsRef.current,
+      liveGammaFlip(),
+      vexFlipRef.current,
+      darkPoolRef.current
+    );
+    refreshTrails(lensRef.current);
+    paintOverlays(lastDisplayBarsRef.current); // expected-move band tracks the snapshot's cone
+    emitRegime();
+    emitProximity();
+    emitMagnet();
+    emitConfluence();
+    paintConfluenceBand();
+    emitWallIntegrity();
+  }, [
+    horizonSnapshot,
+    ticker,
+    dteHorizon,
+    chartReady,
+    refreshOverlays,
+    refreshTrails,
+    paintOverlays,
+    emitRegime,
+    emitProximity,
+    emitMagnet,
+    emitConfluence,
+    paintConfluenceBand,
+    emitWallIntegrity,
+    liveGexWalls,
+    liveGammaFlip,
   ]);
 
   // Lens (GEX↔VEX) is a selection too: re-derive the terminal so the lens-gated wall-integrity line

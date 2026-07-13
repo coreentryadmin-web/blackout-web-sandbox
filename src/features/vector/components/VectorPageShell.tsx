@@ -25,6 +25,7 @@ import { deriveGammaMagnet, type GammaMagnet } from "@/features/vector/lib/vecto
 import { scoreTopWalls, type WallIntegrity } from "@/features/vector/lib/vector-wall-integrity";
 import type { VectorWallEvent } from "@/features/vector/lib/vector-wall-events";
 import { VECTOR_DEFAULT_TICKER } from "@/features/vector/lib/vector-ticker";
+import { useVectorHorizonSnapshot } from "@/features/vector/lib/use-vector-horizon-snapshot";
 
 const VectorChart = dynamic(
   () => import("@/features/vector/components/VectorChart").then((m) => m.VectorChart),
@@ -93,6 +94,12 @@ export function VectorPageShell({
   const [now, setNow] = useState<number | null>(null);
   const [scannerOpen, setScannerOpen] = useState(false);
   const activeTicker = ticker || VECTOR_DEFAULT_TICKER;
+
+  // THE shared per-(ticker, horizon) snapshot — one fetch cycle (walls+flip, ladder rows,
+  // max-pain, expected-move together, one asOf) every 15s in RTH. The chart's displayed levels,
+  // the GEX ladder, and the terminal all consume THIS object, so the three surfaces can never
+  // show different instants' numbers ("one story" — see vector-horizon-snapshot.ts).
+  const horizonSnapshot = useVectorHorizonSnapshot(activeTicker, dteHorizon, liveSession);
 
   // Seed the regime from the SSR snapshot so the banner is right on first paint;
   // VectorChart streams live updates via onRegimeChange during a session.
@@ -263,9 +270,9 @@ export function VectorPageShell({
           <div className="vector-ladder-rail">
             <VectorGexLadder
               ticker={activeTicker}
-              liveSession={liveSession}
               initialSpot={initialBars.length ? initialBars[initialBars.length - 1]!.close : null}
               dteHorizon={dteHorizon}
+              snapshot={horizonSnapshot}
             />
           </div>
           <div className="vector-chart-terminal-chart min-w-0">
@@ -298,6 +305,7 @@ export function VectorPageShell({
               onDteHorizonChange={setDteHorizon}
               onTechnicalsChange={setTechnicals}
               onExpectedMoveChange={setExpectedMove}
+              horizonSnapshot={horizonSnapshot}
               alertRules={alertRules}
               onAlertsFired={handleAlertsFired}
               leadSlot={chartLead}
@@ -314,6 +322,7 @@ export function VectorPageShell({
               wallEvents={wallEvents}
               liveSession={liveSession}
               streamUpdatedAt={streamUpdatedAt}
+              snapshotAsOf={horizonSnapshot?.asOf ?? null}
               proximity={proximity}
               magnet={magnet}
               confluence={confluence}
