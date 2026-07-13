@@ -22,11 +22,25 @@ export function LargoNativeTerminal() {
     activeTools,
     bottomRef,
     runQuery,
+    cancel,
+    newConversation,
     isFresh,
   } = useLargoChat();
 
   return (
     <div className="largo-native-desk">
+      {!isFresh && (
+        <div className="largo-native-topbar">
+          <button
+            type="button"
+            className="largo-native-newchat"
+            onClick={newConversation}
+            disabled={loading}
+          >
+            + New chat
+          </button>
+        </div>
+      )}
       <div className="largo-native-messages" role="log" aria-live="polite" aria-atomic="false">
         {messages.map((msg) => (
           <div
@@ -117,13 +131,24 @@ export function LargoNativeTerminal() {
           autoCorrect="off"
           spellCheck={false}
         />
-        <button
-          type="submit"
-          className="largo-native-send"
-          disabled={loading || !hydrated || !input.trim()}
-        >
-          {loading ? "…" : "Send"}
-        </button>
+        {loading ? (
+          <button
+            type="button"
+            className="largo-native-send largo-native-stop"
+            onClick={cancel}
+            aria-label="Stop generating"
+          >
+            Stop
+          </button>
+        ) : (
+          <button
+            type="submit"
+            className="largo-native-send"
+            disabled={!hydrated || !input.trim()}
+          >
+            Send
+          </button>
+        )}
       </form>
     </div>
   );
