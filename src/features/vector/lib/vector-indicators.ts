@@ -11,7 +11,15 @@
  * RSI = Wilder's smoothing; MACD = EMA(fast) − EMA(slow) with an EMA(signal) of that line.
  */
 
-export type IndicatorBar = { high: number; low: number; close: number; volume?: number };
+export type IndicatorBar = {
+  /** Bar-start epoch SECONDS. Optional for MA math, but REQUIRED for a correct multi-session
+   *  VWAP — without it vwapSeries cannot see session boundaries and accumulates across days. */
+  time?: number;
+  high: number;
+  low: number;
+  close: number;
+  volume?: number;
+};
 
 /** Simple moving average aligned to `values`; null until `period` samples exist. */
 export function smaSeries(values: number[], period: number): (number | null)[] {
@@ -46,19 +54,42 @@ export function emaSeries(values: number[], period: number): (number | null)[] {
   return out;
 }
 
+/** ET calendar day of an epoch-seconds timestamp — VWAP's session boundary. Formatter reused
+ *  across calls; ~1μs per bar, negligible for chart-sized inputs. */
+const ET_DAY = new Intl.DateTimeFormat("en-CA", {
+  timeZone: "America/New_York",
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+});
+
 /**
- * Session-cumulative VWAP aligned to `bars`: Σ(typical×volume) / Σ(volume), typical = (H+L+C)/3.
- * Bars are assumed to be one session (the Vector chart's seed is one session), so accumulation
- * runs from the first bar. A bar with missing/zero volume contributes nothing but VWAP still
- * carries forward the running value; if NO bar up to i has volume, VWAP is null there (undefined
- * without volume — never silently substituted with price).
+ * Session-anchored VWAP aligned to `bars`: Σ(typical×volume) / Σ(volume), typical = (H+L+C)/3.
+ * VWAP is session-anchored BY DEFINITION — accumulation RESETS at each ET calendar-day boundary
+ * (bar.time, epoch seconds). The original "bars are one session" assumption broke when the chart
+ * started seeding multiple sessions (multi-day seed): the terminal/overlay served a 3-day
+ * cumulative VWAP (7,542.28) while the desk's session VWAP read 7,529.98 — a mismatch members
+ * can see across panels. Bars without `time` keep the legacy continuous accumulation (no
+ * boundary is detectable), preserving old callers.
+ * A bar with missing/zero volume contributes nothing but VWAP still carries forward the running
+ * value; if NO bar since the session start has volume, VWAP is null there (undefined without
+ * volume — never silently substituted with price).
  */
 export function vwapSeries(bars: IndicatorBar[]): (number | null)[] {
   const out: (number | null)[] = new Array(bars.length).fill(null);
   let cumTPV = 0;
   let cumVol = 0;
+  let day: string | null = null;
   for (let i = 0; i < bars.length; i++) {
     const b = bars[i]!;
+    if (b.time != null && Number.isFinite(b.time)) {
+      const d = ET_DAY.format(new Date(b.time * 1000));
+      if (day !== null && d !== day) {
+        cumTPV = 0;
+        cumVol = 0;
+      }
+      day = d;
+    }
     const vol = b.volume != null && b.volume > 0 ? b.volume : 0;
     if (vol > 0) {
       const typical = (b.high + b.low + b.close) / 3;
