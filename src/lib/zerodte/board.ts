@@ -139,6 +139,12 @@ export function polygonSpotTicker(ticker: string): string {
   return POLYGON_INDEX_SPOT[upper] ?? upper;
 }
 
+/** The index option roots the mapping above covers — exported for the P-6 regrade
+ *  backfill (zerodte/regrade.ts), which must select EXACTLY the tickers whose
+ *  historical null grades this mapping fixes. Single source of truth: derived from
+ *  the map, never a second hand-maintained list. */
+export const INDEX_OPTION_ROOTS: readonly string[] = Object.keys(POLYGON_INDEX_SPOT);
+
 // ── Single-name 0DTE flow setups (evidence, not fabricated plays) ────────────────
 
 export type FlowSetupInput = {
