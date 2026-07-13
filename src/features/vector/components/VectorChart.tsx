@@ -85,6 +85,7 @@ import { buildStructureMarkers } from "@/features/vector/lib/vector-structure-ma
 import { buildFlowMarkers, DEFAULT_FLOW_MAX_MARKERS, type FlowPrint } from "@/features/vector/lib/vector-flow-markers";
 import { confluenceZones, confluenceCallouts, topConfluenceBand, type ConfluenceLevel } from "@/features/vector/lib/vector-confluence";
 import { summarizeTechnicals, technicalsCallouts } from "@/features/vector/lib/vector-technicals";
+import { expectedMoveCallouts, type ExpectedMove } from "@/features/vector/lib/vector-expected-move";
 import { evaluateAlerts, type AlertRule, type AlertState, type FiredAlert } from "@/features/vector/lib/vector-alerts";
 import { sessionHodLod } from "@/features/vector/lib/vector-key-levels";
 import { dominantSwing, goldenPocket } from "@/features/vector/lib/vector-fib-swing";
@@ -193,6 +194,9 @@ type Props = {
   /** Pre-formatted always-on technicals lines (VWAP/EMA/RSI/MACD/pocket/structure) for the desk
    *  terminal — computed from the shown bars REGARDLESS of which overlays are toggled. Empty = warming up. */
   onTechnicalsChange?: (lines: string[]) => void;
+  /** Options-implied EXPECTED MOVE callout lines (±1σ/2σ range), horizon-scoped. Empty when the
+   *  chain has no real ATM IV to price it. Narrated by the terminal (#15 cone, slice 3a). */
+  onExpectedMoveChange?: (lines: string[]) => void;
   /** Member-defined alert rules for THIS ticker (wall-touch / flip-cross). Evaluated on each live tick. */
   alertRules?: AlertRule[];
   /** Fired alerts from the latest tick (already deduped/cooled-down by the engine) — for toast + terminal. */
@@ -748,6 +752,7 @@ export function VectorChart({
   onLensChange,
   onDteHorizonChange,
   onTechnicalsChange,
+  onExpectedMoveChange,
   alertRules,
   onAlertsFired,
   leadSlot,
@@ -765,6 +770,13 @@ export function VectorChart({
   const lastTechnicalsRef = useRef<string>("");
   useEffect(() => {
     onTechnicalsChangeRef.current = onTechnicalsChange;
+  });
+  // Expected-move narration → terminal (#15 cone, slice 3a). Ref keeps the latest callback for the
+  // horizon-scoped fetch; lastExpectedMoveRef dedupes emits so an unchanged horizon doesn't re-push.
+  const onExpectedMoveChangeRef = useRef(onExpectedMoveChange);
+  const lastExpectedMoveRef = useRef<string>("");
+  useEffect(() => {
+    onExpectedMoveChangeRef.current = onExpectedMoveChange;
   });
   // Alerts: the member's rules + the engine's per-rule state + the prior spot (for flip-cross), all
   // in refs so the []-dep tick handler reads the latest without re-subscribing the SSE stream.
@@ -1729,9 +1741,37 @@ export function VectorChart({
       }
     };
 
+    // Options-implied EXPECTED MOVE for the current (ticker, horizon) — the ±1σ/2σ range the chain
+    // is pricing through the horizon's front expiry. Same DTE-scoped fetch shape as max-pain; emits
+    // pre-formatted callouts to the terminal (#15 cone, slice 3a). Best-effort: on any failure or a
+    // null (no real ATM IV) it emits [] so the terminal drops the section rather than showing stale.
+    const fetchExpectedMove = async () => {
+      const cb = onExpectedMoveChangeRef.current;
+      if (!cb) return;
+      try {
+        const res = await fetch(
+          `/api/market/vector/expected-move?ticker=${encodeURIComponent(ticker)}&dte=${dteHorizon}`
+        );
+        if (cancelled || dteHorizonRef.current !== dteHorizon) return;
+        const em = res.ok
+          ? ((await res.json()) as { expectedMove?: ExpectedMove | null }).expectedMove ?? null
+          : null;
+        if (cancelled || dteHorizonRef.current !== dteHorizon) return;
+        const lines = expectedMoveCallouts(em);
+        const key = lines.join("|");
+        if (key !== lastExpectedMoveRef.current) {
+          lastExpectedMoveRef.current = key;
+          cb(lines);
+        }
+      } catch {
+        // Network throw: keep the last-emitted lines rather than blank the section on a blip.
+      }
+    };
+
     void fetchScoped();
     void fetchHistory();
     void fetchMaxPain();
+    void fetchExpectedMove();
     // Only the current walls need the 15s cadence; the recorded trail advances at the recorder's
     // 5-min bucket, so refresh it on a slower interval in RTH (and once, above, off-hours).
     const id = liveSession ? setInterval(fetchScoped, 15_000) : null;

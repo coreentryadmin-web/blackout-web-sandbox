@@ -27,6 +27,8 @@ type Props = {
   /** Always-on technicals lines (VWAP/EMA/RSI/MACD/pocket/structure) — narrated even with the chart
    *  overlays toggled OFF. Empty while warming up. Pre-formatted by the chart (which knows spot). */
   technicals?: string[];
+  /** Options-implied EXPECTED MOVE lines (±1σ/2σ range for the horizon). Empty when no real ATM IV. */
+  expectedMove?: string[];
   /** Recent fired-alert messages (newest first) for the ALERTS section. Empty when none have fired. */
   alerts?: string[];
   wallIntegrity?: { call: WallIntegrity | null; put: WallIntegrity | null };
@@ -45,6 +47,7 @@ export function VectorDeskTerminal({
   magnet,
   confluence,
   technicals,
+  expectedMove,
   alerts,
   wallIntegrity,
 }: Props) {
@@ -135,6 +138,15 @@ export function VectorDeskTerminal({
         intel.push({ icon: "level", tone: "neutral", text: t, indent: 2 });
       }
     }
+    // EXPECTED MOVE — the options-implied ±1σ/2σ range the chain is pricing through the horizon's
+    // front expiry (the "box" price is likely to stay in). Absent when there's no real ATM IV to
+    // price it (never a fabricated band). Horizon-scoped, so it re-sizes with the DTE toggle.
+    if (expectedMove?.length) {
+      intel.push({ icon: "section", tone: "accent", text: "EXPECTED MOVE — options-implied range", indent: 1 });
+      for (const e of expectedMove) {
+        intel.push({ icon: "level", tone: "accent", text: e, indent: 2 });
+      }
+    }
     // ALERTS — the member's rules that FIRED (price touched a wall / crossed the flip). Newest first,
     // tone 'bull' so they stand out. Empty until something fires. (In-page delivery, slice 1b.)
     if (alerts?.length) {
@@ -145,7 +157,7 @@ export function VectorDeskTerminal({
     }
     if (intel.length) return [base[0]!, ...intel, ...base.slice(1)];
     return base;
-  }, [isSpx, spxPlay, spxPlayError, liveSession, normalized, lens, wallEvents, proximity, magnet, confluence, technicals, alerts, wallIntegrity]);
+  }, [isSpx, spxPlay, spxPlayError, liveSession, normalized, lens, wallEvents, proximity, magnet, confluence, technicals, expectedMove, alerts, wallIntegrity]);
 
   const cmd = isSpx ? "playbook --spx --vector-desk" : `vector --ticker ${normalized} --structure`;
 
