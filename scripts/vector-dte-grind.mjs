@@ -127,8 +127,13 @@ async function grindTicker(page, ticker, consoleErrors) {
   }
   await page.waitForTimeout(5000);
 
+  // DTE toggle removed from the member UI (2026-07-13, user-directed): the grind's DTE loop and
+  // race only run when the toggle exists; otherwise assert its absence (the new contract) and
+  // keep the DTE-independent sections (malformed-data scan, indicators one-by-one).
+  const dteUiPresent = (await page.locator('button:has-text("0DTE")').count().catch(() => 0)) > 0;
+  if (!dteUiPresent) rec(`${ticker}: DTE toggle removed from UI (new contract)`, true);
   let prev = null; // { q, callKing, putKing, flip, hash }
-  const order = [...DTES, ...[...DTES].reverse().slice(1)]; // 0DTE→W→M→ALL→M→W→0DTE (grind both directions)
+  const order = dteUiPresent ? [...DTES, ...[...DTES].reverse().slice(1)] : [];
   for (const dte of order) {
     if (!(await clickDte(page, dte.btn))) { rec(`${ticker} ${dte.btn}: button present`, false); continue; }
     await page.waitForTimeout(2200);
@@ -218,6 +223,7 @@ async function grindTicker(page, ticker, consoleErrors) {
   }
 
   // 9) RAPID-SWITCH RACE: 0DTE then MONTHLY 150ms later → final state must be MONTHLY's.
+  if (dteUiPresent) {
   await clickDte(page, "0DTE");
   await page.waitForTimeout(150);
   await clickDte(page, "MONTHLY");
@@ -231,6 +237,8 @@ async function grindTicker(page, ticker, consoleErrors) {
     const matchesStale0dte = Number.isFinite(zFlip) && zFlip !== mFlip && near(raceSnap.flipLabel, zFlip, 0.0005);
     rec(`${ticker} RACE 0DTE→150ms→MONTHLY: final flip is MONTHLY's (no late-response overwrite)`,
       matchesMonthly && !matchesStale0dte, `label=${raceSnap.flipLabel} monthly=${mFlip} 0dte=${zFlip}`);
+  }
+
   }
 
   // 10) INDICATORS one-by-one (each alone): pixels appear with the indicator's DRAW color on

@@ -1200,12 +1200,13 @@ export function VectorChart({
       // so the anchor re-scopes with the DTE toggle. Timeframe-aware too: the band widens with the
       // candle interval (anchorBandPctForTimeframe), so a tight 1m view anchors to the nearest strong
       // wall and a wide 4h view lets a bigger further-out wall become the anchor. Redraws in replay.
-      const kings = pickKingStrikes(walls, {
-        spot: spotRef.current,
-        bandPct: anchorBandPctForTimeframe(timeframeRef.current),
-      });
-      applyKingAnchor(series, kingCallLineRef, kings.call, v.callColor);
-      applyKingAnchor(series, kingPutLineRef, kings.put, v.putColor);
+      // King anchor price-lines REMOVED (user-directed, 2026-07-13): the solid full-width
+      // yellow/purple horizontal lines at the dominant call/put strikes cluttered the chart —
+      // the bead rail already shows exactly where the king walls sit (fattest beads), so the
+      // anchors were redundant ink. applyKingAnchor with null clears any line a live chart
+      // still holds from before this deploy.
+      applyKingAnchor(series, kingCallLineRef, null, v.callColor);
+      applyKingAnchor(series, kingPutLineRef, null, v.putColor);
       applyDarkPoolGuides(series, dpGuideRefs, []);
       void dp; // dark-pool level lines intentionally not drawn (clean axis); kept in the signature
       //         so callers/consumers of dp elsewhere are unaffected.

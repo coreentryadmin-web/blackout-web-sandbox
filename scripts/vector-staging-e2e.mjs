@@ -99,16 +99,12 @@ async function validateTicker(page, ticker, consoleErrors) {
   rec(`${ticker}: regime banner populated`, probe.regime > 0);
   rec(`${ticker}: indicator menu present`, probe.menu);
 
-  // DTE horizons — each toggle must re-scope without error.
+  // DTE toggle REMOVED from the member UI (user-directed, 2026-07-13 — per-horizon scoping was
+  // the source of the cross-surface incoherence the DTE grind caught). The new contract is its
+  // ABSENCE: the chart always shows the blended live near-term scope.
   for (const dte of DTES) {
-    const btn = page.locator(`button:has-text("${dte}")`).first();
-    if (await btn.count().catch(() => 0)) {
-      await btn.click().catch(() => {});
-      await page.waitForTimeout(1200);
-      rec(`${ticker}: DTE ${dte} toggles`, true);
-    } else {
-      rec(`${ticker}: DTE ${dte} button found`, false);
-    }
+    const n = await page.locator(`button:has-text("${dte}")`).count().catch(() => 0);
+    rec(`${ticker}: DTE ${dte} toggle removed from UI`, n === 0, n ? `${n} still rendered` : "");
   }
 
   // Timeframes — each must redraw without error.

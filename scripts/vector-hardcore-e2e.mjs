@@ -138,8 +138,12 @@ async function validateTicker(page, ticker, errs) {
   rec(`${ticker}: no malformed unrounded floats in ladder`, noJunkFloats);
 
   // ---- C/D/E. per-DTE: max-pain + flip + regime consistency + dynamism ----
+  // DTE toggle removed from the member UI (2026-07-13, user-directed): when absent, the per-DTE
+  // UI blocks SKIP (the horizon APIs are still exercised elsewhere; the UI contract is now
+  // "always blended live scope"). Presence re-enables the full per-DTE sweep unchanged.
+  const dteUiPresent = (await page.locator('button:has-text("0DTE")').count().catch(() => 0)) > 0;
   const mpByDte = {}, flipByDte = {}, regimeByDte = {}, termByDte = {}, hashByDte = {}, wallsByDte = {};
-  for (const dte of DTES) {
+  for (const dte of dteUiPresent ? DTES : []) {
     await clickDte(page, dte);
     const snap = await domSnap(page);
     regimeByDte[dte] = snap.regime; termByDte[dte] = snap.terminal;
@@ -165,6 +169,7 @@ async function validateTicker(page, ticker, errs) {
     console.log(`  [${dte}] maxPain=${mpByDte[dte]} flip=${flipByDte[dte]} regime="${snap.regime.slice(0, 54)}"`);
   }
   const variants = (o) => new Set(Object.values(o).map(String)).size;
+  if (dteUiPresent) {
   rec(`${ticker}: DTE re-scopes (maxPain/flip/regime/terminal change across horizons)`,
     variants(mpByDte) > 1 || variants(flipByDte) > 1 || variants(regimeByDte) > 1 || variants(termByDte) > 1,
     `maxPain=${variants(mpByDte)} flip=${variants(flipByDte)} regime=${variants(regimeByDte)} term=${variants(termByDte)}`);
@@ -184,6 +189,7 @@ async function validateTicker(page, ticker, errs) {
         `banner ${br}/${bs} vs API ${w.callWalls[0].strike}/${w.putWalls[0].strike}`);
     }
   }
+  } else { console.log(`  [${ticker}] DTE toggle absent — per-DTE UI blocks skipped (new contract)`); }
 
   // ---- F. timeframe dynamism: canvas re-renders + MA availability re-computes ----
   const hashByTf = {}, noteByTf = {};

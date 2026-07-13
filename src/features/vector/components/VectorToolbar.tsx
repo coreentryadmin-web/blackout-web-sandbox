@@ -1,7 +1,6 @@
 "use client";
 
 import { VectorLensToggle } from "@/features/vector/components/VectorLensToggle";
-import { VectorDteToggle } from "@/features/vector/components/VectorDteToggle";
 import { VectorReplayControls } from "@/features/vector/components/VectorReplayControls";
 import { VectorTimeframeSelect } from "@/features/vector/components/VectorTimeframeSelect";
 import { VectorIndicatorMenu } from "@/features/vector/components/VectorIndicatorMenu";
@@ -134,16 +133,14 @@ export function VectorToolbar(props: Props) {
             vexAsOf={vexAsOf}
             liveSession={liveSession}
           />
-          {/* DTE horizon only re-scopes GEX walls (the per-expiry gamma ladder);
-              hidden in the VEX lens and for non-oracle tickers where it's a no-op. */}
-          {lens === "gex" && (
-            <VectorDteToggle
-              horizon={dteHorizon}
-              onHorizon={onDteHorizon}
-              available={dteAvailable}
-              disabled={replayMode}
-            />
-          )}
+          {/* DTE horizon toggle REMOVED from the member UI (user-directed, 2026-07-13): the
+              per-horizon scoping was the source of every cross-surface incoherence the DTE grind
+              caught (flip flapping between chain snapshots, "All" meaning different things on
+              different tasks, sides going missing per-horizon) — member verdict: it "adds no value
+              and corrupts the system". The chart now always shows the blended live near-term scope
+              (the honest stream every other surface uses). The horizon APIs/back-end stay intact —
+              SPX Slayer + BIE still consume them — and the toggle can be restored by re-rendering
+              VectorDteToggle here. */}
           {trailSlot}
         </div>
       </div>
