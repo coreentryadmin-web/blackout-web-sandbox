@@ -9,17 +9,17 @@ import {
   groupHeaderSpans,
   groupStartIds,
   tableMinWidth,
-  tableColWidths,
+  tableGridTemplate,
   type HelixColumnDef,
   type HelixTableDensity,
 } from "@/features/helix/lib/helix-table-columns";
 import {
   daysToExpiry,
   flowSignals,
-  flowTimeMs,
   fmtAskPct,
   fmtExpiryShort,
   fmtFill,
+  fmtFullTimestamp,
   fmtIv,
   fmtOi,
   fmtOtm,
@@ -27,7 +27,6 @@ import {
   premiumDisplay,
   ruleLabel,
   sortFlows,
-  timeAgo,
   type HelixFlowSortDir,
   type HelixFlowSortKey,
 } from "@/features/helix/lib/helix-flow-format";
@@ -66,22 +65,28 @@ function colThClass(col: HelixColumnDef, groupStarts: Set<string>) {
 }
 
 function SkeletonRows({ cols, groupStarts }: { cols: HelixColumnDef[]; groupStarts: Set<string> }) {
+  // Grid rows (role=row) — no <tbody>; the parent .helix-tape-body is the rowgroup. Each row applies
+  // the shared grid-template-columns via CSS, so skeleton cells sit in the same columns as real data.
   return (
-    <tbody>
+    <>
       {Array.from({ length: 14 }).map((_, i) => (
-        <tr key={i} className={clsx("helix-tape-row", i % 2 === 1 && "helix-tape-row--zebra")}>
+        <div
+          key={i}
+          role="row"
+          className={clsx("helix-tape-row", i % 2 === 1 && "helix-tape-row--zebra")}
+        >
           {cols.map((col) => (
-            <td key={col.id} className={colTdClass(col, groupStarts)}>
+            <div key={col.id} role="gridcell" className={colTdClass(col, groupStarts)}>
               <Skeleton
                 width={col.id === "ticker" ? 52 : col.id === "premium" ? 64 : 40}
                 height={col.id === "premium" ? 14 : 12}
                 rounded="sm"
               />
-            </td>
+            </div>
           ))}
-        </tr>
+        </div>
       ))}
-    </tbody>
+    </>
   );
 }
 
@@ -105,11 +110,9 @@ function renderCell(
 
   switch (col.id) {
     case "time":
-      return (
-        <span className="helix-tape-time tabular-nums">
-          {flowTimeMs(flow) ? timeAgo(flow.alerted_at) : "—"}
-        </span>
-      );
+      // Full absolute ET stamp "MM/DD/YYYY - HH:MM" (was a relative age via timeAgo). fmtFullTimestamp
+      // returns "—" for empty/invalid, so no separate guard is needed. tabular-nums keeps it aligned.
+      return <span className="helix-tape-time tabular-nums">{fmtFullTimestamp(flow.alerted_at)}</span>;
     case "ticker":
       return (
         <div className="helix-tape-symbol">
@@ -265,9 +268,12 @@ export function HelixFlowTable({
   const groupSpans = useMemo(() => groupHeaderSpans(cols), [cols]);
   const groupStarts = useMemo(() => groupStartIds(cols), [cols]);
   const gridMinWidth = useMemo(() => tableMinWidth(cols), [cols]);
-  // Percentage col widths so the fixed-layout table fills the container (no right gutter) while
-  // keeping each column's relative proportion; gridMinWidth stays the scroll floor. See task #48.
-  const colWidths = useMemo(() => tableColWidths(cols), [cols]);
+  // Single grid-template-columns string shared (via the --helix-tape-cols CSS var) by the header
+  // rows AND every data row. Because column geometry is defined ONCE and every row consumes the
+  // same tracks, header↔body columns are structurally locked together at every viewport width —
+  // the alignment the old table-layout:fixed + percentage-colgroup lost on mobile. gridMinWidth is
+  // the aggregate scroll floor so a narrow screen scrolls horizontally instead of crushing columns.
+  const gridTemplate = useMemo(() => tableGridTemplate(cols), [cols]);
 
   const [sortKey, setSortKey] = useState<HelixFlowSortKey>("time");
   const [sortDir, setSortDir] = useState<HelixFlowSortDir>("desc");
@@ -308,27 +314,21 @@ export function HelixFlowTable({
 
   return (
     <div className="helix-tape desk-panel flex flex-1 flex-col min-h-0">
+      {/* The big "LIVE INSTITUTIONAL TAPE / FLOW PRINTS" title block was removed: it duplicated the
+          page-level HELIX brand + "Institutional flow intelligence" header (HelixPageShell). Only the
+          one-line usage hint and the live status chip (print count / render cap / density) remain, so
+          the live signal is preserved without the redundant heading. */}
       <div className="helix-tape-chrome">
-        <div className="helix-tape-chrome-main">
-          <div className="helix-tape-chrome-title">
-            <span className="helix-tape-kicker">Live institutional tape</span>
-            <h2 className="helix-tape-heading">Flow prints</h2>
+        <p className="helix-tape-hint">Click any row for contract drilldown · sort headers to re-rank</p>
+        {!loading && (
+          <div className="helix-tape-chrome-meta tabular-nums">
+            <span className="helix-tape-meta-count">{total.toLocaleString()} prints</span>
+            {hasMore && (
+              <span className="helix-tape-meta-sub">showing {renderLimit.toLocaleString()}</span>
+            )}
+            <span className="helix-tape-meta-density">{density}</span>
           </div>
-          <p className="helix-tape-hint">Click any row for contract drilldown · sort headers to re-rank</p>
-        </div>
-        <div className="helix-tape-chrome-meta tabular-nums">
-          {!loading && (
-            <>
-              <span className="helix-tape-meta-count">{total.toLocaleString()} prints</span>
-              {hasMore && (
-                <span className="helix-tape-meta-sub">
-                  showing {renderLimit.toLocaleString()}
-                </span>
-              )}
-              <span className="helix-tape-meta-density">{density}</span>
-            </>
-          )}
-        </div>
+        )}
       </div>
 
       {feedDown && (
@@ -338,33 +338,35 @@ export function HelixFlowTable({
       )}
 
       <div ref={scrollRef} className="helix-tape-scroll flow-scroll">
-        <table
+        {/* CSS-grid "table" (not a real <table>): the shared --helix-tape-cols template drives the
+            header rows and every data row identically, so columns can't decouple. minWidth is the
+            horizontal-scroll floor. See tableGridTemplate() for the WHY. */}
+        <div
           className="helix-tape-grid"
           role="grid"
           aria-label="Live options flow table"
-          style={{ minWidth: gridMinWidth }}
+          style={{ minWidth: gridMinWidth, ["--helix-tape-cols" as string]: gridTemplate }}
         >
-          <colgroup>
-            {cols.map((col, i) => (
-              <col key={col.id} style={{ width: colWidths[i] }} />
-            ))}
-          </colgroup>
-          <thead>
-            <tr className="helix-tape-group-row">
+          <div className="helix-tape-head" role="rowgroup">
+            <div className="helix-tape-group-row" role="row">
               {groupSpans.map((g) => (
-                <th
+                <div
                   key={g.group}
-                  colSpan={g.span}
+                  role="columnheader"
+                  aria-colspan={g.span}
                   className={clsx("helix-tape-group-th", `helix-tape-group-th--${g.group}`)}
+                  // Group headers span their member columns in the SAME grid the rows use.
+                  style={{ gridColumn: `span ${g.span}` }}
                 >
                   {g.label}
-                </th>
+                </div>
               ))}
-            </tr>
-            <tr className="helix-tape-col-row">
+            </div>
+            <div className="helix-tape-col-row" role="row">
               {cols.map((col) => (
-                <th
+                <div
                   key={col.id}
+                  role="columnheader"
                   className={colThClass(col, groupStarts)}
                   title={col.hint}
                 >
@@ -391,38 +393,39 @@ export function HelixFlowTable({
                   ) : (
                     <span>{col.shortLabel ?? col.label}</span>
                   )}
-                </th>
+                </div>
               ))}
-            </tr>
-          </thead>
+            </div>
+          </div>
           {loading ? (
-            <SkeletonRows cols={cols} groupStarts={groupStarts} />
+            <div className="helix-tape-body" role="rowgroup">
+              <SkeletonRows cols={cols} groupStarts={groupStarts} />
+            </div>
           ) : filtered.length === 0 ? (
-            <tbody>
-              <tr>
-                <td colSpan={cols.length}>
-                  <EmptyState
-                    className="!border-transparent !bg-transparent !py-16"
-                    title={
-                      tickerFilter
-                        ? `No prints for ${tickerFilter}`
-                        : typeFilter !== "ALL"
-                          ? `No ${typeFilter} prints`
-                          : "Watching the tape"
-                    }
-                    description={
-                      hasData
-                        ? "Filters are active — widen floor or clear symbol to see more."
-                        : live
-                          ? "Acquiring flow…"
-                          : "Reconnecting…"
-                    }
-                  />
-                </td>
-              </tr>
-            </tbody>
+            <div className="helix-tape-body" role="rowgroup">
+              {/* Empty state spans the whole grid width (plain block, not a grid row). */}
+              <div className="helix-tape-empty">
+                <EmptyState
+                  className="!border-transparent !bg-transparent !py-16"
+                  title={
+                    tickerFilter
+                      ? `No prints for ${tickerFilter}`
+                      : typeFilter !== "ALL"
+                        ? `No ${typeFilter} prints`
+                        : "Watching the tape"
+                  }
+                  description={
+                    hasData
+                      ? "Filters are active — widen floor or clear symbol to see more."
+                      : live
+                        ? "Acquiring flow…"
+                        : "Reconnecting…"
+                  }
+                />
+              </div>
+            </div>
           ) : (
-            <tbody>
+            <div className="helix-tape-body" role="rowgroup">
               {displayed.map((flow, i) => {
                 const isCall = flow.option_type?.toUpperCase() === "CALL";
                 const isWhale = flow.premium >= WHALE_PREMIUM;
@@ -443,9 +446,12 @@ export function HelixFlowTable({
                 const isStarred = watchlistTickers?.has(flow.ticker) ?? false;
                 const isNew = i === 0 && sortKey === "time" && sortDir === "desc";
 
+                const interactive = Boolean(onContractClick || onTickerClick);
                 return (
-                  <tr
+                  <div
                     key={`${flow.ticker}-${flow.alerted_at}-${flow.strike}-${i}`}
+                    role="row"
+                    data-helix-tape-row=""
                     className={clsx(
                       "helix-tape-row",
                       i % 2 === 1 && "helix-tape-row--zebra",
@@ -459,7 +465,7 @@ export function HelixFlowTable({
                       else onTickerClick?.(flow.ticker);
                     }}
                     onKeyDown={
-                      onContractClick || onTickerClick
+                      interactive
                         ? (e) => {
                             if (e.key === "Enter" || e.key === " ") {
                               e.preventDefault();
@@ -469,11 +475,10 @@ export function HelixFlowTable({
                           }
                         : undefined
                     }
-                    role={onContractClick || onTickerClick ? "button" : undefined}
-                    tabIndex={onContractClick || onTickerClick ? 0 : undefined}
+                    tabIndex={interactive ? 0 : undefined}
                   >
                     {cols.map((col) => (
-                      <td key={col.id} className={colTdClass(col, groupStarts)}>
+                      <div key={col.id} role="gridcell" className={colTdClass(col, groupStarts)}>
                         {renderCell(col, flow, {
                           isCall,
                           isWhale,
@@ -484,14 +489,14 @@ export function HelixFlowTable({
                           onToggleStar,
                           onTickerClick,
                         })}
-                      </td>
+                      </div>
                     ))}
-                  </tr>
+                  </div>
                 );
               })}
-            </tbody>
+            </div>
           )}
-        </table>
+        </div>
         {hasMore && !loading && (
           <button
             type="button"

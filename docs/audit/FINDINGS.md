@@ -28,6 +28,22 @@ if (dteHorizon === "all") { …clear scoped refs…; repaint(); return; }
 
 **Status:** FIXED (draft PR) — undraft+merge on `verify` green, then re-run the signed-in live-verify on the default `all` view.
 
+## 🟡 P3 FOUND+FIXED 2026-07-13 — HELIX FLOW PRINTS tape columns decoupled from their headers on mobile (member mobile screenshot: "columns scrambled") + TIME showed a fuzzy relative age
+
+**Surface:** `src/features/helix/components/HelixFlowTable.tsx`, `src/features/helix/lib/helix-table-columns.ts`, `src/features/helix/lib/helix-flow-format.ts`, tape CSS in `src/app/globals.css`.
+
+**Root cause (layout):** the tape was a single `<table class="helix-tape-grid">` with `table-layout: fixed`, `width: 100%`, an inline `min-width` scroll floor, and a **percentage `<colgroup>`**. On a viewport narrower than the min-width (iPhone 390px), the browser resolved the percentage column widths inconsistently between `<thead>` and `<tbody>` — so the header row and body rows computed *different* column geometry and drifted apart. Measured live at 390px signed-in: header vs first-body-row cell left-edges diverged by up to **136px**, with body cell *i* landing under header cell *i+1* (a full one-column shift). A single `<table>` cannot guarantee thead↔tbody column agreement once fixed-layout + percentage cols + min-width interact on a narrow screen.
+
+**Fix (`fix/helix-tape-grid-align`):** re-implemented the tape as a **CSS grid** — `<div>`s with ARIA grid roles. `tableGridTemplate()` builds ONE `grid-template-columns` (`minmax(<rem floor>, <weight>fr)` per column) exposed as the `--helix-tape-cols` custom property; the header rows AND every data row consume that same template, so column geometry is defined once and header↔body can't decouple at any width. The rem floor scrolls the tape horizontally on mobile (via the container `min-width`) instead of crushing; the `fr` weights fill the desk on desktop (no right gutter). All row features preserved (sort, density, group spans/dividers, zebra, hover, accent bar, star, row-click, signals, skeleton, empty state). Added a `growWeight` field so `time` can hold a wide 9rem floor without hogging desktop slack.
+
+**Timestamp:** the TIME column showed a relative age (`timeAgo` → `2d`/`11h`/`45m`). Replaced with `fmtFullTimestamp()` → absolute **`MM/DD/YYYY - HH:MM` in US Eastern, 24h** (e.g. `07/15/2026 - 11:45`), `—` for empty/invalid. Scoped to the tape only; `FlowAlertStream`/`TickerDrawer`/`DarkPoolPanel` relative-time was left alone (not the same tape). `time` column width 3.25rem → 9rem to fit the stamp.
+
+**Also (member follow-up, same tape, same PR):** (1) column headers made bold + Helix-cyan + a step larger (`.helix-tape-col-th`); group-header row de-faded to cyan/70. (2) Removed the duplicate "LIVE INSTITUTIONAL TAPE / FLOW PRINTS" title block (the page HELIX header already brands the surface) — kept the live status chip (print count / render cap / density). (3) Data cells bumped bigger/bolder (premium/strike/ticker/muted/time), zebra rhythm unchanged.
+
+**Evidence:** live 390px measurement before (maxDelta 136px, `timeSample "2d"`) vs after (headers over data, full timestamps); `tsc --noEmit` clean; `helix-flow-format.test.ts` + `helix-table-columns.test.ts` green (new `fmtFullTimestamp` + `tableGridTemplate` cases); tailwind opacity guard clean.
+
+**Status:** FIXED (draft PR → auto-merge on verify-green, then live-verify on staging).
+
 ## 🟡 P3 FOUND+FIXED 2026-07-13 — HELIX contract drilldown discarded the clicked print's own real payload (member: "click a flow, no real detail")
 
 **Surface:** `src/features/helix/components/ContractDrilldownDrawer.tsx` + `FlowFeed.tsx`. The tape row's own hint says "Click any row for contract drilldown," and the member reported the resulting window showed no real per-print detail.

@@ -15997,31 +15997,20 @@ body::before {
   }
 
   .helix-tape-chrome {
-    @apply flex items-start justify-between gap-4 shrink-0 px-5 py-3.5 border-b border-white/10;
+    /* Slim single-row chrome: usage hint on the left, live status chip on the right. The big
+       "FLOW PRINTS" title was removed as a dup of the page HELIX header. */
+    @apply flex items-center justify-between gap-4 shrink-0 px-5 py-2.5 border-b border-white/10;
     background: linear-gradient(180deg, rgba(10, 11, 18, 0.95) 0%, rgba(8, 9, 15, 0.88) 100%);
   }
 
-  /* Left accent bar frames the section title so "FLOW PRINTS" reads as a
-     deliberate header, not floating text. */
-  .helix-tape-chrome-title {
-    @apply pl-3 border-l-2 border-purple/60;
-  }
-
-  .helix-tape-kicker {
-    @apply font-mono text-[10px] font-semibold uppercase tracking-[0.28em] text-cyan-300/85;
-  }
-
-  .helix-tape-heading {
-    @apply font-mono text-xl font-extrabold uppercase tracking-[0.2em] text-white mt-1;
-    line-height: 1.1;
-  }
-
+  /* .helix-tape-chrome-title / -kicker / -heading were removed with the duplicate "FLOW PRINTS"
+     title block — the page-level HELIX header already carries the brand. */
   .helix-tape-hint {
-    @apply font-mono text-[11px] text-sky-300/60 mt-1.5 hidden sm:block;
+    @apply font-mono text-[11px] text-sky-300/60 hidden sm:block;
   }
 
   .helix-tape-chrome-meta {
-    @apply flex flex-col items-end gap-0.5 font-mono text-[10px] text-sky-300/75 shrink-0;
+    @apply flex items-center gap-2.5 font-mono text-[10px] text-sky-300/75 shrink-0;
   }
 
   .helix-tape-meta-count {
@@ -16045,32 +16034,48 @@ body::before {
     -webkit-overflow-scrolling: touch;
   }
 
-  /* width:100% is load-bearing: the <colgroup> gives every column a fixed rem
-     width whose sum (~52rem) is far narrower than a desktop viewport. Under
-     table-layout:fixed the browser distributes the leftover width across the
-     specified columns, so the tape spans the full desk instead of collapsing to
-     its ~52rem content width and leaving a dead gutter on the right. The inline
-     minWidth on the <table> is only the horizontal-scroll floor for narrow
-     screens — it must never be mistaken for the target width. */
+  /* The tape is a CSS GRID "table" (divs, not <table>) — NOT table-layout:fixed anymore. width:100%
+     lets the rows fill the desk; the inline minWidth is the horizontal-scroll floor for narrow
+     screens. Every row (header + data) shares one grid-template-columns via the --helix-tape-cols
+     custom property, so header↔body columns are structurally locked and cannot decouple (the old
+     table diverged on mobile: body cells drifted a full column right of their headers). */
   .helix-tape-grid {
+    display: block;
     width: 100%;
-    border-collapse: collapse;
-    border-spacing: 0;
     font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-    font-size: 12px;
+    font-size: 12.5px;
     line-height: 1.35;
-    table-layout: fixed;
   }
 
-  .helix-tape-grid th,
-  .helix-tape-grid td {
+  /* The single shared column template — applied identically to the header rows and every data row. */
+  .helix-tape-group-row,
+  .helix-tape-col-row,
+  .helix-tape-row {
+    display: grid;
+    grid-template-columns: var(--helix-tape-cols);
+    width: 100%;
+  }
+
+  .helix-tape-col-th,
+  .helix-tape-cell,
+  .helix-tape-group-th {
     box-sizing: border-box;
+    /* min-width:0 lets grid items shrink to their track (rem floor) instead of forcing it wider by
+       content size; overflow:hidden then clips anything that would spill past the column edge. */
+    min-width: 0;
     overflow: hidden;
-    text-overflow: ellipsis;
   }
 
-  .helix-tape-group-row th {
-    @apply px-2 py-1.5 text-center font-mono text-[8px] font-bold uppercase tracking-[0.24em] text-sky-300/45 border-b border-white/10;
+  /* Sticky header group (both the group row and the column row stick together). */
+  .helix-tape-head {
+    position: sticky;
+    top: 0;
+    z-index: 5;
+    background: rgba(8, 9, 14, 0.98);
+  }
+
+  .helix-tape-group-th {
+    @apply flex items-center justify-center px-2 py-1.5 font-mono text-[9px] font-bold uppercase tracking-[0.22em] text-cyan-300/70 border-b border-white/10;
     background: rgba(6, 7, 12, 0.98);
   }
 
@@ -16078,16 +16083,24 @@ body::before {
     border-left: none;
   }
 
-  .helix-tape-grid thead {
-    position: sticky;
-    top: 0;
-    z-index: 5;
-  }
-
-  .helix-tape-col-row th {
-    @apply px-2.5 py-2.5 font-mono text-[10px] font-semibold uppercase tracking-[0.16em] text-sky-300/75 whitespace-nowrap border-b border-white/10;
+  /* Column headers: bolder, brighter (Helix cyan accent), a step larger than the old faint labels
+     so the row reads clearly as headers. */
+  .helix-tape-col-th {
+    @apply flex items-center px-2.5 py-2.5 font-mono text-[11.5px] font-bold uppercase tracking-[0.14em] text-cyan-200/95 whitespace-nowrap border-b border-cyan-400/15;
     background: rgba(8, 9, 14, 0.98);
     box-shadow: 0 2px 0 rgba(0, 0, 0, 0.35);
+  }
+
+  /* Right-aligned columns push their content (and the sort control) to the track's right edge. */
+  .helix-tape-col-th.text-right,
+  .helix-tape-cell.text-right {
+    justify-content: flex-end;
+    text-align: right;
+  }
+
+  /* Empty state spans the whole grid, not a single column. */
+  .helix-tape-empty {
+    @apply w-full;
   }
 
   .helix-tape-col-th--group-print,
@@ -16180,12 +16193,14 @@ body::before {
     animation: flow-alert-flash 1.2s ease-out;
   }
 
+  /* Grid cell: flex so content vertically centers in the (stretched) row track and right-aligned
+     cells can justify to the edge. Slightly heavier base weight so print rows read stronger. */
   .helix-tape-cell {
-    @apply px-2.5 py-2.5 align-middle whitespace-nowrap;
+    @apply flex items-center px-2.5 py-2.5 whitespace-nowrap font-medium;
   }
 
   .helix-tape-time {
-    @apply text-[11px] text-sky-300/80;
+    @apply text-[12px] font-medium text-sky-300/85;
   }
 
   .helix-tape-symbol {
@@ -16193,7 +16208,7 @@ body::before {
   }
 
   .helix-tape-symbol-text {
-    @apply text-[13px] font-bold tracking-wide text-white;
+    @apply text-[14px] font-bold tracking-wide text-white;
   }
 
   .helix-tape-symbol-text:hover {
@@ -16221,7 +16236,7 @@ body::before {
   }
 
   .helix-tape-strike {
-    @apply text-[12px] font-semibold text-gold/95;
+    @apply text-[13px] font-bold text-gold/95;
   }
 
   .helix-tape-strike-suffix {
@@ -16229,7 +16244,7 @@ body::before {
   }
 
   .helix-tape-premium {
-    @apply text-[14px] font-bold;
+    @apply text-[15px] font-extrabold;
   }
 
   .helix-tape-premium--call {
@@ -16245,11 +16260,11 @@ body::before {
   }
 
   .helix-tape-muted {
-    @apply text-[11px] text-sky-300/[0.72];
+    @apply text-[12px] font-medium text-sky-300/80;
   }
 
   .helix-tape-dte-zero {
-    @apply text-[11px] font-bold text-ember;
+    @apply text-[12px] font-bold text-ember;
   }
 
   .helix-tape-rule {
