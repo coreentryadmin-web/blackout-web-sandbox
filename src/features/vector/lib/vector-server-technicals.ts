@@ -30,7 +30,12 @@ export async function computeServerTechnicals(
 ): Promise<PlayTechnicals | null> {
   try {
     const t = normalizeVectorTicker(ticker);
-    const { bars } = await fetchVectorSeedBars(t);
+    // targetSessions=3 pins the indicator input to its PRE-multi-day depth: 3 sessions of pure
+    // 1m bars, byte-identical to before the 15-session page seed. The deeper seed's prior days
+    // are 5m-decimated — mixing 5m closes into fixed-period EMA/RSI/MACD windows would silently
+    // shift every value — and 15 Polygon calls per technicals read is waste the indicators
+    // (which only look back a few hundred bars) cannot use.
+    const { bars } = await fetchVectorSeedBars(t, undefined, undefined, undefined, undefined, 3);
     return computeTechnicalsFromBars(bars, timeframeMin, spot);
   } catch {
     return null;

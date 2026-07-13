@@ -131,3 +131,45 @@ test("slice-then-aggregate: post-cursor minutes never reach a higher-timeframe r
   assert.equal(honest[0]!.high, 12, "post-cursor spike leaked into the replay bucket");
   assert.notDeepEqual(honest, leaked, "unsliced aggregate must differ — else this test proves nothing");
 });
+
+// ── Multi-day replay (15-session seed): the timeline may now span sessions ─────────────────
+
+// Two sessions one day apart. Session 1 walls differ from session 2 so leakage is detectable.
+const DAY = 24 * 60 * 60;
+const S1_T0 = 1_800_000;
+const S2_T0 = S1_T0 + DAY;
+const TWO_DAY_HISTORY: WallHistorySample[] = [
+  { time: S1_T0, walls: walls(7550, 7450), gammaFlip: 7500 },
+  { time: S1_T0 + 60, walls: walls(7555, 7450), gammaFlip: 7502 },
+  { time: S2_T0, walls: walls(7650, 7550), gammaFlip: 7600 },
+  { time: S2_T0 + 60, walls: walls(7660, 7550), gammaFlip: 7605 },
+];
+const TWO_DAY_BARS = [S1_T0, S1_T0 + 60, S2_T0, S2_T0 + 60].map((time) => ({
+  time,
+  open: 1,
+  high: 2,
+  low: 0.5,
+  close: 1.5,
+}));
+
+test("multi-day replay: cursor in session 1 must not show session 2 walls or bars", () => {
+  const cursor = S1_T0 + 60; // scrubbed to the end of session 1
+  const history = sliceHistoryToTime(TWO_DAY_HISTORY, cursor);
+  assert.deepEqual(history.map((s) => s.time), [S1_T0, S1_T0 + 60], "session-2 samples excluded");
+  const bars = sliceBarsToTime(TWO_DAY_BARS, cursor);
+  assert.deepEqual(bars.map((b) => b.time), [S1_T0, S1_T0 + 60], "session-2 bars excluded");
+  // The wall ladder AT the cursor is session 1's latest reading — never tomorrow's structure.
+  assert.equal(wallsAtReplayTime(TWO_DAY_HISTORY, cursor, "gex")?.callWalls[0]?.strike, 7555);
+  assert.equal(flipAtReplayTime(TWO_DAY_HISTORY, cursor, "gex"), 7502);
+});
+
+test("multi-day replay: cursor in session 2 reads session 2 structure (not stuck on day 1)", () => {
+  const cursor = S2_T0;
+  assert.equal(wallsAtReplayTime(TWO_DAY_HISTORY, cursor, "gex")?.callWalls[0]?.strike, 7650);
+  assert.equal(flipAtReplayTime(TWO_DAY_HISTORY, cursor, "gex"), 7600);
+});
+
+test("multi-day replay: the timeline is the sorted union across both sessions (no fabricated overnight steps)", () => {
+  const timeline = buildReplayTimeline(TWO_DAY_HISTORY, TWO_DAY_BARS);
+  assert.deepEqual(timeline, [S1_T0, S1_T0 + 60, S2_T0, S2_T0 + 60]);
+});

@@ -239,3 +239,22 @@ test("dynamics: a top-wall SHIFT suppresses redundant new/gone on the same strik
   const ev = diffVectorWallSample(prev, next, "gex");
   assert.deepEqual(ev.map((e) => e.kind), ["call_wall_shift"]);
 });
+
+test("eventsFromWallHistory: never diffs across a session boundary (multi-day rail honesty)", () => {
+  // A 15-day seed concatenates sessions: yesterday closed with a 6810C/6690P structure and today
+  // opened at 6900C/6800P. That overnight jump is a fresh chain, not an intraday shift — diffing
+  // it fabricated a "wall shifted" burst at every one of the seed's session boundaries.
+  const DAY = 24 * 60 * 60;
+  const history: WallHistorySample[] = [
+    { time: 100, walls: walls(6800, 6700) },
+    { time: 115, walls: walls(6810, 6690) }, // real intraday shifts (call + put) → 2 events
+    { time: 115 + DAY, walls: walls(6900, 6800) }, // overnight jump → must emit NOTHING
+    { time: 130 + DAY, walls: walls(6910, 6800) }, // real intraday shift next day → 1 event
+  ];
+  const events = eventsFromWallHistory(history, "gex");
+  assert.equal(events.length, 3, "2 intraday events day 1 + 1 day 2; zero at the boundary");
+  assert.ok(
+    events.every((e) => e.time !== 115 + DAY),
+    "no event stamped at the session-open bucket"
+  );
+});

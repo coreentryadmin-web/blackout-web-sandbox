@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   appendSessionWallSample,
+  loadMultiSessionWallHistory,
   loadSessionWallHistory,
   persistWallSampleDebounced,
   _resetWallPersistDebounceForTest,
@@ -84,4 +85,47 @@ test("wallRailStorageId: 'all' is the bare ticker; narrowed horizons get a compo
   assert.equal(wallRailStorageId("NVDA"), "NVDA");
   assert.equal(wallRailStorageId("NVDA", "weekly"), "NVDA::weekly");
   assert.equal(wallRailStorageId("SPX", "0dte"), "SPX::0dte");
+});
+
+test("loadMultiSessionWallHistory: concatenates per-session rails in time order (15-day seed read)", async () => {
+  // Two sessions written through the normal append path (shared-cache memory). Times are real
+  // epoch-style seconds a day apart so global ascending order is observable.
+  const DAY = 24 * 60 * 60;
+  const s1 = "2099-03-01";
+  const s2 = "2099-03-02";
+  const t1 = 1_000_000;
+  await appendSessionWallSample(s1, { time: t1, walls: walls(6800, 6700) }, "MULTI");
+  await appendSessionWallSample(s1, { time: t1 + 60, walls: walls(6810, 6700) }, "MULTI");
+  await appendSessionWallSample(s2, { time: t1 + DAY, walls: walls(6900, 6800) }, "MULTI");
+
+  // Sessions passed NEWEST-first — the loader must still emit oldest-first, time-ascending.
+  const rail = await loadMultiSessionWallHistory("MULTI", "all", [s2, s1]);
+  assert.deepEqual(rail.map((s) => s.time), [t1, t1 + 60, t1 + DAY]);
+  assert.equal(rail[0].walls.callWalls[0].strike, 6800);
+  assert.equal(rail[2].walls.callWalls[0].strike, 6900);
+});
+
+test("loadMultiSessionWallHistory: a session with nothing recorded is an honest gap, not a failure", async () => {
+  const s1 = "2099-04-01";
+  await appendSessionWallSample(s1, { time: 2_000_000, walls: walls(6800, 6700) }, "GAPPY");
+  const rail = await loadMultiSessionWallHistory("GAPPY", "all", [s1, "2099-04-02", "2099-04-03"]);
+  assert.equal(rail.length, 1);
+  assert.equal(rail[0].time, 2_000_000);
+});
+
+test("loadMultiSessionWallHistory: empty session list / all-empty sessions → []", async () => {
+  assert.deepEqual(await loadMultiSessionWallHistory("SPX", "all", []), []);
+  assert.deepEqual(await loadMultiSessionWallHistory("SPX", "all", ["", ""]), []);
+});
+
+test("loadMultiSessionWallHistory: narrowed horizon reads the composite-keyed rail, not 'all'", async () => {
+  const s1 = "2099-05-01";
+  await appendSessionWallSample(s1, { time: 3_000_000, walls: walls(6800, 6700) }, "HZN", "all");
+  await appendSessionWallSample(s1, { time: 3_000_060, walls: walls(6850, 6750) }, "HZN", "weekly");
+  const weekly = await loadMultiSessionWallHistory("HZN", "weekly", [s1]);
+  assert.equal(weekly.length, 1);
+  assert.equal(weekly[0].walls.callWalls[0].strike, 6850);
+  const all = await loadMultiSessionWallHistory("HZN", "all", [s1]);
+  assert.equal(all.length, 1);
+  assert.equal(all[0].walls.callWalls[0].strike, 6800);
 });

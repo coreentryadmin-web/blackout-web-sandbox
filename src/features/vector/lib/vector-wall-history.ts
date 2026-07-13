@@ -39,8 +39,126 @@ export function hasVexInHistory(history: WallHistorySample[]): boolean {
 
 export type StrikeTrailPoint = { time: number; pct: number; modeled?: boolean };
 
-// ~one RTH session at 15s trail cadence (390 min × 4 ≈ 1560) plus headroom.
-const MAX_HISTORY = 1920;
+// MULTI-DAY RAIL BUDGET (15-session replay): one full-resolution latest session at the 15s trail
+// cadence (390 min × 4 ≈ 1560) PLUS up to 14 prior sessions decimated to the 2-min prior-session
+// step (~195 samples each ≈ 2730) ≈ 4290 total. 4800 leaves headroom for a live day appending on
+// top of a freshly seeded 15-day rail. When the cap trims, it drops the OLDEST samples first —
+// the deepest history day falls off, never today's live tail. (Was 1920 = one session + headroom,
+// which silently truncated any multi-session seed back down to ~1 day.)
+const MAX_HISTORY = 4800;
+
+/**
+ * Gap length that separates two SESSIONS in a time-keyed multi-day rail. No intraday gap comes
+ * close (RTH is 6.5h and the recorder samples every 15s), while the shortest overnight gap
+ * (16:00 close → 9:30 next open) is 17.5h — so 8h cleanly splits sessions with huge margin on
+ * both sides. Used to (a) suppress fabricated "wall shifted overnight" diffs/events across the
+ * boundary, (b) stop bead REBIRTH cues from firing on the first bucket of a new day, and
+ * (c) scope session-relative reads (wall integrity "held N% of session") to the latest session.
+ */
+export const SESSION_GAP_SEC = 8 * 60 * 60;
+
+/**
+ * Prior-session decimation step for the multi-day seed: sessions OLDER than the latest keep
+ * ~1 sample per 2 minutes (vs the 15s live cadence), an 8× payload cut that still leaves ~195
+ * beads per prior session — plenty to see walls form/hold/fade at replay zoom.
+ */
+export const PRIOR_SESSION_DECIMATION_STEP_SEC = 120;
+
+/**
+ * Should a gap between two consecutive bead-trail points render a REBIRTH cue (wall died and
+ * re-formed)? True only for an INTRADAY gap: longer than 2 candle intervals (honest single-bucket
+ * jitter isn't a death) but shorter than a session break — the overnight gap in a multi-day rail
+ * is market closure, not a wall dying and being reborn, so boosting the first bucket of every
+ * new day would spray one fake "wall re-formed" cue per strike per session boundary.
+ */
+export function isRebirthGap(gapSec: number, intervalSec: number): boolean {
+  return gapSec > intervalSec * 2 && gapSec < SESSION_GAP_SEC;
+}
+
+/**
+ * Suffix of a multi-day rail belonging to the LATEST session — everything after the last
+ * session-sized gap. Session-relative consumers (wall integrity's "held N% of session"
+ * persistence) must score against this, not the whole 15-day buffer, or a wall that held ALL of
+ * today would read as "held 7% of session" because 14 other days diluted the denominator.
+ */
+export function latestSessionSlice(
+  history: WallHistorySample[],
+  gapSec: number = SESSION_GAP_SEC
+): WallHistorySample[] {
+  for (let i = history.length - 1; i > 0; i--) {
+    if (history[i]!.time - history[i - 1]!.time >= gapSec) return history.slice(i);
+  }
+  return history;
+}
+
+/** Keep a side's strongest `max` levels by |pct|, preserving the recorded (strike) order. */
+function slimWallSide(
+  levels: GexWalls["callWalls"],
+  max: number
+): GexWalls["callWalls"] {
+  if (levels.length <= max) return levels;
+  const keep = new Set(
+    levels
+      .map((l, i) => ({ i, m: Math.abs(l.pct) }))
+      .sort((a, b) => b.m - a.m)
+      .slice(0, max)
+      .map((r) => r.i)
+  );
+  // Filter (not re-sort) so the slimmed ladder keeps the recorded strike order — consumers that
+  // treat index 0 specially (top-wall reads) only ever do so on LIVE computeGexWalls output, but
+  // preserving order keeps the slimmed row byte-shape-compatible with the full one regardless.
+  return levels.filter((_, i) => keep.has(i));
+}
+
+/**
+ * DECIMATE a rail for payload: keep the LAST sample of each `stepSec` bucket. Last-wins (not
+ * first-wins) is deliberate — a wall that DIED mid-bucket is still absent from the bucket's last
+ * sample, so deaths survive decimation instead of being erased by an earlier sample where the
+ * wall still stood. Original sample times and `modeled` flags are preserved (times are honest
+ * observation times; bucketWallHistoryForInterval re-snaps for display anyway). Optionally slims
+ * each kept sample's ladders to the strongest `maxLevelsPerSide` per side — the bead layer only
+ * ever draws each bucket's top-3 dominant walls (DOMINANT_WALLS_PER_BUCKET) and the banner/legend
+ * read the top few, so a deep 20/side ladder on a PRIOR-day sample is pure payload. Pure; never
+ * mutates input.
+ */
+export function decimateWallHistory(
+  samples: WallHistorySample[],
+  stepSec: number,
+  opts?: { maxLevelsPerSide?: number }
+): WallHistorySample[] {
+  if (!samples.length) return samples;
+  let out: WallHistorySample[];
+  if (stepSec > 0) {
+    const byBucket = new Map<number, WallHistorySample>();
+    for (const s of samples) {
+      const key = Math.floor(s.time / stepSec);
+      const prev = byBucket.get(key);
+      // Last-by-TIME per bucket (not last-by-input-order) so an unsorted input can't flip which
+      // sample "wins" — the bucket's final observed state is what survives.
+      if (!prev || s.time >= prev.time) byBucket.set(key, s);
+    }
+    out = [...byBucket.values()].sort((a, b) => a.time - b.time);
+  } else {
+    out = [...samples];
+  }
+  const max = opts?.maxLevelsPerSide;
+  if (max != null && max > 0) {
+    out = out.map((s) => ({
+      ...s,
+      walls: {
+        callWalls: slimWallSide(s.walls.callWalls, max),
+        putWalls: slimWallSide(s.walls.putWalls, max),
+      },
+      vexWalls: s.vexWalls
+        ? {
+            callWalls: slimWallSide(s.vexWalls.callWalls, max),
+            putWalls: slimWallSide(s.vexWalls.putWalls, max),
+          }
+        : s.vexWalls,
+    }));
+  }
+  return out;
+}
 
 /** Max simultaneous strike-keyed bead rows per side on the chart (reference shows ~4–6). */
 export const MAX_STRIKE_TRAILS_PER_SIDE = 8;
@@ -424,9 +542,22 @@ export function backfillRailPrefix(
   minPrefixGapSec: number = 20 * 60
 ): WallHistorySample[] {
   if (!modeled?.length || firstBarTime == null || !Number.isFinite(firstBarTime)) return observed;
-  const firstObserved = observed[0]?.time ?? Number.POSITIVE_INFINITY;
+  // MULTI-DAY rails: the reconstruction is always for ONE session (the caller passes that
+  // session's first bar as firstBarTime), but `observed` may now span many sessions. The gap to
+  // measure is from firstBarTime to the first observed sample AT/AFTER it — observed[0] can be
+  // 14 sessions older and would make the gap look negative (prefix never fills), or, with no
+  // prior-day rail, today's late first sample still defines the same gap it always did.
+  let firstObserved = Number.POSITIVE_INFINITY;
+  for (const s of observed) {
+    if (s.time >= firstBarTime) {
+      firstObserved = s.time;
+      break;
+    }
+  }
   if (firstObserved - firstBarTime <= minPrefixGapSec) return observed;
-  const prefix = modeled.filter((s) => s.time < firstObserved);
+  // Only model buckets INSIDE the target session's window (≥ firstBarTime) and strictly before
+  // the first real sample — never underlay a modeled ghost beneath a PRIOR session's rail.
+  const prefix = modeled.filter((s) => s.time >= firstBarTime && s.time < firstObserved);
   if (!prefix.length) return observed;
   return mergeModeledUnderlay(observed, prefix);
 }

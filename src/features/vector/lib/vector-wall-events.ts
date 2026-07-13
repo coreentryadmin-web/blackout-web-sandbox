@@ -1,6 +1,7 @@
 import type { GexWalls } from "@/lib/providers/gex-wall-levels";
 import {
   flipForLens,
+  SESSION_GAP_SEC,
   wallsForLens,
   type VectorWallLens,
   type WallHistorySample,
@@ -343,7 +344,15 @@ export function eventsFromWallHistory(
 ): VectorWallEvent[] {
   let events: VectorWallEvent[] = [];
   for (let i = 1; i < history.length; i++) {
-    events = appendVectorWallEvents(events, diffVectorWallSample(history[i - 1]!, history[i]!, lens));
+    const prev = history[i - 1]!;
+    const cur = history[i]!;
+    // MULTI-DAY rails: never diff across a session boundary. The overnight close→open jump is
+    // market closure plus a fresh chain, not an intraday structure shift — diffing yesterday's
+    // last sample against today's first fabricated a burst of "wall shifted / new / gone" events
+    // at every one of the seed's 14 boundaries (the same fabrication vector-snapshot's in-memory
+    // session reset exists to prevent on the live recorder).
+    if (cur.time - prev.time >= SESSION_GAP_SEC) continue;
+    events = appendVectorWallEvents(events, diffVectorWallSample(prev, cur, lens));
   }
   return events;
 }

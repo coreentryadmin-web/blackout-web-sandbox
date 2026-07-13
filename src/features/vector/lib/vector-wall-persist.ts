@@ -61,6 +61,69 @@ export async function loadSessionWallHistory(
 }
 
 /**
+ * Load the durable rails for MANY sessions and concatenate them in time order — the multi-day
+ * replay seed ("store at least 15 days of chart, wall, bead history").
+ *
+ * Read strategy per session: Redis hot-cache first (covers the ~72h-recent sessions), then ONE
+ * batched Postgres read (`loadSessionsWallHistoryFromDb`) for every session Redis missed — a
+ * 15-session cold read is 15 parallel Redis GETs + a single DB round-trip, not 12+ sequential
+ * PG queries. DB-recovered sessions re-warm Redis best-effort, same as the single-session path.
+ *
+ * Ordering: sessions are sorted ascending by ymd and each session's samples are already
+ * ascending by bucket, and sessions never overlap in epoch time — so plain concatenation yields
+ * a globally time-ascending rail. No MAX_HISTORY cap here (the caller decimates prior sessions
+ * for payload and merge functions cap defensively). Never throws; a failed session degrades to
+ * that session simply being absent from the rail (honest gap).
+ */
+export async function loadMultiSessionWallHistory(
+  ticker: string,
+  horizon: VectorDteHorizon,
+  sessionYmds: string[]
+): Promise<WallHistorySample[]> {
+  const sessions = [...new Set(sessionYmds.filter(Boolean))].sort();
+  if (!sessions.length) return [];
+  const st = wallRailStorageId(ticker, horizon);
+
+  const fromRedis = await Promise.all(
+    sessions.map((ymd) =>
+      sharedCacheGet<WallHistorySample[]>(redisKey(st, ymd)).catch(() => null)
+    )
+  );
+
+  const bySession = new Map<string, WallHistorySample[]>();
+  const misses: string[] = [];
+  sessions.forEach((ymd, i) => {
+    const hit = fromRedis[i];
+    if (hit && hit.length) bySession.set(ymd, hit);
+    else misses.push(ymd);
+  });
+
+  if (misses.length) {
+    try {
+      // Lazy dynamic import for the same reason as loadSessionWallHistory: the server-only DB
+      // module must never leak into a client bundle that transitively reaches this file.
+      const { loadSessionsWallHistoryFromDb } = await import("./vector-wall-db");
+      const durable = await loadSessionsWallHistoryFromDb(misses, st);
+      for (const [ymd, samples] of durable) {
+        if (!samples.length) continue;
+        bySession.set(ymd, samples);
+        // Re-warm the hot cache so the next multi-day read skips Postgres. Best-effort.
+        void sharedCacheSet(redisKey(st, ymd), samples, TTL_SEC).catch(() => {});
+      }
+    } catch (err) {
+      console.warn(`[vector-wall-persist] multi-session db fallback failed ${st}:`, err);
+    }
+  }
+
+  const out: WallHistorySample[] = [];
+  for (const ymd of sessions) {
+    const samples = bySession.get(ymd);
+    if (samples) out.push(...samples);
+  }
+  return out;
+}
+
+/**
  * Append/replace one bar sample into the session ring (best-effort).
  *
  * The write is a read-modify-write with no lock, so with 2+ replicas two

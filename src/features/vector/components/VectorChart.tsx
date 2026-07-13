@@ -62,11 +62,14 @@ import {
   bucketWallHistoryForInterval,
   composeHorizonTrail,
   hasVexInHistory,
+  isRebirthGap,
+  latestSessionSlice,
   liveTrailAnchorSec,
   mergeWallHistory,
   narrowedHorizonTrail,
   pickActiveStrikes,
   pickReplayTrailSource,
+  SESSION_GAP_SEC,
   strikeTrailLifecycle,
   trimHistoryForLiveTrails,
   type StrikeTrail,
@@ -775,8 +778,12 @@ function buildWallBeadMarkers(
       // GAP in its bead row (trailsByStrike only emits buckets where the strike was dominant, so a
       // dead stretch is simply missing points). Boost the resume bead exactly like a birth — the
       // member sees the candle where the wall came BACK, not a silent continuation. Gap threshold
-      // is 2 candle intervals so honest single-bucket jitter doesn't spray fake rebirth cues.
-      const reborn = i > 0 && p.time - points[i - 1]!.time > intervalSec * 2;
+      // is 2 candle intervals so honest single-bucket jitter doesn't spray fake rebirth cues —
+      // but a SESSION-sized gap (multi-day rail's overnight boundary, > SESSION_GAP_SEC inside
+      // isRebirthGap) is market closure, not a wall dying and re-forming: without that upper
+      // bound every persistent strike fired a fake "re-formed" cue on day-open of all 14 seeded
+      // prior sessions.
+      const reborn = i > 0 && isRebirthGap(p.time - points[i - 1]!.time, intervalSec);
       // Suppress the birth boost when the trail starts at the EARLIEST drawn bucket — that "birth"
       // is unknowable (live-window trim edge or session open): the wall may have existed before the
       // window we're drawing. Only a birth strictly INSIDE the drawn window is a real formation cue.
@@ -1730,7 +1737,11 @@ export function VectorChart({
   // strike the rail did track still gets full persistence credit. Deduped by tier+score.
   const emitWallIntegrity = useCallback(() => {
     if (!onWallIntegrityChange) return;
-    const integ = scoreTopWalls(liveGexWalls(), wallHistoryRef.current);
+    // latestSessionSlice: the rail is now MULTI-DAY (15-session seed), but integrity's
+    // "held N% of session" persistence is a session-relative claim — scored over the whole
+    // buffer, a wall that held ALL of today would read "held 7% of session" because 14 prior
+    // days diluted the denominator.
+    const integ = scoreTopWalls(liveGexWalls(), latestSessionSlice(wallHistoryRef.current));
     const key = `${integ.call?.strike ?? "-"}:${integ.call?.tier ?? "-"}:${integ.call?.score ?? "-"}|${integ.put?.strike ?? "-"}:${integ.put?.tier ?? "-"}:${integ.put?.score ?? "-"}`;
     if (key === lastWallIntegrityRef.current) return;
     lastWallIntegrityRef.current = key;
@@ -2075,7 +2086,11 @@ export function VectorChart({
         const merged = mergeWallHistory(wallHistoryRef.current, snap.wallHistory);
         if (merged !== wallHistoryRef.current) {
           const newTail = merged[merged.length - 1];
-          if (prevTail && newTail) {
+          // Session-gap guard: with the multi-day seed, the buffer's tail at the OPEN can be the
+          // PRIOR session's last sample (today has nothing recorded yet) — diffing it against
+          // today's first SSE sample would fabricate an overnight "wall shifted" burst, the exact
+          // fabrication the server's in-memory session reset prevents on its side.
+          if (prevTail && newTail && newTail.time - prevTail.time < SESSION_GAP_SEC) {
             for (const active of ["gex", "vex"] as const) {
               const incoming = diffVectorWallSample(prevTail, newTail, active);
               if (incoming.length) {

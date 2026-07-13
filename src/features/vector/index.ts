@@ -37,13 +37,15 @@ export { buildCoachingAlerts } from "./lib/vector-coaching";
 export { fetchSpyVolumeRows } from "./lib/vector-spy-volume";
 export {
   backfillRailPrefix,
+  decimateWallHistory,
   mergeModeledUnderlay,
   mergeWallHistory,
+  PRIOR_SESSION_DECIMATION_STEP_SEC,
   seedWallHistoryForDisplay,
   type VectorWallLens,
   type WallHistorySample,
 } from "./lib/vector-wall-history";
 export type { VectorTimeframeMinutes } from "./lib/vector-bar-timeframes";
-export { loadSessionWallHistory } from "./lib/vector-wall-persist";
+export { loadMultiSessionWallHistory, loadSessionWallHistory } from "./lib/vector-wall-persist";
 export { reconstructSessionRail, reconstructSessionHeatmap } from "./lib/vector-gex-reconstruct-server";
 export type { GexHeatmapGrid } from "./lib/vector-gex-reconstruct";

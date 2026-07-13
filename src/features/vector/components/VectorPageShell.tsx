@@ -7,7 +7,7 @@ import { PageShell, FreshnessChip } from "@/components/ui";
 import { ProductMark } from "@/components/marks/ProductMark";
 import type { VectorBar } from "@/features/vector/components/VectorChart";
 import type { VectorDarkPoolLevel, VectorWalls } from "@/lib/api";
-import type { WallHistorySample, VectorWallLens } from "@/features/vector/lib/vector-wall-history";
+import { latestSessionSlice, type WallHistorySample, type VectorWallLens } from "@/features/vector/lib/vector-wall-history";
 import type { VectorDteHorizon } from "@/features/vector/lib/vector-dte-horizon";
 import { VectorTickerSelect } from "@/features/vector/components/VectorTickerSelect";
 import { VectorScanner } from "@/features/vector/components/VectorScanner";
@@ -143,7 +143,12 @@ export function VectorPageShell({
   const [wallIntegrity, setWallIntegrity] = useState<{
     call: WallIntegrity | null;
     put: WallIntegrity | null;
-  }>(() => scoreTopWalls(initialWalls, initialWallHistory));
+  }>(
+    // latestSessionSlice: initialWallHistory is now a MULTI-DAY rail (15-session seed) but the
+    // integrity note's "held N% of session" is session-relative — score it over the latest
+    // session only, same as VectorChart's live emit.
+    () => scoreTopWalls(initialWalls, latestSessionSlice(initialWallHistory))
+  );
 
   useEffect(() => {
     if (!liveSession) return;
