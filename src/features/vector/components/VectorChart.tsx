@@ -708,7 +708,8 @@ function applyWallsToSeries(
 
 function buildWallBeadMarkers(
   trails: StrikeTrail[],
-  baseColor: string
+  baseColor: string,
+  intervalSec: number = 60
 ): SeriesMarker<Time>[] {
   const markers: SeriesMarker<Time>[] = [];
   // Frame-relative strength: find the STRONGEST wall currently in view, and scale every bead's
@@ -763,7 +764,13 @@ function buildWallBeadMarkers(
       // current candle (birth-anchored), and we brighten that origin bead so a member can SEE when
       // and at what price the wall formed — the "where did this new wall come from" cue. Skip for
       // modeled ghosts (they fill the whole session and have no meaningful single birth).
-      if (i === 0 && !modeled) {
+      // REBIRTH: a wall that dropped out of the dominant set and re-formed later resumes after a
+      // GAP in its bead row (trailsByStrike only emits buckets where the strike was dominant, so a
+      // dead stretch is simply missing points). Boost the resume bead exactly like a birth — the
+      // member sees the candle where the wall came BACK, not a silent continuation. Gap threshold
+      // is 2 candle intervals so honest single-bucket jitter doesn't spray fake rebirth cues.
+      const reborn = i > 0 && p.time - points[i - 1]!.time > intervalSec * 2;
+      if ((i === 0 || reborn) && !modeled) {
         markers.push({
           time,
           position: "atPriceMiddle",
@@ -798,7 +805,7 @@ function applyWallBeadMarkers(
   const active = pickActiveStrikes(trailMap, wallCountForTimeframe(intervalMinutes));
   const activeSet = new Set(active);
   const rendered = lifecycle.filter((t) => activeSet.has(t.strike));
-  beadsPlugin.setMarkers(buildWallBeadMarkers(rendered, baseColor));
+  beadsPlugin.setMarkers(buildWallBeadMarkers(rendered, baseColor, intervalMinutes * 60));
   // Return the strikes actually drawn so the caller can widen the price axis to cover them —
   // otherwise a drawn bead outside the current-ladder range clips out on zoom (see beadStrikesRef).
   return active;
