@@ -23,6 +23,7 @@ export type BieIntent =
   | "vector_read"
   | "concept_read"
   | "universal_lookup"
+  | "verdict"
   | "compound_lookup"
   | "system_diagnostic";
 
@@ -71,6 +72,38 @@ const ADVICE_RE =
   /\b(should i|would you|can i|worth (buying|selling)|buy|sell|hold|trim|into earnings|before earnings|after earnings)\b/i;
 
 const COMPARE_RE = /\b(compare|versus|vs\.?)\b/i;
+
+// Cross-tool VERDICT synthesis (task #59) — the flagship "grade this" question. composeVerdict fans
+// out to the RELEVANT engines (dealer gamma + flow always; earnings/fundamentals for a single-name
+// hold; macro/breadth for an index/market read) and synthesizes ONE structured envelope with an
+// honest confidence + invalidation. Fires on EXPLICIT verdict language, the grading shape
+// ("is SPX 7500 0DTE good today", "is 7500 a good play"), an imperative hold-into-event
+// ("hold NVDA into earnings"), or a market risk-on/off read.
+//
+// It deliberately does NOT fire on a "should I …" question — that lighter shape stays on the
+// ticker_advice path (both "Should I buy NVDA calls into earnings?" and "Should I hold my TSLA play
+// into the close?" are tested there; verdict is the deeper, explicitly-requested synthesis, not a
+// hijack of every advice question).
+const VERDICT_EXPLICIT_RE =
+  /\b(verdict|the call|final call|bottom line|give me (a|the|your) (call|read|verdict|take|grade)|grade (this|the|it|my)\b)\b/i;
+const VERDICT_GRADE_RE =
+  /\bis\b[^?]{0,48}\b(a\s+)?(good|solid|smart|worth it|worth taking)\b(?:[^?]{0,24}\b(play|trade|idea|entry|setup|buy|call|long|short)\b)?/i;
+const VERDICT_HOLD_RE =
+  /\b(hold|holding|keep|keeping)\b[^?]{0,30}\b(into|through|over)\s+(earnings|the\s+(print|report|close|open)|the\s+weekend|overnight|the\s+event)\b/i;
+const VERDICT_MARKET_RE = /\bis\s+(the\s+market|it)\s+risk[- ]?(on|off)\b/i;
+
+/** True when the question is an explicit cross-tool verdict/grade ask (task #59). "should I …" is
+ *  excluded on purpose (stays ticker_advice), as is "hold my … play …" (that's a play-state ask). */
+function isVerdictQuestion(q: string): boolean {
+  if (/\bshould i\b/i.test(q)) return false; // "should I …" → ticker_advice (tested, preserved)
+  if (/\bmy\b[^?]{0,20}\bplay\b/i.test(q)) return false; // "hold my TSLA play …" → play-state advice
+  return (
+    VERDICT_EXPLICIT_RE.test(q) ||
+    VERDICT_MARKET_RE.test(q) ||
+    VERDICT_HOLD_RE.test(q) ||
+    VERDICT_GRADE_RE.test(q)
+  );
+}
 
 // Vector desk read — the deterministic Largo-BIE path for Vector questions (zero Claude cost).
 // Fires on an explicit "vector" product mention, or on a Vector-surface concept asked about a
@@ -205,6 +238,11 @@ export function classifyBieIntent(question: string, ledgerTickers: Set<string>):
   if (SPX_EXPLAIN_RE.test(q)) return { intent: "spx_desk_read", ticker: "SPX" };
   if (SPX_INVALIDATION_RE.test(q)) return { intent: "spx_invalidation", ticker: "SPX" };
 
+  // Cross-tool verdict synthesis — placed before COMPARE/ADVICE so an explicit "grade this /
+  // is X good / hold X into earnings" gets the deep multi-engine envelope, while "should I …"
+  // (excluded in isVerdictQuestion) still falls through to the lighter ticker_advice path.
+  if (isVerdictQuestion(q)) return { intent: "verdict", ticker: extractKnownTicker(q) };
+
   if (COMPARE_RE.test(q)) {
     const pair = extractCompareTickers(q);
     if (pair) return { intent: "ticker_compare", ticker: pair[0], ticker_b: pair[1] };
@@ -268,6 +306,7 @@ export function classifyBieStagingFallback(question: string): BieRoute {
   }
   if (ZERODTE_RE.test(q)) return { intent: "zerodte_plays", ticker: null };
   if (SPX_INVALIDATION_RE.test(q)) return { intent: "spx_invalidation", ticker: "SPX" };
+  if (isVerdictQuestion(q)) return { intent: "verdict", ticker: extractKnownTicker(q) };
   if (SPX_STRUCTURE_RE.test(q) || SPX_DESK_READ_RE.test(q) || SPX_WHY_RE.test(q) || SPX_EXPLAIN_RE.test(q)) {
     return { intent: "spx_desk_read", ticker: "SPX" };
   }
@@ -333,6 +372,8 @@ export function bieFollowups(intent: BieIntent): string[] {
       return ["What is a King node?", "What is the gamma flip?", "What does Night Hawk do?"];
     case "universal_lookup":
       return ["Pull the GEX positioning for SPY", "Show me the platform snapshot", "What is GEX?"];
+    case "verdict":
+      return ["What would flip this read?", "Show the flow tape", "What's the SPX setup right now?"];
     case "compound_lookup":
       return ["Ask a single question for the full read", "What's the SPX setup right now?", "What is a King node?"];
     case "system_diagnostic":

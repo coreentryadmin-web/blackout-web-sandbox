@@ -37,7 +37,8 @@ import {
 export type ComposeBieOpts = { question?: string };
 
 /** Deterministic answer plus the raw source payload for Layer 4 claim verification. */
-export type BieComposed = { answer: string; context: unknown };
+import type { BieComposed } from "@/lib/bie/composers-shared";
+export type { BieComposed };
 
 const fmt = (n: unknown, digits = 2): string =>
   typeof n === "number" && Number.isFinite(n)
@@ -591,12 +592,46 @@ export async function composeCompound(
 /** Compose the deterministic answer for a route, or null → Claude fallback. */
 export async function composeBieAnswer(route: BieRoute, opts?: ComposeBieOpts): Promise<BieComposed | null> {
   const cacheKey = largoAnswerCacheKey(route.intent, route.ticker, route.ticker_b, opts?.question);
-  return withServerCache<BieComposed | null>(
+  const composed = await withServerCache<BieComposed | null>(
     cacheKey,
     BIE_LARGO_ANSWER_TTL_MS,
     () => composeBieAnswerUncached(route, opts),
     { staleWhileRevalidate: true }
   );
+  // Backward-compatible envelope guarantee: every answer carries a structured BieAnswerEnvelope for
+  // the member UI. Legs that already build one (verdict, and future migrations) keep theirs; a
+  // string-only leg is wrapped in a minimal single-section envelope (no fabricated structure).
+  if (composed && !composed.envelope) {
+    const { envelopeFromMarkdown } = await import("@/lib/bie/answer-envelope");
+    composed.envelope = envelopeFromMarkdown(composed.answer, {
+      headline: headlineForRoute(route),
+      intent: route.intent,
+    });
+  }
+  return composed;
+}
+
+/** A short headline for the transition-shim envelope of a string-only leg. */
+function headlineForRoute(route: BieRoute): string {
+  const t = route.ticker ? `${route.ticker} ` : "";
+  const map: Partial<Record<string, string>> = {
+    spx_desk_read: "SPX Live Desk read",
+    spx_structure: "SPX structure",
+    spx_invalidation: "SPX invalidation",
+    vector_read: `${t}Vector desk read`,
+    concept_read: "Definition",
+    market_context: "Market context",
+    flow_tape: "Flow tape",
+    ticker_ecosystem: `${t}ecosystem`,
+    ticker_advice: `${t}read`,
+    ticker_compare: "Comparison",
+    universal_lookup: "Lookup",
+    verdict: `${t}verdict`,
+    system_diagnostic: `${t}diagnosis`,
+    zerodte_plays: "0DTE plays",
+    ticker_play_state: `${t}play`,
+  };
+  return map[route.intent] ?? "BIE read";
 }
 
 async function composeBieAnswerUncached(route: BieRoute, opts?: ComposeBieOpts): Promise<BieComposed | null> {
@@ -636,6 +671,13 @@ async function composeBieAnswerUncached(route: BieRoute, opts?: ComposeBieOpts):
         return await composeConceptRead(opts?.question ?? "");
       case "universal_lookup":
         return await composeUniversal(opts?.question ?? "");
+      case "verdict": {
+        // Cross-tool verdict synthesis (task #59) — the only leg that returns a fully-populated
+        // BieAnswerEnvelope directly (composeBieAnswer's shim leaves it untouched). Server-only
+        // module, dynamically imported so tsx/test never loads its side-effectful deps.
+        const { composeVerdict } = await import("@/lib/bie/verdict");
+        return await composeVerdict(route.ticker ?? "SPX", opts?.question ?? "");
+      }
       case "system_diagnostic": {
         const { composeDiagnostic } = await import("@/lib/bie/diagnostic");
         return await composeDiagnostic(route.ticker ?? "SPX", opts?.question ?? "");
