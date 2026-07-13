@@ -24,6 +24,7 @@ import {
   largoAnswerCacheKey,
 } from "@/lib/bie/platform-cache";
 import { withServerCache } from "@/lib/server-cache";
+import { stripGroundingTokens } from "@/lib/bie/grounding-markers";
 import type { BieRoute } from "./router";
 
 /** Optional member question — premise correction + advice routing context. */
@@ -156,24 +157,18 @@ async function composeSpxDeskRead(question?: string): Promise<BieComposed | null
     playbookShadow,
   }, question);
   const knowledge = formatKnowledgeFootnotes(platform.knowledge);
-  const answer = [`**SPX Live Desk read**`, "", `**${brief.headline}**`, "", brief.body, knowledge ? `\n\n${knowledge}` : ""]
-    .filter(Boolean)
-    .join("\n");
+  // Strip the {{value}} grounding markers so the member sees the number, not the marker — the SPX
+  // desk brief lines wrap every figure in {{…}} for the strict grounding guard, and the non-stream
+  // Largo path was shipping them literally (live audit: "above γflip {{7,496}}").
+  const answer = stripGroundingTokens(
+    [`**SPX Live Desk read**`, "", `**${brief.headline}**`, "", brief.body, knowledge ? `\n\n${knowledge}` : ""]
+      .filter(Boolean)
+      .join("\n")
+  );
   return {
     answer,
     context: { desk, confluence, brief, platform },
   };
-}
-
-/**
- * Render the desk-brief `{{value}}` grounding markers down to clean prose. The brief lines wrap
- * every citable number in `{{…}}` so a strict grounding guard can trace them; the member-facing
- * answer must show the VALUE, not the marker. (The SPX desk-read composer above does NOT do this,
- * so `composeSpxDeskRead`'s answer currently leaks literal `{{…}}` into the non-stream Largo path —
- * flagged to the coordinator; not replicated here.)
- */
-function stripGroundingTokens(text: string): string {
-  return text.replace(/\{\{\s*([^{}]*?)\s*\}\}/g, "$1");
 }
 
 /** Parse a chart timeframe (1m/5m/15m/1H) from the question → minutes, else undefined (default 5). */
@@ -238,7 +233,7 @@ async function composeSpxInvalidation(): Promise<BieComposed | null> {
     intel: platform.intel ?? undefined,
   };
   const lines = composeSpxInvalidationLines(desk, confluence, cross);
-  return { answer: lines.join("\n"), context: { desk, confluence, cross } };
+  return { answer: stripGroundingTokens(lines.join("\n")), context: { desk, confluence, cross } };
 }
 
 async function composeSpxStructure(): Promise<BieComposed | null> {
@@ -283,7 +278,7 @@ async function composeSpxStructure(): Promise<BieComposed | null> {
     }
   }
   parts.push("", "_Mini structure read — ask **What's the SPX setup right now?** for full THESIS/ALIGNMENT._");
-  return { answer: parts.join("\n"), context: { raw, desk: platform.desk } };
+  return { answer: stripGroundingTokens(parts.join("\n")), context: { raw, desk: platform.desk } };
 }
 
 async function composeMarketContext(): Promise<BieComposed | null> {
