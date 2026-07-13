@@ -5055,3 +5055,59 @@ Every page/subpage/panel/button/layout/font; every number/level/matrix/flow valu
 **Files:** `playbook-verdict-guard.ts`, `playbook-match-resolver.ts:70-80`, `playbook-verdict-guard.test.ts`.
 
 **Evidence trail:** sixth-pass reasoning in `docs/spx/PLAYBOOK-BUG-AUDIT-2026-07-11.md`; closure in #105.
+
+---
+
+## INFRA — Cloudflare caches `_next/static` **404s** for a year → ChunkLoadError-forever after every deploy (2026-07-13)
+
+**Status:** ✅ FIXED (staging + prod) 2026-07-13 — via a Cloudflare Cache Rule edit (user-approved, applied with a Cache-Rules:Edit token). Root-cause write-up retained below for the record.
+
+**Resolution (what was changed):** the zone `blackouttrades.com` (Free plan) has a single cache ruleset `95d2e74be110459ea6d8f0da6729dba4` (phase `http_request_cache_settings`). The existing rule `6a0dbd89293348bfa1e86dbb0a6d0af6` — *"Cache Next.js static assets 1 year"*, `expression: (http.request.uri.path contains "/_next/static/")` — had `edge_ttl: { default: 31536000, mode: override_origin }`, which applied the 1-year TTL to **every** status including 404. PATCHed it to add a status override, leaving the 200-path untouched:
+```
+edge_ttl: { default: 31536000, mode: override_origin,
+  status_code_ttl: [ {400-499 → -1}, {500-599 → -1} ] }   // -1 = no-store
+```
+Renamed *"Cache Next.js static assets 1 year (4xx/5xx not cached)"*. The other 5 cache rules were untouched. A one-time `purge_everything` flushed the already-poisoned 404s.
+
+**Verified LIVE (both environments — staging + prod share the ONE zone; the rule has no host filter so it's zone-wide):**
+| | Missing chunk (404) | Real chunk (200) |
+|---|---|---|
+| before | `cf-cache-status: HIT` · `max-age=31536000` (cached 1yr) | cached 1yr |
+| after  | `cf-cache-status: BYPASS` · `cache-control: no-store` | `cf-cache-status: HIT` · `max-age=31536000, immutable` |
+Confirmed on `blackouttrades.com` (prod) and `staging.blackouttrades.com`. Deploy-window 404s now self-heal once the rollout settles — no manual purge, no ChunkLoadError boundary.
+
+**Residual hardening (optional, not yet applied — awaiting user OK):** the sibling cache rules (`/api/market/gex-positioning` 60s, `/api/market/news` 120s, `/api/market/regime` 30s, marketing `/` `/upgrade` `/learn` 7200s) also lack a 4xx/5xx override, so a transient error on those caches for the rule's TTL. Low-impact for the 30–120s API caches; the 2h marketing cache is the notable one. Same `status_code_ttl -1` override would harden them.
+
+**Severity:** HIGH — **affects production** (`blackout-web` main), not just staging. Every deploy can brick pages until someone manually purges the CDN.
+
+**Symptom (observed live, 2026-07-13):** after merging 6 PRs in ~30 min (6 rapid staging deploys), `/flows` and `/vector` rendered the app error boundary — "**We couldn't load this page**" — for **15+ minutes**, with the console showing repeated `_next/static/chunks/*.js` **404s** served as `content-type: text/plain` → `ChunkLoadError: Loading chunk 4985 failed`. The page HTML itself was fresh (`cf-cache-status: DYNAMIC`) and referenced the new build's chunks, but the chunk *files* returned a cached 404.
+
+**Root cause (file:line):** `next.config.mjs:92-93` sets, for the `/_next/static/:path*` source, **unconditionally**:
+```
+{ key: "Cache-Control",     value: "public, max-age=31536000, immutable" }
+{ key: "CDN-Cache-Control", value: "public, max-age=31536000" }
+```
+Next.js `headers()` matches on URL pattern only — it **cannot condition on response status** — so a **404** for a momentarily-missing chunk inherits the same **1-year** cache directives. During an ECS rolling deploy the new HTML requests a new chunk hash that briefly 404s (the task serving it is still on the old build / the object isn't propagated yet); Cloudflare caches that 404 for a year. Confirmed on the wire:
+```
+GET /_next/static/chunks/4985-2a045d5eed8a210d.js
+HTTP/2 404 · content-type: text/plain · cf-cache-status: HIT · age: 927
+cache-control: private, max-age=31536000, must-revalidate · cdn-cache-control: public, max-age=31536000
+```
+`cf-cache-status: HIT` + `age: 927` on a **404** proves Cloudflare is serving a long-lived cached negative response. #42's client-side auto-reload-on-ChunkLoadError does **not** help here: the reload re-requests the same URL and gets the same cached 404.
+
+**Immediate mitigation (done on staging, non-destructive):**
+```
+curl -X POST https://api.cloudflare.com/client/v4/zones/$CF_ZONE_ID/purge_cache \
+  -H "Authorization: Bearer $CF_API_TOKEN" -H "Content-Type: application/json" \
+  --data '{"purge_everything":true}'
+```
+After the purge the chunk returned `200 · application/javascript` and the page rendered clean (console errors 14 → 1).
+
+**Remediation options (ALL touch caching/deploy → DEPLOY-RISKY, need user go before shipping to prod):**
+1. **Don't cache non-200s for static assets.** Emit `Cache-Control: no-store` (or a short TTL) when a `/_next/static/*` request 404s. Next's static `headers()` can't branch on status, so this needs middleware over the `_next/static` matcher, or an edge rule (a Cloudflare Cache Rule: "bypass cache when response status is 4xx/5xx"). Lowest blast radius; a Cloudflare Cache Rule needs no app deploy.
+2. **Purge CF on every deploy.** Add a post-deploy step that calls the purge API (scoped to `/_next/*` + HTML) once the ECS service is stable. Reliable; the purge is proven above. Lives in the deploy pipeline (`blackout-infra` or the app's deploy workflow).
+3. **Retain old chunks across deploys.** Serve `_next/static` from a shared, append-only store (S3/CDN) that keeps prior builds' immutable chunks, so cached old HTML always resolves its chunks and new HTML resolves its own — the standard Next.js multi-instance pattern. Most robust, most infra work.
+
+**Recommendation:** ship (1) as a Cloudflare Cache Rule (no app deploy, instantly stops negative-caching) **plus** (2) purge-on-deploy as belt-and-suspenders; treat (3) as the long-term architectural fix. **Held pending user approval** — this is a caching/infra change, explicitly deploy-risky per CLAUDE.md.
+
+**Evidence trail:** live header capture above; purge receipt `{"success":true}`; symptom screenshot (error boundary) + post-purge clean render captured 2026-07-13. Cross-ref task #49.
