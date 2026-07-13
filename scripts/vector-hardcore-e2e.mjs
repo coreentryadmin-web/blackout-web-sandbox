@@ -99,7 +99,9 @@ async function domSnap(page) {
     const q = (s) => document.querySelector(s);
     return {
       regime: (q(".vector-regime-read")?.textContent || "").replace(/\s+/g, " ").trim(),
-      terminal: (q(".vector-desk-terminal")?.textContent || "").replace(/\s+/g, " ").trim().slice(0, 300),
+      // Full terminal text (was .slice(0,300), which cut BEFORE the king-strike citations and made
+      // the "terminal cites kings" check a false negative on every ticker — harness bug, not product).
+      terminal: (q(".vector-desk-terminal")?.textContent || "").replace(/\s+/g, " ").trim().slice(0, 6000),
       ladderRows: document.querySelectorAll(".vector-gex-ladder-row").length,
       crosshair: (q(".vector-crosshair-legend")?.textContent || "").replace(/\s+/g, " ").trim(),
     };
@@ -313,9 +315,12 @@ async function validateTicker(page, ticker, errs) {
 
   // ---- K. RTH-only: live rail actually advances (growth/fade) ----
   if (RTH) {
-    const s1 = await api(page, `/api/market/vector/wall-history?ticker=${ticker}&dte=all`);
+    // Poll the NARROWED 0DTE rail WITH the session param — `dte=all` (and any missing session)
+    // short-circuits to an empty rail by route contract (the "all" rail is SSR-seeded), so the old
+    // poll asserted against a query documented to return nothing (0→0 false negative — harness bug).
+    const s1 = await api(page, `/api/market/vector/wall-history?ticker=${ticker}&dte=0DTE&session=${sessionYmd}`);
     await page.waitForTimeout(35_000);
-    const s2 = await api(page, `/api/market/vector/wall-history?ticker=${ticker}&dte=all`);
+    const s2 = await api(page, `/api/market/vector/wall-history?ticker=${ticker}&dte=0DTE&session=${sessionYmd}`);
     const n1 = (s1?.history || []).length, n2 = (s2?.history || []).length;
     const grew = n2 > n1 || JSON.stringify(s1?.history?.slice(-1)) !== JSON.stringify(s2?.history?.slice(-1));
     rec(`${ticker}: [RTH] live wall rail advances within 35s (new sample or changed strength)`, grew, `${n1}→${n2} samples`);

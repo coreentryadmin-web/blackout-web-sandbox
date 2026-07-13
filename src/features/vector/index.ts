@@ -36,6 +36,7 @@ export {
 export { buildCoachingAlerts } from "./lib/vector-coaching";
 export { fetchSpyVolumeRows } from "./lib/vector-spy-volume";
 export {
+  backfillRailPrefix,
   mergeModeledUnderlay,
   mergeWallHistory,
   seedWallHistoryForDisplay,

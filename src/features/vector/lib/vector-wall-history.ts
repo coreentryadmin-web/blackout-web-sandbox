@@ -399,6 +399,35 @@ export function mergeWallHistory(
  * bucket. Empty observed → all-modeled; empty modeled → all-observed. Never throws. Respects the
  * same MAX_HISTORY tail cap as mergeWallHistory.
  */
+/**
+ * UNIVERSE PARITY (any-ticker rail): fill the PRE-VIEW gap of a session with the honest
+ * reconstruction, without ever touching observed samples.
+ *
+ * A ticker outside the pre-recorded universe has no rail before its first viewer connects — the
+ * live hub records from first view onward, so a member opening (say) PLTR at 2pm sees a rail that
+ * starts at 2pm. This helper backfills ONLY the missing PREFIX (buckets strictly BEFORE the first
+ * observed sample) from the reconstruction rail (fixed published OI, gamma recomputed along the
+ * session's real spot path — genuinely time-varying, labeled modeled → ghost beads). Observed
+ * samples stay solid and untouched; the model never overwrites or extends past them, so a member
+ * can always tell recorded structure from reconstructed context.
+ *
+ * No-ops (returns `observed` as-is) when the observed rail already starts near the session open
+ * (prefix gap ≤ minPrefixGapSec) or the model has nothing before the first observed bucket.
+ */
+export function backfillRailPrefix(
+  observed: WallHistorySample[],
+  modeled: WallHistorySample[],
+  firstBarTime: number | undefined,
+  minPrefixGapSec: number = 20 * 60
+): WallHistorySample[] {
+  if (!modeled?.length || firstBarTime == null || !Number.isFinite(firstBarTime)) return observed;
+  const firstObserved = observed[0]?.time ?? Number.POSITIVE_INFINITY;
+  if (firstObserved - firstBarTime <= minPrefixGapSec) return observed;
+  const prefix = modeled.filter((s) => s.time < firstObserved);
+  if (!prefix.length) return observed;
+  return mergeModeledUnderlay(observed, prefix);
+}
+
 export function mergeModeledUnderlay(
   observed: WallHistorySample[],
   modeled: WallHistorySample[]

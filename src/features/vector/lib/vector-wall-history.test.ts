@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
+  backfillRailPrefix,
   bucketWallHistoryForInterval,
   composeHorizonTrail,
   liveTrailAnchorSec,
@@ -121,6 +122,35 @@ test("trailsByStrike: groups horizontal bead rows per strike — migration split
   assert.equal(callTrails.size, 2);
   assert.deepEqual(callTrails.get(6800)?.map((p) => p.time), [100, 160]);
   assert.deepEqual(callTrails.get(6810)?.map((p) => p.time), [220]);
+});
+
+test("backfillRailPrefix: fills only the pre-view gap with modeled ghosts; observed stays solid", () => {
+  // Member opened the ticker mid-session: observed rail starts at 14:00 (t=50400 rel), bars start
+  // at the open (t=0 rel). Model covers the whole session at 5-min cadence.
+  const observed = [
+    { time: 50400, walls: walls([100], [90]) },
+    { time: 50700, walls: walls([100], [90]) },
+  ];
+  const modeled = [0, 300, 50100, 50400, 50700].map((time) => ({ time, walls: walls([101], [89]) }));
+  const merged = backfillRailPrefix(observed, modeled, 0);
+  // Prefix modeled buckets (< 50400) included as modeled:true; the modeled 50400/50700 buckets are
+  // NOT allowed to overlap/extend the observed region.
+  assert.deepEqual(merged.map((s) => s.time), [0, 300, 50100, 50400, 50700]);
+  assert.equal(merged[0].modeled, true);
+  assert.equal(merged[2].modeled, true);
+  assert.equal(merged[3].modeled, false);
+  assert.deepEqual(merged[3].walls, walls([100], [90]), "observed sample untouched");
+});
+
+test("backfillRailPrefix: no-op when observed already starts near the open, model empty, or no bars", () => {
+  const observed = [{ time: 600, walls: walls([100], [90]) }];
+  const modeled = [{ time: 0, walls: walls([101], [89]) }];
+  assert.equal(backfillRailPrefix(observed, modeled, 0), observed, "gap ≤ 20min → untouched");
+  assert.equal(backfillRailPrefix(observed, [], 0), observed, "empty model → untouched");
+  assert.equal(backfillRailPrefix(observed, modeled, undefined), observed, "no bars → untouched");
+  // Empty observed rail: the whole modeled session becomes the (ghost) rail.
+  const seeded = backfillRailPrefix([], [{ time: 0, walls: walls([101], [89]) }, { time: 300, walls: walls([101], [89]) }], 0);
+  assert.deepEqual(seeded.map((s) => [s.time, s.modeled]), [[0, true], [300, true]]);
 });
 
 test("trailsByStrike: a strike earns beads ONLY in buckets where it is a DOMINANT wall (birth ≠ session open)", () => {

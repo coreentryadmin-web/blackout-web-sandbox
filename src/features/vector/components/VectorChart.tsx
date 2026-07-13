@@ -712,6 +712,13 @@ function buildWallBeadMarkers(
   intervalSec: number = 60
 ): SeriesMarker<Time>[] {
   const markers: SeriesMarker<Time>[] = [];
+  // Earliest bucket across every rendered trail — the boundary where a trail's start is ambiguous
+  // (window trim edge / session open) rather than a genuine formation. See trueBirth below.
+  let earliestBucket: number | null = null;
+  for (const trail of trails) {
+    const t0 = trail.points[0]?.time;
+    if (t0 != null && (earliestBucket == null || t0 < earliestBucket)) earliestBucket = t0;
+  }
   // Frame-relative strength: find the STRONGEST wall currently in view, and scale every bead's
   // thickness/opacity against it (markerSizeForPctRel), NOT against a fixed 7% saturation. Per-
   // strike gamma share is ~6-8% on the UW oracle ladder but 20-40% on the per-expiry chain path,
@@ -770,7 +777,11 @@ function buildWallBeadMarkers(
       // member sees the candle where the wall came BACK, not a silent continuation. Gap threshold
       // is 2 candle intervals so honest single-bucket jitter doesn't spray fake rebirth cues.
       const reborn = i > 0 && p.time - points[i - 1]!.time > intervalSec * 2;
-      if ((i === 0 || reborn) && !modeled) {
+      // Suppress the birth boost when the trail starts at the EARLIEST drawn bucket — that "birth"
+      // is unknowable (live-window trim edge or session open): the wall may have existed before the
+      // window we're drawing. Only a birth strictly INSIDE the drawn window is a real formation cue.
+      const trueBirth = i === 0 && earliestBucket != null && p.time > earliestBucket;
+      if ((trueBirth || reborn) && !modeled) {
         markers.push({
           time,
           position: "atPriceMiddle",

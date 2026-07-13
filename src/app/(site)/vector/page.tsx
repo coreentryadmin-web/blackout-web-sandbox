@@ -4,6 +4,7 @@ import { canAccessTool } from "@/lib/tool-access-server";
 import { ComingSoon } from "@/components/ComingSoon";
 import {
   VectorPageShell,
+  backfillRailPrefix,
   fetchVectorSeedBars,
   getVectorDarkPoolLevels,
   getVectorGammaFlip,
@@ -15,6 +16,7 @@ import {
   mergeWallHistory,
   normalizeVectorTicker,
   primeVectorWallScope,
+  reconstructSessionRail,
   seedWallHistoryForDisplay,
   type WallHistorySample,
 } from "@/features/vector";
@@ -55,30 +57,39 @@ export default async function VectorPage({ searchParams }: PageProps) {
   const today = todayEt();
   const liveSession = sessionYmd === today && isEtCashRth();
 
-  // Observed rail ONLY — exactly what the live recorder captured point-in-time during RTH:
+  // Observed rail first — exactly what the live recorder captured point-in-time during RTH:
   // genuinely dynamic walls that shift/build/fade with the tape (in-memory + persisted Redis/PG
   // rows). `sessionYmd` comes from fetchVectorSeedBars, which walks back to the most recent day
   // that actually HAS price bars — so off-hours (weekend/overnight) this is the last RTH session,
   // and loadSessionWallHistory(sessionYmd) returns THAT session's real recorded beads. The bars
   // and the rail therefore always describe the same session and align on the time axis.
-  //
-  // The modeled full-width underlay (reconstructSessionRail + mergeModeledUnderlay) was REMOVED
-  // here (2026-07-12, user-directed). Because intraday OI history is unpublished, the
-  // reconstruction can only replay the CLOSING chain back-projected across every bucket — a flat,
-  // uniform full-width rail that reads as fake "static open→close lines" and is the opposite of
-  // the point-in-time dynamism a bead rail implies. A member could not tell a wall that held all
-  // day from one that formed at noon. Showing only observed samples means every bead the member
-  // sees is a real point-in-time observation; where nothing was recorded we show an honest gap (or
-  // the single as-of-close seed below), never a model smeared across the session. The
-  // reconstruction module lives on for the strike×time heatmap (#14), where a back-projected grid
-  // is openly a MODEL — the honest primitive for that surface, unlike an observed bead.
   const combined = mergeWallHistory(getVectorWallHistory(ticker), persistedHistory);
 
+  // UNIVERSE PARITY (2026-07-13, user-directed): Vector must behave the same for EVERY optionable
+  // ticker, not just the pre-recorded ~20-name universe. A ticker with no viewer has no recorded
+  // rail before its first view, so the first member of the day saw single beads. Backfill ONLY the
+  // missing PREFIX (before the first observed sample) from the reconstruction: today's published OI
+  // with gamma recomputed along the session's REAL spot path — genuinely time-varying, and now
+  // rendered through the per-bucket DOMINANCE filter so it shows honest staggered births, not the
+  // flat axis-to-axis underlay that got the model removed on 2026-07-12 (that flatness was the
+  // dominance bug, since fixed). Modeled beads draw as faint ghosts (MODELED_ALPHA_SCALE) under
+  // solid observed ones, and the model never overwrites or extends past a real sample — a member
+  // can always tell recorded structure from reconstructed context. Redis-cached per ticker+session;
+  // best-effort (a reconstruction failure just leaves the honest gap).
+  const firstObserved = combined[0]?.time ?? Number.POSITIVE_INFINITY;
+  const firstBar = bars[0]?.time;
+  const needsPrefix =
+    bars.length > 0 && firstBar != null && firstObserved - firstBar > 20 * 60;
+  const modeledRail = needsPrefix
+    ? await reconstructSessionRail({ ticker, sessionYmd }).catch(() => [] as WallHistorySample[])
+    : ([] as WallHistorySample[]);
+  const backfilled = backfillRailPrefix(combined, modeledRail, firstBar);
+
   // Empty-case fallback: a single as-of-close snapshot at the last bar when there is genuinely
-  // nothing recorded for this session (e.g. a ticker no one viewed during RTH). No-ops whenever
-  // the observed rail already has samples. Never a full-day fabrication.
+  // nothing recorded OR reconstructable for this session. No-ops whenever the rail already has
+  // samples. Never a full-day fabrication.
   const initialWallHistory = seedWallHistoryForDisplay(
-    combined,
+    backfilled,
     bars.map((b) => b.time),
     walls,
     gammaFlip,
