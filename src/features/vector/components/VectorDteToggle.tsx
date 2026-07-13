@@ -10,8 +10,10 @@ import {
 type Props = {
   horizon: VectorDteHorizon;
   onHorizon: (h: VectorDteHorizon) => void;
-  /** Only oracle tickers (SPX/SPY/QQQ) carry the per-expiry ladder that makes the
-   *  horizon actually re-scope walls; hidden otherwise so the control never lies. */
+  /** Always true today: the per-expiry CHAIN path re-scopes walls for EVERY optionable ticker
+   *  (getPerExpiryGexWalls), not just the WS-oracle names — the old "oracle tickers only" note
+   *  predated that and misled a QA pass into flagging the toggle on TSLA as a bug. Kept as a prop
+   *  so a future per-ticker availability rule has a seam. */
   available: boolean;
   disabled?: boolean;
 };
