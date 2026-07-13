@@ -23,6 +23,7 @@ function input(overrides: Partial<ZeroDteGateInput> = {}): ZeroDteGateInput {
     nowMs: NOW_MS,
     bias: "down",
     biasAsOfMs: NOW_MS - 60_000, // 1-minute-old SPY bar — fresh
+    governor: { open_count: 0, stops: [] },
     ...overrides,
   };
 }
@@ -119,6 +120,33 @@ test("G-3: judged on the POST-edge-layer score — 7/13's INTC short (61) blocks
   const v = evaluateZeroDteGates(input({ ticker: "INTC", score: 61, nowEtMinutes: 12 * 60 + 51 }));
   assert.equal(v.verdict, "BLOCKED");
   assert.deepEqual(v.blocks.map((b) => b.code), ["score_floor"]);
+});
+
+// ── G-5 · session governor (wiring — the rules themselves live in governor.test.ts) ─
+
+test("G-5: unreadable governor state fails closed with gate_context_unavailable", () => {
+  const v = evaluateZeroDteGates(input({ governor: null }));
+  assert.equal(v.verdict, "BLOCKED");
+  assert.deepEqual(v.blocks.map((b) => b.code), ["gate_context_unavailable"]);
+});
+
+test("G-5: three stopped plays halt every further commit for the session", () => {
+  const stops = [
+    { ticker: "SPY", direction: "long" as const, at_ms: null },
+    { ticker: "MU", direction: "long" as const, at_ms: null },
+    { ticker: "AMD", direction: "long" as const, at_ms: null },
+  ];
+  const v = evaluateZeroDteGates(input({ governor: { open_count: 0, stops } }));
+  assert.equal(v.verdict, "BLOCKED");
+  assert.deepEqual(v.blocks.map((b) => b.code), ["governor_session_stops"]);
+});
+
+test("G-5: committedThisCycle counts toward the concurrency cap within one scan pass", () => {
+  const governor = { open_count: 1, stops: [] };
+  assert.equal(evaluateZeroDteGates(input({ governor, committedThisCycle: 1 })).verdict, "COMMIT");
+  const v = evaluateZeroDteGates(input({ governor, committedThisCycle: 2 }));
+  assert.equal(v.verdict, "BLOCKED");
+  assert.deepEqual(v.blocks.map((b) => b.code), ["governor_max_concurrent"]);
 });
 
 // ── rejection-row bridge ───────────────────────────────────────────────────────────

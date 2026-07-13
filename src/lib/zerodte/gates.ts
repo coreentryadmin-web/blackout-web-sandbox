@@ -19,6 +19,7 @@
 
 import type { MarketBias } from "./intraday";
 import type { EnrichedZeroDteSetup, ZeroDteGateFailure, ZeroDteGateRejection } from "./board";
+import { evaluateZeroDteGovernor, type GovernorSnapshot } from "./governor";
 
 // ── G-1 · Tape-alignment block ──────────────────────────────────────────────────
 // Evidence (nh0dte forensics, 2026-07-13): counter-tape entries are the single most
@@ -84,6 +85,11 @@ export type ZeroDteGateInput = {
   bias: MarketBias | null;
   /** Epoch-ms of the newest SPY bar behind `bias` (IntradayRead.last_bar_ms). */
   biasAsOfMs: number | null;
+  /** G-5 session state (./governor.ts). Null = state unreadable → fail closed. */
+  governor: GovernorSnapshot | null;
+  /** Fresh commits already accepted earlier in this same scan cycle — feeds the
+   *  governor's concurrency cap so one cycle can't overshoot it. */
+  committedThisCycle?: number;
 };
 
 /**
@@ -142,6 +148,26 @@ export function evaluateZeroDteGates(input: ZeroDteGateInput): ZeroDteGateVerdic
       threshold: ZERODTE_SCORE_FLOOR,
       unlock_et: null,
     });
+  }
+
+  // G-5 — session governor (./governor.ts). Unreadable state fails closed: a desk
+  // that can't count its own open risk doesn't add more.
+  if (input.governor == null) {
+    blocks.push({
+      code: "gate_context_unavailable",
+      reason: "Session governor state could not be read — new commits fail closed.",
+      threshold: null,
+      unlock_et: null,
+    });
+  } else {
+    blocks.push(
+      ...evaluateZeroDteGovernor(
+        { ticker: input.ticker, direction: input.direction },
+        input.governor,
+        input.nowMs,
+        input.committedThisCycle ?? 0
+      )
+    );
   }
 
   return { verdict: blocks.length > 0 ? "BLOCKED" : "COMMIT", blocks };

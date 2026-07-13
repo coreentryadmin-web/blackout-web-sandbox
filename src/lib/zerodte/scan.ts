@@ -49,6 +49,13 @@ import {
 import { persistZeroDteRejections } from "./rejections";
 import { evaluateZeroDteGates, gateRejectionFor } from "./gates";
 import {
+  deriveGovernorFromLedger,
+  loadRecordedGovernorStops,
+  mergeGovernorStops,
+  recordGovernorStops,
+  type GovernorSnapshot,
+} from "./governor";
+import {
   computeIntradayRead,
   intradayScoreAdjust,
   marketAlignAdjust,
@@ -265,16 +272,28 @@ async function attachGateVerdicts(
   biasAsOfMs: number | null
 ): Promise<void> {
   if (setups.length === 0) return;
+  const today = todayEt();
   const { hour, minute } = etNowParts();
   const nowEtMinutes = hour * 60 + minute;
   const nowMs = Date.now();
-  const committed = dbConfigured()
-    ? await fetchZeroDteSetupLog(todayEt())
-        .then((rows) => new Set(rows.map((r) => r.ticker.toUpperCase())))
-        .catch(() => null)
-    : new Set<string>();
-  if (committed == null) return; // gates stay null → fresh commits fail closed downstream
+  const ledgerRows = dbConfigured()
+    ? await fetchZeroDteSetupLog(today).catch(() => null)
+    : ([] as ZeroDteSetupLogRow[]);
+  if (ledgerRows == null) return; // gates stay null → fresh commits fail closed downstream
+  const committed = new Set(ledgerRows.map((r) => r.ticker.toUpperCase()));
 
+  // G-5 snapshot: open/stop counts from the shared Postgres ledger (authoritative),
+  // stop timestamps from the Redis record (best-effort — see governor.ts's model).
+  const recordedStops = await loadRecordedGovernorStops(today).catch(() => []);
+  const ledgerGovernor = deriveGovernorFromLedger(ledgerRows);
+  const governor: GovernorSnapshot = {
+    open_count: ledgerGovernor.open_count,
+    stops: mergeGovernorStops(ledgerGovernor.stops, recordedStops),
+  };
+
+  // Setups arrive score-ranked, so the concurrency budget goes to the best finds:
+  // committedThisCycle counts earlier accepted fresh commits within this same pass.
+  let committedThisCycle = 0;
   for (const s of setups) {
     if (committed.has(s.ticker.toUpperCase())) continue;
     s.gate = evaluateZeroDteGates({
@@ -285,7 +304,10 @@ async function attachGateVerdicts(
       nowMs,
       bias,
       biasAsOfMs,
+      governor,
+      committedThisCycle,
     });
+    if (s.gate.verdict === "COMMIT") committedThisCycle += 1;
   }
 }
 
@@ -523,6 +545,11 @@ export async function syncLedgerLiveState(rows: ZeroDteSetupLogRow[]): Promise<Z
   const { hour, minute } = etNowParts();
   const nowEtMinutes = hour * 60 + minute;
 
+  // G-5 input: stop transitions observed THIS pass (a row flipping to CLOSED/
+  // stopped) get their timestamp recorded to the shared governor state — Postgres
+  // has no stop-time column, and the 20-minute re-entry lock needs one.
+  const stopEvents: Array<{ ticker: string; direction: "long" | "short"; at_ms: number }> = [];
+
   const updated = await Promise.all(
     rows.map(async (r) => {
       // CLOSED is terminal; every other row gets a state pass — rows with no plan/
@@ -540,12 +567,20 @@ export async function syncLedgerLiveState(rows: ZeroDteSetupLogRow[]): Promise<Z
         trough,
         nowEtMinutes,
       });
+      if (state.status === "CLOSED" && state.closed_reason === "stopped") {
+        stopEvents.push({ ticker: r.ticker, direction: r.direction, at_ms: Date.now() });
+      }
       if (dbConfigured()) {
         await updateZeroDteLiveState(r.session_date, r.ticker, { status: state.status, mark }).catch(() => {});
       }
       return { ...r, status: state.status, last_mark: mark ?? r.last_mark, peak_premium: peak, trough_premium: trough };
     })
   );
+  if (stopEvents.length > 0) {
+    // Best-effort (first-write-wins per ticker inside recordGovernorStops): a Redis
+    // failure only softens the timed lock — the ledger stop still counts to the halt.
+    void recordGovernorStops(todayEt(), stopEvents).catch(() => {});
+  }
   return updated;
 }
 
