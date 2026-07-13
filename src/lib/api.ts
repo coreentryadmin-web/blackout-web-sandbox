@@ -443,12 +443,26 @@ export const queryLargo = (question: string, sessionId: string) =>
     }
   );
 
+/** Thrown when the caller cancels an in-flight Largo stream (Stop button). */
+export class LargoStreamAborted extends Error {
+  constructor() {
+    super("Largo stream aborted");
+    this.name = "LargoStreamAborted";
+  }
+}
+
 export async function queryLargoStream(
   question: string,
   sessionId: string,
   onToken: (text: string) => void,
   /** Fires for each live tool Largo pulls (tool_start), enabling a real-time data-trace UI. */
-  onTool?: (name: string) => void
+  onTool?: (name: string) => void,
+  /**
+   * Caller-owned signal for user cancellation (Stop control). When it aborts we
+   * distinguish it from the internal timeout so the UI can preserve the partial
+   * streamed answer instead of showing a timeout error.
+   */
+  externalSignal?: AbortSignal
 ): Promise<{
   answer: string;
   session_id: string;
@@ -459,6 +473,22 @@ export async function queryLargoStream(
 }> {
   const abort = new AbortController();
   const timeout = setTimeout(() => abort.abort(), LARGO_STREAM_TIMEOUT_MS);
+
+  // Bridge the caller's cancel signal into the internal controller. `userAborted`
+  // lets the catch clauses below tell a deliberate Stop apart from a timeout.
+  let userAborted = false;
+  const onExternalAbort = () => {
+    userAborted = true;
+    abort.abort();
+  };
+  if (externalSignal) {
+    if (externalSignal.aborted) onExternalAbort();
+    else externalSignal.addEventListener("abort", onExternalAbort, { once: true });
+  }
+  const cleanup = () => {
+    clearTimeout(timeout);
+    externalSignal?.removeEventListener("abort", onExternalAbort);
+  };
 
   let res: Response;
   try {
@@ -476,19 +506,20 @@ export async function queryLargoStream(
       body: JSON.stringify({ question, session_id: sessionId }),
     });
   } catch (err) {
-    clearTimeout(timeout);
+    cleanup();
+    if (userAborted) throw new LargoStreamAborted();
     if (abort.signal.aborted) throw new Error("Largo stream timeout");
     throw err;
   }
 
   if (!res.ok) {
-    clearTimeout(timeout);
+    cleanup();
     throw new Error(`Market /largo/query → ${res.status}`);
   }
 
   const reader = res.body?.getReader();
   if (!reader) {
-    clearTimeout(timeout);
+    cleanup();
     throw new Error("Largo stream unavailable");
   }
 
@@ -553,10 +584,11 @@ export async function queryLargoStream(
       }
     }
   } catch (err) {
+    if (userAborted) throw new LargoStreamAborted();
     if (abort.signal.aborted) throw new Error("Largo stream timeout");
     throw err;
   } finally {
-    clearTimeout(timeout);
+    cleanup();
   }
 
   if (!result) throw new Error("Largo stream ended without result");
