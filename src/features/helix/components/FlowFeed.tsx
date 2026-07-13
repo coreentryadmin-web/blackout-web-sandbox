@@ -32,10 +32,7 @@ const FlowMomentumChart = dynamic(
 );
 import { DarkPoolPanel } from "@/features/helix/components/DarkPoolPanel";
 import { TickerDrawer } from "@/features/helix/components/TickerDrawer";
-import {
-  ContractDrilldownDrawer,
-  type ContractPick,
-} from "@/features/helix/components/ContractDrilldownDrawer";
+import { ContractDrilldownDrawer } from "@/features/helix/components/ContractDrilldownDrawer";
 import { SplitFlowRadar, type SplitFlowEntry } from "@/features/helix/components/SplitFlowRadar";
 import { VelocityRadar, type VelocityEntry } from "@/features/helix/components/VelocityRadar";
 import { SectorFlowPanel, type SectorFlowEntry } from "@/features/helix/components/SectorFlowPanel";
@@ -138,7 +135,10 @@ export function FlowFeed() {
   const [tickerFilter, setTickerFilter]   = useState("");
   // UI
   const [selectedTicker, setSelectedTicker] = useState<string | null>(null);
-  const [selectedContract, setSelectedContract] = useState<ContractPick | null>(null);
+  // Store the FULL clicked print, not just ticker/strike/expiry — the drilldown window
+  // renders that print's own real payload (premium, fill, spot-at-fill, OI/IV/OTM/DTE,
+  // rule tags, gamma-wall proximity), then fetches aggregate contract activity on top.
+  const [selectedContract, setSelectedContract] = useState<FlowAlert | null>(null);
   // P2: saved-tickers watchlist (localStorage-backed, client-only)
   const watchlist = useWatchlist();
   const [watchlistOnly, setWatchlistOnly] = useState(false);
@@ -617,13 +617,7 @@ export function FlowFeed() {
     filteredCount: displayAlerts.length,
     compoundTickers,
     onTickerClick: setSelectedTicker,
-    onContractClick: (flow: FlowAlert) =>
-      setSelectedContract({
-        ticker: flow.ticker,
-        strike: flow.strike,
-        expiry: flow.expiry,
-        option_type: flow.option_type,
-      }),
+    onContractClick: (flow: FlowAlert) => setSelectedContract(flow),
     replayMode,
     splitFlowTickers,
     earningsDays,
@@ -922,7 +916,7 @@ export function FlowFeed() {
 
       {/* Contract drilldown — per-leg volume/OI/fill history (FLOWCHECKER-style) */}
       <ContractDrilldownDrawer
-        contract={selectedContract}
+        flow={selectedContract}
         onClose={() => setSelectedContract(null)}
         onViewTicker={(t) => {
           setSelectedContract(null);

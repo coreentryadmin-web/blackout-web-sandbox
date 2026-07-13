@@ -16340,6 +16340,61 @@ body::before {
   .helix-contract-fills-table tbody tr:hover {
     background: rgba(125, 211, 252, 0.05);
   }
+
+  /* ── HELIX single-print drilldown ("This print" panel) — added alongside the #227
+     remodel classes, not replacing them. ── */
+  .helix-print-detail-title {
+    @apply font-mono text-[10px] uppercase tracking-[0.18em] text-purple-light mb-2;
+  }
+
+  .helix-print-stat-grid {
+    @apply grid gap-2;
+    grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+  }
+
+  .helix-print-stat {
+    @apply flex flex-col gap-0.5 rounded-lg border border-white/10 bg-black/40 px-2.5 py-1.5;
+  }
+
+  .helix-print-stat-label {
+    @apply flex items-center gap-1 font-mono text-[9px] uppercase tracking-[0.14em] text-sky-300/70;
+  }
+
+  .helix-print-stat-est {
+    @apply rounded bg-white/10 px-1 py-px font-mono text-[7px] uppercase tracking-[0.1em] text-sky-300/60;
+  }
+
+  .helix-print-stat-value {
+    @apply font-mono text-[13px] font-semibold text-white tabular-nums;
+  }
+
+  .helix-print-tags {
+    @apply mt-2 flex flex-wrap gap-1.5;
+  }
+
+  .helix-print-tag {
+    @apply rounded border px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-[0.12em];
+  }
+
+  .helix-print-tag--rule {
+    @apply border-sky-400/30 bg-sky-400/10 text-sky-200;
+  }
+
+  .helix-print-tag--wall {
+    @apply border-purple-light/30 bg-purple-light/10 text-purple-light;
+  }
+
+  .helix-print-note {
+    @apply mt-2 font-mono text-[9px] leading-relaxed text-sky-300/50;
+  }
+
+  .helix-print-section-head {
+    @apply flex items-center justify-between gap-2 border-t border-white/10 pt-3;
+  }
+
+  .helix-print-loading {
+    @apply font-mono text-[9px] uppercase tracking-[0.14em] text-sky-300/60;
+  }
 }
 
 /* ===== Footer artwork ===== */
