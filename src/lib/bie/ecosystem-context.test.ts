@@ -15,6 +15,12 @@ import type { FlowTapeSummary } from "@/lib/platform/types";
 import type { FlowRow } from "@/lib/db";
 import type { GexPositioning } from "@/lib/providers/gex-positioning";
 import type { VectorFullState } from "@/lib/bie/vector-full-state";
+import type { NextEarnings } from "@/lib/providers/uw-earnings";
+import type { TickerFundamentalsBundle } from "@/lib/bie/ticker-fundamentals";
+import type { RelatedCompanies } from "@/lib/providers/polygon-related";
+import type { NewsResult } from "@/lib/providers/polygon-news";
+import type { PolygonMacroBackdrop } from "@/lib/providers/polygon-macro";
+import type { MarketBreadthBundle } from "@/lib/bie/market-breadth";
 
 // mock.module() must be registered before ecosystem-context.ts (and therefore
 // its "@/lib/db" import) is ever loaded — an ordinary top-level `import` of
@@ -134,12 +140,87 @@ mock.module("./vector-full-state", {
   },
 });
 
+// The #60 data-arsenal readers, mocked as their own modules so this test file stays hermetic (no real
+// Polygon/UW HTTP even if CI has keys) AND can prove the relevance gate: which readers run for an
+// index ticker vs a single name. All default to null → an all-null arsenal (relevant legs surface in
+// unavailable_sources), which the existing assertions above don't touch.
+let mockEarnings: NextEarnings | null = null;
+let mockFundamentals: TickerFundamentalsBundle | null = null;
+let mockRelated: RelatedCompanies | null = null;
+let mockTickerNews: NewsResult | null = null;
+let mockCatalysts: NewsResult | null = null;
+let mockMacro: PolygonMacroBackdrop | null = null;
+let mockBreadth: MarketBreadthBundle | null = null;
+let earningsCalls: string[] = [];
+let fundamentalsCalls: string[] = [];
+let relatedCalls: string[] = [];
+let tickerNewsCalls: string[] = [];
+let catalystCalls = 0;
+let macroCalls = 0;
+let breadthCalls = 0;
+
+mock.module("../providers/uw-earnings", {
+  namedExports: {
+    fetchNextEarningsDate: async (ticker: string) => {
+      earningsCalls.push(ticker);
+      return mockEarnings;
+    },
+  },
+});
+mock.module("./ticker-fundamentals", {
+  namedExports: {
+    fetchTickerFundamentalsBundle: async (ticker: string) => {
+      fundamentalsCalls.push(ticker);
+      return mockFundamentals;
+    },
+  },
+});
+mock.module("../providers/polygon-related", {
+  namedExports: {
+    fetchRelatedCompanies: async (ticker: string) => {
+      relatedCalls.push(ticker);
+      return mockRelated;
+    },
+  },
+});
+mock.module("../providers/polygon-news", {
+  namedExports: {
+    fetchTickerNews: async (ticker: string) => {
+      tickerNewsCalls.push(ticker);
+      return mockTickerNews;
+    },
+    fetchMarketCatalysts: async () => {
+      catalystCalls++;
+      return mockCatalysts;
+    },
+  },
+});
+mock.module("../providers/polygon-macro", {
+  namedExports: {
+    fetchPolygonMacroBackdrop: async () => {
+      macroCalls++;
+      return mockMacro;
+    },
+  },
+});
+mock.module("./market-breadth", {
+  namedExports: {
+    fetchMarketBreadthBundle: async () => {
+      breadthCalls++;
+      return mockBreadth;
+    },
+  },
+});
+
 let fetchEcosystemContext: typeof import("./ecosystem-context").fetchEcosystemContext;
 let ECOSYSTEM_CONTEXT_FIELDS: typeof import("./ecosystem-context").ECOSYSTEM_CONTEXT_FIELDS;
 let mapNighthawkEchoRows: typeof import("./ecosystem-context").mapNighthawkEchoRows;
+let assembleEcosystemArsenal: typeof import("./ecosystem-context").assembleEcosystemArsenal;
+let isEcosystemIndexTicker: typeof import("./ecosystem-context").isEcosystemIndexTicker;
 
 before(async () => {
-  ({ fetchEcosystemContext, ECOSYSTEM_CONTEXT_FIELDS, mapNighthawkEchoRows } = await import("./ecosystem-context"));
+  ({ fetchEcosystemContext, ECOSYSTEM_CONTEXT_FIELDS, mapNighthawkEchoRows, assembleEcosystemArsenal, isEcosystemIndexTicker } =
+    await import("./ecosystem-context"));
 });
 
 test("ECOSYSTEM_CONTEXT_FIELDS: covers every real field with a non-empty description", () => {
@@ -155,6 +236,7 @@ test("ECOSYSTEM_CONTEXT_FIELDS: covers every real field with a non-empty descrip
     "flow_feed_fresh",
     "gex_positioning",
     "vector_full_state",
+    "arsenal",
   ];
   assert.deepEqual(
     ECOSYSTEM_CONTEXT_FIELDS.map((f) => f.field).sort(),
@@ -582,4 +664,127 @@ test("mapNighthawkEchoRows: last row wins per ticker if duplicates slip through"
   ]);
   assert.equal(map.size, 1);
   assert.equal(map.get("TSLA")?.edition_for, "2026-06-30");
+});
+
+// ── #60 data arsenal ────────────────────────────────────────────────────────
+// Pure assembler (relevance gate + honesty) is tested directly; the fetch wiring's gate (which
+// readers run for an index vs a single name) is proven at the integration level below.
+
+test("isEcosystemIndexTicker: index/ETF class vs single name", () => {
+  for (const t of ["SPX", "SPXW", "SPY", "QQQ", "NDX", "IWM", "VIX"]) assert.equal(isEcosystemIndexTicker(t), true, `${t} is index`);
+  for (const t of ["NVDA", "AAPL", "TSLA", "ASTS"]) assert.equal(isEcosystemIndexTicker(t), false, `${t} is single name`);
+});
+
+test("assembleEcosystemArsenal(single_name): earnings/fundamentals/peers/news populate; macro/breadth stay null; no false unavailables", () => {
+  const ars = assembleEcosystemArsenal({
+    scope: "single_name",
+    earnings: { earnings_date: "2026-07-20", days_until: 5, report_time: "afterhours", is_confirmed: true } as NextEarnings,
+    fundamentals: { as_of: "2026-07-10", short_interest: { days_to_cover: 6.1 }, short_volume_ratio: 0.42, price_target: null } as unknown as TickerFundamentalsBundle,
+    related: { ticker: "NVDA", related: ["AMD", "AVGO", "MU"], as_of: "2026-07-10" } as unknown as RelatedCompanies,
+    news: { items: [{ headline: "NVDA guidance raised" }, { headline: "new GPU" }], asOf: "2026-07-13T00:00:00Z", newest: "2026-07-12T00:00:00Z" } as unknown as NewsResult,
+    macro: null,
+    breadth: null,
+  });
+  assert.equal(ars.scope, "single_name");
+  assert.deepEqual(ars.earnings, { earnings_date: "2026-07-20", days_until: 5, report_time: "afterhours", is_confirmed: true });
+  assert.equal(ars.fundamentals?.days_to_cover, 6.1);
+  assert.equal(ars.fundamentals?.short_volume_ratio, 0.42);
+  assert.deepEqual(ars.related, ["AMD", "AVGO", "MU"]);
+  assert.equal(ars.news?.count, 2);
+  assert.deepEqual(ars.news?.headlines, ["NVDA guidance raised", "new GPU"]);
+  // Macro/breadth aren't relevant to a single name → plain null, and NOT surfaced as "unavailable".
+  assert.equal(ars.macro, null);
+  assert.equal(ars.breadth, null);
+  assert.deepEqual(ars.unavailable_sources, []);
+});
+
+test("assembleEcosystemArsenal(index): macro/breadth/catalysts populate; single-name legs null", () => {
+  const ars = assembleEcosystemArsenal({
+    scope: "index",
+    earnings: null,
+    fundamentals: null,
+    related: null,
+    news: { items: [{ headline: "FOMC minutes" }], asOf: "2026-07-13T00:00:00Z", newest: "2026-07-12T00:00:00Z" } as unknown as NewsResult,
+    macro: { as_of: "2026-07-11", treasury: { yield_10_year: 4.2, curve_10y_1y_spread: -0.3 }, inflation: { cpi: 3.1 } } as unknown as PolygonMacroBackdrop,
+    breadth: { as_of: "2026-07-13", tone: "risk_on", summary: "Market breadth: 62% advancing — risk on." } as unknown as MarketBreadthBundle,
+  });
+  assert.equal(ars.scope, "index");
+  assert.deepEqual(ars.macro, { yield_10_year: 4.2, curve_10y_1y_spread: -0.3, cpi: 3.1, as_of: "2026-07-11" });
+  assert.equal(ars.breadth?.tone, "risk_on");
+  assert.equal(ars.news?.count, 1);
+  assert.equal(ars.earnings, null);
+  assert.equal(ars.fundamentals, null);
+  assert.equal(ars.related, null);
+  assert.deepEqual(ars.unavailable_sources, []);
+});
+
+test("assembleEcosystemArsenal: requested-but-thin legs surface in unavailable_sources; irrelevant legs do NOT", () => {
+  const ars = assembleEcosystemArsenal({
+    scope: "single_name",
+    earnings: null, // requested (single name) but empty → unavailable
+    fundamentals: null,
+    related: { ticker: "ZZZZ", related: [], as_of: null } as unknown as RelatedCompanies, // empty peer list → unavailable
+    news: { items: [], asOf: "x", newest: null, unavailable: "timeout" } as unknown as NewsResult, // errored → unavailable
+    macro: null, // NOT requested for a single name → must NOT appear as unavailable
+    breadth: null,
+  });
+  const sources = ars.unavailable_sources.map((u) => u.source).sort();
+  assert.deepEqual(sources, ["earnings", "fundamentals/short-interest", "news", "peers"]);
+  assert.ok(!sources.includes("macro backdrop"), "an irrelevant leg is never 'unavailable'");
+  assert.ok(!sources.includes("breadth"));
+});
+
+test("assembleEcosystemArsenal: an empty-but-successful news read is 'no recent news' (count 0), not unavailable", () => {
+  const ars = assembleEcosystemArsenal({
+    scope: "single_name",
+    earnings: { earnings_date: "2026-08-01", days_until: 19, report_time: "unknown", is_confirmed: false } as NextEarnings,
+    fundamentals: null,
+    related: null,
+    news: { items: [], asOf: "2026-07-13T00:00:00Z", newest: null } as unknown as NewsResult, // success, just empty
+    macro: null,
+    breadth: null,
+  });
+  assert.equal(ars.news?.count, 0);
+  assert.ok(!ars.unavailable_sources.some((u) => u.source === "news"), "empty-but-successful news is real info, not an error");
+});
+
+test('fetchEcosystemContext("AAPL"): runs ONLY the single-name arsenal readers, never macro/breadth/catalysts', async () => {
+  earningsCalls = []; fundamentalsCalls = []; relatedCalls = []; tickerNewsCalls = []; catalystCalls = 0; macroCalls = 0; breadthCalls = 0;
+  mockEarnings = { earnings_date: "2026-07-25", days_until: 12, report_time: "afterhours", is_confirmed: true } as NextEarnings;
+  mockFundamentals = { as_of: "2026-07-10", short_interest: { days_to_cover: 2.1 }, short_volume_ratio: 0.3, price_target: null } as unknown as TickerFundamentalsBundle;
+  mockRelated = { ticker: "AAPL", related: ["MSFT", "GOOGL"], as_of: "2026-07-10" } as unknown as RelatedCompanies;
+  mockTickerNews = { items: [{ headline: "Apple ships" }], asOf: "x", newest: "y" } as unknown as NewsResult;
+
+  const ctx = await fetchEcosystemContext("AAPL");
+
+  assert.deepEqual(earningsCalls, ["AAPL"]);
+  assert.deepEqual(fundamentalsCalls, ["AAPL"]);
+  assert.deepEqual(relatedCalls, ["AAPL"]);
+  assert.deepEqual(tickerNewsCalls, ["AAPL"]);
+  assert.equal(catalystCalls, 0, "market catalysts must NOT run for a single name");
+  assert.equal(macroCalls, 0, "macro must NOT run for a single name");
+  assert.equal(breadthCalls, 0, "breadth must NOT run for a single name");
+  assert.equal(ctx.arsenal.scope, "single_name");
+  assert.equal(ctx.arsenal.earnings?.days_until, 12);
+  assert.deepEqual(ctx.arsenal.related, ["MSFT", "GOOGL"]);
+});
+
+test('fetchEcosystemContext("SPX"): runs ONLY the index arsenal readers (macro/breadth/catalysts), never the single-name ones', async () => {
+  earningsCalls = []; fundamentalsCalls = []; relatedCalls = []; tickerNewsCalls = []; catalystCalls = 0; macroCalls = 0; breadthCalls = 0;
+  mockMacro = { as_of: "2026-07-11", treasury: { yield_10_year: 4.1, curve_10y_1y_spread: -0.2 }, inflation: { cpi: 3.0 } } as unknown as PolygonMacroBackdrop;
+  mockBreadth = { as_of: "2026-07-13", tone: "risk_on", summary: "breadth risk on" } as unknown as MarketBreadthBundle;
+  mockCatalysts = { items: [{ headline: "CPI print" }], asOf: "x", newest: "y" } as unknown as NewsResult;
+
+  const ctx = await fetchEcosystemContext("SPX");
+
+  assert.equal(macroCalls, 1);
+  assert.equal(breadthCalls, 1);
+  assert.equal(catalystCalls, 1);
+  assert.deepEqual(earningsCalls, [], "earnings must NOT run for an index");
+  assert.deepEqual(fundamentalsCalls, [], "fundamentals must NOT run for an index");
+  assert.deepEqual(relatedCalls, [], "related must NOT run for an index");
+  assert.deepEqual(tickerNewsCalls, [], "ticker news must NOT run for an index");
+  assert.equal(ctx.arsenal.scope, "index");
+  assert.equal(ctx.arsenal.macro?.yield_10_year, 4.1);
+  assert.equal(ctx.arsenal.breadth?.tone, "risk_on");
 });

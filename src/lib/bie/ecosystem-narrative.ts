@@ -40,6 +40,25 @@ export function formatEcosystemNarrative(ctx: EcosystemContext): string {
     );
   }
 
+  // #60 arsenal — the Track-B provider color, relevance-gated onto the shared context. Cited here so
+  // the ecosystem narrative (not only the verdict) surfaces macro/earnings/breadth/short-interest.
+  const ars = ctx.arsenal;
+  if (ars.earnings?.earnings_date) {
+    const e = ars.earnings;
+    lead.push(
+      `**earnings ${e.days_until != null ? `${e.days_until}d out` : e.earnings_date}**${e.report_time && e.report_time !== "unknown" ? ` (${e.report_time})` : ""}${e.is_confirmed ? ", confirmed" : ""}`
+    );
+  }
+  if (ars.macro && (ars.macro.yield_10_year != null || ars.macro.cpi != null)) {
+    const m = ars.macro;
+    const bits: string[] = [];
+    if (m.yield_10_year != null) bits.push(`10y ${fmt(m.yield_10_year, 2)}%`);
+    if (m.curve_10y_1y_spread != null) bits.push(`10y-1y ${fmt(m.curve_10y_1y_spread, 2)}${m.curve_10y_1y_spread < 0 ? " (inverted)" : ""}`);
+    if (m.cpi != null) bits.push(`CPI ${fmt(m.cpi, 1)}`);
+    if (bits.length) lead.push(`macro: ${bits.join(", ")}`);
+  }
+  if (ars.breadth) lead.push(ars.breadth.summary || `breadth ${ars.breadth.tone}`);
+
   if (!lead.length) {
     if (!ctx.flow_feed_fresh) {
       return `**${t}** — flow pipeline is not confirming fresh frames right now; treat as **unknown**, not quiet. Check back after tape refreshes.`;
@@ -69,6 +88,16 @@ export function formatEcosystemNarrative(ctx: EcosystemContext): string {
   if (ctx.gex_positioning?.nearest_wall?.strike) {
     watch.push(`nearest wall ${fmt(ctx.gex_positioning.nearest_wall.strike, 0)}`);
   }
+  // Short interest is a "watch" signal (squeeze fuel), only when it's actually elevated.
+  if (ars.fundamentals?.days_to_cover != null && ars.fundamentals.days_to_cover >= 5) {
+    watch.push(`high days-to-cover ${fmt(ars.fundamentals.days_to_cover, 1)} (squeeze fuel)`);
+  }
+  if (ars.news && ars.news.count > 0) {
+    watch.push(`${ars.news.count} recent ${ctx.arsenal.scope === "index" ? "catalyst" : "news"}${ars.news.count === 1 ? "" : "s"}${ars.news.headlines[0] ? ` — "${ars.news.headlines[0]}"` : ""}`);
+  }
+  if (ars.related && ars.related.length) {
+    watch.push(`peers ${ars.related.slice(0, 4).join(", ")}`);
+  }
 
   const parts = [
     `**${t} — cross-instrument read**`,
@@ -77,6 +106,10 @@ export function formatEcosystemNarrative(ctx: EcosystemContext): string {
   ];
   if (conflict.length) parts.push("", `**Friction:** ${conflict.join(" · ")}.`);
   if (watch.length) parts.push("", `**Watch:** ${watch.join(" · ")}.`);
+  // Honesty spine: name the requested-but-thin arsenal legs, never silently drop them.
+  if (ars.unavailable_sources.length) {
+    parts.push("", `_Unavailable this turn: ${ars.unavailable_sources.map((u) => `${u.source} (${u.reason})`).join(", ")}._`);
+  }
 
   return parts.join("\n");
 }
