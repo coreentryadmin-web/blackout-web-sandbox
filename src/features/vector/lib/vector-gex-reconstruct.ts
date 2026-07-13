@@ -188,6 +188,18 @@ export function reconstructGexHeatmapGrid(
 export function gammaFlipFromLadder(ladder: Map<number, number>, spot: number): number | null {
   const strikes = [...ladder.keys()].sort((a, b) => a - b);
   if (strikes.length < 2) return null;
+  // Collect EVERY interpolated zero-crossing where the cumulative net GEX (summed low→high) turns
+  // from ≤0 to >0 — the boundary from the net-short to the net-long gamma region — then return the
+  // crossing NEAREST spot.
+  //
+  // WHY nearest-spot and not the first crossing: a wide horizon ladder can carry a spurious
+  // deep-OTM zero-crossing far below spot (thin, noisy far-strike OI can tip the running sum
+  // positive for a strike or two before the real structure near spot). Returning the FIRST crossing
+  // from the bottom pinned the flip down there — observed live on SPX with spot 7,575: weekly flip
+  // 5,991 and 0DTE flip 5,400, ~20-30% below spot, even though the call/put walls were correctly at
+  // 7,575 / 7,465. The gamma flip is the zero-gamma regime boundary around the CURRENT price, so the
+  // crossing nearest spot is both the desk convention and this function's long-documented intent.
+  const crossings: number[] = [];
   let cum = 0;
   let prevStrike = strikes[0]!;
   let prevCum = 0;
@@ -196,12 +208,12 @@ export function gammaFlipFromLadder(ladder: Map<number, number>, spot: number): 
     if (prevCum <= 0 && cum > 0) {
       // linear interp of the zero-crossing between prevStrike and k
       const frac = prevCum === cum ? 0 : -prevCum / (cum - prevCum);
-      return prevStrike + frac * (k - prevStrike);
+      crossings.push(prevStrike + frac * (k - prevStrike));
     }
     prevStrike = k;
     prevCum = cum;
   }
-  // No sign change → flip is on the side spot is nearest; return null rather than guess.
-  void spot;
-  return null;
+  // No sign change anywhere → no honest flip on this ladder; return null rather than guess.
+  if (crossings.length === 0) return null;
+  return crossings.reduce((best, c) => (Math.abs(c - spot) < Math.abs(best - spot) ? c : best));
 }

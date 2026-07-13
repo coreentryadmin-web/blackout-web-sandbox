@@ -8,6 +8,24 @@ and required CI (`verify`) are green — no per-PR approval, no end-of-day hold.
 here and merge the PR in the same session. Supersedes all earlier "leave OPEN for review" notes
 in this file.
 
+## 🔴 P1 FOUND+FIXED 2026-07-13 — VECTOR gamma flip pinned FAR below spot on 0DTE/WEEKLY (SPX flip 5,991 / 5,400 while spot 7,575) — wrong regime read
+
+**Surface:** `src/features/vector/lib/vector-gex-reconstruct.ts` → `gammaFlipFromLadder()`, used by the DTE-scoped walls/flip path (`vector-dte-walls-core.ts:58`) that feeds the WEEKLY / 0DTE / MONTHLY flip line + the regime banner.
+
+**Symptom (member screenshot):** SPX spot 7,575.39, **WEEKLY** "Gamma flip 5,991" drawn ~21% below spot; live probe also showed **0DTE flip 5,400** (~29% below). The banner then read "Spot is above the gamma flip → long gamma," a materially wrong regime call. Call/put walls were correct the whole time (7,575 / 7,465), so it was clearly the flip calc, not the ladder.
+
+**Root cause:** `gammaFlipFromLadder` walked the cumulative net-GEX curve low→high and **returned the FIRST zero-crossing from the bottom**, despite its own docstring saying "the strike nearest spot." A wide horizon ladder (weekly SPX spans ~5,000–9,000) can carry a spurious deep-OTM crossing where thin, noisy far-strike OI tips the running sum positive for a strike or two before the real structure near spot. That first crossing (≈5,400–5,991) got returned. MONTHLY/ALL only looked fine because their first crossing happened to be near spot.
+
+**Evidence:** live `/api/market/vector/walls?dte=` probe — `0dte flip 5400`, `weekly 5991`, `monthly 7563`, `all 7495`; walls clustered 7,440–7,600 in every horizon. The near-term/stream flip (`polygon-options-gex.ts:1367`) and the SPX-playbook flip (`gamma-desk.ts` `considerFlip`/`bestDist`) BOTH already select the crossing **nearest spot** — `gammaFlipFromLadder` was the lone implementation still returning first-from-bottom (that's why `all`=7,495, sourced from the stream fn, was correct).
+
+**Fix (`fix/vector-flip-nearest-spot`):** collect every ≤0→>0 cumulative crossing and return the one **nearest spot** (same crossing definition, just nearest-to-spot selection instead of first) — bringing this fn in line with the two flip implementations that were already correct. Added `gammaFlipFromLadder` unit tests incl. a direct regression: a ladder with a spurious deep-OTM crossing PLUS a real near-spot crossing must return the near-spot one.
+
+**Blast radius:** all three flip implementations audited; the other two were already nearest-spot, so no further change. The DTE-scoped walls path (weekly/0dte/monthly) is the only consumer of the fixed fn.
+
+**Verification:** `tsc --noEmit` clean; `vector-gex-reconstruct.test.ts` 12/12 (was 9); tailwind opacity guard clean. Post-deploy: re-probe live flips for all horizons (expect all near spot) + screenshot the WEEKLY banner.
+
+**Status:** FIXED (draft PR) — undraft+merge on `verify` green, then live-verify all-horizon flips.
+
 ## 🟠 P2 FOUND+FIXED 2026-07-13 — VECTOR expected-move cone + max-pain line silently never rendered on the DEFAULT "all" horizon (dead code behind an early return)
 
 **Surface:** `src/features/vector/components/VectorChart.tsx` — the DTE-horizon data effect (the same effect that fetches horizon-scoped walls/history/max-pain/expected-move).
