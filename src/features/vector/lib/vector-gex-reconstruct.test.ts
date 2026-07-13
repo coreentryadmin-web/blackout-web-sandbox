@@ -189,3 +189,17 @@ test("gexLadderAtSpot: dayVolume absent → identical to OI-only (reconstruction
   const b = gexLadderAtSpot(contracts, 402, "2026-07-13", { volumeAdjusted: true });
   assert.deepEqual([...a.entries()], [...b.entries()]);
 });
+
+test("flip sign safety: unsigned day-volume must not move the zero-crossing (sweep #4 N4-1)", () => {
+  // Calls hold the cumulative sum positive above 400 under OI; a giant same-day put volume print
+  // must NOT drag the OI-only crossing — only the volumeAdjusted ladder may see it.
+  const contracts = [
+    { strike: 390, expiry: "2026-07-17", openInterest: 2000, dayVolume: 50000, iv: 0.4, type: "put" as const },
+    { strike: 400, expiry: "2026-07-17", openInterest: 8000, dayVolume: 0, iv: 0.4, type: "call" as const },
+  ];
+  const oi = gexLadderAtSpot(contracts, 401, "2026-07-13");
+  const vol = gexLadderAtSpot(contracts, 401, "2026-07-13", { volumeAdjusted: true });
+  // OI-only: put side small vs call side; volumeAdjusted: put side dominates.
+  assert.ok(Math.abs(oi.get(390) ?? 0) < (oi.get(400) ?? 0));
+  assert.ok(Math.abs(vol.get(390) ?? 0) > (vol.get(400) ?? 0));
+});

@@ -51,14 +51,22 @@ export function perExpiryWallsFromContracts(
   const filtered = contracts.filter((c) => scoped.has(c.expiry));
   if (filtered.length === 0) return null;
 
-  // volumeAdjusted: LIVE walls blend today's traded volume into positioning (OI + dayVolume) so
-  // a strike printing heavy volume NOW becomes a wall NOW — mid-session births/deaths. OI-only
-  // strength froze the dominant set at the open (member-caught). Point-in-time honest here: this
-  // path reads the chain at THIS moment; the back-projected reconstruction stays OI-only.
-  const ladder = gexLadderAtSpot(filtered, spot, todayYmd, { volumeAdjusted: true });
-  if (ladder.size === 0) return null;
+  // WALLS use the volume-adjusted ladder (OI + today's traded volume) so a strike printing heavy
+  // volume NOW becomes a wall NOW — mid-session births/deaths (member-caught; OI-only strength
+  // froze the dominant set at the open). Point-in-time honest: this path reads the chain at THIS
+  // moment; the back-projected reconstruction stays OI-only.
+  const wallLadder = gexLadderAtSpot(filtered, spot, todayYmd, { volumeAdjusted: true });
+  if (wallLadder.size === 0) return null;
 
-  const walls = computeGexWalls(ladder, { maxPerSide: VECTOR_WALL_NODES_PER_SIDE });
-  const flip = gammaFlipFromLadder(ladder, spot);
+  // The FLIP must come from the OI-ONLY ladder. Volume is UNSIGNED — we cannot know whether
+  // today's prints opened or closed dealer positioning — so blending it into a SIGNED
+  // zero-crossing poisons the sign: SPX's giant same-day 0DTE put volume dragged the flip from
+  // ~7,522 to ~7,000 (inside the ±12% plausibility band) and the regime banner told members
+  // "LONG GAMMA — fade extremes" while the terminal/dashboard/Largo all correctly said short
+  // (QA sweep #4, N4-1, regression from a63f162). Magnitude ranking tolerates the proxy; the
+  // regime boundary does not.
+  const oiLadder = gexLadderAtSpot(filtered, spot, todayYmd);
+  const walls = computeGexWalls(wallLadder, { maxPerSide: VECTOR_WALL_NODES_PER_SIDE });
+  const flip = oiLadder.size > 0 ? gammaFlipFromLadder(oiLadder, spot) : null;
   return { walls, flip };
 }
