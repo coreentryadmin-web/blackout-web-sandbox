@@ -122,14 +122,20 @@ const summary = summarize(rows);
 const scorecard = { ranAt: new Date().toISOString(), staging: STAGING, email, groundTruth, summary, results: rows };
 const outPath = `${OUTDIR}/bie-eval-scorecard.json`;
 writeFileSync(outPath, JSON.stringify(scorecard, null, 2));
+// Also write a STABLE path next to the harness so the coordinator can diff before→after a deploy.
+const stablePath = new URL("./last-scorecard.json", import.meta.url);
+writeFileSync(stablePath, JSON.stringify(scorecard, null, 2));
 
 console.log("\n==================== BIE EVAL SUMMARY ====================");
-console.log(`total ${summary.total} · PASS ${summary.pass} · SOFT ${summary.soft} · FAIL ${summary.fail} · pass-rate ${summary.pass_rate}%`);
+console.log(`GATE: ${summary.gate}   (total ${summary.total} · PASS ${summary.pass} · SOFT ${summary.soft} · FAIL ${summary.fail} · pass-rate ${summary.pass_rate}%)`);
 console.log(`BIE-source ${summary.bie_source_rate}% · {{leaks}} ${summary.leaks} · fabrications ${summary.fabrications} · SPX-bleed ${summary.spx_bleed} · unanswered ${summary.unanswered} · misrouted ${summary.routing_misrouted}`);
+console.log("\n  category      pass-rate   pass / soft / fail   (of total)");
+console.log("  " + "-".repeat(56));
 for (const [cat, c] of Object.entries(summary.by_category)) {
-  console.log(`  ${cat.padEnd(12)} ${c.pass}✓ / ${c.soft}~ / ${c.fail}✗  (of ${c.total})`);
+  console.log(`  ${cat.padEnd(12)} ${String(c.pass_rate + "%").padStart(7)}     ${c.pass}✓ / ${c.soft}~ / ${c.fail}✗   (of ${c.total})`);
 }
 console.log(`\nscorecard → ${outPath}`);
+console.log(`stable    → ${stablePath.pathname}`);
 console.log("SOFT = answered & substantive but keyword-missed — eyeball, NOT a regression. FAIL = real problem.\n");
 
 // Gate: any HARD fail (unanswered / leak / fabrication / wrong number / misrouted) fails the run.

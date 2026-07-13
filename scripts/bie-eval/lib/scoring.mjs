@@ -58,6 +58,99 @@ export function isAnswered(a) {
   return s.length > 15 && !/^HTTP\s*\d/i.test(s) && !/^error\b/i.test(s);
 }
 
+// ── Flagship scorers (synthesis verdict + diagnostic) — pure, unit-tested ──────────────────────────
+
+/**
+ * Distinct evidence DOMAINS a synthesis answer draws on. A real verdict cites SEVERAL (GEX/desk +
+ * flow + macro/earnings/breadth…); a one-tool answer is exactly what a synthesis verdict must not be.
+ */
+const EVIDENCE_DOMAINS = {
+  gex: ["gex", "gamma", "flip", "call wall", "put wall", "king", "dealer", "positioning", "max pain"],
+  flow: ["flow", "sweep", "premium", "tape", "unusual", "call buying", "put buying"],
+  macro: ["macro", "yield", "treasury", "cpi", "inflation", "rates", "fed", "10-year", "10y", "curve"],
+  earnings: ["earnings", "the print", "eps", "guidance", "binary event", "into earnings"],
+  breadth: ["breadth", "advancing", "declining", "a/d", "advance/decline", "internals", "market-wide"],
+  darkpool: ["dark pool", "dark-pool", "darkpool", "off-exchange", "block print"],
+  // Chart indicators ONLY — NOT "support"/"resistance"/"trend" (those overlap gex walls and false-match
+  // prose like "supportive", which would wrongly bump a single-source verdict to multi-source).
+  technicals: ["vwap", "ema20", "ema50", "ema200", " ema ", "rsi", "macd"],
+  news: ["news", "headline", "catalyst", "fda", "m&a", "analyst", "price target"],
+};
+
+/** Which evidence domains the answer touches (deduped domain keys). */
+export function evidenceDomainsCited(a) {
+  const out = [];
+  for (const [domain, toks] of Object.entries(EVIDENCE_DOMAINS)) {
+    if (hasAny(a, toks)) out.push(domain);
+  }
+  return out;
+}
+
+/** Does the answer state a confidence / conviction (an honest verdict owns its uncertainty)? */
+export function hasConfidence(a) {
+  return hasAny(a, [
+    "confidence", "conviction", "grade", "high conviction", "low conviction", "likely",
+    "probability", "odds", "lean", "moderate", "strong", "weak", "%",
+  ]);
+}
+
+/** Does the answer state an invalidation / what-would-flip-it / risk line? */
+export function hasInvalidation(a) {
+  return hasAny(a, [
+    "invalidat", "stop", "if it breaks", "breaks below", "breaks above", "would flip", "would negate",
+    "watch for", "risk is", "invalid if", "fails if", "loses", "negated if", "flips if",
+  ]);
+}
+
+/**
+ * Score a synthesis / verdict answer. PASS = substantive AND cites ≥2 evidence domains AND states a
+ * confidence AND an invalidation/risk. A substantive answer that leans on ≤1 domain is a HARD fail —
+ * a single-source verdict is precisely the failure mode synthesis must avoid. An answer that is
+ * multi-source but missing confidence/invalidation is not a hard fail (→ soft: substantive but thin).
+ */
+export function scoreSynthesisVerdict(a) {
+  const domains = evidenceDomainsCited(a);
+  const substantive = String(a).trim().length >= 80;
+  if (substantive && domains.length <= 1) {
+    return { pass: false, hardFail: true, why: `single-source verdict (domains: ${domains.join(",") || "none"})`, domains };
+  }
+  const pass = substantive && domains.length >= 2 && hasConfidence(a) && hasInvalidation(a);
+  return { pass, why: `domains=${domains.length}[${domains.join(",")}] conf=${hasConfidence(a)} inval=${hasInvalidation(a)}`, domains };
+}
+
+/** Diagnostic self-check tokens — the #56/#283 engine reports what it CHECKED, not a guessed cause. */
+const DIAGNOSTIC_TOKENS = [
+  "check", "checked", "pipeline", "data", "fresh", "stale", "recorder", "coverage", "available",
+  "missing", "off-hours", "off hours", "session", "no prints", "not enough", "liquidity", "empty",
+  "not forming", "healthy", "feed", "ingest", "last update", "as of", "snapshot", "expir",
+];
+
+/** Confident single-cause guesses with no diagnostic backing — a fabricated root cause. */
+const GUESSED_CAUSE_PHRASES = [
+  "because the stock", "due to low interest", "investors are", "the market doesn't care",
+  "nobody is trading", "it's just not popular", "probably because traders", "since no one",
+];
+
+export function looksLikeDiagnosticChecklist(a) {
+  const s = lc(a);
+  return DIAGNOSTIC_TOKENS.filter((t) => s.includes(t)).length >= 2;
+}
+
+/**
+ * Score a diagnostic answer. PASS = substantive AND reads like a grounded checklist (reports what it
+ * checked: data present / freshness / pipeline / coverage). HARD fail = a confident guessed root cause
+ * with NO diagnostic structure (fabrication). Otherwise soft (substantive but thin).
+ */
+export function scoreDiagnostic(a) {
+  const substantive = String(a).trim().length >= 60;
+  const checklist = looksLikeDiagnosticChecklist(a);
+  const guessed = GUESSED_CAUSE_PHRASES.some((p) => lc(a).includes(p));
+  if (guessed && !checklist) {
+    return { pass: false, hardFail: true, why: "guessed root cause with no diagnostic checklist" };
+  }
+  return { pass: substantive && checklist, why: `checklist=${checklist} guessed=${guessed}` };
+}
+
 /**
  * Classify one fired question.
  * @param item  bank item: { cat, id, ticker?, kind?, gtValue?, tol?, range?, expect? }
@@ -102,10 +195,14 @@ export function scoreResult(item, resp) {
     }
   }
 
-  // Domain expectation (keyword/shape) for non-numeric-generic items.
+  // Domain expectation (keyword/shape) for non-numeric-generic items. An expect may return
+  // `hardFail:true` (e.g. a single-source synthesis verdict, or a guessed diagnostic root cause) to
+  // force a hard FAIL rather than the default substantive→soft treatment.
   const exp = typeof item.expect === "function" ? item.expect(answer) : { pass: true, why: "" };
   const domainPass = numericVerdict ? numericVerdict.pass : exp.pass;
   const why = numericVerdict ? numericVerdict.why : exp.why;
+  const expHardFail = !numericVerdict && exp && exp.hardFail === true && !domainPass;
+  flags.hardExpect = !!expHardFail; // observability: a category-specific hard fail fired
 
   // Hard-fail conditions — genuine problems, regardless of keyword match.
   const hardFail =
@@ -113,6 +210,7 @@ export function scoreResult(item, resp) {
     flags.leak ||
     flags.fabricated ||
     flags.sourceMissing ||
+    expHardFail ||
     (numericVerdict && numericVerdict.conflicting);
 
   let severity;
@@ -131,6 +229,10 @@ export function summarize(rows) {
     const c = (cats[r.cat] ??= { total: 0, pass: 0, soft: 0, fail: 0 });
     c.total++;
     c[r.severity]++;
+  }
+  // Per-category pass-rate (pass / total) so the scorecard table + before→after deploy diff is clear.
+  for (const c of Object.values(cats)) {
+    c.pass_rate = c.total ? Number(((c.pass / c.total) * 100).toFixed(1)) : 0;
   }
   const total = rows.length;
   const pass = rows.filter((r) => r.severity === "pass").length;
@@ -154,6 +256,8 @@ export function summarize(rows) {
     spx_bleed: spxBleed,
     unanswered,
     routing_misrouted: routingMisrouted,
+    // Overall gate verdict: any hard FAIL trips the gate (soft misses never do).
+    gate: fail > 0 ? "FAIL" : "PASS",
     by_category: cats,
   };
 }

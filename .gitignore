@@ -31,3 +31,7 @@ apps/blackout-ios/ios/
 
 # Root-level transient git worktrees created by background agents (never commit)
 .worktrees/
+
+# BIE eval harness run artifacts (stable scorecard + output dir)
+scripts/bie-eval/last-scorecard.json
+bie-eval-out/

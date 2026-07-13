@@ -12,6 +12,12 @@ import {
   isAnswered,
   scoreResult,
   summarize,
+  evidenceDomainsCited,
+  hasConfidence,
+  hasInvalidation,
+  scoreSynthesisVerdict,
+  looksLikeDiagnosticChecklist,
+  scoreDiagnostic,
 } from "./scoring.mjs";
 
 test("primitives: token + number helpers", () => {
@@ -108,7 +114,7 @@ test("unanswered / HTTP error → hard fail", () => {
   assert.equal(r.severity, "fail");
 });
 
-test("summarize: per-category + honesty aggregates", () => {
+test("summarize: per-category pass_rate + gate verdict", () => {
   const rows = [
     { cat: "concept", severity: "pass", flags: { bie: true } },
     { cat: "concept", severity: "soft", flags: { bie: true } },
@@ -122,5 +128,74 @@ test("summarize: per-category + honesty aggregates", () => {
   assert.equal(s.fail, 1);
   assert.equal(s.fabrications, 1);
   assert.equal(s.bie_source_rate, 75);
-  assert.deepEqual(s.by_category.concept, { total: 2, pass: 1, soft: 1, fail: 0 });
+  assert.equal(s.gate, "FAIL"); // a hard fail trips the gate
+  assert.deepEqual(s.by_category.concept, { total: 2, pass: 1, soft: 1, fail: 0, pass_rate: 50 });
+  assert.equal(s.by_category.numeric.pass_rate, 50);
+  // No hard fails → gate PASS (soft misses don't trip it).
+  const clean = summarize([
+    { cat: "concept", severity: "pass", flags: {} },
+    { cat: "concept", severity: "soft", flags: {} },
+  ]);
+  assert.equal(clean.gate, "PASS");
+});
+
+// ── flagship scorers ──────────────────────────────────────────────────────────────────────────
+test("evidenceDomainsCited: distinct domains from a multi-tool answer", () => {
+  const a = "The SPX desk shows gamma flip at 7500 with a call wall above; flow is buying calls; the macro backdrop (10y yield) is calm and breadth is 2:1 positive.";
+  const d = evidenceDomainsCited(a);
+  assert.ok(d.includes("gex"));
+  assert.ok(d.includes("flow"));
+  assert.ok(d.includes("macro"));
+  assert.ok(d.includes("breadth"));
+  assert.ok(d.length >= 4);
+  assert.deepEqual(evidenceDomainsCited("just a plain sentence"), []);
+});
+
+test("hasConfidence / hasInvalidation detect the honest-verdict parts", () => {
+  assert.equal(hasConfidence("moderate conviction here"), true);
+  assert.equal(hasConfidence("nothing stated"), false);
+  assert.equal(hasInvalidation("invalidation is a break below 7480"), true);
+  assert.equal(hasInvalidation("no risk line at all"), false);
+});
+
+test("scoreSynthesisVerdict: multi-source + confidence + invalidation → PASS", () => {
+  const a = "Verdict: lean long 0DTE calls. The desk has SPX above the gamma flip (long-gamma, pinning), flow is net call-buying, and macro/breadth are supportive. Confidence: moderate. Invalidation: a break below the 7480 flip flips it short.";
+  const r = scoreSynthesisVerdict(a);
+  assert.equal(r.pass, true);
+  assert.ok(r.domains.length >= 2);
+});
+
+test("scoreSynthesisVerdict: single-source substantive verdict → HARD fail", () => {
+  const a = "Yes, 7500 0DTE calls look good today because gamma is supportive and the flip is below and the dealers are long gamma so it should pin higher into the close, a solid setup overall.";
+  const r = scoreSynthesisVerdict(a);
+  assert.equal(r.hardFail, true);
+  assert.equal(r.pass, false);
+});
+
+test("scoreSynthesisVerdict: multi-source but no confidence/invalidation → soft (not hard fail)", () => {
+  const a = "SPX desk shows the gamma flip nearby and flow is buying calls and breadth is positive across the tape today, a reasonable backdrop for the index right now overall.";
+  const r = scoreSynthesisVerdict(a);
+  assert.equal(r.pass, false);
+  assert.notEqual(r.hardFail, true);
+});
+
+test("looksLikeDiagnosticChecklist + scoreDiagnostic", () => {
+  const good = "I checked the pipeline: the recorder is idle off-hours and there's no fresh data / no prints this session, so beads aren't forming — the feed coverage is empty, not broken.";
+  assert.equal(looksLikeDiagnosticChecklist(good), true);
+  assert.equal(scoreDiagnostic(good).pass, true);
+
+  const guessed = "MSFT isn't forming beads because investors are not interested in the stock right now.";
+  const r = scoreDiagnostic(guessed);
+  assert.equal(r.hardFail, true); // guessed root cause, no checklist
+  assert.equal(r.pass, false);
+});
+
+test("scoreResult: an expect returning hardFail forces a FAIL even when substantive", () => {
+  const long = "x ".repeat(60);
+  const r = scoreResult(
+    { cat: "synthesis", id: "s", expect: () => ({ pass: false, hardFail: true, why: "single-source" }) },
+    { answer: long + "gamma only", source: "blackout-intelligence" }
+  );
+  assert.equal(r.severity, "fail");
+  assert.equal(r.flags.hardExpect, true);
 });
