@@ -219,6 +219,16 @@ export async function ingestBieKnowledge(): Promise<{ stored: number }> {
     // glossary import unavailable in some contexts — skip
   }
 
+  // The governed READ-route allowlist BIE may call (route-registry.ts) — so BIE knows which internal
+  // endpoints it can pull from and that they're read-only. Generated from the registry, never
+  // hand-typed, so it can't drift from the actual allowlist.
+  try {
+    const { routeRegistryKnowledgeText } = await import("@/lib/route-registry");
+    stored += await storeKnowledge("doc", "platform:routes", routeRegistryKnowledgeText());
+  } catch {
+    // registry unavailable in some contexts — skip
+  }
+
   // BIE self-knowledge (generated, not hand-typed): the tool/field inventory
   // read straight from the source of truth (tool-defs.ts, ecosystem-context.ts)
   // instead of prose that has to be remembered and kept in sync by hand. This is
