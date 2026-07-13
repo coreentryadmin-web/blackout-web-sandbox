@@ -189,6 +189,18 @@ export function isVectorFlowId(v: unknown): v is VectorFlowId {
 }
 
 /**
+ * "Expected move" — the options-implied ±1σ/2σ price band the chain is pricing through the horizon's
+ * front expiry, drawn as dashed price-lines (the "cone" #15). One toggle (default OFF); the chart
+ * draws 4 lines (1σ/2σ low+high) from the horizon-scoped `/api/market/vector/expected-move` read,
+ * cleared when the toggle is off or there's no real ATM IV to price it.
+ */
+export type VectorExpectedMoveId = "expected-move";
+
+export function isVectorExpectedMoveId(v: unknown): v is VectorExpectedMoveId {
+  return v === "expected-move";
+}
+
+/**
  * Every toggleable indicator id — a moving-average FAMILY (not an individual line), a level, a
  * structure toggle, or an oscillator. This is what the enabled Set and the menu deal in; the chart
  * expands each to its lines/markers/panes at draw time.
@@ -199,7 +211,8 @@ export type VectorIndicatorId =
   | VectorStructureId
   | VectorOscillatorId
   | VectorConfluenceId
-  | VectorFlowId;
+  | VectorFlowId
+  | VectorExpectedMoveId;
 
 /** Menu structure — the toggle menu renders straight from this (title + its items). */
 export const VECTOR_INDICATOR_GROUPS: ReadonlyArray<{
@@ -233,5 +246,10 @@ export const VECTOR_INDICATOR_GROUPS: ReadonlyArray<{
     title: "Flow",
     // Green matches the call-print marker colour (calls green ↑ / puts red ↓ on the chart).
     items: [{ id: "flow-markers", label: "Options flow (large trades at strike)", color: "#34d399" }],
+  },
+  {
+    title: "Expected move",
+    // Cyan matches the dashed ±1σ/2σ band lines drawn on the chart.
+    items: [{ id: "expected-move", label: "Expected move (±1σ/2σ range)", color: "#22d3ee" }],
   },
 ];

@@ -494,6 +494,44 @@ const LEVEL_LINE_STYLE = {
 } as const;
 
 /**
+ * Draw the options-implied EXPECTED MOVE band (#15 cone, slice 3b) — dashed cyan price-lines at each
+ * band's low+high (1σ solid-ish, 2σ fainter), labelled "1σ 7,424". Idempotent via a signature ref so
+ * the frequent live-tick repaints are no-ops; only a changed horizon/band or a toggle flip rebuilds.
+ * Cleared (all lines removed) when the toggle is off or there's no real band (`em == null`).
+ */
+function applyExpectedMoveBand(
+  series: ISeriesApi<"Candlestick">,
+  linesRef: React.MutableRefObject<IPriceLine[]>,
+  sigRef: React.MutableRefObject<string>,
+  em: ExpectedMove | null,
+  enabled: boolean
+): void {
+  const sig = enabled && em ? em.bands.map((b) => `${b.sigma}:${b.low}:${b.high}`).join("|") : "off";
+  if (sig === sigRef.current) return; // no change → don't churn the price lines on every tick
+  sigRef.current = sig;
+  for (const l of linesRef.current) series.removePriceLine(l);
+  linesRef.current = [];
+  if (!enabled || !em) return;
+  for (const b of em.bands) {
+    const alpha = b.sigma === 1 ? 0.8 : 0.45; // 1σ brighter than the wider 2σ
+    for (const edge of [b.low, b.high]) {
+      if (!(edge > 0) || !Number.isFinite(edge)) continue;
+      linesRef.current.push(
+        series.createPriceLine({
+          price: edge,
+          color: withAlpha("#22d3ee", alpha), // cyan — matches the "Expected move" menu swatch
+          lineWidth: 1 as const,
+          lineStyle: LineStyle.Dashed,
+          lineVisible: true,
+          axisLabelVisible: true,
+          title: `${b.sigma}σ ${Math.round(edge).toLocaleString("en-US")}`,
+        })
+      );
+    }
+  }
+}
+
+/**
  * Pane layout: 0 = price/candles, 1 = volume (always present, its own sub-pane like RSI/MACD — NOT
  * an overlay on the candles), 2..N = enabled oscillators. `applyPaneStretch` reasserts the relative
  * pane heights so the price pane stays dominant and volume is a thin strip; it must run after the
@@ -817,6 +855,11 @@ export function VectorChart({
   // emit stacks it against the other levels.
   const maxPainLineRef = useRef<IPriceLine | null>(null);
   const maxPainValueRef = useRef<number | null>(null);
+  // Expected-move band (#15 cone, slice 3b): the last-fetched band, its drawn price-lines, and a
+  // signature so paintOverlays only rebuilds the lines when the band or the toggle actually changes.
+  const expectedMoveBandsRef = useRef<ExpectedMove | null>(null);
+  const emBandLinesRef = useRef<IPriceLine[]>([]);
+  const emBandSigRef = useRef<string>("");
   const lastConfluenceRef = useRef<string>("");
   // Opt-in technical overlays (VWAP/EMA/SMA) — one lightweight-charts line series per enabled
   // indicator, created on demand and removed when toggled off. Default: none. `indicatorsRef`
@@ -1179,6 +1222,18 @@ export function VectorChart({
                 size: m.size,
               }))
             : []
+        );
+      }
+      // Expected-move band (#15 cone, slice 3b) — dashed ±1σ/2σ price-lines from the last horizon
+      // fetch (expectedMoveBandsRef), gated on the "expected-move" toggle. Idempotent (sig ref) so the
+      // frequent tick-repaints don't churn the lines; cleared when the toggle is off / no real band.
+      if (seriesRef.current) {
+        applyExpectedMoveBand(
+          seriesRef.current,
+          emBandLinesRef,
+          emBandSigRef,
+          expectedMoveBandsRef.current,
+          enabled.has("expected-move")
         );
       }
     }
@@ -1763,6 +1818,11 @@ export function VectorChart({
           lastExpectedMoveRef.current = key;
           cb(lines);
         }
+        // Store the band + repaint so the chart lines redraw when the toggle is on (slice 3b). The
+        // repaint is a no-op for the band's sig-check when nothing changed; paintOverlays gates the
+        // actual draw on the "expected-move" toggle.
+        expectedMoveBandsRef.current = em;
+        paintOverlays(lastDisplayBarsRef.current);
       } catch {
         // Network throw: keep the last-emitted lines rather than blank the section on a blip.
       }
@@ -2157,6 +2217,10 @@ export function VectorChart({
       kingPutLineRef.current = null;
       maxPainLineRef.current = null;
       maxPainValueRef.current = null;
+      // chart.remove() disposed the band's price lines; drop refs + sig so a remount redraws cleanly.
+      emBandLinesRef.current = [];
+      expectedMoveBandsRef.current = null;
+      emBandSigRef.current = "";
       // chart.remove() disposes the overlay line series too — swap in a fresh map so a remount
       // rebuilds instead of touching the now-disposed series (matches the sibling ref resets).
       overlaySeriesRef.current = new Map();
