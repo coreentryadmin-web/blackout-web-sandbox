@@ -149,29 +149,48 @@ async function main() {
     await dismissOnboarding(page);
     await page.waitForTimeout(6000); // let SSE ticks + first trail/overlay refresh settle
 
-    const canvas = page.locator("canvas").first();
-    const box = await canvas.boundingBox();
+    const box = await page.locator("canvas").first().boundingBox();
     if (!box) { rec("chart canvas present", false); throw new Error("no chart canvas"); }
     rec("chart canvas present", true, `${Math.round(box.width)}x${Math.round(box.height)}`);
 
+    // Locate the RIGHT price-axis canvas: lightweight-charts renders the price scale as its own
+    // tall, narrow canvas to the right of the main pane. We must drag on THAT strip — a vertical
+    // drag in the plot area only pans; only a drag on the price scale rescales it (autoScale=false).
+    const axis = await page.evaluate(() => {
+      const host = document.querySelector(".vector-chart, [class*='vector']") || document.body;
+      const cands = [...host.querySelectorAll("canvas")].map((cv) => cv.getBoundingClientRect())
+        .filter((r) => r.height > 260 && r.width > 8 && r.width < 120)
+        .sort((a, b) => b.x - a.x); // rightmost first
+      const r = cands[0];
+      return r ? { x: r.x, y: r.y, w: r.width, h: r.height } : null;
+    });
+
     const R0 = await measureBand(page);
     await page.screenshot({ path: join(OUT, "0-baseline.png") });
+    rec("price-axis strip located", !!axis, axis ? `x=${Math.round(axis.x)} w=${Math.round(axis.w)} h=${Math.round(axis.h)}` : "not found");
     rec("baseline candle band measured", R0.sampled > 0, `ratio=${R0.ratio.toFixed(3)} band=[${R0.minFrac.toFixed(2)},${R0.maxFrac.toFixed(2)}] px=${R0.sampled}`);
 
-    // Manual vertical zoom: drag on the RIGHT price-axis gutter. rightPriceScale sits in the right
-    // ~64px strip. Drag UP from mid-height to compress→expand the price scale (autoScale=false).
-    const gutterX = box.x + box.width - 30;
-    const midY = box.y + box.height / 2;
-    await page.mouse.move(gutterX, midY);
-    await page.mouse.down();
-    for (let i = 1; i <= 10; i++) { await page.mouse.move(gutterX, midY - i * 22); await page.waitForTimeout(20); }
-    await page.mouse.up();
-    await page.waitForTimeout(1200);
-
-    const R1 = await measureBand(page);
+    // Manual vertical zoom via a real drag ON the price-axis strip. Try the located axis first;
+    // if the band doesn't move, sweep a few candidate x positions across the right gutter until it
+    // engages (self-checking — we refuse to "pass" a drag that never rescaled the axis).
+    const midY = (axis ? axis.y + axis.h / 2 : box.y + box.height / 2);
+    const candidateXs = axis
+      ? [axis.x + axis.w / 2, axis.x + 4, axis.x + axis.w - 4]
+      : [box.x + box.width - 20, box.x + box.width - 40];
+    let R1 = R0, engaged = false;
+    for (const gx of candidateXs) {
+      await page.mouse.move(gx, midY);
+      await page.mouse.down();
+      for (let i = 1; i <= 12; i++) { await page.mouse.move(gx, midY - i * 26); await page.waitForTimeout(25); }
+      await page.mouse.up();
+      await page.waitForTimeout(1000);
+      R1 = await measureBand(page);
+      if (Math.abs(R1.ratio - R0.ratio) > 0.04 || Math.abs(R1.minFrac - R0.minFrac) > 0.04) { engaged = true; break; }
+    }
     await page.screenshot({ path: join(OUT, "1-after-zoom.png") });
-    rec("manual price-axis drag rescaled the axis", Math.abs(R1.ratio - R0.ratio) > 0.03 || Math.abs(R1.minFrac - R0.minFrac) > 0.03,
+    rec("manual price-axis drag rescaled the axis", engaged,
       `R0=${R0.ratio.toFixed(3)} R1=${R1.ratio.toFixed(3)} Δband=${(R1.ratio - R0.ratio).toFixed(3)}`);
+    if (!engaged) { rec("VERIFY ABORTED — could not engage a manual vertical zoom (harness gesture, not the fix)", false); }
 
     // Wait through several live SSE ticks + at least one trail/overlay refresh. If the bug were live,
     // the price axis would snap back toward the auto-scaled R0 within ~1s.
