@@ -209,6 +209,22 @@ async function composeVectorRead(
       import("@/lib/bie/vector-desk-intel"),
     ]);
 
+  // HONESTY GUARD: a question that names an UNSUPPORTED horizon (LEAP / multi-year / quarterly) can't
+  // be scoped — normalizeDteHorizon would silently coerce it to the whole-chain "all", and we'd
+  // answer that aggregate as if it satisfied the request (a fabricated read). Reject it honestly
+  // BEFORE fetching, and record the gap. (0DTE/weekly/monthly/all are the only representable horizons.)
+  const { namesUnsupportedHorizon, unsupportedHorizonMessage, noLiveVectorStateMessage } = await import(
+    "@/lib/bie/vector-read-fallback"
+  );
+  const { recordBieGap } = await import("@/lib/bie/gap-log");
+  if (question && namesUnsupportedHorizon(question)) {
+    void recordBieGap({ question, intent: "vector_read", reason: "unsupported_horizon" });
+    return {
+      answer: unsupportedHorizonMessage(ticker),
+      context: { ticker: ticker.toUpperCase(), reason: "unsupported_horizon" },
+    };
+  }
+
   const state = await fetchVectorFullState(
     ticker.toUpperCase(),
     normalizeDteHorizon(horizon),
@@ -218,8 +234,6 @@ async function composeVectorRead(
   // fail-opens to null. Returning null here let the route 502 / fall back to an SPX desk-dump; the
   // honest behavior is to SAY we can't read it and record the gap, never crash or dump the wrong
   // desk. (BUG 1 from the live audit — SPY/QQQ/NVDA off-hours 502'd.)
-  const { recordBieGap } = await import("@/lib/bie/gap-log");
-  const { noLiveVectorStateMessage } = await import("@/lib/bie/vector-read-fallback");
   if (!state) {
     void recordBieGap({ question: question ?? "", intent: "vector_read", reason: "no_live_state" });
     return {
