@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import dynamic from "next/dynamic";
 import { motion, AnimatePresence } from "framer-motion";
 import { usePulse } from "@/lib/usePulse";
+import { relativeAge } from "@/lib/relative-time";
 // Code-split: the dark-pool sparkline (recharts) is the only recharts use in
 // this file. It is extracted to DarkPoolSpark and lazy-loaded (ssr:false) so
 // recharts stays out of DarkPoolPanel's static client graph while the rest of
@@ -25,18 +26,16 @@ const MAX_HISTORY = 20;
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-function timeAgo(iso: string): string {
-  const diff = Date.now() - new Date(iso).getTime();
-  const s = Math.floor(diff / 1000);
-  if (s < 60) return `${s}s`;
-  const m = Math.floor(s / 60);
-  if (m < 60) return `${m}m`;
-  return `${Math.floor(m / 60)}h`;
+// Guarded via the shared relativeAge: a null/unparseable timestamp previously rendered "NaNh".
+function timeAgo(iso: string | null | undefined): string {
+  return relativeAge(iso);
 }
 
 function fmtDate(iso: string): string {
   try {
     const d = new Date(iso);
+    // new Date(bad) is Invalid Date (does NOT throw), so getMonth() etc. would render "NaN/NaN".
+    if (Number.isNaN(d.getTime())) return timeAgo(iso);
     const mo = String(d.getMonth() + 1).padStart(2, "0");
     const dy = String(d.getDate()).padStart(2, "0");
     const hr = String(d.getHours()).padStart(2, "0");
