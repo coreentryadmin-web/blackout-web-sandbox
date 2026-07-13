@@ -39,6 +39,7 @@ import {
   computeLedgerGrade,
   deriveZeroDteSetups,
   enrichSetup,
+  polygonSpotTicker,
   type EarningsFlag,
   type EnrichedZeroDteSetup,
   type NewsHeat,
@@ -199,7 +200,9 @@ export async function scanZeroDteBoard(flags?: {
 async function intradayReadFor(ticker: string, today: string): Promise<IntradayRead | null> {
   return within(
     withServerCache<IntradayRead>(`zerodte:intraday:${ticker}:${today}`, 3 * 60 * 1000, async () => {
-      const bars = await fetchAggBars(ticker, 1, "minute", today, today, "1000");
+      // Index roots (SPXW/SPX/NDX…) only price under Polygon's I: namespace —
+      // unmapped they return zero bars and the read silently degrades to nulls.
+      const bars = await fetchAggBars(polygonSpotTicker(ticker), 1, "minute", today, today, "1000");
       return computeIntradayRead(
         bars
           .filter((b) => b.t != null && Number.isFinite(b.t))
@@ -376,7 +379,11 @@ export async function gradeZeroDteLedger(force = false): Promise<number> {
           plan_pnl_pct: planGrade.pnl_pct,
         });
       }
-      const bars = await fetchAggBars(row.ticker, 1, "day", row.session_date, row.session_date);
+      // polygonSpotTicker: an index-root row (SPXW/SPX/NDX…) must fetch its close
+      // from the I: index symbol — the raw root "succeeds" with 0 results, which
+      // would stamp the row graded with a permanent null direction grade (the
+      // catch-and-retry path only covers thrown fetches, not empty ones).
+      const bars = await fetchAggBars(polygonSpotTicker(row.ticker), 1, "day", row.session_date, row.session_date);
       const close = bars.length ? bars[bars.length - 1]!.c : null;
       const grade = computeLedgerGrade(row.direction, row.underlying_at_flag, close ?? null);
       await gradeZeroDteSetupRow(row.session_date, row.ticker, grade);

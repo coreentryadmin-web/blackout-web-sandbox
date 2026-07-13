@@ -8,6 +8,50 @@ and required CI (`verify`) are green — no per-PR approval, no end-of-day hold.
 here and merge the PR in the same session. Supersedes all earlier "leave OPEN for review" notes
 in this file.
 
+## 🟠 P1 FOUND+FIXED 2026-07-13 — 0DTE Command index-root plays (SPXW/SPX/NDX) permanently ungradeable
+
+**Surface:** `/grid` 0DTE Command ledger + Largo/BIE `get_zerodte_plays` — every index-root row's direction grade.
+
+**Root cause:** `gradeZeroDteLedger` (`src/lib/zerodte/scan.ts`) fetched the session close via
+`fetchAggBars(row.ticker, "day", …)`. Polygon serves index aggregates only under the `I:` namespace —
+for `SPXW`/`SPX`/`NDX` the stock-aggs endpoint returns **status OK with 0 results** (no throw), so
+`close=null` → `computeLedgerGrade` returns all-null → `gradeZeroDteSetupRow` stamps `graded_at` anyway →
+the row leaves the ungraded pool forever with `direction_hit/move_pct/close_price` null. The try/catch retry
+path only covers *thrown* fetches, not empty-success ones. Same hole in `intradayReadFor` — index setups never
+got the VWAP/opening-range/5m-trend conflict read (nulls = "no adjust"), i.e. the A-tier intraday disqualifier
+could never fire for exactly the SPX-class names the scan's mandate explicitly admits.
+
+**Evidence:** live Polygon 2026-07-13: `/v2/aggs/ticker/SPXW/range/1/day/2026-07-10/2026-07-10` → `resultsCount:0`;
+same for `SPX`, `NDX`. `I:SPX` → `o:7547.64, c:7575.39`; `I:NDX` → real bar. Staging ledger 2026-07-13 carried an
+SPXW long (flagged 10:00 ET @ 7564.68, −69.4%) that would have hit this path at grading.
+
+**Fix:** `polygonSpotTicker()` in `src/lib/zerodte/board.ts` (SPX/SPXW→I:SPX, NDX/NDXP→I:NDX, RUT/RUTW→I:RUT,
+XSP→I:XSP, VIX→I:VIX; equities/ETFs pass through), applied at both scan.ts call sites. Tests: mapping cases in
+`board.test.ts`; wiring test in `scan.test.ts` proving a SPXW row grades from the I:SPX close and never requests
+the raw root. **Residue:** rows already stamped null-graded need a one-off backfill (clear `graded_at` where
+`close_price IS NULL` and ticker ∈ index set) from an env with DB access — not possible from this sandbox.
+
+**Status:** FIXED on `fix/nighthawk-0dte` (analysis branch — push only per directive; see
+`docs/audit/NIGHTHAWK-VS-SLAYER-0DTE.md`).
+
+## 🟡 P2 FOUND+FIXED 2026-07-13 — nighthawk_echo/BIE context serialized pg DATE as String(Date) (recurrence of #77 Bug 1)
+
+**Surface:** member-visible `/api/market/zerodte/board` → `ledger[].nighthawk_echo.edition_for`; BIE ecosystem
+context `zerodte_today.session_date` / `nighthawk_recent.edition_for` (feeds Largo answers).
+
+**Root cause:** `src/lib/bie/ecosystem-context.ts` runs raw `dbQuery`s against DATE columns and mapped them with
+`String(r.edition_for)` — node-postgres returns DATE as a JS Date, so members got
+`"Fri Jul 10 2026 00:00:00 GMT+0000 (Coordinated Universal Time)"`. db.ts already had the canonical fix
+(`isoDateString`, #77 Bug 1) but it was private, so the sibling module re-introduced the class.
+
+**Evidence:** staging board capture 2026-07-13 20:17 UTC — META row `nighthawk_echo.edition_for` exactly as above.
+
+**Fix:** exported `isoDateString` from db.ts; applied in `mapNighthawkEchoRows` + `fetchEcosystemContext` DATE
+fields; regression test passes a real `Date` object. Timestamptz fields (`first_flagged_at`, `fired_at`) still use
+`String()` — logged as proposal P-7 in the comparison doc, not fixed here.
+
+**Status:** FIXED on `fix/nighthawk-0dte`.
+
 ## 🔴 P0 FOUND+FIXING 2026-07-07 — Tailwind purged `src/features/` CSS after folder migration (desktop desk broken)
 
 **Surface:** `/dashboard` and other tools moved to `src/features/*` in PR #684.
