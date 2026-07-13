@@ -8,6 +8,25 @@ and required CI (`verify`) are green — no per-PR approval, no end-of-day hold.
 here and merge the PR in the same session. Supersedes all earlier "leave OPEN for review" notes
 in this file.
 
+## 🟠 P2 FOUND+FIXED 2026-07-13 — literal `{{ }}` leaked on SPX Slayer's commentary rail (Watch/Changed lists)
+
+**Severity:** P2 (member-visible garbled text). **Symptom:** the user saw literal `γflip {{7,543}}` on
+SPX Slayer's left commentary panel. **Root cause:** the SPX desk brief wraps every number/headline in
+`{{ }}` for the emphasis renderer (`spx-desk-brief.ts:79-80` `n()`), and `SpxCommentaryRail.tsx` has a
+`renderEmphasis` stripper that the headline (`:352`) and body (`CommentaryLine`, `:87`) use — but the
+**Watch** list (`:369` `<li key={w}>{w}</li>`) and **Changed** list (`:357` `<li key={c}>{c}</li>`)
+rendered their strings **raw**, bypassing the stripper. So the `{{…}}` around the numbers reached the
+DOM verbatim. **Fix:** extracted `renderEmphasis` to a shared util `src/features/spx/lib/spx-emphasis.tsx`
+(built with `createElement` so it's JSX-runtime-agnostic and unit-testable) and reused it at ALL sites:
+the two `<li>` lists now `renderEmphasis(w)` / `renderEmphasis(c)`, and the **latent** site
+`PlayTerminalWindow.tsx:34` (`<span>{line.text}</span>` — renders raw; doesn't carry `{{}}` today but
+would leak if any BIE-sourced line ever routed there) now runs through it too. Funnelling every desk-brief
+string through one helper means a new `{{ }}`-bearing field can't re-introduce the leak at a forgotten
+call site. **Test:** `spx-emphasis.test.ts` — a Watch item `γflip {{7,543}}` renders `7,543` in the
+`spx-ai-key` emphasis span with **no** literal braces; multi-marker + passthrough + empty cases.
+`tsc` clean, spx lib sweep 434/434, opacity clean. **Deliberately untouched:** the play GATES
+(`spx-play-gates.ts`) — the "no plays" issue is a separate policy call. **Status:** FIXED — PR open.
+
 ## ✅ AUDIT 2026-07-13 — De-Claude coverage map: staging is 100% BIE, no surface silently returns empty (task #61)
 
 **What was audited:** every staging-reachable Claude call-site, to prove that with `claudeEnabled()===false` on staging (`src/lib/ai-env.ts:9` — `isStagingDeploy()` ⇒ false unless `STAGING_CLAUDE=1`) no user-facing surface degrades to null/empty. Every Anthropic call funnels through the two gated wrappers `anthropicText` (`src/lib/providers/anthropic.ts:365`) and `anthropicToolLoop` (`:447`), both of which `return null` when `!claudeEnabled()`. Verified via `grep -rn "claudeEnabled|anthropicText|anthropicToolLoop" src/` that NO raw Anthropic SDK usage bypasses those wrappers (the only two Claude-invoking exports are `anthropicText`/`anthropicToolLoop`).
