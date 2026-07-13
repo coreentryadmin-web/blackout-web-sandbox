@@ -7,6 +7,7 @@
 // route costs one Claude call; a wrong route costs trust. When unsure → null.
 
 import { KNOWN_TICKERS } from "@/lib/largo/question-intent";
+import { lookupGlossary } from "./glossary";
 
 export type BieIntent =
   | "zerodte_plays"
@@ -21,7 +22,8 @@ export type BieIntent =
   | "ticker_compare"
   | "vector_read"
   | "concept_read"
-  | "universal_lookup";
+  | "universal_lookup"
+  | "compound_lookup";
 
 export type BieRoute = {
   intent: BieIntent;
@@ -98,13 +100,21 @@ const CONCEPT_TEACH_EXCLUDE_RE =
 
 /** True when a question is a plain definitional ask — no ticker, no live-status hint, not a
  *  teach/opinion question. Unknown TERMS still count (composeConceptRead answers them honestly and
- *  gap-logs); only ticker/live/teach shapes are filtered out here. */
+ *  gap-logs); only ticker/live/teach shapes are filtered out here. ALSO catches a BARE glossary term
+ *  ("GEX", "max pain", "king node") — the terse-barrage shape a compound split produces — even
+ *  without a "what is" lead-in, gated to a short phrase that actually resolves to a definition. */
 function isConceptQuestion(q: string): boolean {
-  if (!CONCEPT_RE.test(q)) return false;
   if (extractKnownTicker(q) != null) return false; // a named ticker → live read, not a definition
   if (CONCEPT_LIVE_HINT_RE.test(q)) return false; // "what is the market doing" → live
   if (CONCEPT_TEACH_EXCLUDE_RE.test(q)) return false; // "explain how gamma hedging works" → Claude
-  return true;
+  if (CONCEPT_RE.test(q)) return true; // definitional lead-in ("what is X", "define X", …)
+  // Bare glossary term with no lead-in (terse barrage: "GEX", "max pain", "king node"): concept
+  // ONLY when it's a short phrase that resolves to a real definition — never a broad steal. The
+  // ZERODTE exclusion keeps a live "0DTE board" query (which the 0dte alias would otherwise match)
+  // on the zerodte_plays path, not the definition.
+  const words = q.split(/\s+/).filter(Boolean);
+  if (words.length <= 4 && !ZERODTE_RE.test(q) && lookupGlossary(q) != null) return true;
+  return false;
 }
 
 // Universal lookup — "pull / look up / fetch / show me X from Y", where the question names an
@@ -306,5 +316,7 @@ export function bieFollowups(intent: BieIntent): string[] {
       return ["What is a King node?", "What is the gamma flip?", "What does Night Hawk do?"];
     case "universal_lookup":
       return ["Pull the GEX positioning for SPY", "Show me the platform snapshot", "What is GEX?"];
+    case "compound_lookup":
+      return ["Ask a single question for the full read", "What's the SPX setup right now?", "What is a King node?"];
   }
 }
