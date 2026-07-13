@@ -5055,3 +5055,43 @@ Every page/subpage/panel/button/layout/font; every number/level/matrix/flow valu
 **Files:** `playbook-verdict-guard.ts`, `playbook-match-resolver.ts:70-80`, `playbook-verdict-guard.test.ts`.
 
 **Evidence trail:** sixth-pass reasoning in `docs/spx/PLAYBOOK-BUG-AUDIT-2026-07-11.md`; closure in #105.
+
+---
+
+## INFRA — Cloudflare caches `_next/static` **404s** for a year → ChunkLoadError-forever after every deploy (2026-07-13)
+
+**Status:** OPEN — mitigation available (manual CF purge, already used on staging); the real fix is a **deploy-risky caching change flagged for user approval** (do NOT change caching headers or the deploy pipeline without a go-ahead).
+
+**Severity:** HIGH — **affects production** (`blackout-web` main), not just staging. Every deploy can brick pages until someone manually purges the CDN.
+
+**Symptom (observed live, 2026-07-13):** after merging 6 PRs in ~30 min (6 rapid staging deploys), `/flows` and `/vector` rendered the app error boundary — "**We couldn't load this page**" — for **15+ minutes**, with the console showing repeated `_next/static/chunks/*.js` **404s** served as `content-type: text/plain` → `ChunkLoadError: Loading chunk 4985 failed`. The page HTML itself was fresh (`cf-cache-status: DYNAMIC`) and referenced the new build's chunks, but the chunk *files* returned a cached 404.
+
+**Root cause (file:line):** `next.config.mjs:92-93` sets, for the `/_next/static/:path*` source, **unconditionally**:
+```
+{ key: "Cache-Control",     value: "public, max-age=31536000, immutable" }
+{ key: "CDN-Cache-Control", value: "public, max-age=31536000" }
+```
+Next.js `headers()` matches on URL pattern only — it **cannot condition on response status** — so a **404** for a momentarily-missing chunk inherits the same **1-year** cache directives. During an ECS rolling deploy the new HTML requests a new chunk hash that briefly 404s (the task serving it is still on the old build / the object isn't propagated yet); Cloudflare caches that 404 for a year. Confirmed on the wire:
+```
+GET /_next/static/chunks/4985-2a045d5eed8a210d.js
+HTTP/2 404 · content-type: text/plain · cf-cache-status: HIT · age: 927
+cache-control: private, max-age=31536000, must-revalidate · cdn-cache-control: public, max-age=31536000
+```
+`cf-cache-status: HIT` + `age: 927` on a **404** proves Cloudflare is serving a long-lived cached negative response. #42's client-side auto-reload-on-ChunkLoadError does **not** help here: the reload re-requests the same URL and gets the same cached 404.
+
+**Immediate mitigation (done on staging, non-destructive):**
+```
+curl -X POST https://api.cloudflare.com/client/v4/zones/$CF_ZONE_ID/purge_cache \
+  -H "Authorization: Bearer $CF_API_TOKEN" -H "Content-Type: application/json" \
+  --data '{"purge_everything":true}'
+```
+After the purge the chunk returned `200 · application/javascript` and the page rendered clean (console errors 14 → 1).
+
+**Remediation options (ALL touch caching/deploy → DEPLOY-RISKY, need user go before shipping to prod):**
+1. **Don't cache non-200s for static assets.** Emit `Cache-Control: no-store` (or a short TTL) when a `/_next/static/*` request 404s. Next's static `headers()` can't branch on status, so this needs middleware over the `_next/static` matcher, or an edge rule (a Cloudflare Cache Rule: "bypass cache when response status is 4xx/5xx"). Lowest blast radius; a Cloudflare Cache Rule needs no app deploy.
+2. **Purge CF on every deploy.** Add a post-deploy step that calls the purge API (scoped to `/_next/*` + HTML) once the ECS service is stable. Reliable; the purge is proven above. Lives in the deploy pipeline (`blackout-infra` or the app's deploy workflow).
+3. **Retain old chunks across deploys.** Serve `_next/static` from a shared, append-only store (S3/CDN) that keeps prior builds' immutable chunks, so cached old HTML always resolves its chunks and new HTML resolves its own — the standard Next.js multi-instance pattern. Most robust, most infra work.
+
+**Recommendation:** ship (1) as a Cloudflare Cache Rule (no app deploy, instantly stops negative-caching) **plus** (2) purge-on-deploy as belt-and-suspenders; treat (3) as the long-term architectural fix. **Held pending user approval** — this is a caching/infra change, explicitly deploy-risky per CLAUDE.md.
+
+**Evidence trail:** live header capture above; purge receipt `{"success":true}`; symptom screenshot (error boundary) + post-purge clean render captured 2026-07-13. Cross-ref task #49.
