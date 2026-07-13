@@ -9,10 +9,12 @@ import assert from "node:assert/strict";
 // ACTUAL compile-time regression net: see spx-full-state-fixture.ts's module
 // doc for the full rationale.
 import { SPX_FULL_STATE_FIXTURE } from "./spx-full-state-fixture";
+import { VECTOR_FULL_STATE_FIXTURE } from "./vector-full-state-fixture";
 import type { SpxPlayPayload } from "@/features/spx/lib/spx-play-payload";
 import type { FlowTapeSummary } from "@/lib/platform/types";
 import type { FlowRow } from "@/lib/db";
 import type { GexPositioning } from "@/lib/providers/gex-positioning";
+import type { VectorFullState } from "@/lib/bie/vector-full-state";
 
 // mock.module() must be registered before ecosystem-context.ts (and therefore
 // its "@/lib/db" import) is ever loaded — an ordinary top-level `import` of
@@ -114,6 +116,24 @@ mock.module("../providers/gex-positioning", {
   },
 });
 
+// vector_full_state's single source: fetchVectorFullState() (src/lib/bie/
+// vector-full-state.ts), the same composer Largo's get_vector_full_state tool
+// runs. Mocked as its own module (not re-derived) so this test file can prove
+// fetchEcosystemContext() calls it VERBATIM (no wrapper) and UNCONDITIONALLY (for
+// every ticker, not gated by isSpxSlayerTicker), without pulling the real Vector
+// server graph (uw-socket / polygon providers) into the test at all.
+let mockVectorFullState: VectorFullState | null = null;
+let vectorFullStateCalls: Array<[string, string]> = [];
+
+mock.module("./vector-full-state", {
+  namedExports: {
+    fetchVectorFullState: async (ticker: string, horizon: string) => {
+      vectorFullStateCalls.push([ticker, horizon]);
+      return mockVectorFullState;
+    },
+  },
+});
+
 let fetchEcosystemContext: typeof import("./ecosystem-context").fetchEcosystemContext;
 let ECOSYSTEM_CONTEXT_FIELDS: typeof import("./ecosystem-context").ECOSYSTEM_CONTEXT_FIELDS;
 let mapNighthawkEchoRows: typeof import("./ecosystem-context").mapNighthawkEchoRows;
@@ -134,6 +154,7 @@ test("ECOSYSTEM_CONTEXT_FIELDS: covers every real field with a non-empty descrip
     "spx_full_state",
     "flow_feed_fresh",
     "gex_positioning",
+    "vector_full_state",
   ];
   assert.deepEqual(
     ECOSYSTEM_CONTEXT_FIELDS.map((f) => f.field).sort(),
@@ -488,6 +509,46 @@ test('fetchEcosystemContext("AAPL"): gex_positioning populates for an ordinary s
 
   assert.deepEqual(gexPositioningCalls, ["AAPL"]);
   assert.deepEqual(ctx.gex_positioning, mockGexPositioning);
+});
+
+// Regression: fetchEcosystemContext() had NO Vector signal at all — Vector already
+// computes a full desk state (regime/walls/beads/VEX/dark-pool/play) for any
+// optionable ticker, but "what does the desk know about this name" via BIE never
+// surfaced it. vector_full_state closes that gap by calling fetchVectorFullState()
+// verbatim, unconditionally, horizon "all" — the Vector analogue of spx_full_state.
+
+test('fetchEcosystemContext("NVDA"): vector_full_state reuses fetchVectorFullState() verbatim, horizon "all"', async () => {
+  vectorFullStateCalls = [];
+  mockVectorFullState = VECTOR_FULL_STATE_FIXTURE;
+
+  const ctx = await fetchEcosystemContext("NVDA");
+
+  assert.deepEqual(vectorFullStateCalls, [["NVDA", "all"]], "fetchVectorFullState should run once, uppercased ticker + 'all' horizon");
+  assert.deepEqual(ctx.vector_full_state, VECTOR_FULL_STATE_FIXTURE, "vector_full_state must pass through the entire object untouched");
+});
+
+test("fetchEcosystemContext: vector_full_state is null when fetchVectorFullState has no live spot", async () => {
+  vectorFullStateCalls = [];
+  mockVectorFullState = null;
+
+  const ctx = await fetchEcosystemContext("ZZZZ");
+
+  assert.deepEqual(vectorFullStateCalls, [["ZZZZ", "all"]]);
+  assert.equal(ctx.vector_full_state, null);
+});
+
+test('fetchEcosystemContext: vector_full_state is NOT gated by isSpxSlayerTicker — populates for every ticker', async () => {
+  vectorFullStateCalls = [];
+  fullStateCalls = 0;
+  mockFullState = SPX_FULL_STATE_FIXTURE;
+  mockVectorFullState = VECTOR_FULL_STATE_FIXTURE;
+
+  const ctx = await fetchEcosystemContext("SPX");
+
+  assert.deepEqual(vectorFullStateCalls, [["SPX", "all"]]);
+  assert.deepEqual(ctx.vector_full_state, VECTOR_FULL_STATE_FIXTURE);
+  // Distinct gate check: the SPX-only spx_full_state still populates here too.
+  assert.equal(fullStateCalls, 1);
 });
 
 test("mapNighthawkEchoRows: maps rows keyed by uppercased ticker", () => {

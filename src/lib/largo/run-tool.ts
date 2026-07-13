@@ -940,6 +940,16 @@ export async function runLargoTool(name: string, input: Record<string, unknown>,
       return fetchEcosystemContext(ticker);
     }
 
+    case "get_vector_full_state": {
+      const [{ fetchVectorFullState }, { normalizeDteHorizon }] = await Promise.all([
+        import("@/lib/bie/vector-full-state"),
+        import("@/features/vector/lib/vector-dte-horizon"),
+      ]);
+      // fetchVectorFullState normalizes the ticker itself (normalizeVectorTicker); pass the raw
+      // string. horizon is validated to one of 0dte/weekly/monthly/all, defaulting to "all".
+      return fetchVectorFullState(ticker, normalizeDteHorizon(input.horizon));
+    }
+
     case "get_hot_tickers": {
       const { fetchHotTickers } = await import("@/lib/bie/hot-tickers");
       return fetchHotTickers(8);

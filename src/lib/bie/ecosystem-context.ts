@@ -5,6 +5,7 @@ import { getSpxPlayState } from "@/features/spx/lib/spx-service";
 import { getFlowTapeSummary } from "@/lib/platform/flow-service";
 import { enrichFlowsWithGex, type GexProximityLabel } from "@/lib/flow-gex-enrichment";
 import { getGexPositioning, type GexPositioning } from "@/lib/providers/gex-positioning";
+import { fetchVectorFullState, type VectorFullState } from "@/lib/bie/vector-full-state";
 import type { SpxPlayPayload } from "@/features/spx/lib/spx-play-payload";
 import type { FlowTapeSummary } from "@/lib/platform/types";
 
@@ -157,6 +158,10 @@ export type { SpxPlayPayload };
 // type without a second import from gex-positioning.ts.
 export type { GexPositioning };
 
+// Re-exported so a consumer of EcosystemContext can name the vector_full_state
+// type without a second import from vector-full-state.ts.
+export type { VectorFullState };
+
 export type EcosystemContext = {
   ticker: string;
   zerodte_today: EcosystemZeroDteTake | null;
@@ -301,6 +306,29 @@ export type EcosystemContext = {
    * `get_gex` only when the per-strike/per-expiry chain itself is needed.
    */
   gex_positioning: GexPositioning | null;
+  /**
+   * Vector's OWN complete live desk state for this ticker — the exact same object
+   * Largo's get_vector_full_state tool returns and the Vector desk terminal reads,
+   * built by calling `src/lib/bie/vector-full-state.ts::fetchVectorFullState(ticker,
+   * "all")` VERBATIM. The Vector analogue of spx_full_state: where spx_full_state /
+   * gex_positioning gave BIE the SPX play engine and dealer positioning, this hands
+   * BIE Vector's ENTIRE surface for the ticker — spot, regime, gamma walls +
+   * integrity, gamma flip, magnet, wall-proximity, options-implied expected move,
+   * max pain, confluence zones, the derived concrete play (buildVectorPlay), the full
+   * per-strike GEX ladder, a compact heatmap-presence summary, options-flow prints,
+   * the wall-history RAIL (the "beads" over the session) and its dynamics events
+   * (building/fading/new/gone — the "fadeness"), the VANNA (VEX) lens (walls + flip),
+   * and dark-pool levels.
+   *
+   * Runs UNCONDITIONALLY for every ticker (like gex_positioning, unlike the SPX/SPXW-
+   * only spx_full_state) — Vector serves any optionable symbol. `null` when
+   * fetchVectorFullState has no live spot for the ticker (its own honest no-surface
+   * convention), never fabricated. Same one-derivation guarantee as the other
+   * full-state fields: whatever get_vector_full_state returns is exactly what this
+   * returns. Not embedded into precedent-search, same as spx_full_state (large
+   * per-ticker numeric object, not prose).
+   */
+  vector_full_state: VectorFullState | null;
 };
 
 /**
@@ -328,6 +356,7 @@ const ECOSYSTEM_CONTEXT_FIELD_DESCRIPTIONS: Record<Exclude<keyof EcosystemContex
   spx_full_state: "SPX Slayer's FULL play-engine snapshot — the exact same object Largo's get_spx_play tool returns (phase, every confluence factor, full gate pass/fail state, the 10-item confirmation checklist, MTF/RSI/EMA technicals, adaptive-gate telemetry, watch state, the AI arbiter's verdict, the option ticket). Only populated for ticker SPX/SPXW; null for every other ticker. Sourced from the SAME getSpxPlayState() Largo's tool calls — one derivation, not two.",
   flow_feed_fresh: "Whether the live HELIX flow pipeline is actually delivering frames right now, cluster-wide — disambiguates a null/empty recent_flow or recent_anomalies as 'unknown' rather than 'genuinely quiet'.",
   gex_positioning: "BlackOut Thermal's canonical dealer gamma/vanna/delta/charm positioning for this ticker — the exact same object getGexPositioning() returns for the Heat Maps UI, the SPX rail, and Night Hawk's positioning read (spot, flip, call/put wall, max pain, gex_king_strike, net GEX/VEX/DEX/CHARM with posture + regime-read one-liners, nearest_wall, distance_to_flip_pct, optional UW cross-validation). Runs for EVERY ticker, not gated to SPX/SPXW like spx_full_state — GEX positioning isn't a single-instrument product. Distinct from get_positioning (a reshaped, DEX/CHARM-less summary) and get_gex (the raw per-strike chain) — this is the full canonical light contract, in between the two. Null when the shared GEX matrix is cold for this ticker.",
+  vector_full_state: "Vector's OWN complete live desk state for this ticker — the exact same object Largo's get_vector_full_state tool returns (via fetchVectorFullState(ticker, \"all\")): spot, regime, gamma walls + integrity, gamma flip, magnet, wall-proximity, options-implied expected move, max pain, confluence zones, the derived concrete play (buildVectorPlay), the full per-strike GEX ladder, a compact heatmap-presence summary, options-flow prints, the wall-history rail (the 'beads' over the session) + its dynamics events (building/fading/new/gone — the 'fadeness'), the VANNA (VEX) lens (walls + flip), and dark-pool levels. The Vector analogue of spx_full_state; runs for EVERY ticker (Vector serves any optionable symbol), not gated to SPX/SPXW. Null when there's no live spot for the ticker. One derivation — identical to get_vector_full_state.",
 };
 
 export const ECOSYSTEM_CONTEXT_FIELDS: { field: string; description: string }[] = Object.entries(
@@ -347,6 +376,7 @@ function emptyContext(ticker: string): EcosystemContext {
     spx_full_state: null,
     flow_feed_fresh: false,
     gex_positioning: null,
+    vector_full_state: null,
   };
 }
 
@@ -491,7 +521,7 @@ export async function fetchEcosystemContext(ticker: string): Promise<EcosystemCo
   const upper = ticker.toUpperCase().trim();
 
   try {
-    const [zerodteRes, nighthawkRes, auditRes, flowRes, flowFullState, anomalyRes, flowFeedFresh, spxPlay, spxFullState, gexPositioning] = await Promise.all([
+    const [zerodteRes, nighthawkRes, auditRes, flowRes, flowFullState, anomalyRes, flowFeedFresh, spxPlay, spxFullState, gexPositioning, vectorFullState] = await Promise.all([
       dbQuery<{
         session_date: string;
         direction: string;
@@ -560,6 +590,12 @@ export async function fetchEcosystemContext(ticker: string): Promise<EcosystemCo
       // gex_positioning's doc on EcosystemContext for why getGexPositioning()
       // already returns exactly the shape/honesty-convention this field wants.
       getGexPositioning(upper),
+      // Vector's ENTIRE live desk state for this ticker — also unconditional (Vector
+      // serves any optionable symbol). fetchVectorFullState is itself fail-open (returns
+      // null on no spot / any read failure and never throws), but wrap in .catch anyway
+      // so it can never reject the whole ecosystem fan-out. The horizon is "all" — the
+      // whole-chain view — matching get_vector_full_state's default.
+      fetchVectorFullState(upper, "all").catch(() => null),
     ]);
 
     const z = zerodteRes.rows[0];
@@ -616,6 +652,7 @@ export async function fetchEcosystemContext(ticker: string): Promise<EcosystemCo
       spx_full_state: spxFullState,
       flow_feed_fresh: flowFeedFresh,
       gex_positioning: gexPositioning,
+      vector_full_state: vectorFullState,
     };
   } catch {
     return emptyContext(ticker);

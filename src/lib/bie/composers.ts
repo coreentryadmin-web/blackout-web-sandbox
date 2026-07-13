@@ -165,6 +165,68 @@ async function composeSpxDeskRead(question?: string): Promise<BieComposed | null
   };
 }
 
+/**
+ * Render the desk-brief `{{value}}` grounding markers down to clean prose. The brief lines wrap
+ * every citable number in `{{…}}` so a strict grounding guard can trace them; the member-facing
+ * answer must show the VALUE, not the marker. (The SPX desk-read composer above does NOT do this,
+ * so `composeSpxDeskRead`'s answer currently leaks literal `{{…}}` into the non-stream Largo path —
+ * flagged to the coordinator; not replicated here.)
+ */
+function stripGroundingTokens(text: string): string {
+  return text.replace(/\{\{\s*([^{}]*?)\s*\}\}/g, "$1");
+}
+
+/** Parse a chart timeframe (1m/5m/15m/1H) from the question → minutes, else undefined (default 5). */
+function timeframeMinFromQuestion(q?: string): number | undefined {
+  if (!q) return undefined;
+  const m = q.match(/\b(1|3|5|15|30)\s?m\b/i);
+  if (m) return Number(m[1]);
+  const h = q.match(/\b(1|2|4)\s?h\b/i);
+  if (h) return Number(h[1]) * 60;
+  return undefined;
+}
+
+/**
+ * Deterministic Vector desk read — the Largo-BIE path for Vector questions (zero Claude cost).
+ * Assembles the FULL Vector state for (ticker, horizon) and renders the multi-section desk brief
+ * (regime / walls / wall-dynamics / magnet / max-pain / expected-move / ladder / VEX / dark-pool /
+ * flow / play). Returns null on no live spot → the router falls back (Claude, or the staging
+ * SPX default). The returned context carries the state + knownVectorNumbers so Layer-4
+ * verifyClaims can ground every cited figure.
+ */
+async function composeVectorRead(
+  ticker: string,
+  horizon: string,
+  question?: string
+): Promise<BieComposed | null> {
+  const [{ fetchVectorFullState }, { normalizeDteHorizon }, { composeVectorDeskBrief }, { knownVectorNumbers }] =
+    await Promise.all([
+      import("@/lib/bie/vector-full-state"),
+      import("@/features/vector/lib/vector-dte-horizon"),
+      import("@/lib/bie/vector-desk-brief"),
+      import("@/lib/bie/vector-desk-intel"),
+    ]);
+
+  const state = await fetchVectorFullState(
+    ticker.toUpperCase(),
+    normalizeDteHorizon(horizon),
+    timeframeMinFromQuestion(question)
+  );
+  if (!state) return null;
+
+  const brief = composeVectorDeskBrief(state, question);
+  const answer = stripGroundingTokens(
+    [
+      `**Vector desk read — ${ticker.toUpperCase()} (${state.horizon.toUpperCase()})**`,
+      "",
+      `**${brief.headline}**`,
+      "",
+      brief.body,
+    ].join("\n")
+  );
+  return { answer, context: { state, known: knownVectorNumbers(state) } };
+}
+
 async function composeSpxInvalidation(): Promise<BieComposed | null> {
   const platform = await getCachedBiePlatformContext({ scope: "desk" });
   const desk = platform.desk;
@@ -365,6 +427,10 @@ async function composeBieAnswerUncached(route: BieRoute, opts?: ComposeBieOpts):
       case "ticker_compare":
         return route.ticker && route.ticker_b
           ? await composeTickerCompare(route.ticker, route.ticker_b)
+          : null;
+      case "vector_read":
+        return route.ticker
+          ? await composeVectorRead(route.ticker, route.horizon ?? "all", opts?.question)
           : null;
       default:
         return null;

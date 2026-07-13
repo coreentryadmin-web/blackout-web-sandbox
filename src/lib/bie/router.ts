@@ -18,13 +18,16 @@ export type BieIntent =
   | "flow_tape"
   | "ticker_ecosystem"
   | "ticker_advice"
-  | "ticker_compare";
+  | "ticker_compare"
+  | "vector_read";
 
 export type BieRoute = {
   intent: BieIntent;
   ticker: string | null;
   /** Second ticker for compare intent. */
   ticker_b?: string | null;
+  /** DTE horizon for vector_read (0dte/weekly/monthly/all); ignored by other intents. */
+  horizon?: string | null;
 };
 
 const ZERODTE_RE =
@@ -64,6 +67,24 @@ const ADVICE_RE =
 
 const COMPARE_RE = /\b(compare|versus|vs\.?)\b/i;
 
+// Vector desk read — the deterministic Largo-BIE path for Vector questions (zero Claude cost).
+// Fires on an explicit "vector" product mention, or on a Vector-surface concept asked about a
+// specific ticker (walls / gamma flip / magnet / beads / fadeness / expected move / max pain).
+const VECTOR_RE = /\bvector\b/i;
+// Vector-surface concepts — walls / flip / regime / magnet, the DTE + timeframe controls, the
+// chart technicals, and the bead/VEX/dark-pool lenses. Broad on purpose: a ticker + any of these
+// is a Vector desk question, which the deterministic Vector read answers in full.
+const VECTOR_STRUCTURE_RE =
+  /\b(gamma\s*(flip|wall|walls|magnet|regime)|call wall|put wall|gamma[- ]?walls?|walls?|expected move|max ?pain|wall integrity|beads?|fad(?:e|ing|eness)|build(?:ing)?|forming|dissolv\w*|stacking|dealer walls?|dte walls?|dtes|expir(?:y|ies)|weekly|monthly|timeframe|technicals?|vwap|ema|rsi|macd|market structure|vex|vanna|dark[- ]?pool|magnet|(?:1|3|5|15|30)\s?m|(?:1|2|4)\s?h)\b/i;
+
+/** Vector DTE horizon named in the question, defaulting to "all" (whole-chain view). */
+function extractHorizon(q: string): string {
+  if (/\b0\s*dte\b/i.test(q)) return "0dte";
+  if (/\bweekl/i.test(q)) return "weekly";
+  if (/\bmonthl/i.test(q)) return "monthly";
+  return "all";
+}
+
 /** Questions with these shapes need REASONING, not lookup — Claude unless a narrower BIE branch matched first. */
 const REASONING_RE =
   /\b(why|explain|compare|versus|vs\.?|should i|would you|what if|predict|forecast|think|opinion|strategy|teach|how do(es)? .{0,20}work)\b/i;
@@ -97,6 +118,12 @@ export function classifyBieIntent(question: string, ledgerTickers: Set<string>):
   const q = question.trim();
   if (q.length > 160 || q.split(/[.?!]/).filter((s) => s.trim()).length > 2) return null;
 
+  // Explicit "vector" mention → the deterministic Vector desk read, for ANY ticker (incl. SPX on
+  // Vector). Placed first so the Vector product wins over the SPX-Sniper branches when named.
+  if (VECTOR_RE.test(q)) {
+    return { intent: "vector_read", ticker: extractKnownTicker(q) ?? "SPX", horizon: extractHorizon(q) };
+  }
+
   if (SPX_WHY_RE.test(q)) return { intent: "spx_desk_read", ticker: "SPX" };
   if (SPX_EXPLAIN_RE.test(q)) return { intent: "spx_desk_read", ticker: "SPX" };
   if (SPX_INVALIDATION_RE.test(q)) return { intent: "spx_invalidation", ticker: "SPX" };
@@ -113,6 +140,16 @@ export function classifyBieIntent(question: string, ledgerTickers: Set<string>):
 
   if (FLOW_TAPE_RE.test(q)) {
     return { intent: "flow_tape", ticker: extractKnownTicker(q) };
+  }
+
+  // A Vector-surface concept (walls/gamma flip/magnet/expected move/beads/…) asked about a
+  // specific NON-SPX ticker → Vector desk read. SPX keeps its own richer Sniper-desk routing
+  // below (spx_structure / spx_desk_read); a bare "gamma flip on NVDA" has no SPX home otherwise.
+  if (VECTOR_STRUCTURE_RE.test(q)) {
+    const ticker = extractKnownTicker(q);
+    if (ticker && ticker !== "SPX") {
+      return { intent: "vector_read", ticker, horizon: extractHorizon(q) };
+    }
   }
 
   if (REASONING_RE.test(q)) return null;
@@ -146,12 +183,21 @@ export function isSpxDeskFallbackQuestion(question: string): boolean {
 
 export function classifyBieStagingFallback(question: string): BieRoute {
   const q = question.trim();
+  if (VECTOR_RE.test(q)) {
+    return { intent: "vector_read", ticker: extractKnownTicker(q) ?? "SPX", horizon: extractHorizon(q) };
+  }
   if (ZERODTE_RE.test(q)) return { intent: "zerodte_plays", ticker: null };
   if (SPX_INVALIDATION_RE.test(q)) return { intent: "spx_invalidation", ticker: "SPX" };
   if (SPX_STRUCTURE_RE.test(q) || SPX_DESK_READ_RE.test(q) || SPX_WHY_RE.test(q) || SPX_EXPLAIN_RE.test(q)) {
     return { intent: "spx_desk_read", ticker: "SPX" };
   }
   if (FLOW_TAPE_RE.test(q)) return { intent: "flow_tape", ticker: extractKnownTicker(q) };
+  {
+    const vTicker = extractKnownTicker(q);
+    if (VECTOR_STRUCTURE_RE.test(q) && vTicker && vTicker !== "SPX") {
+      return { intent: "vector_read", ticker: vTicker, horizon: extractHorizon(q) };
+    }
+  }
   if (MARKET_CONTEXT_RE.test(q) || MARKET_CONTEXT_LOOSE_RE.test(q)) {
     return { intent: "market_context", ticker: null };
   }
@@ -197,5 +243,11 @@ export function bieFollowups(intent: BieIntent): string[] {
       return ["What's the SPX setup right now?", `Compare with another name`, "How are today's plays doing?"];
     case "ticker_compare":
       return ["What's the SPX setup right now?", "How are today's plays doing?", "Any unusual flow right now?"];
+    case "vector_read":
+      return [
+        "Which walls are building vs fading?",
+        "What's the play and where does it invalidate?",
+        "Show the 0DTE horizon instead",
+      ];
   }
 }

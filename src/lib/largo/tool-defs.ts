@@ -426,6 +426,13 @@ export const LARGO_TOOL_DEFS: AnthropicToolDef[] = [
   ),
 
   t(
+    "get_vector_full_state",
+    "Vector's OWN complete live desk state for a ticker + DTE horizon — the exact same object the Vector chart's desk terminal reads and get_ecosystem_context returns as its vector_full_state field (via fetchVectorFullState). Hands you Vector's ENTIRE surface in one call: spot, gamma regime (long/short/transition), gamma walls (call/put, ranked) + per-wall INTEGRITY (firm/moderate/thin, held-% of session), gamma flip, the gamma magnet (pin vs pivot), wall-proximity, the options-implied expected move (±1σ/±2σ bands), max pain, confluence zones, the derived concrete PLAY (buildVectorPlay — style/bias/entry/targets/invalidation/conviction/grade), the full per-strike GEX ladder (king strikes + magnitudes), a compact heatmap-presence summary, options-flow prints, the wall-history RAIL (the 'beads' over the session) + its dynamics events (building/fading/new/dissolved/shifted — the 'fadeness'), the VANNA (VEX) lens (walls + zero-vanna flip), dark-pool levels, and server-computed chart technicals (VWAP/EMA stack/RSI/MACD/structure). horizon is one of 0dte/weekly/monthly/all (default all). Use for ANY question about what Vector shows for a ticker — 'what's the Vector setup / regime / play on NVDA', 'are the walls building or fading', 'where's the gamma flip and magnet', 'what's the expected move' — the deterministic Vector read, zero Claude cost. Runs for any optionable symbol.",
+    { ...T, horizon: { type: "string", enum: ["0dte", "weekly", "monthly", "all"], description: "DTE horizon; defaults to 'all'." } },
+    ["ticker"]
+  ),
+
+  t(
     "get_hot_tickers",
     "Leaderboard of single-name tickers with the most options-flow premium over the last 6h (print count + total premium each). Index/ETF and leveraged-ETP names are excluded so SPY/QQQ don't just occupy every slot. Use for open-ended 'what's hot / what's moving / any unusual flow today' questions that don't name a specific ticker — for a question ABOUT one ticker, use get_ecosystem_context or get_flow_tape instead."
   ),
@@ -461,6 +468,7 @@ export const LARGO_TOOL_DEFS: AnthropicToolDef[] = [
 // both consumers pick it up automatically instead of needing a second edit.
 export const BIE_TOOL_NAMES = [
   "get_ecosystem_context",
+  "get_vector_full_state",
   "get_hot_tickers",
   "get_market_regime",
   "get_confluence_outcomes",
