@@ -2,6 +2,60 @@ import type { PlayTerminalLine } from "@/features/spx/lib/spx-play-terminal-line
 import type { VectorWallEvent, VectorWallEventKind } from "@/features/vector/lib/vector-wall-events";
 import type { VectorWallLens } from "@/features/vector/lib/vector-wall-history";
 import { formatReplayClock } from "@/features/vector/lib/vector-replay";
+import type { VectorPlay } from "@/features/vector/lib/vector-play-engine";
+
+/**
+ * Render the synthesized PLAY as the bold TOP block of the desk terminal — the hero read that sits
+ * above the live "what's on the chart" narration (CONFLUENCE / TECHNICALS / EXPECTED MOVE / ALERTS /
+ * structure). Pure string→lines mapping so it's unit-testable and the terminal component stays thin.
+ *
+ * Emphasis is grade-keyed (A = bull/green confidence, B = accent, C = muted) so a member reads
+ * conviction at a glance without parsing the number. The headline is always the first starred item;
+ * the REMAINING starred items become an explicit "WATCH NOW" set marked with ★, which is the
+ * "watch this second" list (imminent flip cross, a wall under test, a top confluence stack, the BIE
+ * evidence line). Returns [] for a null play so the terminal simply omits the block — never a filler.
+ */
+export function buildVectorPlayLines(play: VectorPlay | null): PlayTerminalLine[] {
+  if (!play) return [];
+  const gradeTone: PlayTerminalLine["tone"] =
+    play.grade === "A" ? "bull" : play.grade === "B" ? "accent" : "neutral";
+  const styleLabel = play.style.toUpperCase();
+
+  const lines: PlayTerminalLine[] = [
+    // Header carries the style (SCALP/SWING/POSITION), grade, and conviction — the at-a-glance verdict.
+    {
+      icon: "section",
+      tone: "accent",
+      text: `PLAY · ${styleLabel} · Grade ${play.grade} · conviction ${play.conviction}/100`,
+    },
+    // Headline is the always-starred hero line, toned by grade.
+    { icon: "pulse", tone: gradeTone, text: `★ ${play.headline}`, indent: 1 },
+  ];
+
+  if (play.thesis) {
+    lines.push({ icon: "prompt", tone: "neutral", text: play.thesis, indent: 1 });
+  }
+  if (play.entryZone) {
+    lines.push({ icon: "level", tone: "accent", text: `Entry — ${play.entryZone}`, indent: 1 });
+  }
+  if (play.targets.length) {
+    lines.push({ icon: "level", tone: "bull", text: `Targets — ${play.targets.join(" → ")}`, indent: 1 });
+  }
+  if (play.invalidation) {
+    lines.push({ icon: "sell", tone: "warn", text: `Invalidation — ${play.invalidation}`, indent: 1 });
+  }
+
+  // The remaining starred items (starred[0] is the headline, already shown) are the "watch NOW" set.
+  const watch = play.starred.slice(1);
+  if (watch.length) {
+    lines.push({ icon: "section", tone: "accent", text: "WATCH NOW", indent: 1 });
+    for (const w of watch) {
+      lines.push({ icon: "watch", tone: "accent", text: `★ ${w}`, indent: 2 });
+    }
+  }
+
+  return lines;
+}
 
 const KIND_ICON: Record<VectorWallEventKind, PlayTerminalLine["icon"]> = {
   call_wall_shift: "gamma",

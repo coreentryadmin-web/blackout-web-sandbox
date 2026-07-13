@@ -5,7 +5,8 @@ import useSWR from "swr";
 import { fetchSpxPlay } from "@/lib/api";
 import { PlayTerminalWindow } from "@/components/terminal/PlayTerminalWindow";
 import { buildPlaybookTerminalLines } from "@/features/spx/lib/spx-play-terminal-lines";
-import { buildVectorTerminalLines } from "@/features/vector/lib/vector-terminal-lines";
+import { buildVectorTerminalLines, buildVectorPlayLines } from "@/features/vector/lib/vector-terminal-lines";
+import type { VectorPlay } from "@/features/vector/lib/vector-play-engine";
 import type { VectorWallEvent } from "@/features/vector/lib/vector-wall-events";
 import type { VectorWallLens } from "@/features/vector/lib/vector-wall-history";
 import type { WallProximity } from "@/features/vector/lib/vector-wall-proximity";
@@ -20,6 +21,8 @@ type Props = {
   wallEvents: VectorWallEvent[];
   liveSession: boolean;
   streamUpdatedAt?: number | null;
+  /** The synthesized top-of-terminal PLAY — rendered as the bold hero block above the live narration. */
+  play?: VectorPlay | null;
   proximity?: WallProximity | null;
   magnet?: GammaMagnet | null;
   /** Ranked confluence callouts (pre-formatted by the chart's emit) — null when no zones. */
@@ -43,6 +46,7 @@ export function VectorDeskTerminal({
   wallEvents,
   liveSession,
   streamUpdatedAt,
+  play,
   proximity,
   magnet,
   confluence,
@@ -155,9 +159,13 @@ export function VectorDeskTerminal({
         intel.push({ icon: "level", tone: "bull", text: `🔔 ${a}`, indent: 2 });
       }
     }
-    if (intel.length) return [base[0]!, ...intel, ...base.slice(1)];
+    // The synthesized PLAY is the HERO block — it leads, right under the window header (base[0]) and
+    // ABOVE the live narration (intel) + the structure feed (base.slice(1)). Empty when there's no
+    // play yet, so the terminal degrades to exactly its prior layout.
+    const playLines = buildVectorPlayLines(play ?? null);
+    if (playLines.length || intel.length) return [base[0]!, ...playLines, ...intel, ...base.slice(1)];
     return base;
-  }, [isSpx, spxPlay, spxPlayError, liveSession, normalized, lens, wallEvents, proximity, magnet, confluence, technicals, expectedMove, alerts, wallIntegrity]);
+  }, [isSpx, spxPlay, spxPlayError, liveSession, normalized, lens, wallEvents, play, proximity, magnet, confluence, technicals, expectedMove, alerts, wallIntegrity]);
 
   const cmd = isSpx ? "playbook --spx --vector-desk" : `vector --ticker ${normalized} --structure`;
 
