@@ -44,9 +44,14 @@ export function isVectorDteHorizon(v: unknown): v is VectorDteHorizon {
   return typeof v === "string" && (VECTOR_DTE_HORIZONS as readonly string[]).includes(v);
 }
 
-/** Normalize an untrusted value (e.g. a `?dte=` query param) to a valid horizon. */
+/** Normalize an untrusted value (e.g. a `?dte=` query param) to a valid horizon.
+ * Case-insensitive: the UI labels shout "0DTE"/"WEEKLY", so callers naturally pass uppercase —
+ * and the old exact-match check silently re-scoped "0DTE" to the DEFAULT ("all"), which the
+ * wall-history route answers with an empty rail by contract. Caught when the hardcore harness
+ * made exactly that mistake; normalize case here so no consumer can repeat it. */
 export function normalizeDteHorizon(v: unknown): VectorDteHorizon {
-  return isVectorDteHorizon(v) ? v : VECTOR_DEFAULT_DTE_HORIZON;
+  const lowered = typeof v === "string" ? v.toLowerCase() : v;
+  return isVectorDteHorizon(lowered) ? lowered : VECTOR_DEFAULT_DTE_HORIZON;
 }
 
 /**

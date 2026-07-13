@@ -318,9 +318,13 @@ async function validateTicker(page, ticker, errs) {
     // Poll the NARROWED 0DTE rail WITH the session param — `dte=all` (and any missing session)
     // short-circuits to an empty rail by route contract (the "all" rail is SSR-seeded), so the old
     // poll asserted against a query documented to return nothing (0→0 false negative — harness bug).
-    const s1 = await api(page, `/api/market/vector/wall-history?ticker=${ticker}&dte=0DTE&session=${sessionYmd}`);
+    // lowercase horizon — the route normalizes params case-SENSITIVELY against "0dte|weekly|monthly|all";
+    // "0DTE" silently fell back to "all" (empty by contract). Session comes from the bars API (the
+    // chart's own source of truth), not the DOM date scrape (which can miss and yield null).
+    const railSession = (await api(page, `/api/market/vector/bars?ticker=${ticker}`))?.sessionYmd || sessionYmd;
+    const s1 = await api(page, `/api/market/vector/wall-history?ticker=${ticker}&dte=0dte&session=${railSession}`);
     await page.waitForTimeout(35_000);
-    const s2 = await api(page, `/api/market/vector/wall-history?ticker=${ticker}&dte=0DTE&session=${sessionYmd}`);
+    const s2 = await api(page, `/api/market/vector/wall-history?ticker=${ticker}&dte=0dte&session=${railSession}`);
     const n1 = (s1?.history || []).length, n2 = (s2?.history || []).length;
     const grew = n2 > n1 || JSON.stringify(s1?.history?.slice(-1)) !== JSON.stringify(s2?.history?.slice(-1));
     rec(`${ticker}: [RTH] live wall rail advances within 35s (new sample or changed strength)`, grew, `${n1}→${n2} samples`);

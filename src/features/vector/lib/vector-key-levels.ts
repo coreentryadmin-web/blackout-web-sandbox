@@ -100,7 +100,10 @@ export function fibLevels(high: number, low: number): Array<{ ratio: number; pri
 }
 
 const PD_COLOR = "#38bdf8"; // sky — prior-day high/low/close
-const PIVOT_P_COLOR = "#fb923c"; // orange — the central pivot
+// orange-500 — deliberately NOT #fb923c (EMA 9's orange-400): two different indicators sharing an
+// exact color made them indistinguishable on the chart (and made pixel-level E2E color checks
+// collide — EMA-off "residue" was really the pivot P line).
+const PIVOT_P_COLOR = "#f97316";
 const PIVOT_R_COLOR = "#f87171"; // red — resistance pivots (above P)
 const PIVOT_S_COLOR = "#34d399"; // green — support pivots (below P)
 

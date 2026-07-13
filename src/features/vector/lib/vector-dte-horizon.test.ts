@@ -102,3 +102,12 @@ test("pickHorizonScopedValue: a falsy-but-non-null scoped value (0) is still sel
   // Guards the `!= null` check — 0 is a legitimate scoped flip and must not fall through to stream.
   assert.equal(pickHorizonScopedValue("0dte", 0, 197), 0);
 });
+
+test("normalizeDteHorizon: case-insensitive — UI-cased '0DTE'/'WEEKLY' must not silently re-scope to 'all'", () => {
+  assert.equal(normalizeDteHorizon("0DTE"), "0dte");
+  assert.equal(normalizeDteHorizon("WEEKLY"), "weekly");
+  assert.equal(normalizeDteHorizon("Monthly"), "monthly");
+  assert.equal(normalizeDteHorizon("ALL"), "all");
+  assert.equal(normalizeDteHorizon("garbage"), "all");
+  assert.equal(normalizeDteHorizon(null), "all");
+});
