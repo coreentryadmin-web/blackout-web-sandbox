@@ -12,6 +12,7 @@ import {
 import { Panel, PanelHeader, FreshnessChip, Button } from "@/components/ui";
 import { LargoThinkingState } from "./LargoThinkingState";
 import { LargoMessageBody } from "./LargoMessageBody";
+import { LargoAnswerMessage } from "./LargoAnswerMessage";
 import { LargoTerminalToolbar } from "./LargoTerminalToolbar";
 import { LargoEmptyState } from "./LargoEmptyState";
 
@@ -112,7 +113,7 @@ export function LargoTerminal({
           )}
         >
           <AnimatePresence initial={false}>
-            {messages.map((msg) => (
+            {messages.map((msg, idx) => (
               <motion.div
                 key={msg.id}
                 initial={
@@ -132,10 +133,24 @@ export function LargoTerminal({
                   {msg.role === "user" ? "You" : "Largo"}
                 </p>
                 {msg.role === "assistant" ? (
-                  <LargoMessageBody
-                    content={msg.content}
-                    className={fullPage ? "text-sm md:text-[15px] lg:text-base" : "text-sm"}
-                  />
+                  msg.id === "welcome" ? (
+                    // Welcome intro stays plain — nothing to structure.
+                    <LargoMessageBody
+                      content={msg.content}
+                      className={fullPage ? "text-sm md:text-[15px] lg:text-base" : "text-sm"}
+                    />
+                  ) : (
+                    // Rich structured rendering; streams as markdown then swaps to the
+                    // structured card once the full answer is in (idx === last & loading).
+                    <LargoAnswerMessage
+                      content={msg.content}
+                      streaming={
+                        loading && idx === messages.length - 1 && msg.role === "assistant"
+                      }
+                      className={fullPage ? "text-sm md:text-[15px] lg:text-base" : "text-sm"}
+                      onFollowup={(q) => void runQuery(q)}
+                    />
+                  )
                 ) : (
                   <p
                     className={clsx(

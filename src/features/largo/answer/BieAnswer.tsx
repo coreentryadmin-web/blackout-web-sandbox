@@ -36,26 +36,50 @@ function isCompact(env: BieAnswerEnvelope): boolean {
 export function BieAnswer({
   envelope,
   className,
+  bodyClassName,
   onFollowup,
+  showBias = true,
+  showConfidence = true,
+  showAsOf = true,
 }: {
   envelope: BieAnswerEnvelope;
   className?: string;
+  /** Text-sizing class forwarded to the compact prose body. */
+  bodyClassName?: string;
   /** Optional: follow-up chips wire back into the terminal's runQuery. */
   onFollowup?: (q: string) => void;
+  /**
+   * Header/footer honesty gates for the transition shim (§4). Default true so a
+   * real (#59) envelope shows everything; the markdown shim passes false where a
+   * field is defaulted rather than derived, so we never assert a fabricated
+   * bias / confidence / assembly time on a plain answer string.
+   */
+  showBias?: boolean;
+  showConfidence?: boolean;
+  showAsOf?: boolean;
 }) {
   const compact = isCompact(envelope);
   const { answered, total } = answeredParts(envelope.sections);
-  const asOfRel = relativeTime(envelope.asOf);
+  const asOfRel = showAsOf ? relativeTime(envelope.asOf) : null;
+  const hasHeadline = Boolean(envelope.headline.trim());
+  const showHeader = hasHeadline || showBias || showConfidence;
+  const showFooter = total > 1 || Boolean(asOfRel);
 
   return (
     <div className={clsx("bie-answer", compact && "bie-answer-compact", className)}>
-      <header className="bie-answer-head">
-        <div className="bie-answer-head-row">
-          <h2 className="bie-answer-headline">{envelope.headline}</h2>
-          <BiasPill bias={envelope.bias} />
-        </div>
-        <ConfidenceBadge confidence={envelope.confidence} className="bie-answer-conf" />
-      </header>
+      {showHeader ? (
+        <header className="bie-answer-head">
+          {hasHeadline || showBias ? (
+            <div className="bie-answer-head-row">
+              {hasHeadline ? <h2 className="bie-answer-headline">{envelope.headline}</h2> : null}
+              {showBias ? <BiasPill bias={envelope.bias} /> : null}
+            </div>
+          ) : null}
+          {showConfidence ? (
+            <ConfidenceBadge confidence={envelope.confidence} className="bie-answer-conf" />
+          ) : null}
+        </header>
+      ) : null}
 
       {/* Sources requested but unavailable this turn — surfaced up top, never hidden (§4). */}
       {envelope.unavailableSources && envelope.unavailableSources.length > 0 ? (
@@ -68,7 +92,10 @@ export function BieAnswer({
 
       {compact ? (
         envelope.sections[0]?.body ? (
-          <LargoMessageBody content={envelope.sections[0].body} className="bie-answer-body" />
+          <LargoMessageBody
+            content={envelope.sections[0].body}
+            className={clsx("bie-answer-body", bodyClassName)}
+          />
         ) : null
       ) : (
         <div className="bie-answer-sections">
@@ -89,16 +116,18 @@ export function BieAnswer({
         </p>
       ) : null}
 
-      <footer className="bie-answer-foot">
-        {total > 1 ? (
-          <span
-            className={clsx("bie-answer-parts", answered < total && "bie-answer-parts-partial")}
-          >
-            Answered {answered}/{total} parts
-          </span>
-        ) : null}
-        {asOfRel ? <span className="bie-answer-asof">Assembled {asOfRel}</span> : null}
-      </footer>
+      {showFooter ? (
+        <footer className="bie-answer-foot">
+          {total > 1 ? (
+            <span
+              className={clsx("bie-answer-parts", answered < total && "bie-answer-parts-partial")}
+            >
+              Answered {answered}/{total} parts
+            </span>
+          ) : null}
+          {asOfRel ? <span className="bie-answer-asof">Assembled {asOfRel}</span> : null}
+        </footer>
+      ) : null}
 
       {onFollowup && envelope.followups && envelope.followups.length > 0 ? (
         <div className="bie-answer-followups">

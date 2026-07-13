@@ -3,12 +3,16 @@ import assert from "node:assert/strict";
 
 import {
   answeredParts,
+  biasFromMarkdown,
   biasToneClass,
+  confidenceFromMarkdown,
   confidenceToneClass,
   evidenceKindToneClass,
   freshnessToneClass,
   headlineFromMarkdown,
+  largoAnswerToEnvelope,
   relativeTime,
+  splitLeadHeadline,
 } from "./answer-format";
 import type { BieSection } from "@/lib/bie/answer-envelope";
 
@@ -48,4 +52,55 @@ test("headlineFromMarkdown extracts first meaningful line, stripped and truncate
   const long = "x".repeat(120);
   const out = headlineFromMarkdown(long);
   assert.ok(out.length <= 90 && out.endsWith("…"));
+});
+
+test("biasFromMarkdown reads explicit markers only, else undefined", () => {
+  assert.equal(biasFromMarkdown("SPX holding **VWAP** _(bullish)_"), "bullish");
+  assert.equal(biasFromMarkdown("**Bias:** Bearish into the close"), "bearish");
+  assert.equal(biasFromMarkdown("Verdict - neutral"), "neutral");
+  assert.equal(biasFromMarkdown("Price is above VWAP and grinding higher"), undefined);
+});
+
+test("confidenceFromMarkdown reads explicit statements only, else undefined", () => {
+  assert.equal(confidenceFromMarkdown("Confidence: High")?.level, "high");
+  assert.equal(confidenceFromMarkdown("confidence - low")?.level, "low");
+  assert.equal(confidenceFromMarkdown("There is insufficient evidence here")?.level, "insufficient");
+  assert.equal(confidenceFromMarkdown("SPX is bid above 7500"), undefined);
+});
+
+test("splitLeadHeadline promotes a heading/bold/short lead and de-dupes the body", () => {
+  const a = splitLeadHeadline("**SPX bid above the flip**\n\nStructure favors continuation.");
+  assert.equal(a.headline, "SPX bid above the flip");
+  assert.equal(a.body, "Structure favors continuation.");
+
+  const b = splitLeadHeadline("VIX 14.2 — calm regime");
+  assert.equal(b.headline, "VIX 14.2 — calm regime");
+  assert.equal(b.body, "");
+
+  const long = "x".repeat(120) + " and more prose here to keep it flowing";
+  const c = splitLeadHeadline(long);
+  assert.equal(c.headline, "");
+  assert.equal(c.body, long);
+});
+
+test("largoAnswerToEnvelope hides bias/confidence when the text doesn't state them", () => {
+  const plain = largoAnswerToEnvelope("Price is above VWAP, grinding higher.", {
+    source: "bie-router",
+  });
+  assert.equal(plain.showBias, false);
+  assert.equal(plain.showConfidence, false);
+  assert.equal(plain.envelope.intent, "bie-router");
+  assert.equal(plain.envelope.sections.length, 1);
+
+  const explicit = largoAnswerToEnvelope("**Bias:** bullish. Confidence: high. Hold above 7500.");
+  assert.equal(explicit.showBias, true);
+  assert.equal(explicit.envelope.bias, "bullish");
+  assert.equal(explicit.showConfidence, true);
+  assert.equal(explicit.envelope.confidence.level, "high");
+});
+
+test("largoAnswerToEnvelope honors a provided asOf for the footer", () => {
+  const asOf = "2026-07-13T11:00:00Z";
+  const { envelope } = largoAnswerToEnvelope("Some read", { asOf });
+  assert.equal(envelope.asOf, asOf);
 });
