@@ -1,4 +1,4 @@
-import { dbQuery, dbConfigured, fetchClosedPlayOutcomes, fetchOpenSpxPlay, type FlowRow } from "@/lib/db";
+import { dbQuery, dbConfigured, fetchClosedPlayOutcomes, fetchOpenSpxPlay, isoDateString, type FlowRow } from "@/lib/db";
 import { todayEtYmd } from "@/lib/providers/spx-session";
 import { isFlowFrameFreshAnywhere } from "@/lib/flow-liveness";
 import { getSpxPlayState } from "@/features/spx/lib/spx-service";
@@ -799,7 +799,9 @@ export async function fetchEcosystemContext(ticker: string): Promise<EcosystemCo
       ticker: upper,
       zerodte_today: z
         ? {
-            session_date: String(z.session_date),
+            // isoDateString: session_date is a pg DATE column — raw String() on the
+            // driver's Date object yields "Mon Jul 13 2026 00:00:00 GMT+0000 (…)".
+            session_date: isoDateString(z.session_date),
             direction: z.direction,
             score: Number(z.score),
             conviction: z.conviction,
@@ -809,7 +811,7 @@ export async function fetchEcosystemContext(ticker: string): Promise<EcosystemCo
         : null,
       nighthawk_recent: n
         ? {
-            edition_for: String(n.edition_for),
+            edition_for: isoDateString(n.edition_for),
             direction: n.direction,
             conviction: n.conviction,
             outcome: n.outcome,
@@ -857,7 +859,9 @@ export async function fetchEcosystemContext(ticker: string): Promise<EcosystemCo
 
 export type EcosystemNighthawkEchoRow = {
   ticker: string;
-  edition_for: string;
+  /** Raw pg DATE column — node-postgres hands this back as a JS Date object,
+   *  not a string (mapNighthawkEchoRows normalizes it via isoDateString). */
+  edition_for: string | Date;
   direction: string;
   conviction: string;
   outcome: string;
@@ -870,7 +874,11 @@ export function mapNighthawkEchoRows(rows: EcosystemNighthawkEchoRow[]): Map<str
   const out = new Map<string, EcosystemNightHawkTake>();
   for (const r of rows) {
     out.set(r.ticker.toUpperCase(), {
-      edition_for: String(r.edition_for),
+      // isoDateString, NOT String(): edition_for is a pg DATE column and this map
+      // feeds the member-visible 0DTE board payload (nighthawk_echo) — String(Date)
+      // shipped "Fri Jul 10 2026 00:00:00 GMT+0000 (Coordinated Universal Time)"
+      // to members (live-caught 2026-07-13; same #77 Bug 1 class db.ts fixed).
+      edition_for: isoDateString(r.edition_for),
       direction: r.direction,
       conviction: r.conviction,
       outcome: r.outcome,

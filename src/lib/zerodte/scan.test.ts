@@ -25,12 +25,21 @@ const state = {
   ledgerRows: [] as LedgerRow[],
   liveMark: null as number | null,
   updateCalls: [] as Array<{ session_date: string; ticker: string; patch: unknown }>,
+  // gradeZeroDteLedger wiring (index-root mapping test below)
+  ungradedRows: [] as LedgerRow[],
+  gradeCalls: [] as Array<{ sessionDate: string; ticker: string; grade: Record<string, unknown> }>,
+  aggBarCalls: [] as Array<{ symbol: string; timespan: string }>,
+  dailyBars: new Map<string, Array<{ t: number; o: number; h: number; l: number; c: number }>>(),
 };
 
 function resetState() {
   state.ledgerRows = [];
   state.liveMark = null;
   state.updateCalls = [];
+  state.ungradedRows = [];
+  state.gradeCalls = [];
+  state.aggBarCalls = [];
+  state.dailyBars = new Map();
 }
 
 mock.module("../db", {
@@ -45,8 +54,10 @@ mock.module("../db", {
     // ESM import throws "does not provide an export named ...".
     fetchLatestNighthawkEdition: async () => null,
     fetchRecentFlows: async () => [],
-    fetchUngradedZeroDteRows: async () => [],
-    gradeZeroDteSetupRow: async () => {},
+    fetchUngradedZeroDteRows: async () => state.ungradedRows,
+    gradeZeroDteSetupRow: async (sessionDate: string, ticker: string, grade: Record<string, unknown>) => {
+      state.gradeCalls.push({ sessionDate, ticker, grade });
+    },
     insertAlertAuditLog: async () => {},
     updateZeroDtePlanOutcome: async () => {},
     upsertZeroDteSetupLog: async () => new Set<string>(),
@@ -68,7 +79,15 @@ mock.module("../../features/nighthawk/lib/session", {
 });
 
 mock.module("../providers/polygon-largo", {
-  namedExports: { fetchAggBars: async () => [] },
+  namedExports: {
+    // Mirrors the real provider's failure mode this suite guards against: an
+    // unknown/unmapped symbol does NOT throw — Polygon answers status OK with an
+    // EMPTY result set. Only symbols seeded into state.dailyBars return bars.
+    fetchAggBars: async (symbol: string, _mult: number, timespan: string) => {
+      state.aggBarCalls.push({ symbol, timespan });
+      return state.dailyBars.get(symbol) ?? [];
+    },
+  },
 });
 
 mock.module("../providers/options-snapshot", {
@@ -210,4 +229,40 @@ test("zeroDtePlaysFeed: a graded CLOSED play surfaces its result string unchange
   assert.equal(feed.plays[0]!.status, "CLOSED");
   assert.equal(feed.plays[0]!.result, "doubled +100%");
   assert.equal(state.updateCalls.length, 0, "a CLOSED row must never be re-synced");
+});
+
+test("gradeZeroDteLedger: an index-root row (SPXW) fetches its close from I:SPX and gets a REAL direction grade", async () => {
+  resetState();
+  // Prior-session SPXW row, plan already graded (plan_outcome set) so only the
+  // direction grade runs. Live numbers from the 2026-07-13 audit: flagged at
+  // 7564.68, I:SPX closed 7575.39 → long direction_hit = true.
+  state.ungradedRows = [
+    baseRow({
+      ticker: "SPXW",
+      session_date: "2026-07-03",
+      underlying_at_flag: 7564.68,
+      plan_outcome: "stopped",
+      plan_pnl_pct: -50,
+      plan_json: { occ: "O:SPXW260703C07565000" },
+    }),
+  ];
+  // Polygon has NO daily bars under the raw root "SPXW" — only under I:SPX.
+  // Pre-fix, the scan asked for "SPXW", got [], and stamped a permanent null grade.
+  state.dailyBars.set("I:SPX", [{ t: 1751500800000, o: 7547.64, h: 7579.93, l: 7508.16, c: 7575.39 }]);
+
+  const { gradeZeroDteLedger } = await mod();
+  const graded = await gradeZeroDteLedger(true);
+
+  assert.equal(graded, 1);
+  const daily = state.aggBarCalls.filter((c) => c.timespan === "day");
+  assert.deepEqual(
+    daily.map((c) => c.symbol),
+    ["I:SPX"],
+    "the daily-close fetch must use the mapped index symbol, never the raw option root"
+  );
+  assert.equal(state.gradeCalls.length, 1);
+  const grade = state.gradeCalls[0]!.grade as { close_price: number | null; direction_hit: boolean | null; move_pct: number | null };
+  assert.equal(grade.close_price, 7575.39, "close must come from the I:SPX bar");
+  assert.equal(grade.direction_hit, true, "long from 7564.68 into a 7575.39 close is a hit");
+  assert.ok(grade.move_pct != null && grade.move_pct > 0);
 });

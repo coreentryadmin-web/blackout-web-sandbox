@@ -110,6 +110,35 @@ export function resolveFreshFindStatus(
   return moved || pastCutoff || illiquid ? "SKIP" : "OPEN";
 }
 
+// ── Polygon symbol mapping for index option roots ─────────────────────────────────
+// The scan's mandate explicitly admits index products (SPY/SPX/NDX/QQQ…), and UW
+// tape rows carry the OPTION ROOT as the ticker (SPXW, NDXP, …). Polygon's stock
+// aggs endpoint returns an EMPTY result set (status OK, resultsCount 0) for those
+// roots — the index itself prices under the `I:` namespace. Live-verified
+// 2026-07-13: /v2/aggs/ticker/SPXW/range/1/day/2026-07-10/2026-07-10 → 0 results,
+// I:SPX → o 7547.64 / c 7575.39. Without this mapping, an SPXW/SPX/NDX ledger row
+// silently gets close=null at grading time and is stamped graded with a null
+// direction grade FOREVER (fetchAggBars succeeds, so the retry path never fires),
+// and the intraday-edge read (VWAP/opening-range/5m-trend) never attaches for
+// index setups. ETF wrappers (SPY/QQQ/IWM) are real equities and pass through.
+const POLYGON_INDEX_SPOT: Record<string, string> = {
+  SPX: "I:SPX",
+  SPXW: "I:SPX", // weekly/0DTE SPX root — same underlying index
+  NDX: "I:NDX",
+  NDXP: "I:NDX", // PM-settled NDX root
+  RUT: "I:RUT",
+  RUTW: "I:RUT",
+  XSP: "I:XSP",
+  VIX: "I:VIX",
+};
+
+/** Polygon aggs symbol for a flow/ledger ticker — index option roots map to the
+ *  `I:` index namespace; everything else (equities, ETFs) passes through as-is. */
+export function polygonSpotTicker(ticker: string): string {
+  const upper = ticker.toUpperCase();
+  return POLYGON_INDEX_SPOT[upper] ?? upper;
+}
+
 // ── Single-name 0DTE flow setups (evidence, not fabricated plays) ────────────────
 
 export type FlowSetupInput = {

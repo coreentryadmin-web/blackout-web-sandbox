@@ -10,6 +10,7 @@ import {
   enrichSetup,
   matchEarnings,
   matchHotNews,
+  polygonSpotTicker,
   SETUP_MIN_GROSS,
   SETUP_MIN_AGGR_SHARE,
   SETUP_MIN_DOMINANCE,
@@ -1051,4 +1052,27 @@ test("audit row: intraday_conflict gate recorded and fails when conflict is true
   assert.ok(conflict);
   assert.equal(conflict!.passed, false);
   assert.equal(conflict!.value, true);
+});
+
+// ── polygonSpotTicker (index-root → I: namespace mapping) ─────────────────────────
+// Live-verified 2026-07-13: Polygon /v2/aggs for "SPXW"/"SPX"/"NDX" returns status
+// OK with resultsCount 0 (no throw), while "I:SPX"/"I:NDX" return real bars — so an
+// unmapped index-root ledger row was stamped graded with a permanent null direction
+// grade, and its intraday read silently degraded to nulls.
+
+test("polygonSpotTicker: index option roots map to the I: index namespace", () => {
+  assert.equal(polygonSpotTicker("SPXW"), "I:SPX");
+  assert.equal(polygonSpotTicker("SPX"), "I:SPX");
+  assert.equal(polygonSpotTicker("NDX"), "I:NDX");
+  assert.equal(polygonSpotTicker("NDXP"), "I:NDX");
+  assert.equal(polygonSpotTicker("RUT"), "I:RUT");
+  assert.equal(polygonSpotTicker("VIX"), "I:VIX");
+});
+
+test("polygonSpotTicker: equities and ETF wrappers pass through unchanged (case-normalized)", () => {
+  assert.equal(polygonSpotTicker("NVDA"), "NVDA");
+  assert.equal(polygonSpotTicker("SPY"), "SPY"); // ETF, real equity aggs — must NOT map
+  assert.equal(polygonSpotTicker("QQQ"), "QQQ");
+  assert.equal(polygonSpotTicker("spxw"), "I:SPX");
+  assert.equal(polygonSpotTicker("meta"), "META");
 });

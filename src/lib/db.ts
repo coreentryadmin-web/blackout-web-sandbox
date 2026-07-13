@@ -1979,8 +1979,15 @@ function parseDate(value: string | null | undefined): string | null {
  * BOTH shapes: a Date object (read its UTC Y-M-D — DATE has no timezone, midnight-UTC is the day) and
  * an already-ISO string (slice). Falls back to the raw stringified first 10 chars only if neither
  * matches, so callers always get a stable value.
+ *
+ * Exported (2026-07-13 Night Hawk 0DTE audit): ecosystem-context.ts runs its own
+ * raw dbQuery()s against DATE columns (nighthawk_play_outcomes.edition_for,
+ * zerodte_setup_log.session_date) and was re-introducing the exact String(Date)
+ * garbage this helper exists to prevent — live-caught on the 0DTE board's
+ * nighthawk_echo ("Fri Jul 10 2026 00:00:00 GMT+0000 (Coordinated Universal
+ * Time)"). Any raw-query consumer of a DATE column must funnel through here.
  */
-function isoDateString(value: unknown): string {
+export function isoDateString(value: unknown): string {
   if (value instanceof Date && !Number.isNaN(value.getTime())) {
     return value.toISOString().slice(0, 10);
   }

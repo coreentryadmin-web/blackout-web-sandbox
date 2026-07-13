@@ -159,3 +159,17 @@ evidence / fix / status per the CLAUDE.md policy.)
 - **Why missed earlier**: the ribbon validation checked the DESK VWAP (correct); the terminal's
   VWAP line was never numerically cross-checked against it — surfaces validated in isolation.
   Added to the morning gate: cross-surface indicator equality (desk ribbon vs Vector terminal).
+
+## 2026-07-13 night — Night Hawk 0DTE audit fixes (merged from fix/nighthawk-0dte)
+
+### P1 — index-root 0DTE plays permanently ungradeable (FIXED)
+- Polygon serves index aggs only under `I:`; `SPXW/SPX/NDX` return HTTP 200 with 0 results, so
+  `gradeZeroDteLedger` stamped rows `graded` with null `direction_hit` forever, and the intraday
+  edge read had the same hole. Fix: `polygonSpotTicker()` mapping applied at both call sites
+  (`src/lib/zerodte/scan.ts`, `board.ts`) + tests. Historical null rows need the P-6 backfill.
+
+### P2 — pg DATE columns leaked as String(Date) into member payloads (FIXED)
+- `nighthawk_echo.edition_for` shipped "Fri Jul 10 2026 00:00:00 GMT+0000 …" (recurrence of the
+  #77 Bug 1 class). Fix: `isoDateString` exported from db.ts, applied in
+  `mapNighthawkEchoRows` + `fetchEcosystemContext`; regression test added.
+- Full analysis: `docs/audit/NIGHTHAWK-VS-SLAYER-0DTE.md` (v1) + `NIGHTHAWK-0DTE-DECISION.md` (v2).
