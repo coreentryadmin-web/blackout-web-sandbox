@@ -8,10 +8,14 @@ import {
   dbConfigured,
 } from "@/lib/db";
 import { evaluateSpxPlay, type SpxPlayPayload } from "@/features/spx/lib/spx-play-engine";
+import { syncPlaybookTelemetryAfterEvaluate } from "@/features/spx/lib/playbook-engine-telemetry";
 import {
   recordPlayEngineTick,
   type PlayEngineTickSource,
 } from "@/lib/play-engine-heartbeat";
+import { resolveGuardedPlaybookMatch } from "@/features/spx/lib/playbook-match-resolver";
+import { refreshOrBreakMemory } from "@/features/spx/lib/playbook-break-memory-store";
+import { todayEtYmd } from "@/lib/providers/spx-session";
 
 export type RunSpxEvaluatorResult =
   | { ok: true; skipped: false; play: SpxPlayPayload }
@@ -38,7 +42,28 @@ export async function runSpxEvaluator(
   }
 
   try {
-    const play = await evaluateSpxPlay(desk, technicals, { mutate: true });
+    const sessionDate = todayEtYmd();
+    const orBreakMemory = await refreshOrBreakMemory(sessionDate, desk, technicals, true);
+    const playbookMatch =
+      technicals?.available
+        ? await resolveGuardedPlaybookMatch(sessionDate, desk, technicals, {
+            or_break_memory: orBreakMemory,
+          })
+        : null;
+    const play = await evaluateSpxPlay(desk, technicals, {
+      mutate: true,
+      or_break_memory: orBreakMemory,
+      playbook_resolved: playbookMatch,
+    });
+    await syncPlaybookTelemetryAfterEvaluate(desk, technicals, play, {
+      or_break_memory: orBreakMemory,
+      resolved: playbookMatch,
+    }).catch((err) => {
+      console.warn(
+        "[spx-evaluator] playbook telemetry:",
+        err instanceof Error ? err.message : err
+      );
+    });
     await recordPlayEngineTick(source);
     return { ok: true, skipped: false, play };
   } catch (err) {
@@ -54,7 +79,15 @@ export async function runSpxEvaluator(
 /** Read-only play snapshot — no DB writes, Discord, or signal side effects. */
 export async function readSpxPlaySnapshot(
   desk: SpxDeskPayload,
-  technicals?: PlayTechnicals | null
+  technicals?: PlayTechnicals | null,
+  opts?: {
+    or_break_memory?: import("@/features/spx/lib/playbook-break-memory").OrBreakMemory | null;
+    playbook_resolved?: import("@/features/spx/lib/playbook-match-resolver").ResolvedPlaybookMatch | null;
+  }
 ): Promise<SpxPlayPayload> {
-  return evaluateSpxPlay(desk, technicals, { mutate: false });
+  return evaluateSpxPlay(desk, technicals, {
+    mutate: false,
+    or_break_memory: opts?.or_break_memory,
+    playbook_resolved: opts?.playbook_resolved,
+  });
 }

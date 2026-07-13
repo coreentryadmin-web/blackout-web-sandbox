@@ -1,5 +1,12 @@
-/** Preset Vector chart intervals — aggregated client-side from 1m SPX seed + live ticks. */
-export const VECTOR_PRESET_TIMEFRAMES = [1, 3, 5, 15] as const;
+/**
+ * Preset Vector chart intervals (minutes) — aggregated client-side from the 1m seed + live ticks.
+ * 30m/60m are intraday roll-ups of the SAME session's 1m bars (a 6.5h RTH session → ~13 30m or
+ * ~7 60m bars), so they need no extra data. Larger horizons (4h/1D/1W) are intentionally NOT
+ * presets: they'd need a multi-day daily-bar feed we don't seed yet, and bucketing a single
+ * session's 1m bars to 4h would collapse the whole day to 1–2 bars. Add those once the daily feed
+ * lands. `VectorTimeframeMinutes` still accepts any custom whole-minute interval up to the max.
+ */
+export const VECTOR_PRESET_TIMEFRAMES = [1, 3, 5, 15, 30, 60] as const;
 
 /** @deprecated Use VECTOR_PRESET_TIMEFRAMES */
 export const VECTOR_TIMEFRAMES = VECTOR_PRESET_TIMEFRAMES;
@@ -11,6 +18,57 @@ export type VectorTimeframeMinutes = number;
 
 export const VECTOR_INTERVAL_MIN = 1;
 export const VECTOR_INTERVAL_MAX = 240;
+
+/**
+ * Max gamma-wall nodes per side the SERVER returns for Vector (double the global
+ * DEFAULT_WALL_NODES_PER_SIDE = 6 that other products use). Higher candle timeframes show a
+ * wider price range, so walls further from spot become relevant — the server must actually
+ * return those further-out walls for the client to reveal them. The client never draws more
+ * than this many per side; wallCountForTimeframe() picks how many of them to SHOW per timeframe.
+ */
+export const VECTOR_WALL_NODES_PER_SIDE = 20;
+
+/**
+ * How many wall nodes (guides + beads) to SHOW per side at a given candle timeframe. Higher
+ * timeframe → wider visible price band → more, further-out walls are worth showing. Bounded by
+ * VECTOR_WALL_NODES_PER_SIDE (the server cap) so we never ask to draw walls the server didn't
+ * return. Monotonic non-decreasing in tf.
+ *
+ * The higher timeframes (30m/60m and custom 2h/4h) previously saturated at 12 alongside 15m, so a
+ * 60m/4h chart — which spans a far wider price range — showed the same handful of near-spot walls
+ * and left the top/bottom of the visible band bare. They now step up to 20 so the wider view fills
+ * with the further-out walls that actually matter at that horizon (the server returns up to 20/side).
+ */
+export function wallCountForTimeframe(tf: VectorTimeframeMinutes): number {
+  let count: number;
+  if (tf <= 1) count = 6;
+  else if (tf <= 3) count = 8;
+  else if (tf <= 5) count = 10;
+  else if (tf <= 15) count = 12;
+  else if (tf <= 30) count = 14;
+  else if (tf <= 60) count = 16;
+  else if (tf <= 120) count = 18;
+  else count = 20; // 2h+ custom intervals — widest view, saturates at the cap
+  return Math.max(1, Math.min(VECTOR_WALL_NODES_PER_SIDE, count));
+}
+
+/**
+ * Half-width (fraction of spot) of the "in view" strike band the KING ANCHOR considers at a given
+ * candle timeframe. Scales UP with the timeframe so the anchor is timeframe-aware: a tight 1m view
+ * anchors to the nearest strong wall (~±2%), while a wide 4h view (~±12%) lets a bigger, further-out
+ * dominant wall become the anchor. Paired with `pickKingStrikes(walls, {spot, bandPct})`. Monotonic
+ * non-decreasing in tf; the near-spot dominant-wall case (e.g. SPX today) anchors the same at every
+ * timeframe because that wall is inside even the tightest band — which is correct, not a no-op.
+ */
+export function anchorBandPctForTimeframe(tf: VectorTimeframeMinutes): number {
+  if (tf <= 1) return 0.02;
+  if (tf <= 3) return 0.03;
+  if (tf <= 5) return 0.04;
+  if (tf <= 15) return 0.055;
+  if (tf <= 30) return 0.07;
+  if (tf <= 60) return 0.09;
+  return 0.12; // 2h+ — widest view
+}
 
 export type VectorOhlcBar = {
   time: number;
@@ -68,4 +126,29 @@ export function barsForVectorTimeframe<T extends VectorOhlcBar>(
   intervalMinutes: number
 ): T[] {
   return aggregateVectorBars(minuteBars, intervalMinutes);
+}
+
+/**
+ * Union two 1m bar arrays by time, sorted ascending. Fetched (Polygon closed)
+ * bars are authoritative for OHLC — they replace live-built bars at the same
+ * minute — but a live-built bar's volume survives when the fetched row has
+ * none. Used by the SSE-reconnect backfill: bars that closed while the
+ * connection was down (reconnect, replay window, tab sleep) are filled in
+ * instead of remaining permanent session holes.
+ */
+export function mergeBarsByTime<T extends VectorOhlcBar & { volume?: number }>(
+  existing: T[],
+  fetched: T[]
+): T[] {
+  if (!fetched.length) return existing;
+  const byTime = new Map<number, T>();
+  for (const b of existing) byTime.set(b.time, b);
+  for (const b of fetched) {
+    const prev = byTime.get(b.time);
+    byTime.set(
+      b.time,
+      prev && b.volume == null && prev.volume != null ? { ...b, volume: prev.volume } : b
+    );
+  }
+  return [...byTime.values()].sort((a, b) => a.time - b.time);
 }

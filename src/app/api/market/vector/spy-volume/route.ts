@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { authorizeMarketDeskApi } from "@/lib/market-api-auth";
-import { requireToolApi } from "@/lib/tool-access-server";
+import { requireToolApiForDeskCaller } from "@/lib/tool-access-server";
 import { fetchSpyVolumeRows } from "@/features/vector";
 
 export const runtime = "nodejs";
@@ -11,7 +11,10 @@ export async function GET(req: NextRequest) {
   const auth = await authorizeMarketDeskApi(req);
   if (auth instanceof Response) return auth;
 
-  const locked = await requireToolApi("vector");
+  // CRON_SECRET callers have no browser session, so the launch gate 403'd
+  // ops/validator probes while Vector is pre-launch — the desk-caller variant
+  // exists for exactly this (fail-closed for members, open for cron bearers).
+  const locked = await requireToolApiForDeskCaller(auth, "vector");
   if (locked) return locked;
 
   const ymd = req.nextUrl.searchParams.get("ymd")?.trim();

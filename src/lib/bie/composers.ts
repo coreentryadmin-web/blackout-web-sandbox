@@ -6,10 +6,39 @@
 
 import { runLargoTool } from "@/lib/largo/run-tool";
 import { zeroDtePlaysForLargo } from "@/lib/platform/zerodte-service";
-import type { BieRoute } from "./router";
+import { computeSpxConfluence } from "@/features/spx/lib/spx-signals";
+import { composeSpxDeskBrief } from "@/lib/bie/spx-desk-brief";
+import { spxSessionPhase } from "@/features/spx/lib/spx-session-phase";
+import { formatKnowledgeFootnotes } from "@/lib/bie/platform-footnotes";
+import { formatEcosystemNarrative } from "@/lib/bie/ecosystem-narrative";
+import { synthesizeTickerVerdict, formatTickerVerdictMarkdown } from "@/lib/bie/ticker-verdict";
+import { composeTickerCompare } from "@/lib/bie/ticker-compare";
+import { composeSpxInvalidationLines } from "@/lib/bie/spx-invalidation";
+import { composeFlowTapeAnswer, composeQuietFlowBrief } from "@/lib/bie/flow-tape-brief";
+import { synthesizeSpxDeskIntel } from "@/lib/bie/spx-desk-synthesis";
+import { buildPlayTechnicals } from "@/features/spx/lib/spx-play-technicals";
+import { buildPlaybookShadowPanel } from "@/features/spx/lib/playbook-shadow-panel";
+import {
+  BIE_LARGO_ANSWER_TTL_MS,
+  getCachedBiePlatformContext,
+  largoAnswerCacheKey,
+} from "@/lib/bie/platform-cache";
+import { withServerCache } from "@/lib/server-cache";
+import { stripGroundingTokens } from "@/lib/bie/grounding-markers";
+import { classifyBieIntent, type BieRoute } from "./router";
+import {
+  splitCompoundQuestion,
+  labelForSubQuestion,
+  synthesizeCompoundAnswer,
+  type CompoundPart,
+} from "./decompose";
+
+/** Optional member question — premise correction + advice routing context. */
+export type ComposeBieOpts = { question?: string };
 
 /** Deterministic answer plus the raw source payload for Layer 4 claim verification. */
-export type BieComposed = { answer: string; context: unknown };
+import type { BieComposed } from "@/lib/bie/composers-shared";
+export type { BieComposed };
 
 const fmt = (n: unknown, digits = 2): string =>
   typeof n === "number" && Number.isFinite(n)
@@ -93,8 +122,260 @@ function scalarSection(title: string, obj: Record<string, unknown>, keys: string
   return [`**${title}**`, ...rows].join("\n");
 }
 
+async function composeSpxDeskRead(question?: string): Promise<BieComposed | null> {
+  const platform = await getCachedBiePlatformContext({ scope: "desk" });
+  const desk = platform.desk;
+  if (!desk) return null;
+  const confluence = computeSpxConfluence(desk);
+  if (!confluence) return null;
+
+  const { openPlay, lotto, powerHour, outcomes } = platform.cross;
+
+  let playbookShadow: import("@/lib/bie/spx-desk-brief").SpxDeskBriefCross["playbookShadow"] = null;
+  try {
+    const technicals = await buildPlayTechnicals(desk.price, {
+      vwap: desk.vwap,
+      pdh: desk.pdh,
+      pdl: desk.pdl,
+      hod: desk.hod,
+      lod: desk.lod,
+    });
+    const panel = buildPlaybookShadowPanel(desk, technicals);
+    if (panel) {
+      const primary = panel.verdicts.find((v) => v.primary) ?? null;
+      playbookShadow = {
+        mode: panel.mode,
+        primary_playbook_id: panel.primary_playbook_id,
+        primary_name: primary?.name ?? null,
+        primary_direction: primary?.direction ?? null,
+        fired_count: panel.verdicts.filter((v) => v.trigger_fired).length,
+      };
+    }
+  } catch {
+    /* Largo desk read degrades without playbook panel */
+  }
+
+  const brief = composeSpxDeskBrief(desk, confluence, [], spxSessionPhase(desk.as_of), {
+    openPlay: openPlay && openPlay.status === "open" ? openPlay : null,
+    lotto: lotto && lotto.phase !== "NONE" && lotto.phase !== "INVALID" ? lotto : null,
+    powerHour: powerHour && powerHour.phase !== "NONE" ? powerHour : null,
+    outcomes: outcomes && outcomes.total_closed > 0 ? outcomes : null,
+    intel: platform.intel ?? undefined,
+    playbookShadow,
+  }, question);
+  const knowledge = formatKnowledgeFootnotes(platform.knowledge);
+  // Strip the {{value}} grounding markers so the member sees the number, not the marker — the SPX
+  // desk brief lines wrap every figure in {{…}} for the strict grounding guard, and the non-stream
+  // Largo path was shipping them literally (live audit: "above γflip {{7,496}}").
+  const answer = stripGroundingTokens(
+    [`**SPX Live Desk read**`, "", `**${brief.headline}**`, "", brief.body, knowledge ? `\n\n${knowledge}` : ""]
+      .filter(Boolean)
+      .join("\n")
+  );
+  return {
+    answer,
+    context: { desk, confluence, brief, platform },
+  };
+}
+
+/** Parse a chart timeframe (1m/5m/15m/1H) from the question → minutes, else undefined (default 5). */
+function timeframeMinFromQuestion(q?: string): number | undefined {
+  if (!q) return undefined;
+  const m = q.match(/\b(1|3|5|15|30)\s?m\b/i);
+  if (m) return Number(m[1]);
+  const h = q.match(/\b(1|2|4)\s?h\b/i);
+  if (h) return Number(h[1]) * 60;
+  return undefined;
+}
+
+/**
+ * Deterministic Vector desk read — the Largo-BIE path for Vector questions (zero Claude cost).
+ * Assembles the FULL Vector state for (ticker, horizon) and renders the multi-section desk brief
+ * (regime / walls / wall-dynamics / magnet / max-pain / expected-move / ladder / VEX / dark-pool /
+ * flow / play). Returns null on no live spot → the router falls back (Claude, or the staging
+ * SPX default). The returned context carries the state + knownVectorNumbers so Layer-4
+ * verifyClaims can ground every cited figure.
+ */
+async function composeVectorRead(
+  ticker: string,
+  horizon: string,
+  question?: string
+): Promise<BieComposed | null> {
+  const [{ fetchVectorFullState }, { normalizeDteHorizon }, { composeVectorDeskBrief }, { knownVectorNumbers }] =
+    await Promise.all([
+      import("@/lib/bie/vector-full-state"),
+      import("@/features/vector/lib/vector-dte-horizon"),
+      import("@/lib/bie/vector-desk-brief"),
+      import("@/lib/bie/vector-desk-intel"),
+    ]);
+
+  // HONESTY GUARD: a question that names an UNSUPPORTED horizon (LEAP / multi-year / quarterly) can't
+  // be scoped — normalizeDteHorizon would silently coerce it to the whole-chain "all", and we'd
+  // answer that aggregate as if it satisfied the request (a fabricated read). Reject it honestly
+  // BEFORE fetching, and record the gap. (0DTE/weekly/monthly/all are the only representable horizons.)
+  const { namesUnsupportedHorizon, unsupportedHorizonMessage, noLiveVectorStateMessage } = await import(
+    "@/lib/bie/vector-read-fallback"
+  );
+  const { recordBieGap } = await import("@/lib/bie/gap-log");
+  if (question && namesUnsupportedHorizon(question)) {
+    void recordBieGap({ question, intent: "vector_read", reason: "unsupported_horizon" });
+    return {
+      answer: unsupportedHorizonMessage(ticker),
+      context: { ticker: ticker.toUpperCase(), reason: "unsupported_horizon" },
+    };
+  }
+
+  const state = await fetchVectorFullState(
+    ticker.toUpperCase(),
+    normalizeDteHorizon(horizon),
+    timeframeMinFromQuestion(question)
+  );
+  // No live state (markets closed, cold matrix, off-universe ticker) — fetchVectorFullState
+  // fail-opens to null. Returning null here let the route 502 / fall back to an SPX desk-dump; the
+  // honest behavior is to SAY we can't read it and record the gap, never crash or dump the wrong
+  // desk. (BUG 1 from the live audit — SPY/QQQ/NVDA off-hours 502'd.)
+  if (!state) {
+    void recordBieGap({ question: question ?? "", intent: "vector_read", reason: "no_live_state" });
+    return {
+      answer: noLiveVectorStateMessage(ticker),
+      context: { ticker: ticker.toUpperCase(), reason: "no_live_state" },
+    };
+  }
+
+  const brief = composeVectorDeskBrief(state, question);
+  const answer = stripGroundingTokens(
+    [
+      `**Vector desk read — ${ticker.toUpperCase()} (${state.horizon.toUpperCase()})**`,
+      "",
+      `**${brief.headline}**`,
+      "",
+      brief.body,
+    ].join("\n")
+  );
+  return { answer, context: { state, known: knownVectorNumbers(state) } };
+}
+
+/**
+ * Deterministic concept/definition read — answers "what is GEX / a King node / VEX / max pain",
+ * "what does Night Hawk do" from the code-grounded glossary, zero LLM cost. On a known term it
+ * returns the clean definition; on an UNKNOWN term it returns an HONEST "not in my glossary yet"
+ * message (never a desk-dump) and records the miss via the gap-logger so the glossary can grow.
+ */
+async function composeConceptRead(question: string): Promise<BieComposed | null> {
+  const { lookupGlossary } = await import("@/lib/bie/glossary");
+  const entry = lookupGlossary(question);
+  if (!entry) {
+    const { recordBieGap } = await import("@/lib/bie/gap-log");
+    void recordBieGap({ question, intent: "concept_read", reason: "no_definition" });
+    return {
+      answer:
+        "I don't have a solid definition for that in my glossary yet — I've logged it so it can be added. " +
+        "I can define the core desk concepts though: GEX, VEX, DEX, charm, the gamma flip, a King node, " +
+        "call/put walls, max pain, expected move, the gamma magnet, wall integrity, the bead rail, confluence, " +
+        "the gamma regime, VWAP/EMA/RSI/MACD, or any BlackOut product (Vector, SPX Slayer, Thermal, Helix, " +
+        "Night Hawk, Largo, BIE).",
+      context: { reason: "no_definition", question },
+    };
+  }
+  // Rich concept answer: a full multi-section EXPLANATION (What it is · How it works · Why it matters
+  // · Example · On the platform) instead of a single dictionary line — BIE teaching the concept like a
+  // desk analyst, deterministic + grounded. Glossary/rich content carries no {{…}} markers.
+  const { buildConceptEnvelope } = await import("@/lib/bie/concept-narrative");
+  const envelope = buildConceptEnvelope(entry);
+  return { answer: envelope.markdown, context: { term: entry.term, category: entry.category }, envelope };
+}
+
+/** Split a "path?a=1&b=2" token into a path + params object. */
+function splitPathQuery(raw: string): { path: string; params: Record<string, string> } {
+  const [path, query] = raw.split("?");
+  const params: Record<string, string> = {};
+  if (query) {
+    for (const kv of query.split("&")) {
+      const [k, v] = kv.split("=");
+      if (k) params[decodeURIComponent(k)] = decodeURIComponent(v ?? "");
+    }
+  }
+  return { path: path!, params };
+}
+
+/**
+ * Universal lookup — "pull / look up X from <internal path | provider>". Resolves the referenced
+ * endpoint through the GOVERNED readers (callInternalApiRead / readUw / readPolygon — all read-only,
+ * allowlisted) and returns the JSON, or an honest "name the endpoint/source" + gap-log when it can't
+ * resolve one. Deterministic: it only acts on an explicitly-named path/provider (the router gate
+ * guarantees one is present); it never guesses a natural-language resource → endpoint mapping (that's
+ * the LLM tool path via get_uw/get_polygon/call_internal_api).
+ */
+async function composeUniversal(question: string): Promise<BieComposed | null> {
+  const { recordBieGap } = await import("@/lib/bie/gap-log");
+  const internalMatch = question.match(/\/api\/[\w\-\/]+(?:\?[\w=&%.\-]+)?/)?.[0] ?? null;
+  const providerMatch =
+    question.match(/\/v[0-9x]+\/[\w\-\/.]+(?:\?[\w=&%.\-]+)?/i)?.[0] ??
+    question.match(/\/(?:snapshot|reference|marketstatus|aggs)[\w\-\/.]*(?:\?[\w=&%.\-]+)?/i)?.[0] ??
+    null;
+  const mentionsPolygon = /\b(polygon|massive)\b/i.test(question);
+  const mentionsUw = /\b(unusual ?whales|uw)\b/i.test(question);
+
+  let result: { ok?: boolean; error?: string; data?: unknown } | null = null;
+  let source = "";
+
+  if (mentionsUw && internalMatch) {
+    const { readUw } = await import("@/lib/bie/provider-read");
+    const { path, params } = splitPathQuery(internalMatch);
+    result = await readUw(path, params);
+    source = `Unusual Whales ${path}`;
+  } else if (providerMatch || (mentionsPolygon && internalMatch)) {
+    const { readPolygon } = await import("@/lib/bie/provider-read");
+    const { path, params } = splitPathQuery(providerMatch ?? internalMatch!);
+    result = await readPolygon(path, params);
+    source = `Polygon ${path}`;
+  } else if (internalMatch) {
+    const { callInternalApiRead } = await import("@/lib/bie/internal-api");
+    const { path, params } = splitPathQuery(internalMatch);
+    result = await callInternalApiRead(path, params);
+    source = `internal ${path}`;
+  }
+
+  if (result == null) {
+    void recordBieGap({ question, intent: "universal_lookup", reason: "universal_unresolved" });
+    return {
+      answer:
+        "I can pull live platform data — just name the endpoint or source. E.g. \"pull /api/market/gex-positioning?ticker=SPY\", " +
+        "\"get /v3/reference/tickers from Polygon\", or a UW data path like \"/api/darkpool/NVDA from unusual whales\". Which endpoint?",
+      context: { reason: "universal_unresolved" },
+    };
+  }
+  if (!result.ok) {
+    void recordBieGap({ question, intent: "universal_lookup", reason: result.error ?? "read_failed" });
+    return {
+      answer: `I couldn't read ${source} — ${result.error ?? "the read failed"}. That path is either denied (read-only + governed) or currently unavailable.`,
+      context: result,
+    };
+  }
+  const json = JSON.stringify(result.data ?? result, null, 2);
+  const body = json.length > 2500 ? `${json.slice(0, 2500)}\n… (truncated)` : json;
+  return { answer: `**${source}**\n\n\`\`\`json\n${body}\n\`\`\``, context: result };
+}
+
+async function composeSpxInvalidation(): Promise<BieComposed | null> {
+  const platform = await getCachedBiePlatformContext({ scope: "desk" });
+  const desk = platform.desk;
+  if (!desk) return null;
+  const confluence = computeSpxConfluence(desk);
+  if (!confluence) return null;
+  const cross = {
+    openPlay: platform.cross.openPlay,
+    intel: platform.intel ?? undefined,
+  };
+  const lines = composeSpxInvalidationLines(desk, confluence, cross);
+  return { answer: stripGroundingTokens(lines.join("\n")), context: { desk, confluence, cross } };
+}
+
 async function composeSpxStructure(): Promise<BieComposed | null> {
-  const raw = (await runLargoTool("get_spx_structure", {})) as Record<string, unknown> | null;
+  const [platform, raw] = await Promise.all([
+    getCachedBiePlatformContext({ scope: "desk" }),
+    runLargoTool("get_spx_structure", {}) as Promise<Record<string, unknown> | null>,
+  ]);
   if (!raw || typeof raw !== "object" || (raw as { error?: unknown }).error) return null;
   const section = scalarSection("SPX structure (live desk)", raw, [
     "price",
@@ -113,14 +394,33 @@ async function composeSpxStructure(): Promise<BieComposed | null> {
     "pdl",
   ]);
   if (!section) return null;
-  return {
-    answer: `${section}\n\n_Direct read of the SPX desk — the same numbers SPX Slayer renders. Ask a follow-up if you want the reasoning behind any level._`,
-    context: raw,
-  };
+
+  const parts = [section];
+  const desk = platform.desk;
+  if (desk) {
+    const confluence = computeSpxConfluence(desk);
+    if (confluence) {
+      const synthesis = synthesizeSpxDeskIntel(
+        desk,
+        confluence,
+        spxSessionPhase(desk.as_of),
+        { intel: platform.intel ?? undefined, openPlay: platform.cross.openPlay ?? undefined }
+      );
+      parts.push("", synthesis.mechanic ?? "");
+      if (synthesis.watch.length) {
+        parts.push("", "**Watch**", ...synthesis.watch.slice(0, 3).map((w) => `- ${w}`));
+      }
+    }
+  }
+  parts.push("", "_Mini structure read — ask **What's the SPX setup right now?** for full THESIS/ALIGNMENT._");
+  return { answer: stripGroundingTokens(parts.join("\n")), context: { raw, desk: platform.desk } };
 }
 
 async function composeMarketContext(): Promise<BieComposed | null> {
-  const raw = (await runLargoTool("get_market_context", {})) as Record<string, unknown> | null;
+  const [platform, raw] = await Promise.all([
+    getCachedBiePlatformContext({ scope: "market", flowLimit: 24 }),
+    runLargoTool("get_market_context", {}) as Promise<Record<string, unknown> | null>,
+  ]);
   if (!raw || typeof raw !== "object" || (raw as { error?: unknown }).error) return null;
   const parts: string[] = [];
   const top = scalarSection("Market context (live)", raw, [
@@ -135,9 +435,41 @@ async function composeMarketContext(): Promise<BieComposed | null> {
     "market_label",
   ]);
   if (top) parts.push(top);
+
+  const regime = platform.regime;
+  if (regime) {
+    const regimeSec = scalarSection("HELIX regime detector", regime, [
+      "regime_label",
+      "risk_tone",
+      "session_phase",
+      "critical_anomalies",
+      "flow_anomaly_count",
+      "as_of",
+    ]);
+    if (regimeSec) parts.push(regimeSec);
+  }
+
+  const snap = platform.snapshot;
+  if (snap.spx) {
+    parts.push(
+      `**SPX desk summary:** ${fmt(snap.spx.price)} (${fmt(snap.spx.change_pct)}%) · γflip ${fmt(snap.spx.gamma_flip, 0)} · γ ${snap.spx.gamma_regime ?? "—"}`
+    );
+  }
+  if (snap.flows) {
+    const tops = (snap.flows.top_tickers ?? []).slice(0, 4).map((t) => t.ticker).join(", ");
+    parts.push(
+      `**HELIX tape:** ${snap.flows.count} prints · $${fmt(snap.flows.total_premium, 0)} premium · top: ${tops || "—"}`
+    );
+  }
+  if (snap.nighthawk?.available) {
+    parts.push(
+      `**Night Hawk:** ${snap.nighthawk.play_count} plays · ${snap.nighthawk.recap_headline ?? snap.nighthawk.edition_for ?? "edition live"}`
+    );
+  }
+
   // Nested one-level scalars (e.g. indices objects) — printed defensively.
   for (const [k, v] of Object.entries(raw)) {
-    if (parts.length >= 3) break;
+    if (parts.length >= 6) break;
     if (v && typeof v === "object" && !Array.isArray(v)) {
       const sec = scalarSection(k.replace(/_/g, " "), v as Record<string, unknown>, [
         "price",
@@ -149,57 +481,177 @@ async function composeMarketContext(): Promise<BieComposed | null> {
       if (sec) parts.push(sec);
     }
   }
+  const knowledge = formatKnowledgeFootnotes(platform.knowledge);
+  if (knowledge) parts.push(knowledge);
   if (parts.length === 0) return null;
   return {
-    answer: `${parts.join("\n\n")}\n\n_Live platform read. For interpretation or a trade thesis, ask the follow-up — that's where deeper reasoning kicks in._`,
-    context: raw,
+    answer: `${parts.join("\n\n")}\n\n_Live platform read — SPX desk, HELIX tape, Night Hawk, regime detector, and desk knowledge. Zero Claude cost._`,
+    context: { market_context: raw, platform },
   };
 }
 
 async function composeTickerEcosystem(ticker: string): Promise<BieComposed | null> {
   const { fetchEcosystemContext } = await import("@/lib/bie/ecosystem-context");
   const ctx = await fetchEcosystemContext(ticker);
-  const lines: string[] = [`**${ctx.ticker} — cross-instrument snapshot**`, ""];
-  let any = false;
+  const narrative = formatEcosystemNarrative(ctx);
+  return {
+    answer: `${narrative}\n\n_Ask a follow-up for SPX desk context or a structured verdict on ${ticker}._`,
+    context: ctx,
+  };
+}
 
-  if (ctx.zerodte_today) {
-    any = true;
-    const z = ctx.zerodte_today;
-    lines.push(
-      `- **0DTE Command today:** ${z.direction}, score ${fmt(z.score)}${z.conviction ? `, ${z.conviction} conviction` : ""}${z.status ? ` (${z.status})` : ""}`
-    );
-  }
-  if (ctx.nighthawk_recent) {
-    any = true;
-    const n = ctx.nighthawk_recent;
-    lines.push(
-      `- **Night Hawk (${n.edition_for}):** ${n.direction}, ${n.conviction} conviction${n.score != null ? `, score ${fmt(n.score)}` : ""} — outcome: ${n.outcome}`
-    );
-  }
-  if (ctx.recent_flow) {
-    any = true;
-    const f = ctx.recent_flow;
-    lines.push(
-      `- **HELIX flow (last ${f.window_hours}h):** ${f.print_count} prints — $${fmt(f.call_premium, 0)} call premium, $${fmt(f.put_premium, 0)} put premium${f.unknown_premium > 0 ? `, $${fmt(f.unknown_premium, 0)} unclassified` : ""}`
-    );
-  }
-  if (ctx.recent_anomalies.length > 0) {
-    any = true;
-    lines.push(`- **Flow anomalies (24h):** ${ctx.recent_anomalies.map((a) => `${a.anomaly_type} (${a.severity})`).join(", ")}`);
-  }
-  if (!any) {
-    lines.push(
-      ctx.flow_feed_fresh
-        ? "Nothing notable on the desk for this name right now — no 0DTE flag, no recent Night Hawk take, no unusual flow."
-        : "_The live flow pipeline isn't reporting fresh data right now, so this may be incomplete — not necessarily quiet, just unconfirmed._"
-    );
-  }
-  lines.push("", "_Cross-instrument read — the same signal Largo's tools compose from. Ask a follow-up for the reasoning behind any of this._");
-  return { answer: lines.join("\n"), context: ctx };
+async function composeTickerAdvice(ticker: string, question: string): Promise<BieComposed | null> {
+  const { fetchEcosystemContext } = await import("@/lib/bie/ecosystem-context");
+  const ctx = await fetchEcosystemContext(ticker);
+  const verdict = await synthesizeTickerVerdict(ctx, question);
+  return {
+    answer: formatTickerVerdictMarkdown(verdict),
+    context: { ecosystem: ctx, verdict },
+  };
+}
+
+async function composeFlowTape(ticker: string | null): Promise<BieComposed | null> {
+  const platform = await getCachedBiePlatformContext({ scope: "market", flowLimit: 40 });
+  return {
+    answer: composeFlowTapeAnswer(platform, ticker),
+    context: platform,
+  };
+}
+
+/** Per-sub-question deadline — a slow friend must never stall the whole compound answer. */
+const COMPOUND_FRIEND_TIMEOUT_MS = 4000;
+const COMPOUND_TIMEOUT = Symbol("compound-timeout");
+
+/**
+ * COMPOUND answer — the "15 questions in one ask" engine (task #57). Splits the message into
+ * sub-questions and, WHEN it is confidently compound (≥2), fans them out over the EXISTING single-
+ * intent path (classifyBieIntent → composeBieAnswer) in PARALLEL, each with a per-friend timeout,
+ * then synthesizes ONE labeled answer. Returns null when the message is a single question, so the
+ * caller falls through to the unchanged single path (no regression — the whole gate).
+ *
+ * Honesty spine: every part is EITHER real grounded data OR an honest "unavailable — timed out / no
+ * live data" note + recordBieGap — never fabricated, never silently dropped. State is request-scoped
+ * (the `ledger` local below), never shared/global, so concurrent calls can't cross-contaminate.
+ */
+export async function composeCompound(
+  question: string,
+  ledgerTickers: Set<string> = new Set()
+): Promise<BieComposed | null> {
+  const subQs = splitCompoundQuestion(question);
+  if (subQs.length < 2) return null; // single question → caller uses the normal path unchanged
+
+  const { recordBieGap } = await import("@/lib/bie/gap-log");
+
+  // Request-scoped ledger — fresh per call, one row per friend. Never global.
+  const ledger: Array<CompoundPart & { context: unknown }> = await Promise.all(
+    subQs.map(async (subQ, i): Promise<CompoundPart & { context: unknown }> => {
+      const index = i + 1;
+      const label = labelForSubQuestion(subQ);
+      const started = Date.now();
+      const unavailable = (reason: string, intent: string | null): CompoundPart & { context: unknown } => ({
+        index,
+        label,
+        ok: false,
+        text: `unavailable — ${reason}`,
+        intent,
+        ms: Date.now() - started,
+        context: null,
+      });
+
+      try {
+        const route = classifyBieIntent(subQ, ledgerTickers);
+        if (!route) {
+          void recordBieGap({ question: subQ, intent: "compound_part", reason: "no_route" });
+          return unavailable("no deterministic read for this part", null);
+        }
+        // Per-friend timeout: race the compose against a deadline so one slow read can't stall all.
+        const raced = await Promise.race([
+          composeBieAnswer(route, { question: subQ }),
+          new Promise<typeof COMPOUND_TIMEOUT>((res) => setTimeout(() => res(COMPOUND_TIMEOUT), COMPOUND_FRIEND_TIMEOUT_MS)),
+        ]);
+        if (raced === COMPOUND_TIMEOUT) {
+          void recordBieGap({ question: subQ, intent: route.intent, reason: "timeout" });
+          return unavailable("timed out", route.intent);
+        }
+        if (!raced || !raced.answer) {
+          void recordBieGap({ question: subQ, intent: route.intent, reason: "no_data" });
+          return unavailable("no live data returned", route.intent);
+        }
+        return {
+          index,
+          label,
+          ok: true,
+          text: raced.answer.trim(),
+          intent: route.intent,
+          ms: Date.now() - started,
+          context: raced.context,
+        };
+      } catch {
+        void recordBieGap({ question: subQ, intent: "compound_part", reason: "error" });
+        return unavailable("read failed", null);
+      }
+    })
+  );
+
+  const answer = synthesizeCompoundAnswer(ledger);
+  return {
+    answer,
+    // Context carries each part's own grounded context so Layer-4 verifyClaims can trace every
+    // number the synthesized answer cites back to the sub-answer it came from.
+    context: {
+      compound: true,
+      parts: ledger.map((p) => ({ index: p.index, label: p.label, ok: p.ok, intent: p.intent, ms: p.ms })),
+      subContexts: ledger.map((p) => p.context),
+    },
+  };
 }
 
 /** Compose the deterministic answer for a route, or null → Claude fallback. */
-export async function composeBieAnswer(route: BieRoute): Promise<BieComposed | null> {
+export async function composeBieAnswer(route: BieRoute, opts?: ComposeBieOpts): Promise<BieComposed | null> {
+  const cacheKey = largoAnswerCacheKey(route.intent, route.ticker, route.ticker_b, opts?.question);
+  const composed = await withServerCache<BieComposed | null>(
+    cacheKey,
+    BIE_LARGO_ANSWER_TTL_MS,
+    () => composeBieAnswerUncached(route, opts),
+    { staleWhileRevalidate: true }
+  );
+  // Backward-compatible envelope guarantee: every answer carries a structured BieAnswerEnvelope for
+  // the member UI. Legs that already build one (verdict, and future migrations) keep theirs; a
+  // string-only leg is wrapped in a minimal single-section envelope (no fabricated structure).
+  if (composed && !composed.envelope) {
+    const { envelopeFromMarkdown } = await import("@/lib/bie/answer-envelope");
+    composed.envelope = envelopeFromMarkdown(composed.answer, {
+      headline: headlineForRoute(route),
+      intent: route.intent,
+    });
+  }
+  return composed;
+}
+
+/** A short headline for the transition-shim envelope of a string-only leg. */
+function headlineForRoute(route: BieRoute): string {
+  const t = route.ticker ? `${route.ticker} ` : "";
+  const map: Partial<Record<string, string>> = {
+    spx_desk_read: "SPX Live Desk read",
+    spx_structure: "SPX structure",
+    spx_invalidation: "SPX invalidation",
+    vector_read: `${t}Vector desk read`,
+    concept_read: "Definition",
+    market_context: "Market context",
+    flow_tape: "Flow tape",
+    ticker_ecosystem: `${t}ecosystem`,
+    ticker_advice: `${t}read`,
+    ticker_compare: "Comparison",
+    universal_lookup: "Lookup",
+    verdict: `${t}verdict`,
+    system_diagnostic: `${t}diagnosis`,
+    zerodte_plays: "0DTE plays",
+    ticker_play_state: `${t}play`,
+  };
+  return map[route.intent] ?? "BIE read";
+}
+
+async function composeBieAnswerUncached(route: BieRoute, opts?: ComposeBieOpts): Promise<BieComposed | null> {
   try {
     switch (route.intent) {
       case "zerodte_plays":
@@ -208,10 +660,45 @@ export async function composeBieAnswer(route: BieRoute): Promise<BieComposed | n
         return route.ticker ? await composeTickerPlayState(route.ticker) : null;
       case "spx_structure":
         return await composeSpxStructure();
+      case "spx_desk_read":
+        return await composeSpxDeskRead(opts?.question);
+      case "spx_invalidation":
+        return await composeSpxInvalidation();
       case "market_context":
         return await composeMarketContext();
+      case "flow_tape":
+        return await composeFlowTape(route.ticker);
       case "ticker_ecosystem":
         return route.ticker ? await composeTickerEcosystem(route.ticker) : null;
+      case "ticker_advice":
+        return route.ticker && opts?.question
+          ? await composeTickerAdvice(route.ticker, opts.question)
+          : route.ticker
+            ? await composeTickerAdvice(route.ticker, `structure on ${route.ticker}`)
+            : null;
+      case "ticker_compare":
+        return route.ticker && route.ticker_b
+          ? await composeTickerCompare(route.ticker, route.ticker_b)
+          : null;
+      case "vector_read":
+        return route.ticker
+          ? await composeVectorRead(route.ticker, route.horizon ?? "all", opts?.question)
+          : null;
+      case "concept_read":
+        return await composeConceptRead(opts?.question ?? "");
+      case "universal_lookup":
+        return await composeUniversal(opts?.question ?? "");
+      case "verdict": {
+        // Cross-tool verdict synthesis (task #59) — the only leg that returns a fully-populated
+        // BieAnswerEnvelope directly (composeBieAnswer's shim leaves it untouched). Server-only
+        // module, dynamically imported so tsx/test never loads its side-effectful deps.
+        const { composeVerdict } = await import("@/lib/bie/verdict");
+        return await composeVerdict(route.ticker ?? "SPX", opts?.question ?? "");
+      }
+      case "system_diagnostic": {
+        const { composeDiagnostic } = await import("@/lib/bie/diagnostic");
+        return await composeDiagnostic(route.ticker ?? "SPX", opts?.question ?? "");
+      }
       default:
         return null;
     }

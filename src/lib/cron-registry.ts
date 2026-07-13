@@ -295,6 +295,30 @@ export const CRON_JOBS: CronJobDefinition[] = [
       "Batch-build compact GEX wall summary rows for the Vector scanner (~21 liquid tickers) into Redis — keeps market-wide Vector reads cache-only",
   },
   {
+    key: "vector-full-state-snapshot",
+    name: "Vector Full-State Snapshot",
+    kind: "http",
+    path: "/api/cron/vector-full-state-snapshot",
+    schedule_label: "~Every 5 min (market hours)",
+    stale_after_min: 15,
+    weekdays_only: true,
+    market_hours_only: true,
+    description:
+      "Snapshot the COMPLETE Vector desk state (regime/walls/flip/magnet/max-pain/expected-move/ladder/heatmap/flow/beads/VEX/dark-pool/technicals/play) per universe ticker × DTE horizon into Redis, so Largo-BIE serves current Vector state for any stock/horizon cache-only without a per-query fan-out",
+  },
+  {
+    key: "bie-full-state-snapshot",
+    name: "BIE Full-State Snapshot",
+    kind: "http",
+    path: "/api/cron/bie-full-state-snapshot",
+    schedule_label: "~Every 5 min (market hours)",
+    stale_after_min: 15,
+    weekdays_only: true,
+    market_hours_only: true,
+    description:
+      "Assemble the broad cross-product platform snapshot (SPX desk + flow tape + Night Hawk + market-regime intel + Vector universe wall summary + market-wide dark pool + hot tickers) into Redis bie:full-state so BIE reads current whole-platform state instantly — the 24/7 'brain of BlackOut' feed",
+  },
+  {
     key: "vector-dark-pool-warm",
     name: "Vector Dark Pool Warm",
     kind: "http",

@@ -940,6 +940,42 @@ export async function runLargoTool(name: string, input: Record<string, unknown>,
       return fetchEcosystemContext(ticker);
     }
 
+    case "call_internal_api": {
+      const { callInternalApiRead } = await import("@/lib/bie/internal-api");
+      const rawParams =
+        input.params && typeof input.params === "object" && !Array.isArray(input.params)
+          ? (input.params as Record<string, string | number | boolean | null | undefined>)
+          : undefined;
+      // Governed + read-only: callInternalApiRead hard-denies anything not a GET class:read route.
+      return callInternalApiRead(String(input.path ?? ""), rawParams);
+    }
+
+    case "get_uw": {
+      const { readUw } = await import("@/lib/bie/provider-read");
+      const p = input.params && typeof input.params === "object" && !Array.isArray(input.params)
+        ? (input.params as Record<string, unknown>)
+        : undefined;
+      return readUw(String(input.endpoint ?? ""), p);
+    }
+
+    case "get_polygon": {
+      const { readPolygon } = await import("@/lib/bie/provider-read");
+      const p = input.params && typeof input.params === "object" && !Array.isArray(input.params)
+        ? (input.params as Record<string, unknown>)
+        : undefined;
+      return readPolygon(String(input.endpoint ?? ""), p);
+    }
+
+    case "get_vector_full_state": {
+      const [{ fetchVectorFullState }, { normalizeDteHorizon }] = await Promise.all([
+        import("@/lib/bie/vector-full-state"),
+        import("@/features/vector/lib/vector-dte-horizon"),
+      ]);
+      // fetchVectorFullState normalizes the ticker itself (normalizeVectorTicker); pass the raw
+      // string. horizon is validated to one of 0dte/weekly/monthly/all, defaulting to "all".
+      return fetchVectorFullState(ticker, normalizeDteHorizon(input.horizon));
+    }
+
     case "get_hot_tickers": {
       const { fetchHotTickers } = await import("@/lib/bie/hot-tickers");
       return fetchHotTickers(8);

@@ -1,159 +1,103 @@
 import assert from "node:assert/strict";
-import { before, beforeEach, describe, test, mock } from "node:test";
+import { describe, test } from "node:test";
+
 import type { SpxDeskPayload } from "@/features/spx/lib/spx-desk";
+import { generateSpxCommentary } from "@/features/spx/lib/spx-commentary";
 
-// Regression: generateSpxCommentary()'s post-generation grounding-guard failure path
-// (spx-commentary.ts ~line 597) used to `return null` on a hallucinated Live Desk AI read
-// with nothing durable recorded — just an ephemeral console.warn, discarded before the
-// caller's 502. The sibling AI-narration surface, spx-play-claude.ts's logPlayVerdict(), has
-// written EVERY verdict (pass or fail) to the shared alert_audit_log table since it shipped,
-// so there was no way to answer "how often does the dashboard's Live Desk AI rail silently
-// throw away a hallucinated read." This test forces the grounding check to fail
-// deterministically and asserts the new audit-log write is attempted with the right shape.
-//
-// mock.module() idiom follows src/features/nighthawk/lib/play-critic.test.ts and
-// src/app/api/platform/intel/route.test.ts: bare specifiers resolve relative to THIS file,
-// not through the "@/" tsconfig alias spx-commentary.ts itself uses, and each mocked module
-// is set up once at import time (ESM caches on first import) with mutable state read at
-// call time.
+// The 2026-07-13 redesign: generateSpxCommentary is a THIN deterministic composition
+// over src/lib/bie/spx-live-voice.ts (bias header + 3–4 sentence voice + ≤3 triggers +
+// transition-only changed[]). These tests cover the composition seams; the brain's own
+// behavior (bias math, event detection, dedupe) is covered by spx-live-voice.test.ts.
 
-let mockRaw: string | null = null;
-let mockGrounded = true;
-let mockUngroundedValue: number | null = null;
-
-mock.module("../../../lib/providers/anthropic", {
-  namedExports: {
-    anthropicText: async () => mockRaw,
-    COMMENTARY_MODEL: "claude-haiku-mock",
-  },
-});
-
-mock.module("../../../lib/grounding-guard", {
-  namedExports: {
-    augmentKnownCommentaryNumbers: (known: number[]) => known,
-    knownCommentaryNumbers: () => [],
-    collectKnownNumbers: () => [],
-    extractNumbersFromText: () => [],
-    checkCommentaryGrounded: () => ({ grounded: mockGrounded, ungroundedValue: mockUngroundedValue }),
-  },
-});
-
-type AuditLogRow = {
-  alert_type: string;
-  source_table: string;
-  source_key: Record<string, unknown>;
-  ticker: string;
-  direction: string | null;
-  confidence_score: number | null;
-  confidence_label: string | null;
-  trigger_reason: string | null;
-  decision_trace: unknown;
-  input_snapshot: Record<string, unknown> | null;
-  final_output: Record<string, unknown> | null;
-};
-
-let auditLogCalls: AuditLogRow[] = [];
-let dbIsConfigured = true;
-
-mock.module("../../../lib/db", {
-  namedExports: {
-    dbConfigured: () => dbIsConfigured,
-    insertAlertAuditLog: async (row: AuditLogRow) => {
-      auditLogCalls.push(row);
-    },
-  },
-});
-
-function fakeDesk(): SpxDeskPayload {
+function bearishDesk(over: Partial<SpxDeskPayload> = {}): SpxDeskPayload {
   return {
     available: true,
-    as_of: "2026-07-04T15:00:00.000Z",
-    source: "test",
-    price: 5900,
-    vwap: 5895,
-    gamma_flip: 5890,
-    gex_king: 5900,
-    max_pain: 5850,
-    gex_walls: [],
-    levels: [],
+    as_of: "2026-07-13T14:30:00.000Z",
+    price: 7512.3,
+    vwap: 7544.2,
+    above_vwap: false,
+    gamma_flip: 7528,
+    above_gamma_flip: false,
+    ema20: 7520.1,
+    ema50: 7535.4,
+    prior_close: 7540,
+    vix: 16,
+    regime: "bearish",
+    gex_walls: [
+      { strike: 7550, net_gex: 3_200_000, kind: "resistance", distance_pts: 37.7 },
+      { strike: 7495, net_gex: -2_800_000, kind: "support", distance_pts: -17.3 },
+    ],
+    ...over,
   } as unknown as SpxDeskPayload;
 }
 
-describe("spx-commentary: grounding-failure audit trail", () => {
-  let generateSpxCommentary: typeof import("./spx-commentary").generateSpxCommentary;
-
-  before(async () => {
-    ({ generateSpxCommentary } = await import("./spx-commentary"));
+describe("generateSpxCommentary (deterministic trader-first read)", () => {
+  test("bearish tape → bias header headline, voiced body, ≤3 triggers, no {{}} markers", async () => {
+    const result = await generateSpxCommentary(bearishDesk());
+    assert.ok(result, "expected a read");
+    assert.equal(result.bias, "bearish");
+    assert.equal(
+      result.headline,
+      "BEARISH · 4/4 aligned · below VWAP & γ-flip · short gamma amplifies moves → favor PUTS on rallies into 7,528"
+    );
+    assert.match(result.body, /^🔥 Sellers pressing — SPX 7,512/);
+    assert.match(result.body, /PUTS on rallies or stand aside/);
+    assert.ok(result.watch.length > 0 && result.watch.length <= 3, `watch=${result.watch.length}`);
+    assert.equal(result.watch[0], "reclaim 7,544 → bias flips — calls window opens");
+    // Deterministic composition never emits the LLM-era {{ }} emphasis markers.
+    for (const text of [result.headline, result.body, ...result.watch, ...result.changed]) {
+      assert.ok(!text.includes("{{") && !text.includes("}}"), `{{}} leak in: ${text}`);
+    }
   });
 
-  beforeEach(() => {
-    auditLogCalls = [];
-    dbIsConfigured = true;
-    mockGrounded = true;
-    mockUngroundedValue = null;
-    mockRaw = JSON.stringify({
-      headline: "LONG A · {{5900}} holding above VWAP",
-      bias: "bullish",
-      body: "WHY  dealers buy dips above γflip.\nLEVELS  R {{5950}}\nSETUP  long\nRISK  half size\nNEXT 5M  grind up\nFLIPS IT  lose {{5890}}",
-      watch: [],
-      changed: [],
+  test("changed[] carries ONLY transitions vs the previous window", async () => {
+    const prev = bearishDesk({ above_vwap: true, price: 7546.1 } as Partial<SpxDeskPayload>);
+    const result = await generateSpxCommentary(bearishDesk(), prev);
+    assert.ok(result);
+    assert.ok(
+      result.changed.some((l) => l.includes("lost VWAP 7,544")),
+      `expected VWAP-lost transition, got: ${JSON.stringify(result.changed)}`
+    );
+
+    // Same desk twice → zero transitions (nothing restated).
+    const quiet = await generateSpxCommentary(bearishDesk(), bearishDesk());
+    assert.ok(quiet);
+    assert.deepEqual(quiet.changed, []);
+  });
+
+  test("first window (no previous desk) → empty changed[], no fake baseline noise", async () => {
+    const result = await generateSpxCommentary(bearishDesk(), null);
+    assert.ok(result);
+    assert.deepEqual(result.changed, []);
+  });
+
+  test("open engine play prints one line and flags a conflicting read", async () => {
+    const result = await generateSpxCommentary(bearishDesk(), null, {
+      openPlay: { status: "open", direction: "long", entry_price: 7520, stop: 7505, target: 7555 },
     });
+    assert.ok(result);
+    const engineLine = result.body.split("\n").find((l) => l.startsWith("🎯 engine live"));
+    assert.ok(engineLine, "expected engine line");
+    assert.match(engineLine, /LONG from 7,520, stop 7,505, target 7,555/);
+    // Bearish read vs open LONG — the conflict must be called out, never silent.
+    assert.match(engineLine, /read now conflicts with the open play/);
   });
 
-  test("a hallucinated read is discarded (null) AND fires an audit-log write with alert_type spx_commentary_ungrounded", async () => {
-    mockGrounded = false;
-    mockUngroundedValue = 9999;
-
-    const result = await generateSpxCommentary(fakeDesk(), null);
-
-    assert.equal(result, null, "caller's 502-on-null contract must be unchanged");
-    assert.equal(auditLogCalls.length, 1, "exactly one audit row should be attempted");
-
-    const row = auditLogCalls[0];
-    assert.equal(row.alert_type, "spx_commentary_ungrounded");
-    assert.equal(row.source_table, "spx_commentary");
-    assert.equal(row.ticker, "SPX");
-    assert.equal(row.direction, "bullish");
-    assert.match(row.trigger_reason ?? "", /9999/);
-    assert.deepEqual(row.decision_trace, [
-      { check: "numbers_grounded", passed: false, value: 9999 },
-    ]);
-    // The raw generated text before discard must be preserved — it's never served anywhere
-    // else once grounding fails.
-    assert.match((row.final_output?.headline as string) ?? "", /LONG A/);
-    assert.match((row.final_output?.body as string) ?? "", /WHY/);
-    assert.equal(row.source_key.price, 5900);
+  test("lotto / power hour lifecycle lines appear only when live", async () => {
+    const withPlays = await generateSpxCommentary(bearishDesk(), null, {
+      lotto: { phase: "WATCH", direction: "short", strike: 7490 },
+      powerHour: { phase: "NONE", direction: null, strike: null },
+    });
+    assert.ok(withPlays);
+    assert.match(withPlays.body, /🎰 lotto WATCH — PUT 7,490/);
+    assert.ok(!withPlays.body.includes("power hour"), "NONE power hour must not print");
   });
 
-  test("a grounded read passes through untouched and never touches the audit log", async () => {
-    mockGrounded = true;
-    mockUngroundedValue = null;
-
-    const result = await generateSpxCommentary(fakeDesk(), null);
-
-    assert.notEqual(result, null);
-    assert.equal(result?.headline, "LONG A · {{5900}} holding above VWAP");
-    assert.equal(auditLogCalls.length, 0, "success path must not write to alert_audit_log");
-  });
-
-  test("the audit-log write is skipped (but the null return is unchanged) when the DB isn't configured", async () => {
-    dbIsConfigured = false;
-    mockGrounded = false;
-    mockUngroundedValue = 9999;
-
-    const result = await generateSpxCommentary(fakeDesk(), null);
-
-    assert.equal(result, null);
-    assert.equal(auditLogCalls.length, 0, "no DB configured means no write attempt at all");
-  });
-
-  test("JSON parse failure returns null (never serves ungrounded raw text)", async () => {
-    mockRaw = "This is not JSON — just prose from the model.";
-    mockGrounded = true;
-
-    const result = await generateSpxCommentary(fakeDesk(), null);
-
-    assert.equal(result, null);
-    assert.equal(auditLogCalls.length, 0);
+  test("unavailable desk / missing price → null (route 502s and retries)", async () => {
+    assert.equal(await generateSpxCommentary(bearishDesk({ available: false })), null);
+    assert.equal(
+      await generateSpxCommentary(bearishDesk({ price: 0 } as Partial<SpxDeskPayload>)),
+      null
+    );
   });
 });

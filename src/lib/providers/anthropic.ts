@@ -24,6 +24,7 @@ import {
 } from "@/lib/ai-spend-ledger";
 import { getUwCacheRedis } from "@/lib/providers/uw-shared-cache";
 import { notifyOpsDiscord } from "@/features/spx/lib/spx-play-notify";
+import { claudeEnabled } from "@/lib/ai-env";
 
 // Per-process daily AI-spend tripwire. It survives Redis loss, so it is kept as the
 // FALLBACK alerter (used only when the cross-replica ledger below is unreachable). The
@@ -361,6 +362,7 @@ export async function anthropicText(
     cacheSystem?: boolean;
   }
 ): Promise<string | null> {
+  if (!claudeEnabled()) return null;
   const client = getClient();
   if (!client) return null;
   if (await isAiSpendCeilingTripped()) {
@@ -442,6 +444,7 @@ export async function anthropicToolLoop(params: {
   runTool: (name: string, input: Record<string, unknown>) => Promise<unknown>;
   onEvent?: (event: AnthropicToolLoopEvent) => void;
 }): Promise<string | null> {
+  if (!claudeEnabled()) return null;
   const client = getClient();
   if (!client) return null;
   if (await isAiSpendCeilingTripped()) {

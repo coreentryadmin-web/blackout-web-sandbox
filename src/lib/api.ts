@@ -1,4 +1,5 @@
 import type { ClaimVerification } from "@/lib/bie/verifier";
+import type { BieAnswerEnvelope } from "@/lib/bie/answer-envelope";
 
 const INTEL_BASE = "/api/engine";
 const MARKET_BASE = "/api/market";
@@ -199,6 +200,8 @@ export interface FlowAlert {
   alert_rule?: string;
   ask_pct?: number;
   dte?: number;
+  /** Per-contract fill from UW alert payload (price paid per share). */
+  fill_price?: number;
   // Feature 5: options chain context at time of print
   underlying_price?: number;
   open_interest?: number;
@@ -250,6 +253,61 @@ export async function fetchFlows(params?: {
   return marketFetch<{ flows: FlowAlert[]; count: number; source?: string }>(
     `/flows${query ? `?${query}` : ""}`
   );
+}
+
+export interface OptionContractIntradayRow {
+  time: string;
+  volume: number;
+  avg_price: number;
+  premium: number;
+}
+
+export interface OptionContractFillRow {
+  time: string;
+  premium: number;
+  size: number;
+  fill: number | null;
+  side: string;
+  tags: string[];
+}
+
+export interface OptionContractMeta {
+  open_interest: number | null;
+  day_volume: number | null;
+  underlying_price: number | null;
+  iv: number | null;
+  delta: number | null;
+}
+
+export interface OptionContractDrilldown {
+  contract_id: string;
+  label: string;
+  ticker: string;
+  strike: number;
+  expiry: string;
+  option_type: "CALL" | "PUT";
+  intraday: OptionContractIntradayRow[];
+  fills: OptionContractFillRow[];
+  volume_profile: unknown;
+  contract_meta: OptionContractMeta;
+  bid_share_pct: number | null;
+  fill_count: number;
+}
+
+/** Per-contract drilldown — UW flow + intraday + volume profile (HELIX contract drawer). */
+export async function fetchOptionContractDrilldown(params: {
+  ticker: string;
+  strike: number;
+  expiry: string;
+  option_type: "CALL" | "PUT";
+}) {
+  const qs = new URLSearchParams({
+    ticker: params.ticker,
+    strike: String(params.strike),
+    expiry: params.expiry.slice(0, 10),
+    option_type: params.option_type,
+  });
+  return marketFetch<OptionContractDrilldown>(`/option-contract?${qs}`);
 }
 
 /** Upcoming earnings dates — ticker → YYYY-MM-DD. Returns {} on error (graceful degradation). */
@@ -378,7 +436,13 @@ export const fetchMarketNews = () =>
 const LARGO_STREAM_TIMEOUT_MS = 130_000;
 
 export const queryLargo = (question: string, sessionId: string) =>
-  marketFetch<{ answer: string; session_id: string; source?: string; tools_used?: string[] }>(
+  marketFetch<{
+    answer: string;
+    session_id: string;
+    source?: string;
+    tools_used?: string[];
+    envelope?: BieAnswerEnvelope | null;
+  }>(
     "/largo/query",
     {
       method: "POST",
@@ -386,12 +450,26 @@ export const queryLargo = (question: string, sessionId: string) =>
     }
   );
 
+/** Thrown when the caller cancels an in-flight Largo stream (Stop button). */
+export class LargoStreamAborted extends Error {
+  constructor() {
+    super("Largo stream aborted");
+    this.name = "LargoStreamAborted";
+  }
+}
+
 export async function queryLargoStream(
   question: string,
   sessionId: string,
   onToken: (text: string) => void,
   /** Fires for each live tool Largo pulls (tool_start), enabling a real-time data-trace UI. */
-  onTool?: (name: string) => void
+  onTool?: (name: string) => void,
+  /**
+   * Caller-owned signal for user cancellation (Stop control). When it aborts we
+   * distinguish it from the internal timeout so the UI can preserve the partial
+   * streamed answer instead of showing a timeout error.
+   */
+  externalSignal?: AbortSignal
 ): Promise<{
   answer: string;
   session_id: string;
@@ -399,9 +477,27 @@ export async function queryLargoStream(
   tools_used?: string[];
   followups?: string[];
   verification?: ClaimVerification;
+  /** Populated structured answer (synthesis #59). Absent on trivial/string answers. */
+  envelope?: BieAnswerEnvelope | null;
 }> {
   const abort = new AbortController();
   const timeout = setTimeout(() => abort.abort(), LARGO_STREAM_TIMEOUT_MS);
+
+  // Bridge the caller's cancel signal into the internal controller. `userAborted`
+  // lets the catch clauses below tell a deliberate Stop apart from a timeout.
+  let userAborted = false;
+  const onExternalAbort = () => {
+    userAborted = true;
+    abort.abort();
+  };
+  if (externalSignal) {
+    if (externalSignal.aborted) onExternalAbort();
+    else externalSignal.addEventListener("abort", onExternalAbort, { once: true });
+  }
+  const cleanup = () => {
+    clearTimeout(timeout);
+    externalSignal?.removeEventListener("abort", onExternalAbort);
+  };
 
   let res: Response;
   try {
@@ -419,19 +515,20 @@ export async function queryLargoStream(
       body: JSON.stringify({ question, session_id: sessionId }),
     });
   } catch (err) {
-    clearTimeout(timeout);
+    cleanup();
+    if (userAborted) throw new LargoStreamAborted();
     if (abort.signal.aborted) throw new Error("Largo stream timeout");
     throw err;
   }
 
   if (!res.ok) {
-    clearTimeout(timeout);
+    cleanup();
     throw new Error(`Market /largo/query → ${res.status}`);
   }
 
   const reader = res.body?.getReader();
   if (!reader) {
-    clearTimeout(timeout);
+    cleanup();
     throw new Error("Largo stream unavailable");
   }
 
@@ -445,6 +542,7 @@ export async function queryLargoStream(
         tools_used?: string[];
         followups?: string[];
         verification?: ClaimVerification;
+        envelope?: BieAnswerEnvelope | null;
       }
     | null = null;
 
@@ -474,6 +572,7 @@ export async function queryLargoStream(
           tools_used?: string[];
           followups?: string[];
           verification?: ClaimVerification;
+          envelope?: BieAnswerEnvelope | null;
         };
 
         if (event.type === "ping") continue;
@@ -488,6 +587,7 @@ export async function queryLargoStream(
             tools_used: event.tools_used,
             followups: event.followups,
             verification: event.verification,
+            envelope: event.envelope ?? null,
           };
         }
         if (event.type === "error") {
@@ -496,10 +596,11 @@ export async function queryLargoStream(
       }
     }
   } catch (err) {
+    if (userAborted) throw new LargoStreamAborted();
     if (abort.signal.aborted) throw new Error("Largo stream timeout");
     throw err;
   } finally {
-    clearTimeout(timeout);
+    cleanup();
   }
 
   if (!result) throw new Error("Largo stream ended without result");
@@ -680,6 +781,8 @@ export type VectorStreamSnapshot = {
   gammaFlip?: number | null;
   vexFlip?: number | null;
   darkPoolLevels?: VectorDarkPoolLevel[];
+  /** Dark-pool snapshot fetch time (epoch ms; 0 = unknown/legacy cache entry). */
+  darkPoolAsOf?: number;
   /** Candle tick time (epoch ms). */
   t?: number;
   /** GEX wall ladder as-of (epoch ms). */

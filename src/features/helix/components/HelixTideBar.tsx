@@ -18,7 +18,7 @@ function fmtMoney(n: number): string {
  *   - Directional bias pill (BULLISH / BEARISH / NEUTRAL)
  * Zero new API paths: reuses fetchSpxState → /api/market/spx/merged.
  */
-export function HelixTideBar() {
+export function HelixTideBar({ className }: { className?: string }) {
   const { data } = useSWR<SpxState>("helix-tide", fetchSpxState, { refreshInterval: 15_000 });
 
   const tideBias = (data?.tide_bias ?? "").toLowerCase();
@@ -43,7 +43,7 @@ export function HelixTideBar() {
     : "bg-sky-400/15 text-sky-300 outline-sky-400/50";
 
   return (
-    <div className="helix-tide-bar flex items-center gap-3 rounded-lg border border-white/8 bg-[rgba(8,9,14,0.5)] px-3 py-2">
+    <div className={clsx("helix-tide-bar flex items-center gap-3", className)}>
       {/* Bias pill */}
       <span
         className={clsx(

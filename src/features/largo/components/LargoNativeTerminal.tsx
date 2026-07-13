@@ -2,6 +2,7 @@
 
 import { clsx } from "clsx";
 import { LargoMessageBody } from "@/features/largo/components/LargoMessageBody";
+import { LargoAnswerMessage } from "@/features/largo/components/LargoAnswerMessage";
 import { LargoThinkingState } from "@/features/largo/components/LargoThinkingState";
 import { resetIosViewport } from "@/hooks/useIosKeyboardInset";
 import { LARGO_SUGGESTIONS, largoToolLabel, useLargoChat } from "@/hooks/useLargoChat";
@@ -22,13 +23,27 @@ export function LargoNativeTerminal() {
     activeTools,
     bottomRef,
     runQuery,
+    cancel,
+    newConversation,
     isFresh,
   } = useLargoChat();
 
   return (
     <div className="largo-native-desk">
+      {!isFresh && (
+        <div className="largo-native-topbar">
+          <button
+            type="button"
+            className="largo-native-newchat"
+            onClick={newConversation}
+            disabled={loading}
+          >
+            + New chat
+          </button>
+        </div>
+      )}
       <div className="largo-native-messages" role="log" aria-live="polite" aria-atomic="false">
-        {messages.map((msg) => (
+        {messages.map((msg, idx) => (
           <div
             key={msg.id}
             className={clsx(
@@ -39,7 +54,18 @@ export function LargoNativeTerminal() {
           >
             <p className="largo-native-bubble-label">{msg.role === "user" ? "You" : "Largo"}</p>
             {msg.role === "assistant" ? (
-              <LargoMessageBody content={msg.content} className="largo-native-body" />
+              msg.id === "welcome" ? (
+                <LargoMessageBody content={msg.content} className="largo-native-body" />
+              ) : (
+                <LargoAnswerMessage
+                  content={msg.content}
+                  envelope={msg.envelope}
+                  streaming={
+                    loading && idx === messages.length - 1 && msg.role === "assistant"
+                  }
+                  className="largo-native-body"
+                />
+              )
             ) : (
               <p className="largo-native-body whitespace-pre-wrap">{msg.content}</p>
             )}
@@ -117,13 +143,24 @@ export function LargoNativeTerminal() {
           autoCorrect="off"
           spellCheck={false}
         />
-        <button
-          type="submit"
-          className="largo-native-send"
-          disabled={loading || !hydrated || !input.trim()}
-        >
-          {loading ? "…" : "Send"}
-        </button>
+        {loading ? (
+          <button
+            type="button"
+            className="largo-native-send largo-native-stop"
+            onClick={cancel}
+            aria-label="Stop generating"
+          >
+            Stop
+          </button>
+        ) : (
+          <button
+            type="submit"
+            className="largo-native-send"
+            disabled={!hydrated || !input.trim()}
+          >
+            Send
+          </button>
+        )}
       </form>
     </div>
   );

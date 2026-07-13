@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
-import { useAuth } from "@clerk/nextjs";
+import { useAppAuth } from "@/lib/auth-client";
 import { clsx } from "clsx";
 import { ProductMark } from "@/components/marks/ProductMark";
 import { isIosAppShell } from "@/lib/ios-app-shell";
@@ -17,7 +17,7 @@ const TAB_SPRING = { type: "spring" as const, stiffness: 520, damping: 42 };
 /** Instrument rail — terminal-style bottom switcher (not a floating pill tab bar). */
 export function IosAppTabBar({ lockedTools = [] }: { lockedTools?: ToolKey[] }) {
   const path = usePathname();
-  const { isSignedIn, isLoaded } = useAuth();
+  const { isSignedIn, isLoaded } = useAppAuth();
   const [iosApp, setIosApp] = useState(false);
 
   useEffect(() => {

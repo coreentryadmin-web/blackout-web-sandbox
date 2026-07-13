@@ -3,40 +3,48 @@
 import React, { Suspense, useState } from "react";
 import dynamic from "next/dynamic";
 import { clsx } from "clsx";
-import { useUser } from "@clerk/nextjs";
+import { useAppAuth } from "@/lib/auth-client";
 import { useMergedDesk } from "@/features/spx/hooks/useMergedDesk";
 import { useIosNativeShell } from "@/hooks/useIosNativeShell";
 import { useCompactDeskPanels } from "@/hooks/useCompactDeskPanels";
 import { IosNativeSegment } from "@/components/ios/IosNativeSegment";
 import { EmptyState, Button } from "@/components/ui";
 import { shouldShowHaltDegradedBanner } from "@/features/spx/lib/spx-halt-banner";
+// Type-only: VectorSeedProps comes from a server-only module; the type import is erased at build.
+import type { VectorSeedProps } from "@/features/vector";
 
 const SpxSniperHeader = dynamic(
   () => import("./SpxSniperHeader").then((m) => ({ default: m.SpxSniperHeader })),
-  {
-    loading: () => <div className="spx-desk-skeleton min-h-[72px]" aria-busy="true" />,
-  }
+  { loading: () => null }
 );
 
 const SpxGexMatrixHeatmap = dynamic(
   () => import("./SpxGexMatrixHeatmap").then((m) => ({ default: m.SpxGexMatrixHeatmap })),
-  {
-    loading: () => <div className="spx-desk-skeleton min-h-[320px]" aria-busy="true" />,
-  }
+  { loading: () => null }
 );
 
-const SpxTradeAlerts = dynamic(
-  () => import("./SpxTradeAlerts").then((m) => ({ default: m.SpxTradeAlerts })),
-  {
-    loading: () => <div className="spx-desk-skeleton min-h-[200px]" aria-busy="true" />,
-  }
+// DESK CONSOLIDATION (2026-07-13, member-directed): the Trade Alerts panel (plays kanban +
+// engine cards) and the Slayer desk terminal (mounted inside that same component) are
+// REMOVED from the flagship desk in favour of the embedded SPX Vector chart below — one
+// flagship desk, one source of truth, and explicitly NO terminal panels on SPX Slayer. The
+// components stay in the repo untouched (see ./SpxTradeAlerts.tsx) so restoring them is one
+// render away if the member reverses the call.
+const VectorPageShell = dynamic(
+  () =>
+    import("@/features/vector/components/VectorPageShell").then((m) => ({
+      default: m.VectorPageShell,
+    })),
+  { loading: () => null }
 );
 
 const SpxCommentaryRail = dynamic(
   () => import("./SpxCommentaryRail").then((m) => ({ default: m.SpxCommentaryRail })),
-  {
-    loading: () => <div className="spx-desk-skeleton min-h-[240px]" aria-busy="true" />,
-  }
+  { loading: () => null }
+);
+
+const SpxLiveSpotPrice = dynamic(
+  () => import("./SpxLiveSpotPrice").then((m) => ({ default: m.SpxLiveSpotPrice })),
+  { loading: () => null }
 );
 
 class SpxPanelErrorBoundary extends React.Component<
@@ -58,13 +66,22 @@ class SpxPanelErrorBoundary extends React.Component<
   }
 }
 
-export function SpxDashboard() {
-  const { isLoaded, user } = useUser();
-  const tier = (user?.publicMetadata as { tier?: string } | undefined)?.tier;
-  const { desk, live, refreshing, deskLoading, sessionActive } = useMergedDesk();
+type SpxDashboardProps = {
+  /**
+   * SSR seed for the embedded SPX Vector chart (loaded by the /dashboard server page via the
+   * SAME loadVectorSeedProps helper the /vector page uses — one code path, zero drift). Null when
+   * the vector tool is not accessible to this user (launch-gated) — the desk then shows a
+   * launching-soon note in that column instead of a broken chart hitting 403 APIs.
+   */
+  vectorSeed: VectorSeedProps | null;
+};
+
+export function SpxDashboard({ vectorSeed }: SpxDashboardProps) {
+  const { isLoaded, tier } = useAppAuth();
+  const { desk, live, deskLoading, deskLaneFailed, sessionActive } = useMergedDesk();
   const nativeShell = useIosNativeShell();
   const compactPanels = useCompactDeskPanels(nativeShell);
-  const [iosPanel, setIosPanel] = useState<"plays" | "matrix" | "intel">("plays");
+  const [iosPanel, setIosPanel] = useState<"vector" | "matrix" | "intel">("vector");
 
   if (isLoaded && tier && tier !== "premium" && tier !== "admin") {
     return (
@@ -73,9 +90,6 @@ export function SpxDashboard() {
           title="Premium membership required"
           description={
             <>
-              {/* App Store guideline 3.1.1 — no purchase-flow language inside the iOS app.
-                  Both spans render on the server (no hydration mismatch); CSS picks one based
-                  on the `ios-app` <html> class set by layout.tsx's user-agent check. */}
               <span className="hide-in-ios-app">
                 This account does not have an active Premium membership. Upgrade to access the
                 live desk.
@@ -105,17 +119,13 @@ export function SpxDashboard() {
   if (deskLoading && !desk) {
     return (
       <div className="spx-sniper-desk spx-sniper-desk-loading" aria-busy="true">
-        <div className="spx-desk-skeleton" />
+        <div className="spx-desk-placeholder" />
       </div>
     );
   }
 
   const activeHalts = desk?.active_halts ?? [];
   const haltChannelStale = desk?.halt_channel_stale ?? false;
-  // The play gate (spx-play-gates.ts) fails OPEN on a stale channel -- it only
-  // warns, never blocks -- so this banner must never claim entries are
-  // blocked. Also gated on sessionActive: the channel is event-only and reads
-  // "stale" off-hours/holidays by design, which is not a real degradation.
   const showHaltDegradedBanner = shouldShowHaltDegradedBanner({
     sessionActive,
     haltChannelStale,
@@ -123,20 +133,36 @@ export function SpxDashboard() {
   });
 
   return (
-    <div className="spx-sniper-desk">
+    <div className="spx-sniper-desk spx-sniper-desk-fill">
+      {deskLaneFailed && (
+        <div
+          className="flex items-center gap-2 rounded border border-amber-500/40 bg-amber-500/10 px-4 py-2 text-xs font-mono text-amber-200"
+          role="alert"
+        >
+          Desk rebuild failed — showing last cached snapshot. Retrying in the background.
+        </div>
+      )}
       {activeHalts.length > 0 && (
-        <div className="flex items-center gap-2 rounded border border-bear/40 bg-bear/10 px-4 py-2 text-xs font-mono text-bear" role="alert">
+        <div
+          className="flex items-center gap-2 rounded border border-bear/40 bg-bear/10 px-4 py-2 text-xs font-mono text-bear"
+          role="alert"
+        >
           <span className="font-bold">TRADING HALT</span>
           {activeHalts.map((h) => (
             <span key={h.symbol}>
-              {h.symbol}{h.halt_type ? ` · ${h.halt_type}` : ""}{h.reason ? ` — ${h.reason}` : ""}
+              {h.symbol}
+              {h.halt_type ? ` · ${h.halt_type}` : ""}
+              {h.reason ? ` — ${h.reason}` : ""}
             </span>
           ))}
         </div>
       )}
       {showHaltDegradedBanner && (
-        <div className="flex items-center gap-2 rounded border border-amber-400/40 bg-amber-400/10 px-4 py-2 text-xs font-mono text-amber-400" role="alert">
-          <span>Halt feed degraded — proceeding fail-open; verify no active halts before entering</span>
+        <div
+          className="flex items-center gap-2 rounded border border-amber-400/40 bg-amber-400/10 px-4 py-2 text-xs font-mono text-amber-400"
+          role="alert"
+        >
+          <span>Halt feed degraded — restricted entry mode; verify no active halts before entering</span>
         </div>
       )}
       <SpxPanelErrorBoundary>
@@ -151,27 +177,52 @@ export function SpxDashboard() {
           aria-label="SPX desk view"
           className="ios-native-desk-segment"
           segments={[
-            { id: "plays", label: "Plays" },
+            { id: "vector", label: "Vector" },
             { id: "matrix", label: "Matrix" },
             { id: "intel", label: "Intel" },
           ]}
         />
       )}
 
-      {/* Left rail: GEX matrix only — no Benzinga scroll, live tape, or interval-flow stack. */}
+      {/*
+        Three grid slots (desk v3, 2026-07-13 member-directed consolidation):
+        Largo commentary | Matrix | embedded SPX Vector chart (chart-only, no terminal).
+        The former Plays (kanban) and Terminal columns were removed in favour of the Vector
+        chart — the components remain in the repo unused so a reversal is one render away.
+      */}
+      {/* --desk-v2 keeps the shared rail styling (gap, borders, Largo/matrix columns);
+          --desk-v3 swaps the grid template from four rails to three and adds the vector column. */}
       <div
-        className="spx-sniper-triple"
+        className="spx-sniper-triple spx-sniper-triple--desk-v2 spx-sniper-triple--desk-v3"
         data-ios-panel={compactPanels ? iosPanel : undefined}
       >
         <SpxPanelErrorBoundary>
+          <Suspense fallback={null}>
+            <aside
+              className={clsx(
+                "spx-sniper-intel-col spx-left-commentary",
+                compactPanels && iosPanel !== "intel" && "ios-native-panel-hidden",
+                compactPanels && iosPanel === "intel" && "ios-native-panel-visible"
+              )}
+            >
+              <SpxCommentaryRail desk={desk} live={live} />
+            </aside>
+          </Suspense>
+        </SpxPanelErrorBoundary>
+
+        <SpxPanelErrorBoundary>
           <aside
-            key={compactPanels ? iosPanel : "matrix"}
             className={clsx(
               "spx-sniper-left-rail spx-left-matrix",
               compactPanels && iosPanel !== "matrix" && "ios-native-panel-hidden",
               compactPanels && iosPanel === "matrix" && "ios-native-panel-visible"
             )}
           >
+            {(!compactPanels || iosPanel === "matrix") && (
+              <div className="spx-matrix-column-spot shrink-0" aria-label="SPX live spot">
+                <SpxLiveSpotPrice desk={desk} live={live} size="panel" />
+              </div>
+            )}
             <SpxGexMatrixHeatmap
               live={live}
               sessionActive={sessionActive}
@@ -189,36 +240,32 @@ export function SpxDashboard() {
         </SpxPanelErrorBoundary>
 
         <SpxPanelErrorBoundary>
-          <div
-            key={compactPanels ? iosPanel : "plays"}
+          <section
             className={clsx(
-              "spx-sniper-chart-col spx-center-stack",
-              compactPanels && iosPanel !== "plays" && "ios-native-panel-hidden",
-              compactPanels && iosPanel === "plays" && "ios-native-panel-visible"
+              "spx-sniper-vector-col",
+              compactPanels && iosPanel !== "vector" && "ios-native-panel-hidden",
+              compactPanels && iosPanel === "vector" && "ios-native-panel-visible"
             )}
+            aria-label="SPX Vector chart"
           >
-            <SpxTradeAlerts
-              desk={desk}
-              live={live}
-              refreshing={refreshing}
-              sessionActive={sessionActive}
-              compactLayout={compactPanels}
-            />
-          </div>
-        </SpxPanelErrorBoundary>
-
-        <SpxPanelErrorBoundary>
-          <Suspense fallback={<div className="spx-desk-skeleton min-h-[240px]" aria-busy="true" />}>
-            <div
-              key={compactPanels ? iosPanel : "intel"}
-              className={clsx(
-                compactPanels && iosPanel !== "intel" && "ios-native-panel-hidden",
-                compactPanels && iosPanel === "intel" && "ios-native-panel-visible"
-              )}
-            >
-              <SpxCommentaryRail desk={desk} live={live} />
-            </div>
-          </Suspense>
+            {vectorSeed ? (
+              // The FULL Vector chart surface (toolbar, DTE toggle, indicators, regime banner,
+              // alert toasts) pinned to SPX — same component + same server seed path as /vector.
+              // Desk defaults per member direction: 0DTE horizon, 3-minute candles.
+              <VectorPageShell
+                {...vectorSeed}
+                embed="chart-only"
+                defaultDteHorizon="0dte"
+                defaultTimeframe={3}
+              />
+            ) : (
+              <EmptyState
+                title="Vector chart launching soon"
+                description="The embedded SPX Vector chart is not enabled for this account yet."
+                className="m-auto max-w-md"
+              />
+            )}
+          </section>
         </SpxPanelErrorBoundary>
       </div>
     </div>

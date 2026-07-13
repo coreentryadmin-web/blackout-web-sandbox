@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { wallsFromStrikeTotals } from "@/lib/providers/gex-cross-validation-core";
-import { computeGexWalls, mapFromStrikeTotalsRecord, nextWallScope } from "./gex-wall-levels";
+import { computeGexWalls, mapFromStrikeTotalsRecord, nextWallScope, wallsHaveNodes } from "./gex-wall-levels";
 
 test("computeGexWalls ranks call walls (positive strikes) strongest-first", () => {
   const ladder = new Map<number, number>([
@@ -125,4 +125,24 @@ test("nextWallScope keeps the previous scope on an explicitly empty expiries arr
   const prev = { expiries: ["2026-07-07"], fetchedAt: 1000 };
   const next = nextWallScope(prev, 16000, { near_term_expiries: [] });
   assert.deepEqual(next, { expiries: ["2026-07-07"], fetchedAt: 16000 });
+});
+
+test("wallsHaveNodes distinguishes a cold/empty ladder from real walls", () => {
+  // The Vector DTE "all" horizon read relies on this to detect a cold-task synchronous
+  // miss (empty walls but the flip still fetched) and fall back to the heatmap. A plain
+  // `!= null` check can't tell these apart because computeGexWalls returns {[],[]} not null.
+  assert.equal(wallsHaveNodes(null), false, "null → no nodes");
+  assert.equal(wallsHaveNodes(undefined), false, "undefined → no nodes");
+  assert.equal(wallsHaveNodes({ callWalls: [], putWalls: [] }), false, "cold/empty ladder → no nodes");
+  assert.equal(wallsHaveNodes(computeGexWalls(new Map())), false, "computeGexWalls of empty ladder → no nodes");
+  assert.equal(
+    wallsHaveNodes({ callWalls: [{ strike: 6800, pct: 50 }], putWalls: [] }),
+    true,
+    "a single call node → has nodes"
+  );
+  assert.equal(
+    wallsHaveNodes({ callWalls: [], putWalls: [{ strike: 6700, pct: 50 }] }),
+    true,
+    "a single put node → has nodes"
+  );
 });

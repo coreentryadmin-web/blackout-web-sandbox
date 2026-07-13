@@ -5,6 +5,16 @@ import { getSpxPlayState } from "@/features/spx/lib/spx-service";
 import { getFlowTapeSummary } from "@/lib/platform/flow-service";
 import { enrichFlowsWithGex, type GexProximityLabel } from "@/lib/flow-gex-enrichment";
 import { getGexPositioning, type GexPositioning } from "@/lib/providers/gex-positioning";
+import { fetchVectorFullState, type VectorFullState } from "@/lib/bie/vector-full-state";
+// Track-B/#60 data-arsenal readers — folded into the shared ecosystem context (relevance-gated by
+// ticker class below) so EVERY composer that reads fetchEcosystemContext (the ecosystem narrative,
+// the ticker verdict, …) can cite macro/earnings/fundamentals/peers/news, not just the #59 verdict.
+import { fetchNextEarningsDate, type NextEarnings } from "@/lib/providers/uw-earnings";
+import { fetchTickerFundamentalsBundle, type TickerFundamentalsBundle } from "@/lib/bie/ticker-fundamentals";
+import { fetchRelatedCompanies, type RelatedCompanies } from "@/lib/providers/polygon-related";
+import { fetchTickerNews, fetchMarketCatalysts, type NewsResult } from "@/lib/providers/polygon-news";
+import { fetchPolygonMacroBackdrop, type PolygonMacroBackdrop } from "@/lib/providers/polygon-macro";
+import { fetchMarketBreadthBundle, type MarketBreadthBundle } from "@/lib/bie/market-breadth";
 import type { SpxPlayPayload } from "@/features/spx/lib/spx-play-payload";
 import type { FlowTapeSummary } from "@/lib/platform/types";
 
@@ -157,6 +167,171 @@ export type { SpxPlayPayload };
 // type without a second import from gex-positioning.ts.
 export type { GexPositioning };
 
+// Re-exported so a consumer of EcosystemContext can name the vector_full_state
+// type without a second import from vector-full-state.ts.
+export type { VectorFullState };
+
+// ── #60 data arsenal ────────────────────────────────────────────────────────
+// The Track-B provider readers, summarized into member-readable scalar slices and folded onto the
+// shared context so any composer can cite them. RELEVANCE-GATED by ticker class (depth matches
+// merit, master spec §3): an index/ETF verdict gets the market weather (macro backdrop + breadth +
+// market catalysts); a single name gets its own event/positioning color (next earnings + short
+// interest + peers + ticker news). A leg that was REQUESTED for this scope but came back thin/empty
+// is surfaced in `unavailable_sources`, never fabricated and never silently dropped (§4). A leg that
+// wasn't relevant for this scope is simply `null` with NO unavailable entry (it wasn't asked for).
+
+export type EcosystemArsenalEarnings = {
+  earnings_date: string | null;
+  days_until: number | null;
+  report_time: string | null;
+  is_confirmed: boolean | null;
+};
+export type EcosystemArsenalFundamentals = {
+  days_to_cover: number | null;
+  short_volume_ratio: number | null;
+  price_target: number | null;
+  as_of: string | null;
+};
+export type EcosystemArsenalMacro = {
+  yield_10_year: number | null;
+  curve_10y_1y_spread: number | null;
+  cpi: number | null;
+  as_of: string | null;
+};
+export type EcosystemArsenalBreadth = { tone: string; summary: string; as_of: string };
+export type EcosystemArsenalNews = { count: number; newest: string | null; headlines: string[] };
+export type EcosystemArsenalUnavailable = { source: string; reason: string };
+
+export type EcosystemArsenal = {
+  /** Which relevance branch ran — index/ETF market weather vs single-name color. */
+  scope: "index" | "single_name";
+  earnings: EcosystemArsenalEarnings | null;
+  fundamentals: EcosystemArsenalFundamentals | null;
+  related: string[] | null;
+  news: EcosystemArsenalNews | null;
+  macro: EcosystemArsenalMacro | null;
+  breadth: EcosystemArsenalBreadth | null;
+  /** Requested-but-thin legs — surfaced, never silently omitted. */
+  unavailable_sources: EcosystemArsenalUnavailable[];
+};
+
+/** Index/ETF-class tickers get the macro/breadth branch; everything else is treated as a single
+ *  name. Mirrors the verdict engine's own index gate so the two stay consistent. */
+const ARSENAL_INDEX_TICKERS = new Set(["SPX", "SPXW", "SPY", "QQQ", "NDX", "IWM", "DIA", "VIX", "ES"]);
+export function isEcosystemIndexTicker(upperTicker: string): boolean {
+  return ARSENAL_INDEX_TICKERS.has(upperTicker);
+}
+
+/** Raw reader outputs for the arsenal — the pure assembler's input (already fetched by the server). */
+export type EcosystemArsenalReads = {
+  scope: "index" | "single_name";
+  earnings: NextEarnings | null;
+  fundamentals: TickerFundamentalsBundle | null;
+  related: RelatedCompanies | null;
+  news: NewsResult | null;
+  macro: PolygonMacroBackdrop | null;
+  breadth: MarketBreadthBundle | null;
+};
+
+/**
+ * PURE: fold the raw arsenal reader outputs into the summarized, relevance-gated EcosystemArsenal.
+ * Split out from the fetch so the gate + honesty logic is unit-testable without any network/DB.
+ * Only the legs relevant to `scope` are considered; a relevant leg that returned nothing usable is
+ * pushed to `unavailable_sources` (honest), an irrelevant leg stays a plain `null`.
+ */
+export function assembleEcosystemArsenal(reads: EcosystemArsenalReads): EcosystemArsenal {
+  const single = reads.scope === "single_name";
+  const unavailable: EcosystemArsenalUnavailable[] = [];
+
+  // Single-name legs.
+  const earnings: EcosystemArsenalEarnings | null = single
+    ? reads.earnings && reads.earnings.earnings_date
+      ? {
+          earnings_date: reads.earnings.earnings_date,
+          days_until: reads.earnings.days_until,
+          report_time: reads.earnings.report_time,
+          is_confirmed: reads.earnings.is_confirmed,
+        }
+      : (unavailable.push({ source: "earnings", reason: "no upcoming date" }), null)
+    : null;
+
+  const fundamentals: EcosystemArsenalFundamentals | null = single
+    ? reads.fundamentals && (reads.fundamentals.short_interest?.days_to_cover != null || reads.fundamentals.short_volume_ratio != null)
+      ? {
+          days_to_cover: reads.fundamentals.short_interest?.days_to_cover ?? null,
+          short_volume_ratio: reads.fundamentals.short_volume_ratio ?? null,
+          // Benzinga PT is a structured object, not a clean scalar — left out of the numeric slice
+          // for now (same call the verdict engine makes); the short-interest read still lands.
+          price_target: null,
+          as_of: reads.fundamentals.as_of ?? null,
+        }
+      : (unavailable.push({ source: "fundamentals/short-interest", reason: "no data for ticker" }), null)
+    : null;
+
+  const related: string[] | null = single
+    ? reads.related && reads.related.related.length > 0
+      ? reads.related.related.slice(0, 8)
+      : (unavailable.push({ source: "peers", reason: "none found" }), null)
+    : null;
+
+  // Macro/breadth legs (index/ETF only).
+  const macro: EcosystemArsenalMacro | null = !single
+    ? reads.macro && (reads.macro.treasury.yield_10_year != null || reads.macro.inflation.cpi != null)
+      ? {
+          yield_10_year: reads.macro.treasury.yield_10_year,
+          curve_10y_1y_spread: reads.macro.treasury.curve_10y_1y_spread,
+          cpi: reads.macro.inflation.cpi,
+          as_of: reads.macro.as_of,
+        }
+      : (unavailable.push({ source: "macro backdrop", reason: "unavailable" }), null)
+    : null;
+
+  const breadth: EcosystemArsenalBreadth | null = !single
+    ? reads.breadth && reads.breadth.tone !== "unknown"
+      ? { tone: reads.breadth.tone, summary: reads.breadth.summary, as_of: reads.breadth.as_of }
+      : (unavailable.push({ source: "breadth", reason: "unavailable (thin/empty sample)" }), null)
+    : null;
+
+  // News runs for BOTH scopes (ticker news for a single name, market catalysts for an index). An
+  // empty-but-successful read is real "no recent news" (count 0), distinct from an error/miss which
+  // sets `.unavailable` on the NewsResult → surfaced here.
+  const news: EcosystemArsenalNews | null = reads.news
+    ? reads.news.unavailable
+      ? (unavailable.push({ source: "news", reason: reads.news.unavailable }), null)
+      : { count: reads.news.items.length, newest: reads.news.newest, headlines: reads.news.items.slice(0, 4).map((i) => i.headline) }
+    : (unavailable.push({ source: "news", reason: "read failed" }), null);
+
+  return { scope: reads.scope, earnings, fundamentals, related, news, macro, breadth, unavailable_sources: unavailable };
+}
+
+function emptyArsenal(scope: "index" | "single_name"): EcosystemArsenal {
+  return { scope, earnings: null, fundamentals: null, related: null, news: null, macro: null, breadth: null, unavailable_sources: [] };
+}
+
+/**
+ * Fetch + assemble the arsenal for one ticker, RELEVANCE-GATED by ticker class. Each reader is itself
+ * fail-open (returns null/{unavailable} rather than throwing), but every call is additionally
+ * `.catch(() => null)`-guarded so a single reader can NEVER reject the fan-out, and the whole thing is
+ * wrapped so an arsenal failure degrades to an empty arsenal — it must never blank the rest of the
+ * ecosystem context. Irrelevant legs never run (no wasted provider calls; depth matches merit).
+ */
+async function fetchEcosystemArsenal(ticker: string, scope: "index" | "single_name"): Promise<EcosystemArsenal> {
+  try {
+    const single = scope === "single_name";
+    const [earnings, fundamentals, related, news, macro, breadth] = await Promise.all([
+      single ? fetchNextEarningsDate(ticker).catch(() => null) : Promise.resolve(null),
+      single ? fetchTickerFundamentalsBundle(ticker).catch(() => null) : Promise.resolve(null),
+      single ? fetchRelatedCompanies(ticker).catch(() => null) : Promise.resolve(null),
+      (single ? fetchTickerNews(ticker, { limit: 6 }) : fetchMarketCatalysts({ limit: 8 })).catch(() => null),
+      single ? Promise.resolve(null) : fetchPolygonMacroBackdrop().catch(() => null),
+      single ? Promise.resolve(null) : fetchMarketBreadthBundle().catch(() => null),
+    ]);
+    return assembleEcosystemArsenal({ scope, earnings, fundamentals, related, news, macro, breadth });
+  } catch {
+    return emptyArsenal(scope);
+  }
+}
+
 export type EcosystemContext = {
   ticker: string;
   zerodte_today: EcosystemZeroDteTake | null;
@@ -301,6 +476,41 @@ export type EcosystemContext = {
    * `get_gex` only when the per-strike/per-expiry chain itself is needed.
    */
   gex_positioning: GexPositioning | null;
+  /**
+   * Vector's OWN complete live desk state for this ticker — the exact same object
+   * Largo's get_vector_full_state tool returns and the Vector desk terminal reads,
+   * built by calling `src/lib/bie/vector-full-state.ts::fetchVectorFullState(ticker,
+   * "all")` VERBATIM. The Vector analogue of spx_full_state: where spx_full_state /
+   * gex_positioning gave BIE the SPX play engine and dealer positioning, this hands
+   * BIE Vector's ENTIRE surface for the ticker — spot, regime, gamma walls +
+   * integrity, gamma flip, magnet, wall-proximity, options-implied expected move,
+   * max pain, confluence zones, the derived concrete play (buildVectorPlay), the full
+   * per-strike GEX ladder, a compact heatmap-presence summary, options-flow prints,
+   * the wall-history RAIL (the "beads" over the session) and its dynamics events
+   * (building/fading/new/gone — the "fadeness"), the VANNA (VEX) lens (walls + flip),
+   * and dark-pool levels.
+   *
+   * Runs UNCONDITIONALLY for every ticker (like gex_positioning, unlike the SPX/SPXW-
+   * only spx_full_state) — Vector serves any optionable symbol. `null` when
+   * fetchVectorFullState has no live spot for the ticker (its own honest no-surface
+   * convention), never fabricated. Same one-derivation guarantee as the other
+   * full-state fields: whatever get_vector_full_state returns is exactly what this
+   * returns. Not embedded into precedent-search, same as spx_full_state (large
+   * per-ticker numeric object, not prose).
+   */
+  vector_full_state: VectorFullState | null;
+  /**
+   * The #60 data ARSENAL for this ticker — the Track-B provider readers summarized and folded onto
+   * the shared context so any composer can cite them, not just the #59 verdict. RELEVANCE-GATED by
+   * ticker class: an index/ETF (SPX/SPY/QQQ/…) gets the market weather (macro backdrop + breadth +
+   * market catalysts); a single name gets its own color (next earnings + short interest + peers +
+   * ticker news). Requested-but-thin legs are surfaced in `arsenal.unavailable_sources` (honest,
+   * never fabricated); an irrelevant-for-scope leg is a plain null. Fails open to an empty arsenal —
+   * an arsenal read failure NEVER blanks the rest of this context. Dark-pool levels are deliberately
+   * NOT duplicated here: they already ship on `vector_full_state` for every ticker, so a second
+   * standalone fetch would be redundant cost.
+   */
+  arsenal: EcosystemArsenal;
 };
 
 /**
@@ -328,6 +538,8 @@ const ECOSYSTEM_CONTEXT_FIELD_DESCRIPTIONS: Record<Exclude<keyof EcosystemContex
   spx_full_state: "SPX Slayer's FULL play-engine snapshot — the exact same object Largo's get_spx_play tool returns (phase, every confluence factor, full gate pass/fail state, the 10-item confirmation checklist, MTF/RSI/EMA technicals, adaptive-gate telemetry, watch state, the AI arbiter's verdict, the option ticket). Only populated for ticker SPX/SPXW; null for every other ticker. Sourced from the SAME getSpxPlayState() Largo's tool calls — one derivation, not two.",
   flow_feed_fresh: "Whether the live HELIX flow pipeline is actually delivering frames right now, cluster-wide — disambiguates a null/empty recent_flow or recent_anomalies as 'unknown' rather than 'genuinely quiet'.",
   gex_positioning: "BlackOut Thermal's canonical dealer gamma/vanna/delta/charm positioning for this ticker — the exact same object getGexPositioning() returns for the Heat Maps UI, the SPX rail, and Night Hawk's positioning read (spot, flip, call/put wall, max pain, gex_king_strike, net GEX/VEX/DEX/CHARM with posture + regime-read one-liners, nearest_wall, distance_to_flip_pct, optional UW cross-validation). Runs for EVERY ticker, not gated to SPX/SPXW like spx_full_state — GEX positioning isn't a single-instrument product. Distinct from get_positioning (a reshaped, DEX/CHARM-less summary) and get_gex (the raw per-strike chain) — this is the full canonical light contract, in between the two. Null when the shared GEX matrix is cold for this ticker.",
+  arsenal: "The #60 data arsenal — Track-B provider readers summarized + relevance-gated by ticker class so any composer can cite them (not just the verdict). Index/ETF tickers get macro backdrop (10y yield, 10y-1y curve, CPI) + market breadth + market catalysts; single names get next-earnings date + short interest (days-to-cover, short-volume ratio) + peers + ticker news. Requested-but-thin legs are surfaced in arsenal.unavailable_sources; irrelevant-for-scope legs are null. Fails open to an empty arsenal — never blanks the rest of the context. Dark-pool levels are NOT duplicated here (already on vector_full_state).",
+  vector_full_state: "Vector's OWN complete live desk state for this ticker — the exact same object Largo's get_vector_full_state tool returns (via fetchVectorFullState(ticker, \"all\")): spot, regime, gamma walls + integrity, gamma flip, magnet, wall-proximity, options-implied expected move, max pain, confluence zones, the derived concrete play (buildVectorPlay), the full per-strike GEX ladder, a compact heatmap-presence summary, options-flow prints, the wall-history rail (the 'beads' over the session) + its dynamics events (building/fading/new/gone — the 'fadeness'), the VANNA (VEX) lens (walls + flip), and dark-pool levels. The Vector analogue of spx_full_state; runs for EVERY ticker (Vector serves any optionable symbol), not gated to SPX/SPXW. Null when there's no live spot for the ticker. One derivation — identical to get_vector_full_state.",
 };
 
 export const ECOSYSTEM_CONTEXT_FIELDS: { field: string; description: string }[] = Object.entries(
@@ -347,6 +559,8 @@ function emptyContext(ticker: string): EcosystemContext {
     spx_full_state: null,
     flow_feed_fresh: false,
     gex_positioning: null,
+    vector_full_state: null,
+    arsenal: emptyArsenal(isEcosystemIndexTicker(ticker.toUpperCase().trim()) ? "index" : "single_name"),
   };
 }
 
@@ -489,9 +703,15 @@ async function fetchFlowFullState(ticker: string): Promise<EcosystemFlowFullStat
 export async function fetchEcosystemContext(ticker: string): Promise<EcosystemContext> {
   if (!dbConfigured() || !ticker.trim()) return emptyContext(ticker);
   const upper = ticker.toUpperCase().trim();
+  // Relevance branch for the #60 arsenal — index/ETF market weather vs single-name color.
+  const arsenalScope: "index" | "single_name" = isEcosystemIndexTicker(upper) ? "index" : "single_name";
 
   try {
-    const [zerodteRes, nighthawkRes, auditRes, flowRes, flowFullState, anomalyRes, flowFeedFresh, spxPlay, spxFullState, gexPositioning] = await Promise.all([
+    // The arsenal fan-out runs CONCURRENTLY with the existing platform fan-out (not serially after
+    // it) — one extra Promise in the outer Promise.all, so it adds no latency beyond its own slowest
+    // reader, and its internal fail-open keeps an arsenal hiccup from blanking the rest of the context.
+    const [[zerodteRes, nighthawkRes, auditRes, flowRes, flowFullState, anomalyRes, flowFeedFresh, spxPlay, spxFullState, gexPositioning, vectorFullState], arsenal] = await Promise.all([
+      Promise.all([
       dbQuery<{
         session_date: string;
         direction: string;
@@ -560,6 +780,15 @@ export async function fetchEcosystemContext(ticker: string): Promise<EcosystemCo
       // gex_positioning's doc on EcosystemContext for why getGexPositioning()
       // already returns exactly the shape/honesty-convention this field wants.
       getGexPositioning(upper),
+      // Vector's ENTIRE live desk state for this ticker — also unconditional (Vector
+      // serves any optionable symbol). fetchVectorFullState is itself fail-open (returns
+      // null on no spot / any read failure and never throws), but wrap in .catch anyway
+      // so it can never reject the whole ecosystem fan-out. The horizon is "all" — the
+      // whole-chain view — matching get_vector_full_state's default.
+      fetchVectorFullState(upper, "all").catch(() => null),
+      ]),
+      // #60 arsenal — relevance-gated + fail-open; runs concurrently with the platform fan-out above.
+      fetchEcosystemArsenal(upper, arsenalScope),
     ]);
 
     const z = zerodteRes.rows[0];
@@ -618,6 +847,8 @@ export async function fetchEcosystemContext(ticker: string): Promise<EcosystemCo
       spx_full_state: spxFullState,
       flow_feed_fresh: flowFeedFresh,
       gex_positioning: gexPositioning,
+      vector_full_state: vectorFullState,
+      arsenal,
     };
   } catch {
     return emptyContext(ticker);

@@ -28,6 +28,7 @@ export function analyzeStrikeGexRows(rows: Record<string, unknown>[]): {
     if (!Number.isFinite(strike)) continue;
     const callG = Number(row.call_gamma_oi ?? row.call_gex ?? 0);
     const putG = Number(row.put_gamma_oi ?? row.put_gex ?? 0);
+    if (!Number.isFinite(callG) || !Number.isFinite(putG)) continue;
     const net = callG + putG;
     // Drop ONLY genuinely empty (0/0) strikes. Since net = callG + putG, the test
     // (callG === 0 && putG === 0) already implies net === 0, so the old `net === 0 &&`
@@ -129,6 +130,32 @@ export function gammaRegime(spot: number, flip: number | null): string {
   return spot > flip ? "mean_revert" : "amplification";
 }
 
+/** Debounce flip churn — require spot to clear flip by bufferPts before regime changes.
+ *
+ *  This is the INTENDED local spot-vs-flip regime model: spot just below the flip is locally
+ *  short-gamma ("amplification") even when the aggregate net GEX is positive — the local regime at
+ *  spot and the total-book net sign measure different things, so this deliberately does NOT consult
+ *  net GEX. (An earlier revision tried a net-GEX-sign override inside the buffer; an adversarial
+ *  review refuted it — the observed "amplification at +20.7B netGex" was a symptom of the desk being
+ *  horizon-blind, i.e. the two surfaces used DIFFERENT flip values, which #294 fixes.) */
+export function gammaRegimeWithHysteresis(
+  spot: number,
+  flip: number | null,
+  previous: string,
+  bufferPts = 2
+): string {
+  const raw = gammaRegime(spot, flip);
+  if (flip == null || raw === "unknown" || previous === "unknown") return raw;
+  if (previous === raw) return raw;
+  if (previous === "mean_revert" && raw === "amplification") {
+    return spot <= flip - bufferPts ? "amplification" : "mean_revert";
+  }
+  if (previous === "amplification" && raw === "mean_revert") {
+    return spot >= flip + bufferPts ? "mean_revert" : "amplification";
+  }
+  return raw;
+}
+
 /**
  * Build the GEX-wall ladder shown on the SPX desk.
  *
@@ -218,6 +245,14 @@ export function topGexWalls(levels: GexStrikeLevel[], spot: number, limit = 6): 
     }
   }
   void putCount;
+
+  if (picked.size > limit) {
+    const ranked = [...picked.values()].sort(
+      (a, b) => Math.abs(b.net_gex) - Math.abs(a.net_gex)
+    );
+    picked.clear();
+    for (const lv of ranked.slice(0, limit)) picked.set(lv.strike, lv);
+  }
 
   // Descending by strike → calls render above the spot anchor, puts below.
   return [...picked.values()].map(mkWall).sort((a, b) => b.strike - a.strike);

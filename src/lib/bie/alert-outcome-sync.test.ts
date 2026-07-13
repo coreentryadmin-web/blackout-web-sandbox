@@ -37,6 +37,8 @@ function row(overrides: Partial<UngradedAlertAuditRow> = {}): UngradedAlertAudit
     source_table: "zerodte_setup_log",
     source_key: { session_date: "2026-07-01", ticker: "NVDA" },
     fired_at: "2026-07-01T14:30:00.000Z",
+    confidence_label: null,
+    direction: null,
     ...overrides,
   };
 }
@@ -153,6 +155,8 @@ describe("alert-outcome-sync", () => {
         id: 301,
         alert_type: "spx_claude_play",
         source_key: { price: 6234.5, direction: "long", at: "2026-07-01T15:00:00.000Z" },
+        direction: "long",
+        confidence_label: "A",
       }),
     ];
     mockSpxOutcome = { outcome: "win" };
@@ -163,6 +167,25 @@ describe("alert-outcome-sync", () => {
 
     assert.equal(result.graded, 1);
     assert.deepEqual(gradeCalls, [{ id: 301, outcome: "target", laterCorrect: true }]);
+  });
+
+  test("SPX Slayer: legacy spx_bie_play alert_type uses same origin lookup", async () => {
+    mockUngraded = [
+      row({
+        id: 303,
+        alert_type: "spx_bie_play",
+        source_key: { price: 6200, direction: "short", at: "2026-07-01T15:05:00.000Z" },
+        direction: "short",
+        confidence_label: "B",
+      }),
+    ];
+    mockSpxOutcome = { outcome: "loss" };
+    gradeCalls = [];
+
+    const result = await mod.syncAlertAuditOutcomes();
+
+    assert.equal(result.graded, 1);
+    assert.deepEqual(gradeCalls, [{ id: 303, outcome: "stop", laterCorrect: false }]);
   });
 
   test("SPX Slayer: no matching play (e.g. a VETO'd verdict) counts as no_match, never errors", async () => {

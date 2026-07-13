@@ -83,7 +83,9 @@ function connectionViaPooler(connectionString: string): boolean {
       host.includes("pgbouncer") ||
       host.includes("pooler") ||
       host.includes("proxy.rlwy") ||
-      host.includes("-pool.")
+      host.includes("-pool.") ||
+      // AWS RDS Proxy: {name}.proxy-{id}.{region}.rds.amazonaws.com
+      host.includes(".proxy-")
     );
   } catch {
     return false;
@@ -356,6 +358,27 @@ async function runMigrations(): Promise<void> {
     ADD COLUMN IF NOT EXISTS option_label TEXT,
     ADD COLUMN IF NOT EXISTS option_premium TEXT,
     ADD COLUMN IF NOT EXISTS entry_score INT;
+  `);
+  await p.query(`
+    ALTER TABLE spx_open_play
+    ADD COLUMN IF NOT EXISTS playbook_id TEXT;
+  `);
+  await p.query(`
+    ALTER TABLE spx_play_outcomes
+    ADD COLUMN IF NOT EXISTS playbook_id TEXT;
+  `);
+  await p.query(`
+    ALTER TABLE spx_play_outcomes
+    ADD COLUMN IF NOT EXISTS playbook_instance_id TEXT;
+  `);
+  await p.query(`
+    CREATE INDEX IF NOT EXISTS idx_spx_play_outcomes_playbook
+    ON spx_play_outcomes(playbook_id, outcome);
+  `);
+  await p.query(`
+    CREATE INDEX IF NOT EXISTS idx_spx_play_outcomes_playbook_instance
+    ON spx_play_outcomes(playbook_instance_id)
+    WHERE playbook_instance_id IS NOT NULL;
   `);
   await p.query(`
     CREATE TABLE IF NOT EXISTS spx_play_outcomes (
@@ -1008,6 +1031,122 @@ async function runMigrations(): Promise<void> {
     CREATE INDEX IF NOT EXISTS idx_spx_engine_snapshots_observed_at
       ON spx_engine_snapshots (observed_at DESC);
 
+    -- SPX named-playbook shadow observations (Phase 1 evidence — PB-01..08).
+    -- Logs what the playbook matcher WOULD have flagged as primary/fired WITHOUT
+    -- gating BUY. Throttled at the caller (state-transition cursor) so we get one
+    -- row per meaningful playbook shift, not every member poll tick.
+    CREATE TABLE IF NOT EXISTS spx_playbook_shadow_observations (
+      id                   BIGSERIAL PRIMARY KEY,
+      observed_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      session_date         DATE NOT NULL,
+      primary_playbook_id  TEXT,
+      regime               TEXT,
+      gamma_regime         TEXT,
+      price_at_observation NUMERIC,
+      engine_action        TEXT NOT NULL,
+      engine_score         INTEGER NOT NULL,
+      verdicts             JSONB NOT NULL DEFAULT '[]'
+    );
+    CREATE INDEX IF NOT EXISTS idx_spx_playbook_shadow_obs_at
+      ON spx_playbook_shadow_observations (observed_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_spx_playbook_shadow_obs_primary
+      ON spx_playbook_shadow_observations (primary_playbook_id, observed_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_spx_playbook_shadow_obs_session
+      ON spx_playbook_shadow_observations (session_date, observed_at DESC);
+
+    ALTER TABLE spx_playbook_shadow_observations
+      ADD COLUMN IF NOT EXISTS pipeline_audit JSONB,
+      ADD COLUMN IF NOT EXISTS feature_snapshot JSONB,
+      ADD COLUMN IF NOT EXISTS instance_transitions JSONB NOT NULL DEFAULT '[]'::jsonb,
+      ADD COLUMN IF NOT EXISTS gate_blocks JSONB,
+      ADD COLUMN IF NOT EXISTS first_block_category TEXT;
+
+    CREATE TABLE IF NOT EXISTS spx_playbook_instances (
+      instance_id       TEXT PRIMARY KEY,
+      session_date      DATE NOT NULL,
+      playbook_id       TEXT NOT NULL,
+      direction         TEXT,
+      state             TEXT NOT NULL,
+      armed_at          TIMESTAMPTZ,
+      triggered_at      TIMESTAMPTZ,
+      feature_snapshot  JSONB,
+      detail            TEXT,
+      updated_at        TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+    CREATE INDEX IF NOT EXISTS idx_spx_playbook_instances_session
+      ON spx_playbook_instances (session_date, playbook_id);
+
+    ALTER TABLE spx_playbook_instances
+      ADD COLUMN IF NOT EXISTS invalidated_at TIMESTAMPTZ,
+      ADD COLUMN IF NOT EXISTS opened_at TIMESTAMPTZ,
+      ADD COLUMN IF NOT EXISTS closed_at TIMESTAMPTZ,
+      ADD COLUMN IF NOT EXISTS reason_blocked TEXT,
+      ADD COLUMN IF NOT EXISTS reason_invalidated TEXT,
+      ADD COLUMN IF NOT EXISTS executable BOOLEAN,
+      ADD COLUMN IF NOT EXISTS trigger_price NUMERIC,
+      ADD COLUMN IF NOT EXISTS counterfactual_mfe_pts NUMERIC DEFAULT 0,
+      ADD COLUMN IF NOT EXISTS counterfactual_mae_pts NUMERIC DEFAULT 0,
+      ADD COLUMN IF NOT EXISTS counterfactual_eval JSONB,
+      ADD COLUMN IF NOT EXISTS option_contract_candidate JSONB,
+      ADD COLUMN IF NOT EXISTS armed_poll_count INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE spx_playbook_instances
+      ADD COLUMN IF NOT EXISTS trigger_count INTEGER NOT NULL DEFAULT 0;
+
+    CREATE TABLE IF NOT EXISTS spx_playbook_instance_events (
+      id                   BIGSERIAL PRIMARY KEY,
+      observed_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      session_date         DATE NOT NULL,
+      instance_id          TEXT NOT NULL,
+      playbook_id          TEXT NOT NULL,
+      event_type           TEXT NOT NULL,
+      direction            TEXT,
+      price_at_event       NUMERIC,
+      reason               TEXT,
+      gate_blocks          JSONB,
+      feature_snapshot     JSONB NOT NULL,
+      engine_action        TEXT,
+      executable           BOOLEAN,
+      counterfactual_mfe_pts NUMERIC,
+      counterfactual_mae_pts NUMERIC
+    );
+    CREATE INDEX IF NOT EXISTS idx_spx_playbook_instance_events_session
+      ON spx_playbook_instance_events (session_date, playbook_id, observed_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_spx_playbook_instance_events_instance
+      ON spx_playbook_instance_events (instance_id, observed_at DESC);
+
+    -- #38: orphan cleanup then FK — application-level refs become enforced at the DB layer.
+    DELETE FROM spx_playbook_instance_events e
+      WHERE NOT EXISTS (
+        SELECT 1 FROM spx_playbook_instances i WHERE i.instance_id = e.instance_id
+      );
+    UPDATE spx_play_outcomes o
+      SET playbook_instance_id = NULL
+      WHERE o.playbook_instance_id IS NOT NULL
+        AND NOT EXISTS (
+          SELECT 1 FROM spx_playbook_instances i WHERE i.instance_id = o.playbook_instance_id
+        );
+    DO $$
+    BEGIN
+      IF NOT EXISTS (
+        SELECT 1 FROM information_schema.table_constraints
+        WHERE constraint_name = 'fk_spx_playbook_instance_events_instance'
+      ) THEN
+        ALTER TABLE spx_playbook_instance_events
+          ADD CONSTRAINT fk_spx_playbook_instance_events_instance
+          FOREIGN KEY (instance_id) REFERENCES spx_playbook_instances(instance_id)
+          ON DELETE CASCADE;
+      END IF;
+      IF NOT EXISTS (
+        SELECT 1 FROM information_schema.table_constraints
+        WHERE constraint_name = 'fk_spx_play_outcomes_playbook_instance'
+      ) THEN
+        ALTER TABLE spx_play_outcomes
+          ADD CONSTRAINT fk_spx_play_outcomes_playbook_instance
+          FOREIGN KEY (playbook_instance_id) REFERENCES spx_playbook_instances(instance_id)
+          ON DELETE SET NULL;
+      END IF;
+    END $$;
+
     -- nighthawk_scoring_history (task #129): durable copy of Night Hawk's per-candidate
     -- scoring dossiers, the Night Hawk analogue of spx_engine_snapshots above. scoreCandidate()
     -- (src/lib/nighthawk/scorer.ts) computes a FULL breakdown for every ticker the nightly hunt
@@ -1294,6 +1433,27 @@ async function runMigrations(): Promise<void> {
       outcome TEXT
     );
     CREATE INDEX IF NOT EXISTS signal_outcomes_event_idx ON signal_outcomes(signal_event_id, checkpoint);
+  `);
+
+  // Vector wall-history durable write-through (007_vector_wall_history.sql) — inlined for
+  // ECS standalone cold starts. Mirrors the Redis-only rail so it survives Redis restarts
+  // and keeps ~90 days of past sessions for replay. UNIQUE(ticker, session_ymd, bucket_time)
+  // makes the recorder's per-bucket upsert idempotent; pruned to 90 days by db-cleanup.
+  await p.query(`
+    CREATE TABLE IF NOT EXISTS vector_wall_history (
+      id BIGSERIAL PRIMARY KEY,
+      ticker TEXT NOT NULL,
+      session_ymd DATE NOT NULL,
+      bucket_time BIGINT NOT NULL,
+      walls JSONB NOT NULL,
+      gamma_flip DOUBLE PRECISION,
+      vex_walls JSONB,
+      vex_flip DOUBLE PRECISION,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE (ticker, session_ymd, bucket_time)
+    );
+    CREATE INDEX IF NOT EXISTS vector_wall_history_lookup_idx ON vector_wall_history (ticker, session_ymd, bucket_time);
+    CREATE INDEX IF NOT EXISTS vector_wall_history_updated_at_idx ON vector_wall_history (updated_at DESC);
   `);
   await p.query(`
     ALTER TABLE largo_messages
@@ -2073,6 +2233,714 @@ export async function fetchRecentSpxEngineSnapshots(limit = 50): Promise<
   }));
 }
 
+/** Persists one throttled playbook-shadow state transition (Phase 1 evidence). */
+export async function insertPlaybookShadowObservation(row: {
+  session_date: string;
+  primary_playbook_id: string | null;
+  regime: string | null;
+  gamma_regime: string | null;
+  price_at_observation: number | null;
+  engine_action: string;
+  engine_score: number;
+  verdicts: unknown;
+  pipeline_audit?: unknown;
+  feature_snapshot?: unknown;
+  instance_transitions?: unknown;
+  gate_blocks?: unknown;
+  first_block_category?: string | null;
+}): Promise<void> {
+  await ensureSchema();
+  await (await getPool()).query(
+    `
+    INSERT INTO spx_playbook_shadow_observations (
+      session_date, primary_playbook_id, regime, gamma_regime,
+      price_at_observation, engine_action, engine_score, verdicts,
+      pipeline_audit, feature_snapshot, instance_transitions,
+      gate_blocks, first_block_category
+    )
+    VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9::jsonb,$10::jsonb,$11::jsonb,$12::jsonb,$13)
+    `,
+    [
+      row.session_date,
+      row.primary_playbook_id,
+      row.regime,
+      row.gamma_regime,
+      row.price_at_observation,
+      row.engine_action,
+      row.engine_score,
+      JSON.stringify(row.verdicts ?? []),
+      row.pipeline_audit != null ? JSON.stringify(row.pipeline_audit) : null,
+      row.feature_snapshot != null ? JSON.stringify(row.feature_snapshot) : null,
+      JSON.stringify(row.instance_transitions ?? []),
+      row.gate_blocks != null ? JSON.stringify(row.gate_blocks) : null,
+      row.first_block_category ?? null,
+    ]
+  );
+}
+
+export async function loadPlaybookInstanceStates(
+  sessionDate: string
+): Promise<
+  Array<{
+    instance_id: string;
+    playbook_id: string;
+    direction: "long" | "short" | null;
+    state:
+      | "idle"
+      | "armed"
+      | "triggered"
+      | "blocked"
+      | "entry_pending"
+      | "open"
+      | "managing"
+      | "exit_pending"
+      | "closed"
+      | "invalidated"
+      | "expired"
+      | "cancelled";
+    armed_poll_count: number;
+    triggered_at_ms: number | null;
+    armed_at_ms: number | null;
+    invalidated_at_ms: number | null;
+    trigger_count: number;
+  }>
+> {
+  await ensureSchema();
+  const res = await (await getPool()).query(
+    `
+    SELECT instance_id, playbook_id, direction, state,
+           COALESCE(armed_poll_count, 0) AS armed_poll_count,
+           COALESCE(trigger_count, 0) AS trigger_count,
+           (EXTRACT(EPOCH FROM triggered_at) * 1000)::bigint AS triggered_at_ms,
+           (EXTRACT(EPOCH FROM armed_at) * 1000)::bigint AS armed_at_ms,
+           (EXTRACT(EPOCH FROM invalidated_at) * 1000)::bigint AS invalidated_at_ms
+    FROM spx_playbook_instances
+    WHERE session_date = $1
+    `,
+    [sessionDate]
+  );
+  return res.rows.map((r) => ({
+    instance_id: String(r.instance_id),
+    playbook_id: String(r.playbook_id),
+    direction:
+      r.direction === "long" || r.direction === "short"
+        ? r.direction
+        : null,
+    state: String(r.state) as
+      | "idle"
+      | "armed"
+      | "triggered"
+      | "blocked"
+      | "entry_pending"
+      | "open"
+      | "managing"
+      | "exit_pending"
+      | "closed"
+      | "invalidated"
+      | "expired"
+      | "cancelled",
+    armed_poll_count: Number(r.armed_poll_count ?? 0),
+    triggered_at_ms:
+      r.triggered_at_ms != null && Number.isFinite(Number(r.triggered_at_ms))
+        ? Number(r.triggered_at_ms)
+        : null,
+    armed_at_ms:
+      r.armed_at_ms != null && Number.isFinite(Number(r.armed_at_ms))
+        ? Number(r.armed_at_ms)
+        : null,
+    invalidated_at_ms:
+      r.invalidated_at_ms != null && Number.isFinite(Number(r.invalidated_at_ms))
+        ? Number(r.invalidated_at_ms)
+        : null,
+    trigger_count: Number(r.trigger_count ?? 0),
+  }));
+}
+
+export async function loadPlaybookArmedPollCounts(sessionDate: string): Promise<Map<string, number>> {
+  const rows = await loadPlaybookInstanceStates(sessionDate);
+  return new Map(rows.map((r) => [r.instance_id, r.armed_poll_count]));
+}
+
+/** Count trigger episodes per playbook for session risk governor (includes invalidated-without-open). */
+export async function loadPlaybookTriggerCountsByPb(sessionDate: string): Promise<Map<string, number>> {
+  await ensureSchema();
+  const res = await (await getPool()).query(
+    `
+    SELECT playbook_id, COUNT(*)::int AS trigger_count
+    FROM spx_playbook_instances
+    WHERE session_date = $1
+      AND (
+        trigger_count > 0
+        OR triggered_at IS NOT NULL
+        OR opened_at IS NOT NULL
+        OR state IN ('triggered', 'entry_pending', 'open', 'managing', 'exit_pending', 'blocked')
+      )
+    GROUP BY playbook_id
+    `,
+    [sessionDate]
+  );
+  return new Map(res.rows.map((r) => [String(r.playbook_id), Number(r.trigger_count)]));
+}
+
+export async function syncPlaybookArmedPollCounts(counts: ReadonlyMap<string, number>): Promise<void> {
+  if (!counts.size) return;
+  await ensureSchema();
+  const pool = await getPool();
+  for (const [instanceId, count] of counts) {
+    await pool.query(
+      `
+      UPDATE spx_playbook_instances
+      SET armed_poll_count = $2, updated_at = NOW()
+      WHERE instance_id = $1
+      `,
+      [instanceId, count]
+    );
+  }
+}
+
+export async function upsertPlaybookInstances(
+  sessionDate: string,
+  rows: Array<{
+    instance_id: string;
+    playbook_id: string;
+    direction: "long" | "short" | null;
+    state:
+      | "idle"
+      | "armed"
+      | "triggered"
+      | "blocked"
+      | "entry_pending"
+      | "open"
+      | "managing"
+      | "exit_pending"
+      | "closed"
+      | "invalidated"
+      | "expired"
+      | "cancelled";
+    feature_snapshot: unknown;
+    detail: string;
+    trigger_price?: number | null;
+    reason_invalidated?: string | null;
+    reason_blocked?: string | null;
+    armed_poll_count?: number | null;
+  }>
+): Promise<void> {
+  if (!rows.length) return;
+  await ensureSchema();
+  const pool = await getPool();
+  for (const row of rows) {
+    await pool.query(
+      `
+      INSERT INTO spx_playbook_instances (
+        instance_id, session_date, playbook_id, direction, state,
+        armed_at, triggered_at, invalidated_at, opened_at, closed_at,
+        feature_snapshot, detail,
+        trigger_price, reason_invalidated, reason_blocked, armed_poll_count, trigger_count, updated_at
+      )
+      VALUES ($1,$2,$3,$4,$5,
+        CASE WHEN $5 = 'armed' THEN NOW() ELSE NULL END,
+        CASE WHEN $5 IN ('triggered', 'blocked', 'entry_pending') THEN NOW() ELSE NULL END,
+        CASE WHEN $5 = 'invalidated' THEN NOW() ELSE NULL END,
+        CASE WHEN $5 = 'open' THEN NOW() ELSE NULL END,
+        CASE WHEN $5 = 'closed' THEN NOW() ELSE NULL END,
+        $6::jsonb, $7,
+        $8, $9, $10, COALESCE($11, 0),
+        CASE WHEN $5 = 'triggered' THEN 1 ELSE 0 END,
+        NOW())
+      ON CONFLICT (instance_id) DO UPDATE SET
+        direction = EXCLUDED.direction,
+        state = EXCLUDED.state,
+        armed_at = COALESCE(spx_playbook_instances.armed_at,
+          CASE WHEN EXCLUDED.state = 'armed' THEN NOW() ELSE NULL END),
+        triggered_at = COALESCE(spx_playbook_instances.triggered_at,
+          CASE WHEN EXCLUDED.state IN ('triggered', 'blocked', 'entry_pending') THEN NOW() ELSE NULL END),
+        invalidated_at = COALESCE(spx_playbook_instances.invalidated_at,
+          CASE WHEN EXCLUDED.state = 'invalidated' THEN NOW() ELSE NULL END),
+        opened_at = COALESCE(spx_playbook_instances.opened_at,
+          CASE WHEN EXCLUDED.state = 'open' THEN NOW() ELSE NULL END),
+        closed_at = COALESCE(spx_playbook_instances.closed_at,
+          CASE WHEN EXCLUDED.state = 'closed' THEN NOW() ELSE NULL END),
+        feature_snapshot = EXCLUDED.feature_snapshot,
+        detail = EXCLUDED.detail,
+        trigger_price = COALESCE(spx_playbook_instances.trigger_price, EXCLUDED.trigger_price),
+        reason_invalidated = COALESCE(EXCLUDED.reason_invalidated, spx_playbook_instances.reason_invalidated),
+        reason_blocked = COALESCE(EXCLUDED.reason_blocked, spx_playbook_instances.reason_blocked),
+        armed_poll_count = GREATEST(COALESCE(spx_playbook_instances.armed_poll_count, 0), COALESCE(EXCLUDED.armed_poll_count, 0)),
+        trigger_count = CASE
+          WHEN EXCLUDED.state = 'triggered'
+            AND spx_playbook_instances.state IS DISTINCT FROM 'triggered'
+          THEN COALESCE(spx_playbook_instances.trigger_count, 0) + 1
+          ELSE COALESCE(spx_playbook_instances.trigger_count, EXCLUDED.trigger_count, 0)
+        END,
+        updated_at = NOW()
+      `,
+      [
+        row.instance_id,
+        sessionDate,
+        row.playbook_id,
+        row.direction,
+        row.state,
+        JSON.stringify(row.feature_snapshot),
+        row.detail,
+        row.trigger_price ?? null,
+        row.reason_invalidated ?? null,
+        row.reason_blocked ?? null,
+        row.armed_poll_count ?? null,
+      ]
+    );
+  }
+}
+
+export async function insertPlaybookInstanceEvents(
+  rows: Array<{
+    session_date: string;
+    instance_id: string;
+    playbook_id: string;
+    event_type: string;
+    direction: "long" | "short" | null;
+    price_at_event: number | null;
+    reason: string | null;
+    gate_blocks: string[] | null;
+    feature_snapshot: unknown;
+    engine_action: string | null;
+    executable: boolean | null;
+    counterfactual_mfe_pts: number | null;
+    counterfactual_mae_pts: number | null;
+  }>
+): Promise<void> {
+  if (!rows.length) return;
+  await ensureSchema();
+  const lockKey = `playbook-instance-events:${rows[0]!.session_date}`;
+  const locked = await tryAdvisoryLock(lockKey);
+  if (!locked) return;
+  const pool = await getPool();
+  try {
+    for (const row of rows) {
+      await pool.query(
+        `
+      INSERT INTO spx_playbook_instance_events (
+        session_date, instance_id, playbook_id, event_type, direction,
+        price_at_event, reason, gate_blocks, feature_snapshot, engine_action,
+        executable, counterfactual_mfe_pts, counterfactual_mae_pts
+      )
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9::jsonb,$10,$11,$12,$13)
+      `,
+        [
+          row.session_date,
+          row.instance_id,
+          row.playbook_id,
+          row.event_type,
+          row.direction,
+          row.price_at_event,
+          row.reason,
+          row.gate_blocks != null ? JSON.stringify(row.gate_blocks) : null,
+          JSON.stringify(row.feature_snapshot),
+          row.engine_action,
+          row.executable,
+          row.counterfactual_mfe_pts,
+          row.counterfactual_mae_pts,
+        ]
+      );
+    }
+  } finally {
+    await releaseAdvisoryLock(lockKey);
+  }
+}
+
+export async function patchPlaybookInstanceBlocked(input: {
+  instance_id: string;
+  reason_blocked: string;
+  executable: boolean;
+}): Promise<void> {
+  await ensureSchema();
+  await (await getPool()).query(
+    `
+    UPDATE spx_playbook_instances
+    SET reason_blocked = $2, executable = $3, updated_at = NOW()
+    WHERE instance_id = $1
+    `,
+    [input.instance_id, input.reason_blocked, input.executable]
+  );
+}
+
+export async function patchPlaybookInstanceOpened(input: {
+  instance_id: string;
+  opened_at?: string;
+  option_contract_candidate?: unknown;
+  executable?: boolean;
+}): Promise<void> {
+  await ensureSchema();
+  await (await getPool()).query(
+    `
+    UPDATE spx_playbook_instances
+    SET opened_at = COALESCE($2::timestamptz, NOW()),
+        option_contract_candidate = COALESCE($3::jsonb, option_contract_candidate),
+        executable = COALESCE($4, executable, true),
+        updated_at = NOW()
+    WHERE instance_id = $1
+    `,
+    [
+      input.instance_id,
+      input.opened_at ?? null,
+      input.option_contract_candidate != null ? JSON.stringify(input.option_contract_candidate) : null,
+      input.executable ?? true,
+    ]
+  );
+}
+
+export async function loadTriggeredPlaybookInstances(sessionDate: string): Promise<
+  Array<{
+    instance_id: string;
+    playbook_id: string;
+    direction: "long" | "short" | null;
+    trigger_price: number | null;
+    triggered_at_ms: number | null;
+    counterfactual_mfe_pts: number;
+    counterfactual_mae_pts: number;
+    counterfactual_eval: unknown;
+    opened_at: string | null;
+  }>
+> {
+  await ensureSchema();
+  const res = await (await getPool()).query(
+    `
+    SELECT instance_id, playbook_id, direction, trigger_price,
+           (EXTRACT(EPOCH FROM triggered_at) * 1000)::bigint AS triggered_at_ms,
+           COALESCE(counterfactual_mfe_pts, 0) AS counterfactual_mfe_pts,
+           COALESCE(counterfactual_mae_pts, 0) AS counterfactual_mae_pts,
+           counterfactual_eval,
+           opened_at
+    FROM spx_playbook_instances
+    WHERE session_date = $1
+      AND state IN ('triggered', 'blocked', 'entry_pending')
+      AND triggered_at IS NOT NULL
+      AND opened_at IS NULL
+    `,
+    [sessionDate]
+  );
+  return res.rows.map((r) => ({
+    instance_id: String(r.instance_id),
+    playbook_id: String(r.playbook_id),
+    direction:
+      r.direction === "long" || r.direction === "short"
+        ? r.direction
+        : null,
+    trigger_price: r.trigger_price != null ? Number(r.trigger_price) : null,
+    triggered_at_ms:
+      r.triggered_at_ms != null && Number.isFinite(Number(r.triggered_at_ms))
+        ? Number(r.triggered_at_ms)
+        : null,
+    counterfactual_mfe_pts: Number(r.counterfactual_mfe_pts ?? 0),
+    counterfactual_mae_pts: Number(r.counterfactual_mae_pts ?? 0),
+    counterfactual_eval: r.counterfactual_eval ?? null,
+    opened_at: r.opened_at != null ? String(r.opened_at) : null,
+  }));
+}
+
+export async function finalizePlaybookCounterfactualIfActive(
+  instanceId: string,
+  reason: string,
+  nowMs: number
+): Promise<void> {
+  await ensureSchema();
+  const res = await (await getPool()).query(
+    `SELECT counterfactual_eval FROM spx_playbook_instances WHERE instance_id = $1`,
+    [instanceId]
+  );
+  const raw = res.rows[0]?.counterfactual_eval;
+  if (!raw || typeof raw !== "object") return;
+  const o = raw as { exit_reason_counterfactual?: string };
+  if (o.exit_reason_counterfactual !== "active") return;
+  await (await getPool()).query(
+    `
+    UPDATE spx_playbook_instances
+    SET counterfactual_eval = jsonb_set(
+          jsonb_set(counterfactual_eval, '{exit_reason_counterfactual}', to_jsonb($2::text)),
+          '{counterfactual_window_end_ms}',
+          to_jsonb($3::bigint)
+        ),
+        updated_at = NOW()
+    WHERE instance_id = $1
+    `,
+    [instanceId, reason, nowMs]
+  );
+}
+
+export async function patchPlaybookInstanceCounterfactualEval(
+  instanceId: string,
+  evalPayload: unknown
+): Promise<void> {
+  await ensureSchema();
+  await (await getPool()).query(
+    `
+    UPDATE spx_playbook_instances
+    SET counterfactual_eval = $2::jsonb,
+        updated_at = NOW()
+    WHERE instance_id = $1
+    `,
+    [instanceId, JSON.stringify(evalPayload)]
+  );
+}
+
+export async function updatePlaybookInstanceCounterfactual(
+  instanceId: string,
+  mfePts: number,
+  maePts: number
+): Promise<void> {
+  await ensureSchema();
+  await (await getPool()).query(
+    `
+    UPDATE spx_playbook_instances
+    SET counterfactual_mfe_pts = GREATEST(COALESCE(counterfactual_mfe_pts, 0), $2),
+        counterfactual_mae_pts = GREATEST(COALESCE(counterfactual_mae_pts, 0), $3),
+        updated_at = NOW()
+    WHERE instance_id = $1
+    `,
+    [instanceId, mfePts, maePts]
+  );
+}
+
+export async function fetchPlaybookEvidenceRows(opts?: {
+  oos_only?: boolean;
+  since_date?: string;
+}): Promise<
+  Array<{
+    instance_id: string;
+    session_date: string;
+    playbook_id: string;
+    direction: string | null;
+    state: string;
+    armed_at: string | null;
+    triggered_at: string | null;
+    invalidated_at: string | null;
+    opened_at: string | null;
+    executable: boolean | null;
+    reason_blocked: string | null;
+    trigger_price: number | null;
+    counterfactual_mfe_pts: number | null;
+    counterfactual_mae_pts: number | null;
+    pnl_pts: number | null;
+    mfe_pts: number | null;
+    mae_pts: number | null;
+    outcome: string | null;
+    gamma_regime: string | null;
+    blocked_events: number;
+  }>
+> {
+  await ensureSchema();
+  const oosOnly = opts?.oos_only !== false;
+  const since = opts?.since_date ?? "2026-07-10";
+  const res = await (await getPool()).query(
+    `
+    SELECT
+      i.instance_id,
+      i.session_date::text,
+      i.playbook_id,
+      i.direction,
+      i.state,
+      i.armed_at,
+      i.triggered_at,
+      i.invalidated_at,
+      i.opened_at,
+      i.executable,
+      i.reason_blocked,
+      i.trigger_price,
+      i.counterfactual_mfe_pts,
+      i.counterfactual_mae_pts,
+      o.pnl_pts,
+      o.mfe_pts,
+      o.mae_pts,
+      o.outcome,
+      (i.feature_snapshot->>'gamma_regime') AS gamma_regime,
+      (
+        SELECT COUNT(*)::int FROM spx_playbook_instance_events e
+        WHERE e.instance_id = i.instance_id AND e.event_type = 'blocked'
+      ) AS blocked_events
+    FROM spx_playbook_instances i
+    LEFT JOIN spx_play_outcomes o
+      ON o.outcome <> 'open'
+     AND (
+       o.playbook_instance_id = i.instance_id
+       OR (
+         o.playbook_instance_id IS NULL
+         AND o.playbook_id = i.playbook_id
+         AND o.session_date = i.session_date
+         AND o.direction IS NOT DISTINCT FROM i.direction
+       )
+     )
+    WHERE ($1::boolean = false OR i.session_date >= $2::date)
+    ORDER BY i.session_date DESC, i.playbook_id
+    `,
+    [oosOnly, since]
+  );
+  return res.rows.map((r) => ({
+    instance_id: String(r.instance_id),
+    session_date: String(r.session_date),
+    playbook_id: String(r.playbook_id),
+    direction: r.direction != null ? String(r.direction) : null,
+    state: String(r.state),
+    armed_at: r.armed_at != null ? String(r.armed_at) : null,
+    triggered_at: r.triggered_at != null ? String(r.triggered_at) : null,
+    invalidated_at: r.invalidated_at != null ? String(r.invalidated_at) : null,
+    opened_at: r.opened_at != null ? String(r.opened_at) : null,
+    executable: r.executable != null ? Boolean(r.executable) : null,
+    reason_blocked: r.reason_blocked != null ? String(r.reason_blocked) : null,
+    trigger_price: r.trigger_price != null ? Number(r.trigger_price) : null,
+    counterfactual_mfe_pts:
+      r.counterfactual_mfe_pts != null ? Number(r.counterfactual_mfe_pts) : null,
+    counterfactual_mae_pts:
+      r.counterfactual_mae_pts != null ? Number(r.counterfactual_mae_pts) : null,
+    pnl_pts: r.pnl_pts != null ? Number(r.pnl_pts) : null,
+    mfe_pts: r.mfe_pts != null ? Number(r.mfe_pts) : null,
+    mae_pts: r.mae_pts != null ? Number(r.mae_pts) : null,
+    outcome: r.outcome != null ? String(r.outcome) : null,
+    gamma_regime: r.gamma_regime != null ? String(r.gamma_regime) : null,
+    blocked_events: Number(r.blocked_events ?? 0),
+  }));
+}
+
+/** Full promotion-evidence rows — mirrors CLI sample-builder query (#20b). */
+export async function fetchPlaybookPromotionEvidenceRows(opts?: {
+  oos_only?: boolean;
+  since_date?: string;
+}): Promise<
+  Array<{
+    instance_id: string;
+    session_date: string;
+    playbook_id: string;
+    armed_at: string | null;
+    triggered_at: string | null;
+    opened_at: string | null;
+    reason_blocked: string | null;
+    counterfactual_mfe_pts: number | null;
+    counterfactual_mae_pts: number | null;
+    counterfactual_eval: unknown;
+    option_contract_candidate: unknown;
+    pnl_pts: number | null;
+    mfe_pts: number | null;
+    mae_pts: number | null;
+    outcome: string | null;
+    execution_sim: { round_trip_cost_pts?: number | null } | null;
+    has_execution_sim: boolean;
+    blocked_events: number;
+    trigger_feature_snapshot: Record<string, unknown> | null;
+  }>
+> {
+  await ensureSchema();
+  const oosOnly = opts?.oos_only !== false;
+  const since = opts?.since_date ?? "2026-07-10";
+  const res = await (await getPool()).query(
+    `
+    SELECT
+      i.instance_id,
+      i.session_date::text,
+      i.playbook_id,
+      i.armed_at,
+      i.triggered_at,
+      i.opened_at,
+      i.reason_blocked,
+      i.counterfactual_mfe_pts,
+      i.counterfactual_mae_pts,
+      i.counterfactual_eval,
+      i.option_contract_candidate,
+      o.pnl_pts,
+      o.mfe_pts,
+      o.mae_pts,
+      o.outcome,
+      o.option_ticket,
+      (SELECT COUNT(*)::int FROM spx_playbook_instance_events e
+        WHERE e.instance_id = i.instance_id AND e.event_type = 'blocked') AS blocked_events,
+      (SELECT e.feature_snapshot FROM spx_playbook_instance_events e
+        WHERE e.instance_id = i.instance_id AND e.event_type = 'triggered'
+        ORDER BY e.observed_at ASC LIMIT 1) AS trigger_feature_snapshot
+    FROM spx_playbook_instances i
+    LEFT JOIN spx_play_outcomes o
+      ON o.outcome <> 'open'
+     AND (
+       o.playbook_instance_id = i.instance_id
+       OR (
+         o.playbook_instance_id IS NULL
+         AND o.playbook_id = i.playbook_id
+         AND o.session_date = i.session_date
+         AND o.direction IS NOT DISTINCT FROM i.direction
+       )
+     )
+    WHERE ($1::boolean = false OR i.session_date >= $2::date)
+    ORDER BY i.session_date, i.playbook_id
+    LIMIT 50000
+    `,
+    [oosOnly, since]
+  );
+  return res.rows.map((r) => {
+    const optionTicket =
+      r.option_ticket && typeof r.option_ticket === "object"
+        ? (r.option_ticket as Record<string, unknown>)
+        : null;
+    const executionSim =
+      optionTicket?.execution_sim && typeof optionTicket.execution_sim === "object"
+        ? (optionTicket.execution_sim as { round_trip_cost_pts?: number | null })
+        : null;
+    const triggerSnap =
+      r.trigger_feature_snapshot && typeof r.trigger_feature_snapshot === "object"
+        ? (r.trigger_feature_snapshot as Record<string, unknown>)
+        : null;
+    return {
+      instance_id: String(r.instance_id),
+      session_date: String(r.session_date),
+      playbook_id: String(r.playbook_id),
+      armed_at: r.armed_at != null ? String(r.armed_at) : null,
+      triggered_at: r.triggered_at != null ? String(r.triggered_at) : null,
+      opened_at: r.opened_at != null ? String(r.opened_at) : null,
+      reason_blocked: r.reason_blocked != null ? String(r.reason_blocked) : null,
+      counterfactual_mfe_pts:
+        r.counterfactual_mfe_pts != null ? Number(r.counterfactual_mfe_pts) : null,
+      counterfactual_mae_pts:
+        r.counterfactual_mae_pts != null ? Number(r.counterfactual_mae_pts) : null,
+      counterfactual_eval: r.counterfactual_eval ?? null,
+      option_contract_candidate: r.option_contract_candidate ?? null,
+      pnl_pts: r.pnl_pts != null ? Number(r.pnl_pts) : null,
+      mfe_pts: r.mfe_pts != null ? Number(r.mfe_pts) : null,
+      mae_pts: r.mae_pts != null ? Number(r.mae_pts) : null,
+      outcome: r.outcome != null ? String(r.outcome) : null,
+      execution_sim: executionSim,
+      has_execution_sim: Boolean(executionSim),
+      blocked_events: Number(r.blocked_events ?? 0),
+      trigger_feature_snapshot: triggerSnap,
+    };
+  });
+}
+
+export async function fetchPlaybookShadowObservationsForSession(
+  sessionDate: string,
+  limit = 200
+): Promise<
+  Array<{
+    id: number;
+    observed_at: string;
+    primary_playbook_id: string | null;
+    regime: string | null;
+    gamma_regime: string | null;
+    price_at_observation: number | null;
+    engine_action: string;
+    engine_score: number;
+    verdicts: unknown;
+  }>
+> {
+  await ensureSchema();
+  const res = await (await getPool()).query(
+    `
+    SELECT id, observed_at, primary_playbook_id, regime, gamma_regime,
+           price_at_observation, engine_action, engine_score, verdicts
+    FROM spx_playbook_shadow_observations
+    WHERE session_date = $1
+    ORDER BY observed_at DESC
+    LIMIT $2
+    `,
+    [sessionDate, limit]
+  );
+  return res.rows;
+}
+
 /**
  * Persists one 0DTE Command near-miss/rejection row (task #147,
  * src/lib/zerodte/rejections.ts's persistZeroDteRejections). Same "always insert,
@@ -2461,13 +3329,14 @@ export async function fetchOpenSpxPlay(sessionDate: string): Promise<{
   option_type?: string | null;
   option_label?: string | null;
   option_premium?: string | null;
+  playbook_id?: string | null;
 } | null> {
   await ensureSchema();
   const res = await (await getPool()).query(
     `
     SELECT id, session_date, direction, entry_price, entry_score, stop, target, grade, headline,
            trim_done, mfe_pts, mae_pts, opened_at, status,
-           option_strike, option_type, option_label, option_premium
+           option_strike, option_type, option_label, option_premium, playbook_id
     FROM spx_open_play
     WHERE session_date = $1::date AND status = 'open'
     ORDER BY opened_at DESC
@@ -2496,6 +3365,7 @@ export async function fetchOpenSpxPlay(sessionDate: string): Promise<{
     option_type: r.option_type != null ? String(r.option_type) : null,
     option_label: r.option_label != null ? String(r.option_label) : null,
     option_premium: r.option_premium != null ? String(r.option_premium) : null,
+    playbook_id: r.playbook_id != null ? String(r.playbook_id) : null,
   };
 }
 
@@ -2535,6 +3405,8 @@ export async function insertOpenSpxPlay(
     option_type?: string | null;
     option_label?: string | null;
     option_premium?: string | null;
+    playbook_id?: string | null;
+    playbook_instance_id?: string | null;
   },
   outcome?: {
     entry_path: string;
@@ -2545,6 +3417,8 @@ export async function insertOpenSpxPlay(
     mtf: unknown;
     claude: unknown;
     option_ticket: unknown;
+    playbook_id?: string | null;
+    playbook_instance_id?: string | null;
   }
 ): Promise<{ id: number; created: boolean }> {
   await ensureSchema();
@@ -2573,9 +3447,9 @@ export async function insertOpenSpxPlay(
         `
     INSERT INTO spx_open_play (
       session_date, direction, entry_price, entry_score, stop, target, grade, headline, opened_at, status,
-      option_strike, option_type, option_label, option_premium
+      option_strike, option_type, option_label, option_premium, playbook_id
     )
-    VALUES ($1::date,$2,$3,$4,$5,$6,$7,$8,$9,'open',$10,$11,$12,$13)
+    VALUES ($1::date,$2,$3,$4,$5,$6,$7,$8,$9,'open',$10,$11,$12,$13,$14)
     RETURNING id
     `,
         [
@@ -2592,6 +3466,7 @@ export async function insertOpenSpxPlay(
           row.option_type ?? null,
           row.option_label ?? null,
           row.option_premium ?? null,
+          row.playbook_id ?? null,
         ]
       );
       const openId = Number(res.rows[0]?.id ?? 0);
@@ -2601,9 +3476,9 @@ export async function insertOpenSpxPlay(
     INSERT INTO spx_play_outcomes (
       open_play_id, session_date, direction, entry_path, grade, score, confidence,
       entry_price, stop, target, headline, factors, confirmations, mtf, claude,
-      option_ticket, opened_at, outcome
+      option_ticket, opened_at, outcome, playbook_id, playbook_instance_id
     )
-    VALUES ($1,$2::date,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12::jsonb,$13::jsonb,$14::jsonb,$15::jsonb,$16::jsonb,$17,'open')
+    VALUES ($1,$2::date,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12::jsonb,$13::jsonb,$14::jsonb,$15::jsonb,$16::jsonb,$17,'open',$18,$19)
     ON CONFLICT (open_play_id) WHERE outcome = 'open' DO NOTHING
     RETURNING id
     `,
@@ -2625,6 +3500,8 @@ export async function insertOpenSpxPlay(
             JSON.stringify(outcome.claude ?? null),
             JSON.stringify(outcome.option_ticket ?? null),
             row.opened_at,
+            outcome.playbook_id ?? row.playbook_id ?? null,
+            outcome.playbook_instance_id ?? row.playbook_instance_id ?? null,
           ]
         );
         if (!outcomeRes.rows[0]?.id) {
@@ -2676,11 +3553,11 @@ export async function updateOpenSpxPlayRow(
     vals.push(patch.trim_done);
   }
   if (patch.mfe_pts !== undefined) {
-    sets.push(`mfe_pts = $${i++}`);
+    sets.push(`mfe_pts = GREATEST(mfe_pts, $${i++})`);
     vals.push(patch.mfe_pts);
   }
   if (patch.mae_pts !== undefined) {
-    sets.push(`mae_pts = $${i++}`);
+    sets.push(`mae_pts = GREATEST(mae_pts, $${i++})`);
     vals.push(patch.mae_pts);
   }
   if (!sets.length) return;
@@ -2691,12 +3568,13 @@ export async function updateOpenSpxPlayRow(
   );
 }
 
-export async function closeOpenSpxPlayRow(id: number, db?: Db): Promise<void> {
+export async function closeOpenSpxPlayRow(id: number, db?: Db): Promise<number> {
   await ensureSchema();
-  await (db ?? await getPool()).query(
+  const res = await (db ?? await getPool()).query(
     `UPDATE spx_open_play SET status = 'closed', closed_at = NOW() WHERE id = $1 AND status = 'open'`,
     [id]
   );
+  return res.rowCount ?? 0;
 }
 
 function mapPlayOutcomeRow(r: QueryResultRow): import("@/features/spx/lib/spx-play-outcomes").PlayOutcomeRow {
@@ -2744,6 +3622,7 @@ export async function insertPlayOutcomeEntry(row: {
   claude: unknown;
   option_ticket: unknown;
   opened_at: string;
+  playbook_instance_id?: string | null;
 }): Promise<number> {
   await ensureSchema();
   const res = await (await getPool()).query<{ id: string }>(
@@ -2751,9 +3630,9 @@ export async function insertPlayOutcomeEntry(row: {
     INSERT INTO spx_play_outcomes (
       open_play_id, session_date, direction, entry_path, grade, score, confidence,
       entry_price, stop, target, headline, factors, confirmations, mtf, claude,
-      option_ticket, opened_at, outcome
+      option_ticket, opened_at, outcome, playbook_instance_id
     )
-    VALUES ($1,$2::date,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12::jsonb,$13::jsonb,$14::jsonb,$15::jsonb,$16::jsonb,$17,'open')
+    VALUES ($1,$2::date,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12::jsonb,$13::jsonb,$14::jsonb,$15::jsonb,$16::jsonb,$17,'open',$18)
     ON CONFLICT (open_play_id) WHERE outcome = 'open' DO NOTHING
     RETURNING id
     `,
@@ -2775,6 +3654,7 @@ export async function insertPlayOutcomeEntry(row: {
       JSON.stringify(row.claude ?? null),
       JSON.stringify(row.option_ticket ?? null),
       row.opened_at,
+      row.playbook_instance_id ?? null,
     ]
   );
   return Number(res.rows[0]?.id ?? 0);
@@ -3774,6 +4654,9 @@ export type UngradedAlertAuditRow = {
   source_table: string;
   source_key: Record<string, unknown>;
   fired_at: string;
+  /** SPX verdict grade at fire time — tightens play-outcome join when set. */
+  confidence_label: string | null;
+  direction: string | null;
 };
 
 /**
@@ -3793,7 +4676,7 @@ export async function fetchUngradedAlertAuditRows(
   const cappedMinutes = Math.min(Math.max(minAgeMinutes, 1), 60 * 24 * 30);
   const cappedLimit = Math.min(Math.max(limit, 1), 2000);
   const res = await dbQuery<QueryResultRow>(
-    `SELECT id, alert_type, source_table, source_key, fired_at
+    `SELECT id, alert_type, source_table, source_key, fired_at, confidence_label, direction
      FROM alert_audit_log
      WHERE outcome IS NULL
        AND alert_type <> 'nighthawk_rejected'
@@ -3808,6 +4691,8 @@ export async function fetchUngradedAlertAuditRows(
     source_table: String(r.source_table),
     source_key: (r.source_key as Record<string, unknown>) ?? {},
     fired_at: new Date(String(r.fired_at)).toISOString(),
+    confidence_label: r.confidence_label != null ? String(r.confidence_label) : null,
+    direction: r.direction != null ? String(r.direction) : null,
   }));
 }
 
@@ -3887,29 +4772,35 @@ export async function fetchNighthawkOutcomeForAudit(
  * same `direction`), moments after the verdict is logged — so (direction, price) match
  * exactly and `opened_at` always lands shortly after the audit row's `fired_at`. This looks
  * up the nearest such play within a generous 30-minute window and only matches CLOSED rows
- * (`outcome <> 'open'`). A price tolerance (not exact equality) absorbs any NUMERIC
- * round-trip formatting difference between the JSONB-serialized verdict price and the
- * column value. If nothing matches, the row simply stays ungraded — a missed match is safe
- * (leaves a row for next run); this function is written so it can never return the WRONG
- * play's outcome (tight price+direction+time constraints, always LIMIT 1 ordered by nearest
- * open time to the verdict).
+ * (`outcome NOT IN ('open','superseded')`). When more than one play matches the same
+ * direction+price window, returns null (ambiguous — safe no-grade) rather than picking the wrong
+ * play. Optional `grade` tightens the match when the audit row captured the verdict grade.
  */
 export async function fetchSpxClaudePlayOutcomeForAudit(
   direction: string,
   price: number,
-  firedAt: string
+  firedAt: string,
+  grade?: string | null
 ): Promise<{ outcome: string } | null> {
   if (!Number.isFinite(price)) return null;
   const res = await dbQuery<QueryResultRow>(
-    `SELECT outcome FROM spx_play_outcomes
-     WHERE direction = $1
-       AND ABS(entry_price - $2::numeric) < 0.01
-       AND outcome <> 'open'
-       AND opened_at >= $3::timestamptz
-       AND opened_at <= $3::timestamptz + interval '30 minutes'
-     ORDER BY opened_at ASC
+    `WITH candidates AS (
+       SELECT outcome,
+              ABS(EXTRACT(EPOCH FROM (opened_at - $3::timestamptz))) AS delta_sec
+       FROM spx_play_outcomes
+       WHERE direction = $1
+         AND ABS(entry_price - $2::numeric) < 0.01
+         AND outcome NOT IN ('open', 'superseded')
+         AND opened_at >= $3::timestamptz - interval '2 minutes'
+         AND opened_at <= $3::timestamptz + interval '30 minutes'
+         AND ($4::text IS NULL OR grade = $4)
+     )
+     SELECT outcome
+     FROM candidates
+     WHERE (SELECT COUNT(*)::int FROM candidates) = 1
+     ORDER BY delta_sec ASC
      LIMIT 1`,
-    [direction, price, firedAt]
+    [direction, price, firedAt, grade ?? null]
   );
   const row = res.rows[0];
   return row ? { outcome: String(row.outcome) } : null;

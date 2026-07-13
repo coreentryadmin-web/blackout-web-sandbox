@@ -6,8 +6,10 @@ import {
   createSeriesMarkers,
   CandlestickSeries,
   HistogramSeries,
+  LineSeries,
   ColorType,
   LineStyle,
+  type AutoscaleInfo,
   type HistogramData,
   type IChartApi,
   type IPriceLine,
@@ -19,7 +21,6 @@ import {
 } from "lightweight-charts";
 import { VectorCrosshairLegend, type VectorCrosshairState } from "@/features/vector/components/VectorCrosshairLegend";
 import { VectorToolbar } from "@/features/vector/components/VectorToolbar";
-import { VectorWallEventTicker } from "@/features/vector/components/VectorWallEventTicker";
 import {
   createVectorEventSource,
   type VectorDarkPoolLevel,
@@ -33,24 +34,64 @@ import {
   eventsFromWallHistory,
   type VectorWallEvent,
 } from "@/features/vector/lib/vector-wall-events";
+import { VECTOR_CHART_LOCALE } from "@/features/vector/lib/vector-chart-config";
+import { reassertPriceAutoScale } from "@/features/vector/lib/vector-price-autoscale";
+import {
+  normalizeDteHorizon,
+  pickHorizonScopedValue,
+  type VectorDteHorizon,
+} from "@/features/vector/lib/vector-dte-horizon";
+import { deriveVectorRegime, type VectorRegime } from "@/features/vector/lib/vector-regime";
+import { deriveWallProximity, type WallProximity } from "@/features/vector/lib/vector-wall-proximity";
+import { deriveGammaMagnet, type GammaMagnet } from "@/features/vector/lib/vector-gamma-magnet";
+import {
+  extendRangeForWalls,
+  DEFAULT_WALL_VIEW_MAX_PCT,
+  BEAD_VIEW_MAX_PCT,
+} from "@/features/vector/lib/vector-price-range";
+import { scoreTopWalls, type WallIntegrity } from "@/features/vector/lib/vector-wall-integrity";
 import {
   alphaForPct,
-  glowAlphaForPct,
-  markerSizeForPct,
+  alphaForPctRel,
+  glowAlphaForPctRel,
+  markerSizeForPctRel,
   widthForPct,
+  MODELED_ALPHA_SCALE,
 } from "@/features/vector/lib/vector-wall-visual";
 import {
   bucketWallHistoryForInterval,
+  composeHorizonTrail,
   hasVexInHistory,
   liveTrailAnchorSec,
   mergeWallHistory,
+  narrowedHorizonTrail,
   pickActiveStrikes,
-  trailsByStrike,
+  pickReplayTrailSource,
+  strikeTrailLifecycle,
   trimHistoryForLiveTrails,
-  type StrikeTrailPoint,
+  type StrikeTrail,
   type VectorWallLens,
   type WallHistorySample,
 } from "@/features/vector/lib/vector-wall-history";
+import { pickKingStrikes, kingAnchorTitle } from "@/features/vector/lib/vector-king-anchor";
+import { smaSeries, emaSeries, vwapSeries, rsiSeries, macdSeries } from "@/features/vector/lib/vector-indicators";
+import {
+  VECTOR_OVERLAYS,
+  VECTOR_LEVELS,
+  type VectorOverlayId,
+  type VectorIndicatorId,
+} from "@/features/vector/lib/vector-indicators-config";
+import { GexHeatmapPrimitive } from "@/features/vector/lib/vector-gex-heatmap-primitive";
+import type { GexHeatmapGrid } from "@/features/vector/lib/vector-gex-reconstruct";
+import { levelLinesFor, type LevelLine, type PriorDayOhlc } from "@/features/vector/lib/vector-key-levels";
+import { buildStructureMarkers } from "@/features/vector/lib/vector-structure-markers";
+import { buildFlowMarkers, DEFAULT_FLOW_MAX_MARKERS, type FlowPrint } from "@/features/vector/lib/vector-flow-markers";
+import { confluenceZones, confluenceCallouts, topConfluenceBand, type ConfluenceLevel } from "@/features/vector/lib/vector-confluence";
+import { summarizeTechnicals, technicalsCallouts } from "@/features/vector/lib/vector-technicals";
+import { expectedMoveCallouts, type ExpectedMove } from "@/features/vector/lib/vector-expected-move";
+import { evaluateAlerts, type AlertRule, type AlertState, type FiredAlert } from "@/features/vector/lib/vector-alerts";
+import { sessionHodLod } from "@/features/vector/lib/vector-key-levels";
+import { dominantSwing, goldenPocket } from "@/features/vector/lib/vector-fib-swing";
 import {
   buildReplayTimeline,
   clampTimelineIndex,
@@ -68,6 +109,10 @@ import {
 } from "@/features/vector/lib/vector-replay";
 import {
   aggregateVectorBars,
+  mergeBarsByTime,
+  wallCountForTimeframe,
+  anchorBandPctForTimeframe,
+  VECTOR_WALL_NODES_PER_SIDE,
   type VectorTimeframeMinutes,
 } from "@/features/vector/lib/vector-bar-timeframes";
 import { mergeSpyVolumeRows } from "@/features/vector/lib/vector-spy-volume-merge";
@@ -82,21 +127,45 @@ export type VectorBar = {
   volume?: number;
 };
 
-const PUT_WALL_COLOR = "#b26bff";
+// Put beads are brightened from #b26bff so purple reads as strongly as the gold call beads at the
+// SAME opacity. Yellow (#ffd60a, ~0.72 rel-luminance) punches through a dark chart at low alpha;
+// the old purple (~0.30) washed out — so at the dimmed modeled-underlay alpha (0.15) members saw
+// "only yellow beads." #d97bff (~0.52) closes that perceptual gap so both colors ghost/solidify
+// together at every alpha, off-hours and in live RTH alike.
+const PUT_WALL_COLOR = "#d97bff";
 const CALL_WALL_COLOR = "#ffd60a";
 const VEX_POS_COLOR = "#7dd3fc";
 const VEX_NEG_COLOR = "#fb7185";
 const GAMMA_FLIP_COLOR = "#22d3ee";
 const VANNA_FLIP_COLOR = "#38bdf8";
-const DARK_POOL_COLOR = "#00d4ff";
+const DARK_POOL_COLOR = "#ff8a3d"; // orange, not cyan — dark-pool cyan #00d4ff failed CVD separation vs gamma-flip cyan #22d3ee (worst-pair ΔE 6.9); orange lifts it to 36.7 (validated via dataviz palette checker)
 const REPLAY_STEP_MS = 350;
-const MAX_WALL_GUIDES = 6;
+/** Widen the price axis to reveal walls within this % of spot (env-tunable). Without
+ *  this the axis fits candles only and support walls a few % below spot render off-screen. */
+const WALL_VIEW_MAX_PCT = (() => {
+  const raw = Number(process.env.NEXT_PUBLIC_VECTOR_WALL_VIEW_MAX_PCT);
+  return Number.isFinite(raw) && raw > 0 && raw <= 0.2 ? raw : DEFAULT_WALL_VIEW_MAX_PCT;
+})();
 const MAX_DP_GUIDES = 6;
+/** Empty walls used to CLEAR the wall guide price-lines each refresh — walls now render only as
+ *  strength-scaled beads (Skylit-clean axis), so the full-width "Call/Put wall — %" guide lines
+ *  are gone; the axis carries just the current price + the gamma-flip line. */
+const EMPTY_WALLS: VectorWalls = { callWalls: [], putWalls: [] };
+/** Trailing whitespace (in bars) between the last candle and the price axis — so the bead bands
+ *  stop short of the axis with breathing room instead of running flush into it (Skylit-style). */
+const VECTOR_RIGHT_OFFSET_BARS = 6;
 /** Re-poll cadence for the SPY volume backfill — Polygon only publishes one new closed
  *  minute bar per minute, so anything faster than that would just refetch the same data. */
 const SPY_VOLUME_BACKFILL_MS = 60_000;
 /** If the viewport is within this many bars of the live edge, new bars may follow (TradingView-style). */
 const LIVE_FOLLOW_THRESHOLD_BARS = 2;
+/** Opacity multiplier for a strike row that has LEFT the current wall set (its last bead predates
+ *  this side's latest bucket). A closed/faded wall dims to this fraction so a member reads it as
+ *  receding history, not a live rail — the birth→fade lifecycle Skylit shows (BUG 3). */
+const STALE_TRAIL_FADE = 0.4;
+/** Extra opacity added to a wall's BIRTH bead (its first observed candle) so the moment/price a
+ *  new wall forms visibly pops out of its trail rather than looking identical to every other bead. */
+const BIRTH_BEAD_ALPHA_BOOST = 0.35;
 
 function chartIsFollowingLive(chart: IChartApi): boolean {
   const pos = chart.timeScale().scrollPosition();
@@ -121,6 +190,41 @@ type Props = {
   sessionYmd: string;
   liveSession: boolean;
   onFreshness?: (updatedAt: number) => void;
+  onWallEventsChange?: (events: VectorWallEvent[]) => void;
+  onLensChange?: (lens: VectorWallLens) => void;
+  onRegimeChange?: (regime: VectorRegime) => void;
+  onProximityChange?: (proximity: WallProximity | null) => void;
+  onMagnetChange?: (magnet: GammaMagnet | null) => void;
+  /** Ranked confluence callouts (pre-formatted strings) for the desk terminal; null = no zones. */
+  onConfluenceChange?: (callouts: string[] | null) => void;
+  onWallIntegrityChange?: (integrity: { call: WallIntegrity | null; put: WallIntegrity | null }) => void;
+  /** Emits the current DTE horizon whenever the member toggles it, so sibling panels (the GEX
+   *  ladder) can re-scope to the SAME expiries the chart's walls use. */
+  onDteHorizonChange?: (horizon: VectorDteHorizon) => void;
+  /** Pre-formatted always-on technicals lines (VWAP/EMA/RSI/MACD/pocket/structure) for the desk
+   *  terminal — computed from the shown bars REGARDLESS of which overlays are toggled. Empty = warming up. */
+  onTechnicalsChange?: (lines: string[]) => void;
+  /** Options-implied EXPECTED MOVE callout lines (±1σ/2σ range), horizon-scoped. Empty when the
+   *  chain has no real ATM IV to price it. Narrated by the terminal (#15 cone, slice 3a). */
+  onExpectedMoveChange?: (lines: string[]) => void;
+  /** Member-defined alert rules for THIS ticker (wall-touch / flip-cross). Evaluated on each live tick. */
+  alertRules?: AlertRule[];
+  /** Fired alerts from the latest tick (already deduped/cooled-down by the engine) — for toast + terminal. */
+  onAlertsFired?: (fired: FiredAlert[]) => void;
+  /** Compact page title + ticker cluster, rendered at the far left of the chart toolbar row. */
+  leadSlot?: React.ReactNode;
+  /** Freshness/status chip, rendered at the far right of the toolbar row. */
+  trailSlot?: React.ReactNode;
+  /** Regime banner (or similar), rendered as a thin strip between the toolbar and the canvas so it
+   *  still leads the chart without a tall separate header block above the whole page. */
+  regimeSlot?: React.ReactNode;
+  /** Initial DTE horizon override (host-desk seam, 2026-07-13): the SPX Slayer dashboard embed
+   *  opens on 0DTE (SPX day-trading desk) while the standalone /vector page keeps WEEKLY. Initial
+   *  state only — the member's toggle still rules after mount. */
+  defaultDteHorizon?: VectorDteHorizon;
+  /** Initial candle interval override (same seam): the dashboard embed opens on 3-minute candles;
+   *  the standalone page keeps 1-minute. Initial state only. */
+  defaultTimeframe?: VectorTimeframeMinutes;
 };
 
 function lensVisuals(lens: VectorWallLens) {
@@ -155,6 +259,7 @@ function pinCandlesOnTop(candleSeries: ISeriesApi<"Candlestick">): void {
   if (count > 0) candleSeries.setSeriesOrder(count - 1);
 }
 
+
 const VOLUME_UP = "rgba(0, 230, 118, 0.72)";
 const VOLUME_DOWN = "rgba(255, 45, 85, 0.72)";
 
@@ -179,6 +284,35 @@ function applyDisplayBars(
 ): void {
   candleSeries.setData(bars);
   volumeSeries?.setData(volumeHistogramData(bars));
+}
+
+/**
+ * Re-seed the candle+volume data for a BACKGROUND refresh (the 60s SPY-volume backfill, any
+ * non-user-initiated re-seed) WITHOUT disturbing the member's zoom/pan. Members reported the
+ * zoom "flashes and resets to the default/loading view" — that happens when a background path
+ * refits the whole range (fitContent) or lets setData nudge the visible logical range.
+ *
+ * We snapshot the exact visible logical range before swapping the data and restore it after —
+ * UNLESS the chart is currently following the live edge, in which case we defer to the same
+ * maybeScrollToLive() follow behavior the live-tick path uses (pinning a stale range there
+ * would fight the live follow). First load and explicit timeframe switches deliberately keep
+ * their fitContent() refit and must NOT route through here.
+ */
+function applyDisplayBarsPreservingView(
+  chart: IChartApi | null,
+  candleSeries: ISeriesApi<"Candlestick">,
+  volumeSeries: ISeriesApi<"Histogram"> | null,
+  bars: VectorBar[]
+): void {
+  const timeScale = chart?.timeScale() ?? null;
+  const following = chart ? chartIsFollowingLive(chart) : false;
+  const prevRange = timeScale && !following ? timeScale.getVisibleLogicalRange() : null;
+  applyDisplayBars(candleSeries, volumeSeries, bars);
+  if (following) {
+    maybeScrollToLive(chart);
+  } else if (prevRange && timeScale) {
+    timeScale.setVisibleLogicalRange(prevRange);
+  }
 }
 
 function applyPriceGuides(
@@ -231,14 +365,29 @@ function applyWallGuides(
   guideRefs: React.MutableRefObject<(IPriceLine | null)[]>,
   levels: VectorWallLevel[],
   baseColor: string,
-  label: string
+  label: string,
+  maxGuides: number
 ): void {
+  // Grow the guide-ref array to the server cap so a higher timeframe has slots to draw into —
+  // same grow-then-fill pattern as applyDarkPoolGuides (the wall count is now variable per
+  // timeframe, not a fixed 6). We size to VECTOR_WALL_NODES_PER_SIDE (the max any timeframe can
+  // ask for) rather than maxGuides so the array never has to shrink.
+  if (guideRefs.current.length < VECTOR_WALL_NODES_PER_SIDE) {
+    guideRefs.current = [
+      ...guideRefs.current,
+      ...Array.from({ length: VECTOR_WALL_NODES_PER_SIDE - guideRefs.current.length }, () => null),
+    ];
+  }
+  // Walk the FULL ref array (guideRefs.current.length), not just maxGuides: on a DOWNSHIFT
+  // (e.g. 15m→1m) maxGuides drops from 12 to 6, so slots 6..11 hold price lines that must be
+  // removed. levels is sliced to maxGuides, so applyPriceGuides sees `undefined` for every
+  // slot past the new count and clears it (removePriceLine + null) — no stale guides linger.
   applyPriceGuides(
     series,
     guideRefs,
-    levels.slice(0, MAX_WALL_GUIDES).map((l) => ({ ...l, label })),
+    levels.slice(0, maxGuides).map((l) => ({ ...l, label })),
     baseColor,
-    MAX_WALL_GUIDES,
+    guideRefs.current.length,
     true
   );
 }
@@ -280,6 +429,9 @@ function applyFlipGuide(
   }
   const title = `${label} ${Math.round(flip)}`;
   const lineColor = withAlpha(color, 0.9);
+  // The gamma flip is now the ONE analytical line on the chart (walls became beads, dark-pool
+  // lines removed), so draw it as a real dashed line — not just an axis label — the single
+  // regime-boundary reference the member kept.
   if (lineRef.current) {
     lineRef.current.applyOptions({
       price: flip,
@@ -287,7 +439,7 @@ function applyFlipGuide(
       color: lineColor,
       lineWidth: 1,
       lineStyle: LineStyle.Dashed,
-      lineVisible: false,
+      lineVisible: true,
       axisLabelVisible: true,
     });
   } else {
@@ -296,10 +448,249 @@ function applyFlipGuide(
       color: lineColor,
       lineWidth: 1,
       lineStyle: LineStyle.Dashed,
-      lineVisible: false,
+      lineVisible: true,
       axisLabelVisible: true,
       title,
     });
+  }
+}
+
+/**
+ * King anchor — a persistent SOLID line at the single dominant call/put wall (member ask: "mark
+ * the King node / anchor on the chart"). Distinct from the walls-as-beads treatment (#173) and the
+ * dashed flip line: only the two strongest strikes get a line, styled as an anchor (solid, brighter,
+ * ⚓ title), so a member always has the key level to trade against. The strike is chosen by
+ * pickKingStrikes from the HORIZON-SCOPED walls, so the anchor re-scopes with the DTE toggle and is
+ * redrawn every refreshOverlays (live + replay). Null strike → the line is removed.
+ */
+function applyKingAnchor(
+  series: ISeriesApi<"Candlestick">,
+  lineRef: React.MutableRefObject<IPriceLine | null>,
+  strike: number | null,
+  color: string
+): void {
+  if (strike == null || !Number.isFinite(strike) || strike <= 0) {
+    if (lineRef.current) {
+      series.removePriceLine(lineRef.current);
+      lineRef.current = null;
+    }
+    return;
+  }
+  const title = kingAnchorTitle(strike);
+  const lineColor = withAlpha(color, 0.85);
+  if (lineRef.current) {
+    lineRef.current.applyOptions({
+      price: strike,
+      title,
+      color: lineColor,
+      lineWidth: 2,
+      lineStyle: LineStyle.Solid,
+      lineVisible: true,
+      axisLabelVisible: true,
+    });
+  } else {
+    lineRef.current = series.createPriceLine({
+      price: strike,
+      color: lineColor,
+      lineWidth: 2,
+      lineStyle: LineStyle.Solid,
+      lineVisible: true,
+      axisLabelVisible: true,
+      title,
+    });
+  }
+}
+
+/**
+ * Max-pain line — a single DOTTED amber level at the strike of minimum aggregate option intrinsic
+ * (where net-short writers pay out least and price tends to pin into expiry). DTE-dynamic: it reads
+ * the horizon-scoped `/api/market/vector/max-pain` value, so it re-scopes with the toggle exactly
+ * like the king anchor. Styled distinct from every other line (dotted amber vs the solid king, the
+ * dashed cyan flip, and the gold/purple bead colours) so it reads as its own concept. Null → the
+ * line is removed (no honest max-pain level to draw).
+ */
+function applyMaxPainLine(
+  series: ISeriesApi<"Candlestick">,
+  lineRef: React.MutableRefObject<IPriceLine | null>,
+  strike: number | null
+): void {
+  if (strike == null || !Number.isFinite(strike) || strike <= 0) {
+    if (lineRef.current) {
+      series.removePriceLine(lineRef.current);
+      lineRef.current = null;
+    }
+    return;
+  }
+  const opts = {
+    price: strike,
+    color: withAlpha("#f59e0b", 0.9), // amber — distinct from king/flip/bead colours
+    lineWidth: 1 as const,
+    lineStyle: LineStyle.Dotted,
+    lineVisible: true,
+    axisLabelVisible: true,
+    title: `⊗ Max Pain ${strike}`,
+  };
+  if (lineRef.current) lineRef.current.applyOptions(opts);
+  else lineRef.current = series.createPriceLine(opts);
+}
+
+const LEVEL_LINE_STYLE = {
+  solid: LineStyle.Solid,
+  dashed: LineStyle.Dashed,
+  dotted: LineStyle.Dotted,
+} as const;
+
+/**
+ * Draw the options-implied EXPECTED MOVE band (#15 cone, slice 3b) — dashed cyan price-lines at each
+ * band's low+high (1σ solid-ish, 2σ fainter), labelled "1σ 7,424". Idempotent via a signature ref so
+ * the frequent live-tick repaints are no-ops; only a changed horizon/band or a toggle flip rebuilds.
+ * Cleared (all lines removed) when the toggle is off or there's no real band (`em == null`).
+ */
+function applyExpectedMoveBand(
+  series: ISeriesApi<"Candlestick">,
+  linesRef: React.MutableRefObject<IPriceLine[]>,
+  sigRef: React.MutableRefObject<string>,
+  em: ExpectedMove | null,
+  enabled: boolean
+): void {
+  const sig = enabled && em ? em.bands.map((b) => `${b.sigma}:${b.low}:${b.high}`).join("|") : "off";
+  if (sig === sigRef.current) return; // no change → don't churn the price lines on every tick
+  sigRef.current = sig;
+  for (const l of linesRef.current) series.removePriceLine(l);
+  linesRef.current = [];
+  if (!enabled || !em) return;
+  for (const b of em.bands) {
+    const alpha = b.sigma === 1 ? 0.8 : 0.45; // 1σ brighter than the wider 2σ
+    for (const edge of [b.low, b.high]) {
+      if (!(edge > 0) || !Number.isFinite(edge)) continue;
+      linesRef.current.push(
+        series.createPriceLine({
+          price: edge,
+          color: withAlpha("#22d3ee", alpha), // cyan — matches the "Expected move" menu swatch
+          lineWidth: 1 as const,
+          lineStyle: LineStyle.Dashed,
+          lineVisible: true,
+          axisLabelVisible: true,
+          title: `${b.sigma}σ ${Math.round(edge).toLocaleString("en-US")}`,
+        })
+      );
+    }
+  }
+}
+
+/**
+ * Pane layout: 0 = price/candles, 1 = volume (always present, its own sub-pane like RSI/MACD — NOT
+ * an overlay on the candles), 2..N = enabled oscillators. `applyPaneStretch` reasserts the relative
+ * pane heights so the price pane stays dominant and volume is a thin strip; it must run after the
+ * oscillator panes are (re)built, since a freshly-created pane starts at the default stretch of 1.
+ */
+const VOLUME_PANE_INDEX = 1;
+const PRICE_PANE_STRETCH = 8;
+const VOLUME_PANE_STRETCH = 1.4;
+const OSCILLATOR_PANE_STRETCH = 2.6;
+
+function applyPaneStretch(chart: IChartApi): void {
+  const panes = chart.panes();
+  panes.forEach((pane, i) => {
+    const stretch = i === 0 ? PRICE_PANE_STRETCH : i === VOLUME_PANE_INDEX ? VOLUME_PANE_STRETCH : OSCILLATOR_PANE_STRETCH;
+    pane.setStretchFactor(stretch);
+  });
+}
+
+/**
+ * Draw/diff the enabled "Key levels" price lines (HOD/LOD, opening range, fib) on the candle series.
+ * Each enabled level id expands to one or more {@link LevelLine}s via `levelLinesFor(bars)`; the map
+ * (keyed `levelId:lineKey`) is reconciled against the desired set so lines are added/updated/removed
+ * without churn. Computed from the CURRENTLY-shown bars, so levels track the timeframe and, in
+ * replay, reflect the bars up to the cursor (HOD/LOD-so-far). Nothing drawn when the set is empty.
+ */
+function applyLevelLines(
+  series: ISeriesApi<"Candlestick">,
+  map: Map<string, IPriceLine>,
+  enabled: Set<VectorIndicatorId>,
+  bars: VectorBar[],
+  priorDay: PriorDayOhlc | null
+): void {
+  const desired = new Map<string, LevelLine>();
+  for (const def of VECTOR_LEVELS) {
+    if (!enabled.has(def.id)) continue;
+    for (const line of levelLinesFor(def.id, bars, priorDay))
+      desired.set(`${def.id}:${line.key}`, line);
+  }
+  // Remove lines no longer wanted (toggled off, or a level that now yields fewer lines).
+  for (const [k, pl] of map) {
+    if (!desired.has(k)) {
+      series.removePriceLine(pl);
+      map.delete(k);
+    }
+  }
+  for (const [k, line] of desired) {
+    const opts = {
+      price: line.price,
+      color: withAlpha(line.color, 0.9),
+      lineWidth: 1 as const,
+      lineStyle: LEVEL_LINE_STYLE[line.style],
+      lineVisible: true,
+      axisLabelVisible: true,
+      title: line.label,
+    };
+    const existing = map.get(k);
+    if (existing) existing.applyOptions(opts);
+    else map.set(k, series.createPriceLine(opts));
+  }
+}
+
+/**
+ * Draw/diff the strongest CONFLUENCE ZONE as a faint band on the candle series. Reconciles up to
+ * three price lines — the zone's weighted center plus its high/low edges — against the map (keyed
+ * `mid`/`hi`/`lo`), so toggling off or a zone shift adds/updates/removes without churn. The zone is
+ * the top-ranked cluster from the pure `confluenceZones` engine over whatever levels the caller
+ * gathered (walls/flip/max-pain/golden-pocket/session/prior-day). When the band collapses to a
+ * single price (edges within a hair of the center — a point-cluster) only the labeled center line is
+ * drawn, so it doesn't render as three stacked identical lines. Nothing is drawn when the toggle is
+ * off or no ≥2-kind zone exists — honest about "there is no confluence right now".
+ */
+function applyConfluenceBand(
+  series: ISeriesApi<"Candlestick">,
+  map: Map<string, IPriceLine>,
+  enabled: Set<VectorIndicatorId>,
+  spot: number,
+  levels: readonly ConfluenceLevel[]
+): void {
+  const CONF_COLOR = "#f59e0b";
+  const desired = new Map<string, { price: number; style: LineStyle; label: string; alpha: number }>();
+  if (enabled.has("confluence-band") && spot > 0) {
+    const band = topConfluenceBand(levels, spot);
+    if (band) {
+      const title = `◇ Confluence ×${band.kinds} · score ${Math.round(band.score * 10) / 10}`;
+      desired.set("mid", { price: band.center, style: LineStyle.Dashed, label: title, alpha: 0.85 });
+      // Edge lines only for a genuinely wide zone; a point-cluster draws the center alone.
+      if (band.wide) {
+        desired.set("hi", { price: band.high, style: LineStyle.Dotted, label: "", alpha: 0.45 });
+        desired.set("lo", { price: band.low, style: LineStyle.Dotted, label: "", alpha: 0.45 });
+      }
+    }
+  }
+  for (const [k, pl] of map) {
+    if (!desired.has(k)) {
+      series.removePriceLine(pl);
+      map.delete(k);
+    }
+  }
+  for (const [k, d] of desired) {
+    const opts = {
+      price: d.price,
+      color: withAlpha(CONF_COLOR, d.alpha),
+      lineWidth: 1 as const,
+      lineStyle: d.style,
+      lineVisible: true,
+      // Only the center carries an axis label; unlabeled edges keep the price scale uncluttered.
+      axisLabelVisible: d.label !== "",
+      title: d.label,
+    };
+    const existing = map.get(k);
+    if (existing) existing.applyOptions(opts);
+    else map.set(k, series.createPriceLine(opts));
   }
 }
 
@@ -308,7 +699,8 @@ function applyWallsToSeries(
   callGuideRefs: React.MutableRefObject<(IPriceLine | null)[]>,
   putGuideRefs: React.MutableRefObject<(IPriceLine | null)[]>,
   walls: VectorWalls | null | undefined,
-  lens: VectorWallLens
+  lens: VectorWallLens,
+  maxGuides: number
 ): void {
   // Must still call through (with empty levels) rather than early-return on null —
   // applyWallGuides/applyPriceGuides clear stale price lines when passed [], but an
@@ -317,40 +709,95 @@ function applyWallsToSeries(
   // fix below: nulling out gexAt/vexAt during early-timeline scrubbing did nothing
   // visually because the old wall lines never got cleared.
   const v = lensVisuals(lens);
-  applyWallGuides(series, callGuideRefs, walls?.callWalls ?? [], v.callColor, v.callLabel);
-  applyWallGuides(series, putGuideRefs, walls?.putWalls ?? [], v.putColor, v.putLabel);
+  applyWallGuides(series, callGuideRefs, walls?.callWalls ?? [], v.callColor, v.callLabel, maxGuides);
+  applyWallGuides(series, putGuideRefs, walls?.putWalls ?? [], v.putColor, v.putLabel, maxGuides);
 }
 
 function buildWallBeadMarkers(
-  trails: Map<number, StrikeTrailPoint[]>,
-  activeStrikes: number[],
-  baseColor: string
+  trails: StrikeTrail[],
+  baseColor: string,
+  intervalSec: number = 60
 ): SeriesMarker<Time>[] {
   const markers: SeriesMarker<Time>[] = [];
-  for (const strike of activeStrikes) {
-    const points = trails.get(strike);
-    if (!points) continue;
-    for (const p of points) {
+  // Earliest bucket across every rendered trail — the boundary where a trail's start is ambiguous
+  // (window trim edge / session open) rather than a genuine formation. See trueBirth below.
+  let earliestBucket: number | null = null;
+  for (const trail of trails) {
+    const t0 = trail.points[0]?.time;
+    if (t0 != null && (earliestBucket == null || t0 < earliestBucket)) earliestBucket = t0;
+  }
+  // Frame-relative strength: find the STRONGEST wall currently in view, and scale every bead's
+  // thickness/opacity against it (markerSizeForPctRel), NOT against a fixed 7% saturation. Per-
+  // strike gamma share is ~6-8% on the UW oracle ladder but 20-40% on the per-expiry chain path,
+  // so the old absolute cap clipped every stock wall to max → all beads looked identically fat
+  // ("all our beads feel the same"). Normalizing to the in-frame king restores the Skylit fat-
+  // king / thin-straggler contrast at any concentration, and — because a strike's pct varies
+  // over the session — also makes a wall's band bulge thicker in the stretch where it built up.
+  let maxPct = 0;
+  for (const trail of trails) {
+    for (const p of trail.points) if (p.pct > maxPct) maxPct = p.pct;
+  }
+  for (const trail of trails) {
+    // BUG 3 birth→fade lifecycle: a strike that has LEFT the current wall set (active:false)
+    // dims to STALE_TRAIL_FADE so it reads as receding/closed rather than a live rail. Its beads
+    // already stop at its last-seen bucket (trailsByStrike never back-fills or extends), so a
+    // departed wall neither runs to "now" nor to session open — it occupies exactly its lifespan.
+    const staleFade = trail.active ? 1 : STALE_TRAIL_FADE;
+    const points = trail.points;
+    for (let i = 0; i < points.length; i++) {
+      const p = points[i]!;
       const time = p.time as Time;
-      const size = markerSizeForPct(p.pct);
-      const coreAlpha = alphaForPct(p.pct);
+      // Modeled (reconstructed) beads read as a FAINT, smaller GHOST of an observed bead: same
+      // color/shape, alpha scaled to MODELED_ALPHA_SCALE (0.15) and size to 0.6×, so a real recorded
+      // sample (solid, full size) is unmistakably "more real" wherever it overwrites the modeled one
+      // — and a full-width reconstruction reads as a quiet underlay, not axis-to-axis walls.
+      // Observed beads (modeled falsy) are unchanged.
+      const modeled = p.modeled === true;
+      const alphaScale = (modeled ? MODELED_ALPHA_SCALE : 1) * staleFade;
+      const size = markerSizeForPctRel(p.pct, maxPct) * (modeled ? 0.6 : 1);
+      const coreAlpha = alphaForPctRel(p.pct, maxPct) * alphaScale;
+      const glowAlpha = glowAlphaForPctRel(p.pct, maxPct) * alphaScale;
       // Halo + core — Skylit-style glow on dominant walls (per-bead size + opacity).
       markers.push({
         time,
         position: "atPriceMiddle",
-        price: strike,
+        price: trail.strike,
         shape: "circle",
-        color: withAlpha(baseColor, glowAlphaForPct(p.pct)),
+        color: withAlpha(baseColor, glowAlpha),
         size: size * 2.2,
       });
       markers.push({
         time,
         position: "atPriceMiddle",
-        price: strike,
+        price: trail.strike,
         shape: "circle",
         color: withAlpha(baseColor, coreAlpha),
         size,
       });
+      // BIRTH bead: the candle where this wall first appeared. A new wall naturally starts at the
+      // current candle (birth-anchored), and we brighten that origin bead so a member can SEE when
+      // and at what price the wall formed — the "where did this new wall come from" cue. Skip for
+      // modeled ghosts (they fill the whole session and have no meaningful single birth).
+      // REBIRTH: a wall that dropped out of the dominant set and re-formed later resumes after a
+      // GAP in its bead row (trailsByStrike only emits buckets where the strike was dominant, so a
+      // dead stretch is simply missing points). Boost the resume bead exactly like a birth — the
+      // member sees the candle where the wall came BACK, not a silent continuation. Gap threshold
+      // is 2 candle intervals so honest single-bucket jitter doesn't spray fake rebirth cues.
+      const reborn = i > 0 && p.time - points[i - 1]!.time > intervalSec * 2;
+      // Suppress the birth boost when the trail starts at the EARLIEST drawn bucket — that "birth"
+      // is unknowable (live-window trim edge or session open): the wall may have existed before the
+      // window we're drawing. Only a birth strictly INSIDE the drawn window is a real formation cue.
+      const trueBirth = i === 0 && earliestBucket != null && p.time > earliestBucket;
+      if ((trueBirth || reborn) && !modeled) {
+        markers.push({
+          time,
+          position: "atPriceMiddle",
+          price: trail.strike,
+          shape: "circle",
+          color: withAlpha(baseColor, Math.min(1, coreAlpha + BIRTH_BEAD_ALPHA_BOOST)),
+          size: size + 1.5,
+        });
+      }
     }
   }
   return markers;
@@ -363,12 +810,23 @@ function applyWallBeadMarkers(
   baseColor: string,
   lens: VectorWallLens,
   intervalMinutes: VectorTimeframeMinutes
-): void {
-  if (!beadsPlugin) return;
+): number[] {
+  if (!beadsPlugin) return [];
   const bucketed = bucketWallHistoryForInterval(history, intervalMinutes);
-  const trails = trailsByStrike(bucketed, side, lens);
-  const active = pickActiveStrikes(trails);
-  beadsPlugin.setMarkers(buildWallBeadMarkers(trails, active, baseColor));
+  // Lifecycle carries each strike's birth/last-seen/active flags so the marker layer can anchor
+  // beads to the birth candle and fade departed walls (BUG 3). It wraps trailsByStrike, so the
+  // point lists are identical to before — only the per-strike metadata is added.
+  const lifecycle = strikeTrailLifecycle(bucketed, side, lens);
+  const trailMap = new Map(lifecycle.map((t) => [t.strike, t.points]));
+  // Bead strike-rows scale with the timeframe the same way the wall guides do — few near-spot
+  // rows on 1m, more (further-out) rows on higher timeframes.
+  const active = pickActiveStrikes(trailMap, wallCountForTimeframe(intervalMinutes));
+  const activeSet = new Set(active);
+  const rendered = lifecycle.filter((t) => activeSet.has(t.strike));
+  beadsPlugin.setMarkers(buildWallBeadMarkers(rendered, baseColor, intervalMinutes * 60));
+  // Return the strikes actually drawn so the caller can widen the price axis to cover them —
+  // otherwise a drawn bead outside the current-ladder range clips out on zoom (see beadStrikesRef).
+  return active;
 }
 
 function upsertBar(bars: VectorBar[], candle: VectorBar): VectorBar[] {
@@ -383,7 +841,9 @@ function upsertBar(bars: VectorBar[], candle: VectorBar): VectorBar[] {
 }
 
 function emptyGuideRefs(): (IPriceLine | null)[] {
-  return Array.from({ length: MAX_WALL_GUIDES }, () => null);
+  // Sized to the server cap (max any timeframe can draw); applyWallGuides only fills up to the
+  // timeframe's scaled count and clears the rest.
+  return Array.from({ length: VECTOR_WALL_NODES_PER_SIDE }, () => null);
 }
 
 function displayBarsFromMinute(
@@ -408,27 +868,168 @@ export function VectorChart({
   sessionYmd,
   liveSession,
   onFreshness,
+  onWallEventsChange,
+  onRegimeChange,
+  onProximityChange,
+  onMagnetChange,
+  onConfluenceChange,
+  onWallIntegrityChange,
+  onLensChange,
+  onDteHorizonChange,
+  onTechnicalsChange,
+  onExpectedMoveChange,
+  alertRules,
+  onAlertsFired,
+  leadSlot,
+  trailSlot,
+  regimeSlot,
+  defaultDteHorizon,
+  defaultTimeframe,
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const seriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
   const volumeSeriesRef = useRef<ISeriesApi<"Histogram"> | null>(null);
+  // Always-on technicals narration (VWAP/EMA/RSI/MACD/pocket/structure) → terminal, computed on
+  // every paint from the shown bars regardless of which overlays are toggled. `onTechnicalsChangeRef`
+  // keeps the latest callback for the []-dep paintOverlays; `lastTechnicalsRef` dedupes emits.
+  const onTechnicalsChangeRef = useRef(onTechnicalsChange);
+  const lastTechnicalsRef = useRef<string>("");
+  useEffect(() => {
+    onTechnicalsChangeRef.current = onTechnicalsChange;
+  });
+  // Expected-move narration → terminal (#15 cone, slice 3a). Ref keeps the latest callback for the
+  // horizon-scoped fetch; lastExpectedMoveRef dedupes emits so an unchanged horizon doesn't re-push.
+  const onExpectedMoveChangeRef = useRef(onExpectedMoveChange);
+  const lastExpectedMoveRef = useRef<string>("");
+  useEffect(() => {
+    onExpectedMoveChangeRef.current = onExpectedMoveChange;
+  });
+  // Alerts: the member's rules + the engine's per-rule state + the prior spot (for flip-cross), all
+  // in refs so the []-dep tick handler reads the latest without re-subscribing the SSE stream.
+  const alertRulesRef = useRef<AlertRule[]>(alertRules ?? []);
+  const alertStateRef = useRef<AlertState>({});
+  const priorSpotRef = useRef<number | null>(null);
+  const onAlertsFiredRef = useRef(onAlertsFired);
+  useEffect(() => {
+    alertRulesRef.current = alertRules ?? [];
+    onAlertsFiredRef.current = onAlertsFired;
+  });
   const callGuideRefs = useRef<(IPriceLine | null)[]>(emptyGuideRefs());
   const putGuideRefs = useRef<(IPriceLine | null)[]>(emptyGuideRefs());
+  // Strikes currently drawn on the chart — read by the candle series'
+  // autoscaleInfoProvider to widen the price axis so support/resistance walls
+  // (esp. put walls a few % below spot) aren't clipped off-screen. Seeded from the
+  // SSR walls so the FIRST autoscale on mount already includes them.
+  // Sliced to the 1m shown-count (the mount default timeframe) so the first autoscale matches
+  // what's actually drawn; refreshOverlays re-slices to the active timeframe on every repaint.
+  const rangeWallsRef = useRef<{ call: number[]; put: number[] }>({
+    call: (initialWalls?.callWalls ?? []).slice(0, wallCountForTimeframe(1)).map((w) => w.strike),
+    put: (initialWalls?.putWalls ?? []).slice(0, wallCountForTimeframe(1)).map((w) => w.strike),
+  });
+  // The strikes ACTUALLY drawn as beads (from the session-trail rail, per side). The autoscale
+  // provider widens for these too — not just the live ladder in rangeWallsRef — so a bead never
+  // clips out when zoom re-runs autoscale off fewer visible candles. Populated by refreshTrails.
+  const beadStrikesRef = useRef<{ call: number[]; put: number[] }>({ call: [], put: [] });
   const dpGuideRefs = useRef<(IPriceLine | null)[]>([]);
   const flipGuideRef = useRef<IPriceLine | null>(null);
+  // King anchors — solid lines at the single dominant call/put wall (member ask). Re-scope with the
+  // DTE horizon (they read the same horizon-scoped walls refreshOverlays draws) and are cleared on
+  // ticker switch / unmount alongside the flip line.
+  const kingCallLineRef = useRef<IPriceLine | null>(null);
+  const kingPutLineRef = useRef<IPriceLine | null>(null);
+  // Max-pain level — a single dotted amber line at the horizon-scoped max-pain strike, fetched from
+  // /api/market/vector/max-pain and redrawn on ticker/DTE change (like the king anchor). Cleared on
+  // ticker switch / unmount alongside the other price lines. The VALUE is kept too — the confluence
+  // emit stacks it against the other levels.
+  const maxPainLineRef = useRef<IPriceLine | null>(null);
+  const maxPainValueRef = useRef<number | null>(null);
+  // Expected-move band (#15 cone, slice 3b): the last-fetched band, its drawn price-lines, and a
+  // signature so paintOverlays only rebuilds the lines when the band or the toggle actually changes.
+  const expectedMoveBandsRef = useRef<ExpectedMove | null>(null);
+  const emBandLinesRef = useRef<IPriceLine[]>([]);
+  const emBandSigRef = useRef<string>("");
+  // GEX positioning heatmap (#14): the strike×time surface primitive attached BEHIND the candles
+  // (zOrder "bottom"), plus the last horizon-scoped grid it draws. The grid is fetched in the
+  // DTE-scoped effect (like max-pain/expected-move) and visibility is gated on the "gex-heatmap"
+  // toggle; a null grid or the toggle off makes the primitive draw nothing. Cleared on ticker
+  // switch / unmount — chart.remove() disposes the series (and its primitives), so we just drop refs.
+  const gexHeatmapPrimitiveRef = useRef<GexHeatmapPrimitive | null>(null);
+  const gexHeatmapGridRef = useRef<GexHeatmapGrid | null>(null);
+  const lastConfluenceRef = useRef<string>("");
+  // Opt-in technical overlays (VWAP/EMA/SMA) — one lightweight-charts line series per enabled
+  // indicator, created on demand and removed when toggled off. Default: none. `indicatorsRef`
+  // mirrors the state for the imperative paint path; `lastDisplayBarsRef` lets a toggle repaint
+  // against the currently-shown bars without waiting for the next tick/timeframe change.
+  const overlaySeriesRef = useRef<Map<VectorOverlayId, ISeriesApi<"Line">>>(new Map());
+  // Oscillator sub-pane series (RSI / MACD) — keyed by series role. Rebuilt only when the enabled
+  // OSCILLATOR set changes (pane layout shifts); their data is refreshed every paint. `lastOscKey`
+  // is that enabled-set signature so we don't tear down/recreate panes on every tick.
+  const oscillatorSeriesRef = useRef<Map<string, ISeriesApi<"Line"> | ISeriesApi<"Histogram">>>(new Map());
+  const lastOscKeyRef = useRef<string>("");
+  // Horizontal price-line overlays for the "Key levels" group (HOD/LOD, opening range, fib), keyed
+  // by `${levelId}:${lineKey}` so each line is diffed/kept/removed independently across repaints.
+  const levelLinesRef = useRef<Map<string, IPriceLine>>(new Map());
+  // The strongest-confluence-zone band lines (center + edges), keyed mid/hi/lo, reconciled the same
+  // way as the level lines. Separate map because the zone is derived from live walls/flip/max-pain,
+  // not from `levelLinesFor(bars)`, so it repaints on wall/flip updates too — not just bar changes.
+  const confluenceBandRef = useRef<Map<string, IPriceLine>>(new Map());
+  // Prior-session OHLC for the PDH/PDL/PDC + floor-pivot levels — fetched once per ticker (only when
+  // such a level is enabled). `priorDayTickerRef` guards a fetch from a previous ticker landing late.
+  const priorDayRef = useRef<PriorDayOhlc | null>(null);
+  const priorDayTickerRef = useRef<string | null>(null);
+  const indicatorsRef = useRef<Set<VectorIndicatorId>>(new Set());
+  const lastDisplayBarsRef = useRef<VectorBar[]>(initialBars);
   const callBeadsRef = useRef<ISeriesMarkersPluginApi<Time> | null>(null);
   const putBeadsRef = useRef<ISeriesMarkersPluginApi<Time> | null>(null);
+  // Market-structure markers (pivot labels + BOS/CHOCH) — own instance, cleared with the beads.
+  const structureMarkersRef = useRef<ISeriesMarkersPluginApi<Time> | null>(null);
+  // Options-flow markers (large trades at strike/time) — its OWN createSeriesMarkers instance so it
+  // never clobbers the two bead instances or the structure instance. `flowPrintsRef` holds the last
+  // horizon-scoped fetch; paintOverlays draws it when the toggle is on and clears it when off.
+  const flowMarkersRef = useRef<ISeriesMarkersPluginApi<Time> | null>(null);
+  const flowPrintsRef = useRef<FlowPrint[]>([]);
+  const flowMinPremiumRef = useRef<number>(0);
+  // Dedupe the truncation console note so a steady poll doesn't spam it — only log when the dropped
+  // count changes. (No SILENT truncation: the cap is always announced when prints are dropped.)
+  const lastFlowTruncatedRef = useRef<number>(-1);
   const wallHistoryRef = useRef<WallHistorySample[]>(initialWallHistory);
   /** Canonical 1m session bars — SSE live ticks and Polygon seed write here only. */
   const minuteBarsRef = useRef<VectorBar[]>(initialBars);
   const displayBarTimeRef = useRef<number>(0);
   const timeframeRef = useRef<VectorTimeframeMinutes>(1);
+  // Tracks the timeframe the time scale was last fitContent()'d to, so the timeframe effect can
+  // tell a GENUINE timeframe switch (refit expected) from a re-run triggered by a dependency's
+  // identity change or a liveSession flip (must preserve the member's zoom/pan). See BUG 2.
+  const lastFittedTimeframeRef = useRef<VectorTimeframeMinutes>(1);
   const gammaFlipRef = useRef<number | null>(initialGammaFlip);
   const vexFlipRef = useRef<number | null>(initialVexFlip);
   const darkPoolRef = useRef<VectorDarkPoolLevel[]>(initialDarkPoolLevels);
   const gexWallsRef = useRef<VectorWalls | null>(initialWalls);
   const vexWallsRef = useRef<VectorWalls | null>(initialVexWalls);
+  // DTE-horizon override: when the member picks a horizon other than "all", the
+  // displayed GEX walls come from an on-demand fetch of /api/market/vector/walls
+  // (the per-second SSE stream keeps carrying the full near-term walls into
+  // gexWallsRef untouched). null = follow the live stream. See liveGexWalls().
+  const horizonWallsRef = useRef<VectorWalls | null>(null);
+  // Horizon-scoped gamma flip, paired with horizonWallsRef: when a narrower DTE is
+  // active the flip line re-scopes to the same per-expiry ladder the walls came from
+  // (server returns it on /api/market/vector/walls). null = follow the live stream flip.
+  const horizonFlipRef = useRef<number | null>(null);
+  // Recorded per-horizon bead trail (the FROZEN point-in-time clusters for the active narrowed
+  // horizon), fetched from /api/market/vector/wall-history on each DTE toggle. Empty for "all"
+  // (that rail is SSR-seeded into wallHistoryRef) or when nothing was recorded for the horizon.
+  // refreshTrails prefers this over the single-column narrowedHorizonTrail so weekly/monthly show
+  // the accumulated clusters after close — the after-hours analogue of the live "All" rail.
+  const horizonHistoryRef = useRef<WallHistorySample[]>([]);
+  const dteHorizonRef = useRef<VectorDteHorizon>("all");
+  // Dedupe regime emissions — the read only changes when posture/flip/levels
+  // shift, not every tick, so we skip identical reads to avoid re-rendering the
+  // banner on every SSE frame.
+  const lastRegimeReadRef = useRef<string>("");
+  const lastProximityRef = useRef<string>("");
+  const lastMagnetRef = useRef<string>("");
+  const lastWallIntegrityRef = useRef<string>("");
   const lensRef = useRef<VectorWallLens>("gex");
   const spotRef = useRef<number | null>(
     initialBars.length ? initialBars[initialBars.length - 1]!.close : null
@@ -438,6 +1039,13 @@ export function VectorChart({
   const replayTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const replayModeRef = useRef(false);
   const liveSessionRef = useRef(liveSession);
+  /**
+   * Mirrors cursorIndex for reads outside React's render cycle (replay timer, lens
+   * repaint, stepReplay). Keeping paints OUT of setCursorIndex updater callbacks matters:
+   * updaters must be pure (StrictMode double-invokes them), so applyFrame calls live next
+   * to the state set instead of inside it.
+   */
+  const cursorIndexRef = useRef(0);
 
   const [sessionHistory, setSessionHistory] = useState(initialWallHistory);
   const [sessionBars, setSessionBars] = useState(initialBars);
@@ -448,10 +1056,25 @@ export function VectorChart({
   const [replayLoop, setReplayLoop] = useState(false);
   const [crosshair, setCrosshair] = useState<VectorCrosshairState | null>(null);
   const [lens, setLens] = useState<VectorWallLens>("gex");
-  const [wallEvents, setWallEvents] = useState<VectorWallEvent[]>(() => [
-    ...eventsFromWallHistory(initialWallHistory, "gex"),
-    ...eventsFromWallHistory(initialWallHistory, "vex"),
-  ]);
+  // Default WEEKLY: "All" is no longer a member-facing option (2026-07-13), and 0DTE is empty
+  // mid-week for most single names (only SPX/SPY/QQQ have daily expiries) — weekly always has a
+  // real chain to scope to. SPX day-traders tap 0DTE once; the choice persists per session.
+  // Host desks may override the OPENING horizon (defaultDteHorizon — the SPX Slayer embed opens
+  // on 0DTE); after mount the member's toggle rules either way.
+  const [dteHorizon, setDteHorizon] = useState<VectorDteHorizon>(defaultDteHorizon ?? "weekly");
+  // Per-expiry walls are now computed from the Polygon options chain for EVERY ticker
+  // (per-contract expiry + OI + IV → BSM GEX ladder at spot), not just the 3 UW-oracle
+  // names, so the horizon toggle is real everywhere. Vector only ever loads optionable
+  // tickers, and getVectorGexWallsForHorizon's honest fallback guarantees walls never
+  // blank, so the toggle is always available.
+  const dteAvailable = true;
+  // appendVectorWallEvents enforces the display cap — a bare concat of both
+  // lenses' seeds could hold up to 2× the cap.
+  const [wallEvents, setWallEvents] = useState<VectorWallEvent[]>(() =>
+    appendVectorWallEvents(eventsFromWallHistory(initialWallHistory, "gex"), [
+      ...eventsFromWallHistory(initialWallHistory, "vex"),
+    ])
+  );
   const [vexAvailable, setVexAvailable] = useState(
     () =>
       Boolean(initialVexWalls?.callWalls?.length || initialVexWalls?.putWalls?.length) ||
@@ -459,8 +1082,43 @@ export function VectorChart({
   );
   const [gexAsOf, setGexAsOf] = useState<number | null>(null);
   const [vexAsOf, setVexAsOf] = useState<number | null>(null);
-  const [timeframe, setTimeframe] = useState<VectorTimeframeMinutes>(1);
+  // 1m is the seed resolution; host desks may open on a coarser preset (defaultTimeframe — the
+  // SPX Slayer embed opens on 3-minute candles). Aggregation is client-side from the same 1m bars.
+  const [timeframe, setTimeframe] = useState<VectorTimeframeMinutes>(defaultTimeframe ?? 1);
   const [chartReady, setChartReady] = useState(false);
+  // Enabled overlay indicators (default none — the chart stays clean until the member opts in).
+  const [indicators, setIndicators] = useState<Set<VectorIndicatorId>>(() => new Set());
+  // Count of bars currently shown (at the active timeframe). Drives the indicator menu's
+  // "not enough bars" annotation so an MA family that can't compute at this timeframe is explained
+  // rather than looking broken. Updated imperatively from paintOverlays; setState bails out when
+  // the count is unchanged, so this re-renders at most once per new bar / timeframe switch.
+  const [displayBarCount, setDisplayBarCount] = useState<number>(initialBars.length);
+
+  useEffect(() => {
+    // Replay honesty for the structure feed: while scrubbed to 9:35 the ticker
+    // must not display events that happened at 11:00 — filter to the cursor.
+    // Events keep accumulating in state (the SSE stays open in replay); only
+    // what consumers SEE is cursor-gated. cursorIndex is a dep so the feed
+    // advances as the member scrubs/plays.
+    if (replayMode) {
+      const cursor = timelineRef.current[cursorIndex] ?? 0;
+      onWallEventsChange?.(wallEvents.filter((e) => e.time <= cursor));
+      return;
+    }
+    onWallEventsChange?.(wallEvents);
+  }, [wallEvents, onWallEventsChange, replayMode, cursorIndex]);
+
+  useEffect(() => {
+    onLensChange?.(lens);
+  }, [lens, onLensChange]);
+
+  useEffect(() => {
+    setWallEvents(
+      appendVectorWallEvents(eventsFromWallHistory(initialWallHistory, "gex"), [
+        ...eventsFromWallHistory(initialWallHistory, "vex"),
+      ])
+    );
+  }, [ticker, initialWallHistory]);
 
   useEffect(() => {
     timeframeRef.current = timeframe;
@@ -478,20 +1136,54 @@ export function VectorChart({
     replayModeRef.current = replayMode;
   }, [replayMode]);
 
+  useEffect(() => {
+    cursorIndexRef.current = cursorIndex;
+  }, [cursorIndex]);
+
   const refreshTrails = useCallback((activeLens: VectorWallLens) => {
     const series = seriesRef.current;
     if (!series) return;
     const v = lensVisuals(activeLens);
-    const history =
-      liveSessionRef.current && !replayModeRef.current
+    // NARROWED DTE HORIZON (0DTE/weekly/monthly) — two sources, in precedence order:
+    //   1. horizonHistoryRef: the RECORDED per-horizon trail (composite-keyed rail, PR #186),
+    //      fetched by the DTE effect. This is the full point-in-time cluster history for the
+    //      horizon — the after-close analogue of the blended "All" rail — so weekly/monthly show
+    //      accumulated frozen clusters, not a single column (member ask). Merged with (2) so the
+    //      newest live structure paints even before the 5-min recorder writes the current bucket.
+    //   2. narrowedHorizonTrail: the CURRENT horizon-scoped walls (fetched into horizonWallsRef by
+    //      the DTE effect, refreshed each 15s in RTH) as ONE column at the latest bar — the honest
+    //      "current 0DTE/weekly/monthly structure", used alone before any history is recorded.
+    // Both are null/empty for All / VEX / empty-scope, in which case we draw the blended rail as
+    // before (member finding "select 0DTE, still shows All's walls" is still fixed either way).
+    const lastBarTime = minuteBarsRef.current[minuteBarsRef.current.length - 1]?.time ?? 0;
+    const horizon = dteHorizonRef.current;
+    const currentColumn = narrowedHorizonTrail(
+      horizon,
+      activeLens,
+      horizonWallsRef.current,
+      lastBarTime,
+      horizonFlipRef.current
+    );
+    // Gate the recorded trail on horizon+lens here; composeHorizonTrail owns the merge precedence.
+    const recordedTrail =
+      horizon !== "all" && activeLens === "gex" ? horizonHistoryRef.current : null;
+    const history: WallHistorySample[] =
+      composeHorizonTrail(recordedTrail, currentColumn) ??
+      (liveSessionRef.current && !replayModeRef.current
         ? trimHistoryForLiveTrails(
             wallHistoryRef.current,
             undefined,
             liveTrailAnchorSec(wallHistoryRef.current, minuteBarsRef.current.map((b) => b.time))
           )
-        : wallHistoryRef.current;
-    applyWallBeadMarkers(callBeadsRef.current, history, "callWalls", v.callColor, activeLens, timeframeRef.current);
-    applyWallBeadMarkers(putBeadsRef.current, history, "putWalls", v.putColor, activeLens, timeframeRef.current);
+        : wallHistoryRef.current);
+    const callStrikes = applyWallBeadMarkers(callBeadsRef.current, history, "callWalls", v.callColor, activeLens, timeframeRef.current);
+    const putStrikes = applyWallBeadMarkers(putBeadsRef.current, history, "putWalls", v.putColor, activeLens, timeframeRef.current);
+    // Record what was actually drawn so the autoscale provider widens to reveal these exact beads
+    // at every zoom level, then nudge a rescale (off-hours there is no tick to trigger it).
+    beadStrikesRef.current = { call: callStrikes, put: putStrikes };
+    // Respect a manual vertical zoom — only nudge autoscale when the member hasn't taken the
+    // price axis over (see reassertPriceAutoScale; this was the residual "zooms out" reset).
+    reassertPriceAutoScale(series.priceScale());
     pinCandlesOnTop(series);
   }, []);
 
@@ -509,12 +1201,342 @@ export function VectorChart({
       const walls = wallsForActiveLens(activeLens, gexWalls, vexWalls);
       const flip = flipForActiveLens(activeLens, gammaFlip, vexFlip);
       const v = lensVisuals(activeLens);
-      applyWallsToSeries(series, callGuideRefs, putGuideRefs, walls ?? undefined, activeLens);
+      // How many wall guides/beads THIS timeframe shows (1m→6 … 15m→12). Higher timeframe →
+      // more, further-out walls drawn → wider axis (extendRangeForWalls keys off these SHOWN
+      // strikes below, so 1m stays tight while 15m widens).
+      const maxGuides = wallCountForTimeframe(timeframeRef.current);
+      // Walls are shown ONLY as strength-scaled beads now (the Skylit-clean look) — clear any
+      // wall guide price-lines rather than drawing them, so the price axis is not stacked with
+      // "Call/Put wall — %" labels. The gamma-flip line stays (member kept it); dark-pool level
+      // lines are removed from the axis too. rangeWallsRef below still keys off the walls, so the
+      // axis keeps auto-widening to reveal the bead rows.
+      applyWallsToSeries(series, callGuideRefs, putGuideRefs, EMPTY_WALLS, activeLens, 0);
       applyFlipGuide(series, flipGuideRef, flip, v.flipLabel, v.flipColor);
-      applyDarkPoolGuides(series, dpGuideRefs, dp);
+      // King anchors: solid lines at the dominant call/put wall of the ACTIVE (horizon-scoped) walls,
+      // so the anchor re-scopes with the DTE toggle. Timeframe-aware too: the band widens with the
+      // candle interval (anchorBandPctForTimeframe), so a tight 1m view anchors to the nearest strong
+      // wall and a wide 4h view lets a bigger further-out wall become the anchor. Redraws in replay.
+      // King anchor price-lines REMOVED (user-directed, 2026-07-13): the solid full-width
+      // yellow/purple horizontal lines at the dominant call/put strikes cluttered the chart —
+      // the bead rail already shows exactly where the king walls sit (fattest beads), so the
+      // anchors were redundant ink. applyKingAnchor with null clears any line a live chart
+      // still holds from before this deploy.
+      applyKingAnchor(series, kingCallLineRef, null, v.callColor);
+      applyKingAnchor(series, kingPutLineRef, null, v.putColor);
+      applyDarkPoolGuides(series, dpGuideRefs, []);
+      void dp; // dark-pool level lines intentionally not drawn (clean axis); kept in the signature
+      //         so callers/consumers of dp elsewhere are unaffected.
+      // Feed the just-drawn strikes to the autoscale provider and nudge a rescale, so
+      // the axis widens to reveal support/resistance walls the moment the lens/horizon
+      // changes (off-hours there's no tick to trigger the recompute otherwise). Sliced to the
+      // SHOWN count so the axis only widens for walls actually on screen — a 1m chart drawing 6
+      // walls must not be stretched by the 7th–12th walls that only a higher timeframe reveals.
+      rangeWallsRef.current = {
+        call: (walls?.callWalls ?? []).slice(0, maxGuides).map((w) => w.strike),
+        put: (walls?.putWalls ?? []).slice(0, maxGuides).map((w) => w.strike),
+      };
+      // Same guard as refreshTrails: a live tick re-running this must not override the member's
+      // manual price-axis zoom (the split-second "zooms out" bug).
+      reassertPriceAutoScale(series.priceScale());
     },
     []
   );
+
+  /**
+   * Draw/refresh the enabled technical overlays against the CURRENTLY-shown bars. Called after every
+   * applyDisplayBars (tick, timeframe, replay, seed) so the lines track the same aggregated bars the
+   * candles use, and by the indicator-toggle effect so enabling/disabling repaints immediately.
+   * One line series per enabled indicator, created lazily and removed the moment it's toggled off —
+   * nothing is drawn while the (default-empty) enabled set is empty. Values are computed 1:1 with
+   * the bars and the null warm-up region is dropped so lines simply start once defined.
+   */
+  const paintOverlays = useCallback((bars: VectorBar[]) => {
+    const chart = chartRef.current;
+    if (!chart || !seriesRef.current) return;
+    lastDisplayBarsRef.current = bars;
+    setDisplayBarCount(bars.length); // menu availability follows the shown-bar count (no-op if unchanged)
+    const enabled = indicatorsRef.current;
+    const map = overlaySeriesRef.current;
+    const closes = bars.map((b) => b.close);
+
+    for (const def of VECTOR_OVERLAYS) {
+      const existing = map.get(def.id) ?? null;
+      // Gated by the family toggle, not the individual line: enabling "EMA" draws every EMA line.
+      if (!enabled.has(def.family)) {
+        if (existing) {
+          chart.removeSeries(existing);
+          map.delete(def.id);
+        }
+        continue;
+      }
+      const values =
+        def.kind === "vwap"
+          ? vwapSeries(bars)
+          : def.kind === "ema"
+            ? emaSeries(closes, def.period ?? 0)
+            : smaSeries(closes, def.period ?? 0);
+      const data: { time: Time; value: number }[] = [];
+      for (let i = 0; i < bars.length; i++) {
+        const v = values[i];
+        if (v != null) data.push({ time: bars[i]!.time, value: v });
+      }
+      let line = existing;
+      if (!line) {
+        line = chart.addSeries(LineSeries, {
+          color: def.color,
+          lineWidth: 2,
+          priceLineVisible: false,
+          lastValueVisible: false,
+          crosshairMarkerVisible: false,
+        });
+        map.set(def.id, line);
+      }
+      line.setData(data);
+    }
+
+    // Draw the enabled "Key levels" horizontal lines from the SAME bars, on the candle series.
+    if (seriesRef.current) {
+      applyLevelLines(seriesRef.current, levelLinesRef.current, enabled, bars, priorDayRef.current);
+      // Market-structure markers (HH/HL labels + BOS/CHOCH flags) on their own markers instance —
+      // separate from the two bead instances, so beads and structure never clobber each other.
+      // Recomputed from the SAME displayed bars, so the structure re-detects per timeframe and, in
+      // replay, reflects only the bars up to the cursor (no future pivots leak into a scrub).
+      if (structureMarkersRef.current) {
+        structureMarkersRef.current.setMarkers(
+          enabled.has("market-structure")
+            ? buildStructureMarkers(bars, 3).map((m) => ({
+                time: m.time as Time,
+                position: m.position,
+                color: m.color,
+                shape: m.shape,
+                text: m.text,
+                size: m.size,
+              }))
+            : []
+        );
+      }
+      // Options-flow markers — one arrow per notable LARGE print at its strike (price axis) + trade
+      // time (time axis): calls green ↑, puts red ↓, size scaled by premium. Drawn from the last
+      // horizon-scoped fetch (flowPrintsRef, populated by the flow effect) so they track the SAME
+      // bars/timeframe as everything else and clear the instant the toggle goes off. The markers sit
+      // at exact trade times (atPriceMiddle + price), so they don't need to align to a bar boundary —
+      // lightweight-charts snaps them onto the axis, matching how the wall beads use sample times.
+      if (flowMarkersRef.current) {
+        flowMarkersRef.current.setMarkers(
+          enabled.has("flow-markers")
+            ? buildFlowMarkers(flowPrintsRef.current, flowMinPremiumRef.current).map((m) => ({
+                time: m.time as Time,
+                position: m.position,
+                price: m.price,
+                color: m.color,
+                shape: m.shape,
+                text: m.text,
+                size: m.size,
+              }))
+            : []
+        );
+      }
+      // Expected-move band (#15 cone, slice 3b) — dashed ±1σ/2σ price-lines from the last horizon
+      // fetch (expectedMoveBandsRef), gated on the "expected-move" toggle. Idempotent (sig ref) so the
+      // frequent tick-repaints don't churn the lines; cleared when the toggle is off / no real band.
+      if (seriesRef.current) {
+        applyExpectedMoveBand(
+          seriesRef.current,
+          emBandLinesRef,
+          emBandSigRef,
+          expectedMoveBandsRef.current,
+          enabled.has("expected-move")
+        );
+      }
+      // GEX positioning heatmap (#14) — push the last horizon-scoped grid + toggle state to the
+      // background primitive (attached at zOrder "bottom", so candles/walls stay readable on top).
+      // Cheap: the primitive just stores refs and requests a redraw; a null grid or the toggle off
+      // draws nothing. This lives in paintOverlays so a toggle flip (which repaints here via the
+      // indicators effect) shows/hides the surface instantly; the fetch pushes fresh data directly.
+      gexHeatmapPrimitiveRef.current?.setData(gexHeatmapGridRef.current, enabled.has("gex-heatmap"));
+    }
+
+    // Oscillator sub-panes (RSI / MACD) in their OWN panes below price. The pane LAYOUT is rebuilt
+    // only when the enabled-oscillator set changes (toggling on/off), assigning panes 1..N in a
+    // fixed order so there's never an empty pane; the series DATA refreshes every paint. Drawing
+    // nothing when the study can't compute (too few bars) is honest — the pane just stays empty.
+    if (chart) paintOscillators(chart, enabled, bars, closes);
+
+    // ALWAYS-ON technicals narration for the terminal — computed here (every paint: tick, timeframe,
+    // replay frame, toggle) from the SHOWN bars, INDEPENDENT of the enabled-overlay set, so the desk
+    // terminal keeps reading VWAP/EMA/RSI/MACD/pocket/structure even when nothing is toggled on the
+    // chart. Deduped so an unchanged read is not re-emitted.
+    const techCb = onTechnicalsChangeRef.current;
+    if (techCb) {
+      const lines = technicalsCallouts(summarizeTechnicals(bars, spotRef.current));
+      const key = lines.join("|");
+      if (key !== lastTechnicalsRef.current) {
+        lastTechnicalsRef.current = key;
+        techCb(lines);
+      }
+    }
+  }, []);
+
+  // Rebuild oscillator panes when the enabled set changes; always refresh their data. Kept a plain
+  // function (not a hook) because it's only called from inside the stable paintOverlays.
+  function paintOscillators(
+    chart: IChartApi,
+    enabled: Set<VectorIndicatorId>,
+    bars: VectorBar[],
+    closes: number[]
+  ) {
+    const oscMap = oscillatorSeriesRef.current;
+    // Fixed order → contiguous pane indices starting at 2 (0 = price, 1 = the always-on volume pane).
+    const active = (["rsi", "macd"] as const).filter((id) => enabled.has(id));
+    const key = active.join(",");
+    if (key !== lastOscKeyRef.current) {
+      for (const s of oscMap.values()) chart.removeSeries(s);
+      oscMap.clear();
+      active.forEach((id, i) => {
+        const pane = i + VOLUME_PANE_INDEX + 1;
+        if (id === "rsi") {
+          const line = chart.addSeries(LineSeries, { color: "#c084fc", lineWidth: 2, priceLineVisible: false, lastValueVisible: true }, pane);
+          // 30/70 oversold/overbought guides + the 50 midline, drawn on the RSI series itself.
+          for (const [lvl, style] of [[70, LineStyle.Dashed], [50, LineStyle.Dotted], [30, LineStyle.Dashed]] as const) {
+            line.createPriceLine({ price: lvl, color: withAlpha("#c084fc", 0.4), lineWidth: 1, lineStyle: style, axisLabelVisible: true, title: String(lvl) });
+          }
+          oscMap.set("rsi", line);
+        } else {
+          // MACD pane: histogram (behind) + macd line + signal line.
+          oscMap.set("macd-hist", chart.addSeries(HistogramSeries, { priceLineVisible: false, lastValueVisible: false }, pane));
+          oscMap.set("macd", chart.addSeries(LineSeries, { color: "#38bdf8", lineWidth: 2, priceLineVisible: false, lastValueVisible: true }, pane));
+          oscMap.set("macd-signal", chart.addSeries(LineSeries, { color: "#f59e0b", lineWidth: 1, priceLineVisible: false, lastValueVisible: false }, pane));
+        }
+      });
+      lastOscKeyRef.current = key;
+      // New oscillator panes start at the default stretch of 1 — reassert the layout so price stays
+      // dominant and the volume strip keeps its height as oscillators come and go.
+      applyPaneStretch(chart);
+    }
+    if (!active.length) return;
+    if (active.includes("rsi")) {
+      const rsi = rsiSeries(closes, 14);
+      const data: { time: Time; value: number }[] = [];
+      for (let i = 0; i < bars.length; i++) if (rsi[i] != null) data.push({ time: bars[i]!.time, value: rsi[i] as number });
+      (oscMap.get("rsi") as ISeriesApi<"Line"> | undefined)?.setData(data);
+    }
+    if (active.includes("macd")) {
+      const m = macdSeries(closes, 12, 26, 9);
+      const line: { time: Time; value: number }[] = [];
+      const sig: { time: Time; value: number }[] = [];
+      const hist: { time: Time; value: number; color: string }[] = [];
+      for (let i = 0; i < bars.length; i++) {
+        const t = bars[i]!.time;
+        if (m[i]!.macd != null) line.push({ time: t, value: m[i]!.macd as number });
+        if (m[i]!.signal != null) sig.push({ time: t, value: m[i]!.signal as number });
+        if (m[i]!.histogram != null) {
+          const h = m[i]!.histogram as number;
+          hist.push({ time: t, value: h, color: withAlpha(h >= 0 ? "#34d399" : "#f87171", 0.6) });
+        }
+      }
+      (oscMap.get("macd-hist") as ISeriesApi<"Histogram"> | undefined)?.setData(hist);
+      (oscMap.get("macd") as ISeriesApi<"Line"> | undefined)?.setData(line);
+      (oscMap.get("macd-signal") as ISeriesApi<"Line"> | undefined)?.setData(sig);
+    }
+  }
+
+  // Sync the enabled-indicator set to the ref the imperative paint reads, and repaint immediately
+  // against the currently-shown bars so toggling an indicator is instant (no wait for the next
+  // tick/timeframe change). paintOverlays is stable, so this runs only when the selection changes.
+  useEffect(() => {
+    indicatorsRef.current = indicators;
+    paintOverlays(lastDisplayBarsRef.current);
+  }, [indicators, paintOverlays]);
+
+  // Lazy prior-day OHLC fetch: only when a prior-day/pivot level is enabled, and only once per
+  // ticker. The PDH/PDL/PDC + floor-pivot lines need the prior session's high/low/close, which the
+  // session bars don't carry. On success, repaint so the lines appear without waiting for a tick.
+  useEffect(() => {
+    const needsPrior = VECTOR_LEVELS.some((l) => l.needsPriorDay && indicators.has(l.id));
+    if (!needsPrior || (priorDayTickerRef.current === ticker && priorDayRef.current)) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await fetch(`/api/market/vector/prior-day?ticker=${encodeURIComponent(ticker)}`);
+        if (cancelled || !res.ok) return;
+        const d = (await res.json()) as { pdh: number | null; pdl: number | null; pdc: number | null };
+        if (cancelled) return;
+        priorDayRef.current =
+          d.pdh != null && d.pdl != null && d.pdc != null
+            ? { pdh: d.pdh, pdl: d.pdl, pdc: d.pdc }
+            : null;
+        priorDayTickerRef.current = ticker;
+        paintOverlays(lastDisplayBarsRef.current);
+      } catch {
+        /* best-effort — the prior-day/pivot lines simply don't draw if the fetch fails */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [indicators, ticker, paintOverlays]);
+
+  // Lazy options-flow fetch: ONLY when the "Options flow" toggle is enabled (the underlying pull is a
+  // bounded Massive/Polygon per-OCC trades fan-out — don't spend it on members who never opt in). Re-
+  // fetches on ticker / DTE-horizon change, and on a slow poll while the session is live so fresh
+  // prints appear. Scoped to the SAME horizon the walls use so flow and walls describe one expiry set.
+  // On success the prints land in flowPrintsRef and we repaint; toggling off clears them and repaints.
+  useEffect(() => {
+    const enabled = indicators.has("flow-markers");
+    if (!enabled) {
+      // Cleared → drop any prints and repaint so the markers disappear immediately (not on next tick).
+      if (flowPrintsRef.current.length) {
+        flowPrintsRef.current = [];
+        paintOverlays(lastDisplayBarsRef.current);
+      }
+      return;
+    }
+    let cancelled = false;
+    const fetchFlow = async () => {
+      try {
+        const res = await fetch(
+          `/api/market/vector/flow?ticker=${encodeURIComponent(ticker)}&dte=${dteHorizon}`
+        );
+        if (cancelled || !res.ok) return;
+        const data = (await res.json()) as {
+          prints?: FlowPrint[];
+          meta?: { minPremium?: number; truncated?: number };
+        };
+        if (cancelled) return;
+        flowPrintsRef.current = Array.isArray(data.prints) ? data.prints : [];
+        flowMinPremiumRef.current = data.meta?.minPremium ?? 0;
+        // NO silent truncation: when the server dropped large prints past the display cap, say so
+        // once (deduped) — the member is seeing the top N by premium, not every large print.
+        const truncated = data.meta?.truncated ?? 0;
+        if (truncated > 0 && truncated !== lastFlowTruncatedRef.current) {
+          console.info(
+            `[vector] options-flow markers capped: showing top ${flowPrintsRef.current.length} by premium (max ${DEFAULT_FLOW_MAX_MARKERS}); ${truncated} additional large print(s) not drawn.`
+          );
+        }
+        lastFlowTruncatedRef.current = truncated;
+        paintOverlays(lastDisplayBarsRef.current);
+      } catch {
+        /* best-effort — the flow markers simply don't draw if the fetch fails (honest empty) */
+      }
+    };
+    void fetchFlow();
+    // Live sessions get fresh prints as they hit; off-hours a single fetch is enough (static tape).
+    const id = liveSession ? setInterval(fetchFlow, 30_000) : null;
+    return () => {
+      cancelled = true;
+      if (id) clearInterval(id);
+    };
+  }, [indicators, ticker, dteHorizon, liveSession, paintOverlays]);
+
+  const toggleIndicator = useCallback((id: VectorIndicatorId) => {
+    setIndicators((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
+  const clearIndicators = useCallback(() => setIndicators(new Set()), []);
 
   const applyFrame = useCallback(
     (cursorTime: number, bars: VectorBar[], history: WallHistorySample[], activeLens: VectorWallLens) => {
@@ -524,11 +1546,28 @@ export function VectorChart({
 
       const visibleBars = displayBarsFromMinute(bars, timeframeRef.current, cursorTime);
       applyDisplayBars(series, volumeSeriesRef.current, visibleBars);
+      paintOverlays(visibleBars);
 
-      const visibleHistory = sliceHistoryToTime(history, cursorTime);
+      // Horizon-aware replay: when the member has narrowed the DTE (GEX lens) and that horizon
+      // has a recorded trail, replay THAT horizon's beads forming point-in-time — not the blended
+      // "All" rail the callsites pass. So hitting replay on 0DTE/weekly/monthly reconstructs how
+      // that specific horizon's clusters built through the session, matching what the live toggle
+      // now draws (#187). VEX / "all" / no-recorded-trail fall back to the passed blended history.
+      // Unlike the live composeHorizonTrail there is NO current-column union — replay must never
+      // draw structure newer than the cursor, and the recorded trail is already point-in-time.
+      const sourceHistory = pickReplayTrailSource(
+        dteHorizonRef.current,
+        activeLens,
+        horizonHistoryRef.current,
+        history
+      );
+
+      const visibleHistory = sliceHistoryToTime(sourceHistory, cursorTime);
       const v = lensVisuals(activeLens);
-      applyWallBeadMarkers(callBeadsRef.current, visibleHistory, "callWalls", v.callColor, activeLens, timeframeRef.current);
-      applyWallBeadMarkers(putBeadsRef.current, visibleHistory, "putWalls", v.putColor, activeLens, timeframeRef.current);
+      const callStrikes = applyWallBeadMarkers(callBeadsRef.current, visibleHistory, "callWalls", v.callColor, activeLens, timeframeRef.current);
+      const putStrikes = applyWallBeadMarkers(putBeadsRef.current, visibleHistory, "putWalls", v.putColor, activeLens, timeframeRef.current);
+      // Same zoom-stability guarantee in replay: widen the axis for the beads this frame drew.
+      beadStrikesRef.current = { call: callStrikes, put: putStrikes };
       pinCandlesOnTop(series);
 
       // initialWalls/etc are the page-load seed — a reasonable fallback only when the
@@ -536,14 +1575,18 @@ export function VectorChart({
       // return from wallsAtReplayTime/flipAtReplayTime means cursorTime predates the
       // earliest sample; falling back to the seed would misattribute today's page-load-time
       // walls to that earlier point on the replay timeline (same bug shape as
-      // wallsAtCrosshairTime above).
-      const gexAt = history.length > 0 ? wallsAtReplayTime(history, cursorTime, "gex") : initialWalls;
-      const vexAt = history.length > 0 ? wallsAtReplayTime(history, cursorTime, "vex") : initialVexWalls;
-      const gammaAt = history.length > 0 ? flipAtReplayTime(history, cursorTime, "gex") : initialGammaFlip;
-      const vexFlipAt = history.length > 0 ? flipAtReplayTime(history, cursorTime, "vex") : initialVexFlip;
-      refreshOverlays(activeLens, gexAt, vexAt, gammaAt, vexFlipAt, darkPoolRef.current);
+      // wallsAtCrosshairTime above). Reads from sourceHistory so the flip line + wall guides
+      // stay coherent with the horizon-scoped beads drawn above.
+      const gexAt = sourceHistory.length > 0 ? wallsAtReplayTime(sourceHistory, cursorTime, "gex") : initialWalls;
+      const vexAt = sourceHistory.length > 0 ? wallsAtReplayTime(sourceHistory, cursorTime, "vex") : initialVexWalls;
+      const gammaAt = sourceHistory.length > 0 ? flipAtReplayTime(sourceHistory, cursorTime, "gex") : initialGammaFlip;
+      const vexFlipAt = sourceHistory.length > 0 ? flipAtReplayTime(sourceHistory, cursorTime, "vex") : initialVexFlip;
+      // Dark pool has no per-time history — darkPoolRef is TODAY's live ladder. Drawing
+      // it on a historical frame mislabels live levels under the cursor timestamp
+      // (walls/flip above are carefully time-honest; DP must not be the exception).
+      refreshOverlays(activeLens, gexAt, vexAt, gammaAt, vexFlipAt, []);
     },
-    [initialWalls, initialVexWalls, initialGammaFlip, initialVexFlip, refreshOverlays]
+    [initialWalls, initialVexWalls, initialGammaFlip, initialVexFlip, refreshOverlays, paintOverlays]
   );
 
   const stopReplayTimer = useCallback(() => {
@@ -553,18 +1596,492 @@ export function VectorChart({
     }
   }, []);
 
+  // GEX walls to DRAW right now: the horizon-scoped fetch when the member has
+  // narrowed the DTE, else the live stream walls. Replay/history paths bypass
+  // this — they use the time-sliced recorded walls (which were recorded at the
+  // full near-term scope), so the horizon override is a live-view concern only.
+  const liveGexWalls = useCallback(
+    (): VectorWalls | null =>
+      pickHorizonScopedValue(dteHorizonRef.current, horizonWallsRef.current, gexWallsRef.current),
+    []
+  );
+
+  // Gamma flip to DRAW right now — the horizon-scoped flip when the member has narrowed
+  // the DTE (so the flip line re-scopes with the walls), else the live stream flip. Same
+  // live-view-only scope as liveGexWalls: replay/history paths use time-sliced recorded flips.
+  const liveGammaFlip = useCallback(
+    (): number | null =>
+      pickHorizonScopedValue(dteHorizonRef.current, horizonFlipRef.current, gammaFlipRef.current),
+    []
+  );
+
+  // Compute the gamma regime from the current spot / flip / walls and emit it up to
+  // the page banner. Uses the HORIZON-SCOPED view (liveGexWalls/liveGammaFlip) so the
+  // banner describes exactly what the member is looking at: on "all" that's the near-
+  // term stream, but when they narrow to 0DTE/weekly/monthly the regime read + flip
+  // re-scope with the walls actually drawn on the chart. (User-requested coherence —
+  // the terminal must adapt to the DTE selection, not narrate a different scope.)
+  const emitRegime = useCallback(() => {
+    if (!onRegimeChange) return;
+    const walls = liveGexWalls();
+    const regime = deriveVectorRegime({
+      spot: spotRef.current,
+      gammaFlip: liveGammaFlip(),
+      topCallWall: walls?.callWalls?.[0]?.strike ?? null,
+      topPutWall: walls?.putWalls?.[0]?.strike ?? null,
+    });
+    if (regime.read === lastRegimeReadRef.current) return;
+    lastRegimeReadRef.current = regime.read;
+    onRegimeChange(regime);
+  }, [onRegimeChange, liveGexWalls, liveGammaFlip]);
+
+  // Emit the nearest-wall proximity callout (dynamic desk-terminal pulse). Uses the
+  // HORIZON-SCOPED walls + flip so "spot testing the 190 put wall" refers to the wall
+  // the member's DTE selection actually surfaces — deduped by callout text so it only
+  // fires when the actionable level actually changes.
+  const emitProximity = useCallback(() => {
+    if (!onProximityChange) return;
+    const prox = deriveWallProximity({
+      spot: spotRef.current,
+      walls: liveGexWalls(),
+      gammaFlip: liveGammaFlip(),
+    });
+    const key = prox ? `${prox.side}:${prox.strike}:${prox.nearness}` : "none";
+    if (key === lastProximityRef.current) return;
+    lastProximityRef.current = key;
+    onProximityChange(prox);
+  }, [onProximityChange, liveGexWalls, liveGammaFlip]);
+
+  // Emit the gamma magnet (dealer-hedging center of mass) up to the desk terminal.
+  // Regime posture drives the honest wording (pin in long gamma, pivot in short),
+  // so it's derived here from the SAME horizon-scoped walls/flip as the regime banner
+  // (liveGexWalls/liveGammaFlip) — the magnet's center of mass re-computes over the
+  // walls the member's DTE selection surfaces. Deduped by the level+pull+posture key.
+  const emitMagnet = useCallback(() => {
+    if (!onMagnetChange) return;
+    const walls = liveGexWalls();
+    const regime = deriveVectorRegime({
+      spot: spotRef.current,
+      gammaFlip: liveGammaFlip(),
+      topCallWall: walls?.callWalls?.[0]?.strike ?? null,
+      topPutWall: walls?.putWalls?.[0]?.strike ?? null,
+    });
+    const magnet = deriveGammaMagnet({ spot: spotRef.current, walls, posture: regime.posture });
+    const key = magnet ? `${magnet.strike}:${magnet.pull}:${magnet.posture}` : "none";
+    if (key === lastMagnetRef.current) return;
+    lastMagnetRef.current = key;
+    onMagnetChange(magnet);
+  }, [onMagnetChange, liveGexWalls, liveGammaFlip]);
+
+  // Emit ranked CONFLUENCE zones (CTO#7) — stacks every level the chart already tracks (horizon-
+  // scoped walls, flip, max pain, session HOD/LOD, auto-fib golden pocket, prior-day H/L) through
+  // the pure confluenceZones engine and sends the top callouts to the desk terminal. Levels the
+  // chart doesn't have yet (max pain pre-fetch, prior-day unfetched) simply don't contribute — the
+  // zones are honest about what's known NOW and refine as data lands. Deduped by the callout key.
+  // Gather every price level the chart currently tracks into the flat list the confluence engine
+  // clusters. Shared by the terminal callouts (emitConfluence) AND the chart band (paintConfluence)
+  // so the two can never disagree about what stacked where. Levels not yet known (max pain pre-fetch,
+  // prior-day unfetched) simply don't contribute — the zones are honest about what's known NOW.
+  const gatherConfluenceLevels = useCallback((spot: number): ConfluenceLevel[] => {
+    const lvls: ConfluenceLevel[] = [];
+    const walls = liveGexWalls();
+    for (const w of walls?.callWalls?.slice(0, 3) ?? []) lvls.push({ price: w.strike, kind: "call-wall" });
+    for (const w of walls?.putWalls?.slice(0, 3) ?? []) lvls.push({ price: w.strike, kind: "put-wall" });
+    const flip = liveGammaFlip();
+    if (flip != null) lvls.push({ price: flip, kind: "gamma-flip" });
+    if (maxPainValueRef.current != null) lvls.push({ price: maxPainValueRef.current, kind: "max-pain" });
+    const bars = lastDisplayBarsRef.current;
+    const hl = sessionHodLod(bars);
+    if (hl) lvls.push({ price: hl.hod, kind: "hod" }, { price: hl.lod, kind: "lod" });
+    const swing = dominantSwing(bars, 3, spot > 0 ? spot * 0.0015 : 0);
+    if (swing) {
+      const gp = goldenPocket(swing);
+      lvls.push({ price: gp.top, kind: "golden-pocket" }, { price: gp.bottom, kind: "golden-pocket" });
+    }
+    if (priorDayRef.current) {
+      lvls.push({ price: priorDayRef.current.pdh, kind: "pdh" }, { price: priorDayRef.current.pdl, kind: "pdl" });
+    }
+    return lvls;
+  }, [liveGexWalls, liveGammaFlip]);
+
+  const emitConfluence = useCallback(() => {
+    if (!onConfluenceChange) return;
+    const spot = spotRef.current;
+    if (!(spot && spot > 0)) return;
+    const callouts = confluenceCallouts(confluenceZones(gatherConfluenceLevels(spot), spot).slice(0, 3), spot);
+    const key = callouts.join("|") || "none";
+    if (key === lastConfluenceRef.current) return;
+    lastConfluenceRef.current = key;
+    onConfluenceChange(callouts.length ? callouts : null);
+  }, [onConfluenceChange, gatherConfluenceLevels]);
+
+  // Repaint the strongest-confluence-zone band on the price pane. Reads the enabled set + the SAME
+  // gathered levels as the terminal, so the band and the ranked callout always describe one zone.
+  // Cheap and idempotent (reconciles the ≤3 band lines), so it's safe to call from every place the
+  // walls/flip/max-pain/bars change — that's what keeps the band tracking the tape live.
+  const paintConfluenceBand = useCallback(() => {
+    const series = seriesRef.current;
+    if (!series) return;
+    const spot = spotRef.current ?? 0;
+    applyConfluenceBand(series, confluenceBandRef.current, indicatorsRef.current, spot, gatherConfluenceLevels(spot));
+  }, [gatherConfluenceLevels]);
+
+  // Toggling the "Confluence zone" indicator on/off must repaint the band immediately (it's on a
+  // separate paint path from paintOverlays, which only draws bar-derived overlays). Kept a distinct
+  // effect placed after paintConfluenceBand's declaration to avoid a use-before-declaration cycle
+  // with the earlier indicator-sync effect.
+  useEffect(() => {
+    paintConfluenceBand();
+  }, [indicators, paintConfluenceBand]);
+
+  // Emit top-wall integrity (is this wall real?) — strength × session persistence
+  // (from the same history rail the trails use) × isolation. Scores the HORIZON-SCOPED
+  // top walls (liveGexWalls) so the readout matches the walls on the chart. Note: the
+  // persistence component reads the near-term-scoped recorded rail (wallHistoryRef), so
+  // for a narrowed horizon whose top wall sits at a strike the rail never recorded,
+  // persistence is best-effort — strength + isolation still score it honestly, and a
+  // strike the rail did track still gets full persistence credit. Deduped by tier+score.
+  const emitWallIntegrity = useCallback(() => {
+    if (!onWallIntegrityChange) return;
+    const integ = scoreTopWalls(liveGexWalls(), wallHistoryRef.current);
+    const key = `${integ.call?.strike ?? "-"}:${integ.call?.tier ?? "-"}:${integ.call?.score ?? "-"}|${integ.put?.strike ?? "-"}:${integ.put?.tier ?? "-"}:${integ.put?.score ?? "-"}`;
+    if (key === lastWallIntegrityRef.current) return;
+    lastWallIntegrityRef.current = key;
+    onWallIntegrityChange(integ);
+  }, [onWallIntegrityChange, liveGexWalls]);
+
+  // Evaluate the member's alert rules against the CURRENT live tick (spot + horizon-scoped walls +
+  // flip). The pure engine does the dedupe/cooldown/hysteresis; we just persist its state + the prior
+  // spot (for flip-cross) and forward any fired alerts. No-op when there are no rules or no callback.
+  const evaluateAlertsNow = useCallback(() => {
+    const cb = onAlertsFiredRef.current;
+    const rules = alertRulesRef.current;
+    const spot = spotRef.current;
+    if (!cb || rules.length === 0 || !(spot && spot > 0)) {
+      if (spot && spot > 0) priorSpotRef.current = spot; // still track spot so the first real cross is honest
+      return;
+    }
+    const { fired, state } = evaluateAlerts(
+      rules,
+      { spot, priorSpot: priorSpotRef.current, walls: liveGexWalls(), flip: liveGammaFlip(), nowMs: Date.now() },
+      alertStateRef.current
+    );
+    alertStateRef.current = state;
+    priorSpotRef.current = spot;
+    if (fired.length) cb(fired);
+  }, [liveGexWalls, liveGammaFlip]);
+
+  // DTE horizon → repaint GEX walls. "all" follows the live stream; a narrower
+  // horizon fetches expiry-scoped walls on demand (keeping the shared per-second
+  // SSE stream untouched) and repaints, refreshing on an interval while live.
+  useEffect(() => {
+    dteHorizonRef.current = dteHorizon;
+    // Surface the horizon to the shell so the GEX ladder re-scopes to the same expiries.
+    onDteHorizonChange?.(dteHorizon);
+    let cancelled = false;
+
+    // A selection change (DTE horizon or ticker — this effect's own deps) must ALWAYS repaint the
+    // terminal, even if the new scope happens to yield the same coarse dedup key as the last emit.
+    // The emit dedup refs persist for the component's life, so without this reset a toggle whose
+    // read collides with the prior one is SWALLOWED and the terminal stays on the old selection
+    // until a full page refresh clears the refs — exactly the "had to refresh" report. Clearing them
+    // here guarantees the first post-selection emit fires; steady-state SSE dedup is unaffected.
+    lastRegimeReadRef.current = "";
+    lastProximityRef.current = "";
+    lastMagnetRef.current = "";
+    lastWallIntegrityRef.current = "";
+
+    const repaintLive = () => {
+      if (replayModeRef.current || !seriesRef.current) return;
+      refreshOverlays(
+        lensRef.current,
+        liveGexWalls(),
+        vexWallsRef.current,
+        liveGammaFlip(),
+        vexFlipRef.current,
+        darkPoolRef.current
+      );
+      // Repaint the BEADS on the horizon toggle too — refreshTrails is now horizon-aware, so a
+      // narrowed horizon redraws the scoped walls instead of the blended "All" rail. Without this,
+      // the toggle re-scoped only the flip line + terminal and the beads stayed on "All" (the bug).
+      refreshTrails(lensRef.current);
+      // Re-derive the desk-terminal narration against the just-scoped walls/flip so the
+      // regime banner, magnet, proximity, and integrity all snap to the new DTE horizon
+      // the instant the member toggles it — not on the next SSE tick. Each emit is
+      // self-deduped, so switching back to a horizon that yields the same reads is a no-op.
+      emitRegime();
+      emitProximity();
+      emitMagnet();
+      emitConfluence();
+      paintConfluenceBand(); // keep the on-chart band in lockstep with the re-scoped terminal zone
+      emitWallIntegrity();
+    };
+
+    // Repaint dispatcher: in replay a DTE toggle must redraw the CURRENT cursor frame (not the
+    // live tape) so the horizon-scoped beads swap in immediately — applyFrame picks the per-horizon
+    // source from dteHorizonRef + horizonHistoryRef, so re-applying the frame is all that's needed.
+    // Mirrors the lens effect's in-replay applyFrame call. Off replay this is the live repaint.
+    const repaint = () => {
+      if (replayModeRef.current) {
+        if (!seriesRef.current) return;
+        const t = timelineRef.current[cursorIndexRef.current];
+        if (t != null) applyFrame(t, minuteBarsRef.current, wallHistoryRef.current, lensRef.current);
+        return;
+      }
+      repaintLive();
+    };
+
+    // Max-pain and the expected-move cone are HORIZON-INDEPENDENT reads: each has its own endpoint
+    // that accepts ?dte= and returns a value for EVERY horizon, including "all" (verified live — the
+    // "all" response carries a real band/strike). They must therefore fire on every selection and are
+    // defined + invoked HERE, ABOVE the "all" early-return below. The early-return only skips the
+    // horizon-SCOPED walls/history fetch (on "all" the chart follows the live SSE stream, so there's
+    // nothing scoped to fetch). Before this move both reads sat AFTER the return, so on the DEFAULT
+    // "all" view they never ran — the max-pain line and the ±1σ/2σ cone silently never rendered until
+    // the member toggled to a narrower DTE. Same root cause, both fixed together.
+    const fetchMaxPain = async () => {
+      try {
+        const res = await fetch(
+          `/api/market/vector/max-pain?ticker=${encodeURIComponent(ticker)}&dte=${dteHorizon}`
+        );
+        if (cancelled || dteHorizonRef.current !== dteHorizon) return;
+        const strike =
+          res.ok && seriesRef.current
+            ? ((await res.json()) as { maxPain?: number | null }).maxPain ?? null
+            : null;
+        if (cancelled || dteHorizonRef.current !== dteHorizon || !seriesRef.current) return;
+        maxPainValueRef.current = strike;
+        applyMaxPainLine(seriesRef.current, maxPainLineRef, strike);
+        emitConfluence(); // the max-pain level just landed — the zone stack may have changed
+        paintConfluenceBand();
+      } catch {
+        // Network throw: keep the last-drawn line rather than blank it on a transient blip.
+      }
+    };
+
+    // Options-implied EXPECTED MOVE for the current (ticker, horizon) — the ±1σ/2σ range the chain
+    // is pricing through the horizon's front expiry. Emits pre-formatted callouts to the terminal
+    // (#15 cone, slice 3a) and stores the band for the chart draw (slice 3b). Best-effort: on any
+    // failure or a null (no real ATM IV) it emits [] so the terminal drops the section rather than
+    // showing stale, and the band clears.
+    const fetchExpectedMove = async () => {
+      const cb = onExpectedMoveChangeRef.current;
+      if (!cb) return;
+      try {
+        const res = await fetch(
+          `/api/market/vector/expected-move?ticker=${encodeURIComponent(ticker)}&dte=${dteHorizon}`
+        );
+        if (cancelled || dteHorizonRef.current !== dteHorizon) return;
+        const em = res.ok
+          ? ((await res.json()) as { expectedMove?: ExpectedMove | null }).expectedMove ?? null
+          : null;
+        if (cancelled || dteHorizonRef.current !== dteHorizon) return;
+        const lines = expectedMoveCallouts(em);
+        const key = lines.join("|");
+        if (key !== lastExpectedMoveRef.current) {
+          lastExpectedMoveRef.current = key;
+          cb(lines);
+        }
+        // Store the band + repaint so the chart lines redraw when the toggle is on (slice 3b). The
+        // repaint is a no-op for the band's sig-check when nothing changed; paintOverlays gates the
+        // actual draw on the "expected-move" toggle.
+        expectedMoveBandsRef.current = em;
+        paintOverlays(lastDisplayBarsRef.current);
+      } catch {
+        // Network throw: keep the last-emitted lines rather than blank the section on a blip.
+      }
+    };
+
+    // GEX positioning heatmap (#14) — the horizon-scoped strike×time surface behind the candles.
+    // HORIZON-INDEPENDENT in the same sense as max-pain/expected-move: /api/market/vector/gex-heatmap
+    // accepts ?dte= and returns a grid for EVERY horizon (including "all"), so it must fire on every
+    // selection and is defined + invoked HERE, ABOVE the "all" early-return — otherwise the DEFAULT
+    // "all" view would never fetch it and the surface would only appear after toggling a narrower DTE
+    // (the exact class of bug #237 fixed for the cone/max-pain). Stores the grid and pushes it to the
+    // background primitive with the current toggle state; the primitive paints only when the
+    // "gex-heatmap" toggle is on, and a null grid (no honest surface) clears it — never fabricated.
+    const fetchGexHeatmap = async () => {
+      try {
+        const res = await fetch(
+          `/api/market/vector/gex-heatmap?ticker=${encodeURIComponent(ticker)}&dte=${dteHorizon}` +
+            `&session=${encodeURIComponent(sessionYmd)}`
+        );
+        if (cancelled || dteHorizonRef.current !== dteHorizon) return;
+        const grid = res.ok
+          ? ((await res.json()) as { grid?: GexHeatmapGrid | null }).grid ?? null
+          : null;
+        if (cancelled || dteHorizonRef.current !== dteHorizon) return;
+        gexHeatmapGridRef.current = grid;
+        // Push straight to the primitive with the current toggle state — no full repaint needed
+        // (paintOverlays also re-pushes on a toggle flip, so both entry points stay consistent).
+        gexHeatmapPrimitiveRef.current?.setData(grid, indicatorsRef.current.has("gex-heatmap"));
+      } catch {
+        // Network throw: keep the last-drawn surface rather than blank it on a transient blip.
+      }
+    };
+
+    void fetchMaxPain();
+    void fetchExpectedMove();
+    void fetchGexHeatmap();
+
+    if (dteHorizon === "all") {
+      horizonWallsRef.current = null;
+      horizonFlipRef.current = null;
+      horizonHistoryRef.current = [];
+      repaint();
+      return;
+    }
+
+    // Clear any prior horizon's recorded trail up front so a toggle never briefly shows the
+    // previous horizon's clusters while this fetch is in flight.
+    horizonHistoryRef.current = [];
+
+    // Fetch the RECORDED per-horizon trail (frozen clusters) in parallel with the current walls.
+    // Separate from fetchScoped so a slow/empty history read never delays the current-structure
+    // repaint. Guarded on the still-active horizon + not cancelled, same as fetchScoped.
+    const fetchHistory = async () => {
+      try {
+        const res = await fetch(
+          `/api/market/vector/wall-history?ticker=${encodeURIComponent(ticker)}&dte=${dteHorizon}` +
+            `&session=${encodeURIComponent(sessionYmd)}`
+        );
+        if (cancelled || dteHorizonRef.current !== dteHorizon || !res.ok) return;
+        const data = (await res.json()) as { history?: WallHistorySample[] };
+        if (cancelled || dteHorizonRef.current !== dteHorizon) return;
+        horizonHistoryRef.current = Array.isArray(data.history) ? data.history : [];
+        repaint();
+      } catch {
+        // History is a supplementary overlay — on any failure keep the single-column fallback
+        // (horizonHistoryRef stays []), which refreshTrails already draws. No repaint needed.
+      }
+    };
+
+    const fetchScoped = async () => {
+      try {
+        const res = await fetch(
+          `/api/market/vector/walls?ticker=${encodeURIComponent(ticker)}&dte=${dteHorizon}`
+        );
+        if (cancelled || dteHorizonRef.current !== dteHorizon) return;
+        if (!res.ok) {
+          // Fetch reachable but errored (e.g. 5xx). Still repaint against the live stream values
+          // (liveGexWalls/liveGammaFlip fall back to the un-scoped stream), so the terminal reflects
+          // the CURRENT selection instead of freezing on the previous horizon's narration.
+          repaintLive();
+          return;
+        }
+        const data = (await res.json()) as { walls?: VectorWalls | null; flip?: number | null };
+        if (cancelled || dteHorizonRef.current !== dteHorizon) return;
+        horizonWallsRef.current = data.walls ?? null;
+        // Re-scope the flip line with the horizon too. A null flip (e.g. no ladder
+        // zero-crossing in the scoped expiries) falls back to the live stream flip
+        // via liveGammaFlip, so the flip never vanishes just because a horizon narrowed.
+        horizonFlipRef.current = data.flip ?? null;
+        repaintLive();
+      } catch {
+        // Network throw: keep last-known scoped walls/flip, but STILL repaint so the terminal
+        // re-derives against the current selection (stream fallback) rather than staying stale.
+        if (!cancelled && dteHorizonRef.current === dteHorizon) repaintLive();
+      }
+    };
+
+    void fetchScoped();
+    void fetchHistory();
+    // Only the current walls need the 15s cadence; the recorded trail advances at the recorder's
+    // 5-min bucket, so refresh it on a slower interval in RTH (and once, above, off-hours).
+    const id = liveSession ? setInterval(fetchScoped, 15_000) : null;
+    const histId = liveSession ? setInterval(fetchHistory, 60_000) : null;
+    return () => {
+      cancelled = true;
+      if (id) clearInterval(id);
+      if (histId) clearInterval(histId);
+    };
+  }, [
+    dteHorizon,
+    ticker,
+    sessionYmd,
+    liveSession,
+    // chartReady: at mount this effect runs BEFORE the chart-creation effect builds the series, so
+    // repaintLive() bails on !seriesRef.current and the terminal stays blank until the first SSE
+    // frame — which never arrives in a closed session (→ "had to refresh"). Re-running once the
+    // series exists fires the initial emits against the SSR-seeded walls/spot refs.
+    chartReady,
+    applyFrame,
+    refreshOverlays,
+    refreshTrails,
+    liveGexWalls,
+    liveGammaFlip,
+    emitRegime,
+    emitProximity,
+    emitMagnet, emitConfluence,
+    paintConfluenceBand,
+    emitWallIntegrity,
+    onDteHorizonChange,
+  ]);
+
+  // Lens (GEX↔VEX) is a selection too: re-derive the terminal so the lens-gated wall-integrity line
+  // (and the rest) reflect the new lens immediately, not on the next SSE frame — which never arrives
+  // in a closed session, forcing the member to refresh. Reset the dedup keys so the switch can't be
+  // swallowed by a coincidental key match. Placed after the emit callbacks are declared (they read
+  // lensRef, synced above) and guarded on the series existing / not replaying.
+  useEffect(() => {
+    if (!chartReady || replayModeRef.current || !seriesRef.current) return;
+    lastRegimeReadRef.current = "";
+    lastProximityRef.current = "";
+    lastMagnetRef.current = "";
+    lastWallIntegrityRef.current = "";
+    emitRegime();
+    emitProximity();
+    emitMagnet();
+    emitConfluence();
+    paintConfluenceBand();
+    emitWallIntegrity();
+  }, [lens, chartReady, emitRegime, emitProximity, emitMagnet, emitConfluence, paintConfluenceBand, emitWallIntegrity]);
+
   const connectLive = useCallback(() => {
     if (!liveSessionRef.current) return;
     connRef.current?.close();
+
+    // Closed-bar backfill on every (re)connect: the SSE only carries the
+    // currently-forming candle, so bars that closed while disconnected
+    // (reconnect crossing a minute boundary, tab sleep) — and the bar Polygon
+    // hadn't published yet at SSR time — were permanent holes corrupting
+    // higher-timeframe aggregates. Fire-and-forget; merge is idempotent.
+    void fetch(`/api/market/vector/bars?ticker=${encodeURIComponent(ticker)}`)
+      .then(async (res) => {
+        if (!res.ok) return;
+        const data = (await res.json()) as { bars?: VectorBar[]; sessionYmd?: string };
+        if (!data.bars?.length || data.sessionYmd !== sessionYmd) return;
+        const merged = mergeBarsByTime(minuteBarsRef.current, data.bars);
+        if (merged === minuteBarsRef.current) return;
+        minuteBarsRef.current = merged;
+        setSessionBars(merged);
+        if (!replayModeRef.current && seriesRef.current) {
+          const display = displayBarsFromMinute(merged, timeframeRef.current);
+          displayBarTimeRef.current = display[display.length - 1]?.time ?? 0;
+          // BUG 2: closed-bar backfill on (re)connect is a background re-seed — must not reset
+          // the member's zoom/pan. Preserve the viewport (or follow live if at the edge).
+          applyDisplayBarsPreservingView(chartRef.current, seriesRef.current, volumeSeriesRef.current, display);
+          paintOverlays(display);
+        }
+      })
+      .catch(() => {
+        /* best-effort — live ticks keep flowing regardless */
+      });
 
     let lastMinuteBarTime = minuteBarsRef.current.length
       ? minuteBarsRef.current[minuteBarsRef.current.length - 1]!.time
       : 0;
 
     connRef.current = createVectorEventSource(ticker, (snap) => {
-      if (replayModeRef.current) return;
       if (snap.sessionYmd && snap.sessionYmd !== sessionYmd) return;
       if (!liveSessionRef.current) return;
+      // During replay the connection stays OPEN and every branch below keeps
+      // accumulating into refs/state — only chart PAINTS are gated. Closing the
+      // stream (the old behavior) permanently lost every bar that closed while
+      // the member was in replay: nothing backfills bars on reconnect, so a
+      // 10-minute replay left a 10-bar hole in the session for the rest of the
+      // day, silently corrupting higher-timeframe OHLC aggregates.
+      const inReplay = replayModeRef.current;
 
       if (snap.wallHistory?.length) {
         const prevTail = wallHistoryRef.current[wallHistoryRef.current.length - 1];
@@ -582,7 +2099,7 @@ export function VectorChart({
           wallHistoryRef.current = merged;
           setSessionHistory(merged);
           if (hasVexInHistory(merged)) setVexAvailable(true);
-          refreshTrails(lensRef.current);
+          if (!inReplay) refreshTrails(lensRef.current);
         }
       }
 
@@ -605,6 +2122,15 @@ export function VectorChart({
       if (snap.darkPoolLevels) {
         darkPoolRef.current = snap.darkPoolLevels;
       }
+      // Capture the PREVIOUS tick's structure before overwriting — spot-break
+      // detection requires the level to have been stable across the tick (a
+      // wall relocating across a flat spot is not a breakout).
+      const prevStruct = {
+        gexWalls: gexWallsRef.current,
+        vexWalls: vexWallsRef.current,
+        gammaFlip: gammaFlipRef.current,
+        vexFlip: vexFlipRef.current,
+      };
       if (snap.walls) {
         gexWallsRef.current = snap.walls;
       }
@@ -626,7 +2152,9 @@ export function VectorChart({
             wallsForActiveLens(active, gexWallsRef.current, vexWallsRef.current),
             flipForActiveLens(active, gammaFlipRef.current, vexFlipRef.current),
             active,
-            snap.candle.time
+            snap.candle.time,
+            wallsForActiveLens(active, prevStruct.gexWalls, prevStruct.vexWalls),
+            flipForActiveLens(active, prevStruct.gammaFlip, prevStruct.vexFlip)
           );
           if (spotEvents.length) {
             setWallEvents((ev) => appendVectorWallEvents(ev, spotEvents));
@@ -635,25 +2163,38 @@ export function VectorChart({
         spotRef.current = curSpot;
         minuteBarsRef.current = upsertBar(minuteBarsRef.current, snap.candle as VectorBar);
         setSessionBars(minuteBarsRef.current);
-        const displayBars = displayBarsFromMinute(minuteBarsRef.current, timeframeRef.current);
-        const lastDisplay = displayBars[displayBars.length - 1];
-        if (lastDisplay) {
-          displayBarTimeRef.current = lastDisplay.time;
-          seriesRef.current?.update(lastDisplay);
-          volumeSeriesRef.current?.setData(volumeHistogramData(displayBars));
+        if (!inReplay) {
+          const displayBars = displayBarsFromMinute(minuteBarsRef.current, timeframeRef.current);
+          const lastDisplay = displayBars[displayBars.length - 1];
+          if (lastDisplay) {
+            displayBarTimeRef.current = lastDisplay.time;
+            seriesRef.current?.update(lastDisplay);
+            volumeSeriesRef.current?.setData(volumeHistogramData(displayBars));
+          }
         }
       }
 
-      refreshOverlays(
-        lensRef.current,
-        gexWallsRef.current,
-        vexWallsRef.current,
-        gammaFlipRef.current,
-        vexFlipRef.current,
-        darkPoolRef.current
-      );
+      // Painting the live overlays during replay would overwrite the cursor-sliced
+      // frame applyFrame just drew — same leak shape as the 2026-07-07 finding.
+      if (!inReplay) {
+        refreshOverlays(
+          lensRef.current,
+          liveGexWalls(),
+          vexWallsRef.current,
+          liveGammaFlip(),
+          vexFlipRef.current,
+          darkPoolRef.current
+        );
+        emitRegime();
+        emitProximity();
+        emitMagnet();
+        emitConfluence();
+        paintConfluenceBand(); // live SSE tick moved the walls — re-fit the band to the new stack
+        emitWallIntegrity();
+        evaluateAlertsNow(); // spot/walls/flip just advanced — check the member's alert rules
+      }
     });
-  }, [sessionYmd, refreshTrails, refreshOverlays, onFreshness, ticker]);
+  }, [sessionYmd, refreshTrails, refreshOverlays, onFreshness, ticker, liveGexWalls, liveGammaFlip, emitRegime, emitProximity, emitMagnet, emitConfluence, paintConfluenceBand, emitWallIntegrity, evaluateAlertsNow, paintOverlays]);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -661,6 +2202,10 @@ export function VectorChart({
 
     const chart = createChart(container, {
       autoSize: true,
+      // Pin the axis locale instead of inheriting navigator.language — a rejected default
+      // tag (e.g. "en-US@posix") throws inside the chart's Intl-based time-axis formatting
+      // and blanks the whole canvas. See vector-chart-config.ts for the full write-up.
+      localization: { locale: VECTOR_CHART_LOCALE },
       layout: {
         background: { type: ColorType.Solid, color: "transparent" },
         textColor: "#9fb4d4",
@@ -674,6 +2219,9 @@ export function VectorChart({
         secondsVisible: true,
         // Subtle live follow when the last bar is visible — do not call scrollToRealTime on every new bar.
         shiftVisibleRangeOnNewBar: true,
+        // Leave whitespace between the last candle and the price axis so the bead bands stop short
+        // of the axis (Skylit-style) instead of running flush into it.
+        rightOffset: VECTOR_RIGHT_OFFSET_BARS,
       },
       rightPriceScale: { borderColor: "rgba(255,255,255,0.12)" },
       crosshair: {
@@ -690,26 +2238,65 @@ export function VectorChart({
       wickDownColor: "#ff2d55",
       priceLineVisible: false,
       lastValueVisible: true,
+      // Widen the auto-fitted candle range to also include the drawn walls within
+      // ±WALL_VIEW_MAX_PCT of spot, so put (support) walls below the candle band
+      // are visible instead of clipped. Pure union — never narrows the candle range.
+      autoscaleInfoProvider: (original: () => AutoscaleInfo | null) => {
+        const res = original();
+        if (!res || !res.priceRange) return res;
+        // Two composed widenings (each only ever WIDENS, never narrows the candle band):
+        // 1) the current live ladder (rangeWallsRef) within the tight ±WALL_VIEW_MAX_PCT window;
+        // 2) the strikes ACTUALLY drawn as beads (beadStrikesRef) within the wider BEAD_VIEW_MAX_PCT.
+        // (2) is what keeps beads from vanishing on zoom: autoscale re-runs on every zoom off the
+        // now-fewer visible candles, and without covering the drawn-bead strikes a bead outside the
+        // ladder range clipped out and reappeared on zoom-back. Covering the drawn set makes the
+        // rail stable at every zoom (Skylit wide-rail look).
+        const ladderRange = extendRangeForWalls(
+          res.priceRange,
+          spotRef.current,
+          rangeWallsRef.current.call,
+          rangeWallsRef.current.put,
+          WALL_VIEW_MAX_PCT
+        );
+        return {
+          ...res,
+          priceRange: extendRangeForWalls(
+            ladderRange,
+            spotRef.current,
+            beadStrikesRef.current.call,
+            beadStrikesRef.current.put,
+            BEAD_VIEW_MAX_PCT,
+            BEAD_VIEW_MAX_PCT
+          ),
+        };
+      },
     }, 0);
 
-    // TradingView-style volume strip — overlay on pane 0 (LWC documented pattern).
+    // Volume in its OWN sub-pane below price (like RSI/MACD), not overlaid on the candles. Pane 1 is
+    // reserved for volume; oscillator panes start at 2 (see paintOscillators). Stretch factors keep
+    // the price pane dominant and volume a thin strip — applyPaneStretch reasserts them whenever the
+    // oscillator panes are (re)built.
     const volumeSeries = chart.addSeries(
       HistogramSeries,
       {
         priceFormat: { type: "volume" },
-        priceScaleId: "",
         lastValueVisible: false,
         priceLineVisible: false,
       },
-      0
+      VOLUME_PANE_INDEX
     );
     volumeSeries.priceScale().applyOptions({
-      scaleMargins: { top: 0.72, bottom: 0 },
+      scaleMargins: { top: 0.1, bottom: 0 },
     });
+    applyPaneStretch(chart);
 
     const initialDisplay = displayBarsFromMinute(initialBars, 1);
     applyDisplayBars(series, volumeSeries, initialDisplay);
+    paintOverlays(initialDisplay);
     displayBarTimeRef.current = initialBars[initialBars.length - 1]?.time ?? 0;
+    // Deliberate refit on FIRST load only — there is no prior viewport to preserve here, so
+    // fitting the seeded bars to the width is the correct default. Background re-seeds route
+    // through applyDisplayBarsPreservingView instead (see BUG 2).
     if (initialBars.length) chart.timeScale().fitContent();
 
     chartRef.current = chart;
@@ -718,6 +2305,15 @@ export function VectorChart({
     setChartReady(true);
     callBeadsRef.current = createSeriesMarkers(series, []);
     putBeadsRef.current = createSeriesMarkers(series, []);
+    structureMarkersRef.current = createSeriesMarkers(series, []);
+    flowMarkersRef.current = createSeriesMarkers(series, []);
+    // GEX positioning heatmap (#14): attach the background surface primitive to the candle series.
+    // It renders at zOrder "bottom" (under the candles + every overlay); its data/visibility are
+    // pushed via setData from paintOverlays + the DTE-scoped fetch, so it stays hidden (draws
+    // nothing) until the member enables the "gex-heatmap" toggle AND a real grid has landed.
+    const gexHeatmap = new GexHeatmapPrimitive();
+    series.attachPrimitive(gexHeatmap);
+    gexHeatmapPrimitiveRef.current = gexHeatmap;
 
     refreshTrails("gex");
     refreshOverlays("gex", initialWalls, initialVexWalls, initialGammaFlip, initialVexFlip, initialDarkPoolLevels);
@@ -756,7 +2352,16 @@ export function VectorChart({
         ),
         callWalls: walls?.callWalls ?? [],
         putWalls: walls?.putWalls ?? [],
-        darkPoolLevels: darkPoolRef.current,
+        // No DP history exists — only today's live ladder. Walls/flip above resolve
+        // to their value AT the hovered time; showing live DP under a historical
+        // hover timestamp would mislabel it. Show DP only when hovering the present
+        // (at/after the latest recorded sample, or before any history exists).
+        darkPoolLevels:
+          hoverEpochSec == null ||
+          history.length === 0 ||
+          hoverEpochSec >= (history[history.length - 1]?.time ?? 0)
+            ? darkPoolRef.current
+            : [],
       });
     });
 
@@ -772,8 +2377,39 @@ export function VectorChart({
       putGuideRefs.current = emptyGuideRefs();
       dpGuideRefs.current = [];
       flipGuideRef.current = null;
+      // chart.remove() disposes the series (and its price lines) — just drop the stale refs so a
+      // remount (ticker switch) starts clean instead of calling removePriceLine on a dead series.
+      kingCallLineRef.current = null;
+      kingPutLineRef.current = null;
+      maxPainLineRef.current = null;
+      maxPainValueRef.current = null;
+      // chart.remove() disposed the band's price lines; drop refs + sig so a remount redraws cleanly.
+      emBandLinesRef.current = [];
+      expectedMoveBandsRef.current = null;
+      emBandSigRef.current = "";
+      // chart.remove() disposes the overlay line series too — swap in a fresh map so a remount
+      // rebuilds instead of touching the now-disposed series (matches the sibling ref resets).
+      overlaySeriesRef.current = new Map();
+      // chart.remove() disposes the oscillator pane series too — swap in a fresh map + clear the
+      // layout key so a remount rebuilds the panes from scratch.
+      oscillatorSeriesRef.current = new Map();
+      lastOscKeyRef.current = "";
+      levelLinesRef.current = new Map();
+      confluenceBandRef.current = new Map();
+      priorDayRef.current = null;
+      priorDayTickerRef.current = null;
       callBeadsRef.current = null;
       putBeadsRef.current = null;
+      structureMarkersRef.current = null;
+      // chart.remove() disposed the flow markers instance too — drop the ref + prints so a remount
+      // (ticker switch) starts clean and doesn't touch a dead series.
+      flowMarkersRef.current = null;
+      flowPrintsRef.current = [];
+      lastFlowTruncatedRef.current = -1;
+      // chart.remove() disposes the series and its attached primitives; drop the refs + last grid so
+      // a remount (ticker switch) re-attaches a fresh primitive instead of touching a dead one.
+      gexHeatmapPrimitiveRef.current = null;
+      gexHeatmapGridRef.current = null;
       volumeSeriesRef.current = null;
       setChartReady(false);
     };
@@ -810,8 +2446,20 @@ export function VectorChart({
         if (!merged.some((b) => b.volume != null && b.volume > 0)) return;
         minuteBarsRef.current = merged;
         setSessionBars(merged);
+        // REPLAY GUARD: this poll fires every 60s regardless of mode. Painting here
+        // with no cursorTime slice repaints the FULL live bar array — during replay
+        // that silently leaks every bar through "now" onto a chart whose clock label
+        // still reads the cursor time (the exact 2026-07-07 leak, re-entering through
+        // this effect). Merge into refs/state above is safe and wanted (post-replay
+        // display picks it up); the paint must be live-mode only.
+        if (replayModeRef.current) return;
         const display = displayBarsFromMinute(merged, timeframeRef.current);
-        applyDisplayBars(seriesRef.current!, volumeSeriesRef.current, display);
+        // BUG 2: this is a purely BACKGROUND re-seed (fires every 60s). Preserve the member's
+        // zoom/pan across it — a plain applyDisplayBars/fitContent here is what made the zoom
+        // "flash and reset" once a minute. The helper restores the prior viewport, or follows
+        // live if the chart was at the edge.
+        applyDisplayBarsPreservingView(chartRef.current, seriesRef.current!, volumeSeriesRef.current, display);
+        paintOverlays(display);
       } catch {
         /* best-effort */
       }
@@ -822,7 +2470,7 @@ export function VectorChart({
       cancelled = true;
       clearInterval(interval);
     };
-  }, [chartReady, sessionYmd, ticker]);
+  }, [chartReady, sessionYmd, ticker, paintOverlays]);
 
   useEffect(() => {
     if (!replayMode || !playing || timelineRef.current.length === 0) {
@@ -830,21 +2478,22 @@ export function VectorChart({
       return;
     }
     replayTimerRef.current = setInterval(() => {
-      setCursorIndex((idx) => {
-        const next = idx + 1;
-        if (next >= timelineRef.current.length) {
-          if (replayLoop) {
-            const t0 = timelineRef.current[0]!;
-            applyFrame(t0, minuteBarsRef.current, wallHistoryRef.current, lensRef.current);
-            return 0;
-          }
-          setPlaying(false);
-          return idx;
+      const next = cursorIndexRef.current + 1;
+      if (next >= timelineRef.current.length) {
+        if (replayLoop) {
+          const t0 = timelineRef.current[0]!;
+          applyFrame(t0, minuteBarsRef.current, wallHistoryRef.current, lensRef.current);
+          cursorIndexRef.current = 0;
+          setCursorIndex(0);
+          return;
         }
-        const t = timelineRef.current[next]!;
-        applyFrame(t, minuteBarsRef.current, wallHistoryRef.current, lensRef.current);
-        return next;
-      });
+        setPlaying(false);
+        return;
+      }
+      const t = timelineRef.current[next]!;
+      applyFrame(t, minuteBarsRef.current, wallHistoryRef.current, lensRef.current);
+      cursorIndexRef.current = next;
+      setCursorIndex(next);
     }, REPLAY_STEP_MS / Math.max(0.25, replaySpeed));
 
     return stopReplayTimer;
@@ -854,11 +2503,16 @@ export function VectorChart({
   const canReplay = replayTimeline.length > 1;
 
   const enterReplay = () => {
-    connRef.current?.close();
-    connRef.current = null;
+    // The SSE connection stays OPEN during replay — the handler keeps accumulating
+    // bars/history/events into refs (so nothing is lost while browsing) and gates
+    // every paint on replayModeRef. Set the ref synchronously: an SSE message can
+    // arrive between this render being scheduled and the sync effect running, and
+    // an un-gated paint here would overwrite the frame drawn below.
+    replayModeRef.current = true;
     timelineRef.current = replayTimeline;
     setReplayMode(true);
     setPlaying(false);
+    cursorIndexRef.current = 0;
     setCursorIndex(0);
     if (replayTimeline.length > 0) {
       applyFrame(replayTimeline[0]!, minuteBarsRef.current, wallHistoryRef.current, lens);
@@ -867,6 +2521,7 @@ export function VectorChart({
 
   const exitReplay = () => {
     stopReplayTimer();
+    replayModeRef.current = false;
     setReplayMode(false);
     setPlaying(false);
     const bars = minuteBarsRef.current;
@@ -874,6 +2529,7 @@ export function VectorChart({
     displayBarTimeRef.current = display[display.length - 1]?.time ?? 0;
     if (seriesRef.current) {
       applyDisplayBars(seriesRef.current, volumeSeriesRef.current, display);
+      paintOverlays(display);
     }
     const history = wallHistoryRef.current;
     refreshTrails(lens);
@@ -886,8 +2542,12 @@ export function VectorChart({
       flipAtReplayTime(history, tail, "vex") ?? initialVexFlip,
       darkPoolRef.current
     );
+    // User-initiated transition (member clicked out of replay back to live): a refit to the
+    // full live range is the expected reset here, not a background update — so fitContent is
+    // correct and intentionally NOT routed through the viewport-preserving path.
     chartRef.current?.timeScale().fitContent();
-    connectLive();
+    // Connection was kept open through replay; only reconnect if it actually dropped.
+    if (!connRef.current) connectLive();
   };
 
   const toggleReplay = () => {
@@ -898,6 +2558,7 @@ export function VectorChart({
   const scrubTo = (index: number) => {
     setPlaying(false);
     const clamped = clampTimelineIndex(timelineRef.current, index);
+    cursorIndexRef.current = clamped;
     setCursorIndex(clamped);
     const t = timelineRef.current[clamped];
     if (t != null) applyFrame(t, minuteBarsRef.current, wallHistoryRef.current, lens);
@@ -905,12 +2566,11 @@ export function VectorChart({
 
   const stepReplay = (delta: number) => {
     setPlaying(false);
-    setCursorIndex((idx) => {
-      const clamped = clampTimelineIndex(timelineRef.current, idx + delta);
-      const t = timelineRef.current[clamped];
-      if (t != null) applyFrame(t, minuteBarsRef.current, wallHistoryRef.current, lensRef.current);
-      return clamped;
-    });
+    const clamped = clampTimelineIndex(timelineRef.current, cursorIndexRef.current + delta);
+    const t = timelineRef.current[clamped];
+    if (t != null) applyFrame(t, minuteBarsRef.current, wallHistoryRef.current, lensRef.current);
+    cursorIndexRef.current = clamped;
+    setCursorIndex(clamped);
   };
 
   const jumpReplayOpen = () => {
@@ -955,18 +2615,31 @@ export function VectorChart({
   const cursorTime = timelineRef.current[cursorIndex] ?? 0;
   const clockLabel = cursorTime ? formatReplayClock(cursorTime) : "—";
 
+  // Honesty label: any modeled (reconstructed) bead currently in the trail means the member is
+  // looking at a mix of modeled + recorded structure — say so explicitly. As live observed
+  // samples overwrite the modeled buckets (mergeWallHistory in the SSE handler drops the modeled
+  // flag), a fully-observed trail flips this false and the caption disappears on its own.
+  const hasModeledBeads = sessionHistory.some((s) => s.modeled === true);
+
   useEffect(() => {
-    if (replayMode) return;
+    if (replayMode) {
+      // Lens buttons stay enabled in replay; without a repaint the toolbar/legend
+      // switch to the new lens while the drawn walls/beads/flip stay on the OLD
+      // lens until the next scrub. Redraw the current frame under the new lens.
+      const t = timelineRef.current[cursorIndexRef.current];
+      if (t != null) applyFrame(t, minuteBarsRef.current, wallHistoryRef.current, lens);
+      return;
+    }
     refreshTrails(lens);
     refreshOverlays(
       lens,
-      gexWallsRef.current,
+      liveGexWalls(),
       vexWallsRef.current,
-      gammaFlipRef.current,
+      liveGammaFlip(),
       vexFlipRef.current,
       darkPoolRef.current
     );
-  }, [lens, replayMode, refreshTrails, refreshOverlays]);
+  }, [lens, replayMode, refreshTrails, refreshOverlays, applyFrame, liveGexWalls, liveGammaFlip]);
 
   useEffect(() => {
     const series = seriesRef.current;
@@ -984,8 +2657,48 @@ export function VectorChart({
     } else {
       const display = displayBarsFromMinute(minuteBarsRef.current, timeframe);
       displayBarTimeRef.current = display[display.length - 1]?.time ?? 0;
+      // This effect re-runs not only on a real timeframe switch but whenever one of its
+      // callback deps (refreshTrails/refreshOverlays/applyFrame/liveGexWalls/liveGammaFlip) or
+      // liveSession changes identity. Those re-runs must NOT wipe the member's zoom/pan — that
+      // was the reported "zoom flashes and resets to the default view" bug. So we only fitContent
+      // on a GENUINE timeframe change; otherwise we snapshot the visible logical range and
+      // restore it across the setData (unless the chart is following the live edge, where
+      // maybeScrollToLive below keeps the existing follow behavior instead).
+      const timeframeChanged = timeframe !== lastFittedTimeframeRef.current;
+      const timeScale = chart?.timeScale() ?? null;
+      const following = chart ? chartIsFollowingLive(chart) : false;
+      const prevRange =
+        timeScale && !timeframeChanged && !following ? timeScale.getVisibleLogicalRange() : null;
       applyDisplayBars(series, volumeSeriesRef.current, display);
+      paintOverlays(display);
+      if (timeframeChanged) {
+        // Re-fit the time scale to the new bar COUNT. A higher timeframe has far fewer bars (a 6.5h
+        // session ≈ 390 1m bars but only ~26 at 15m), and lightweight-charts keeps the previous
+        // per-bar pixel spacing — so without a refit those few bars stay crammed into the right edge
+        // with a huge empty gap on the left, and the price-following overlays (VWAP/EMA/SMA) get
+        // squished into that sliver and look absent. fitContent recomputes the spacing so the bars —
+        // and their overlays — fill the chart width at every timeframe. This is the deliberate,
+        // user-expected refit; the create effect's fitContent is the only other one (first load).
+        chart?.timeScale().fitContent();
+        lastFittedTimeframeRef.current = timeframe;
+      } else if (prevRange && timeScale) {
+        // Background re-run: pin the exact viewport the member had so zoom/pan survives.
+        timeScale.setVisibleLogicalRange(prevRange);
+      }
       refreshTrails(lensRef.current);
+      // Repaint the wall GUIDES too: the shown-count (wallCountForTimeframe) changes with the
+      // timeframe, so a pure timeframe switch (no lens/tick change) must redraw the call/put
+      // price lines — growing the count on an upshift, and clearing the now-extra lines on a
+      // downshift. refreshTrails above already rescaled the beads; without this the guides
+      // would stay frozen at the previous timeframe's count until the next SSE tick.
+      refreshOverlays(
+        lensRef.current,
+        liveGexWalls(),
+        vexWallsRef.current,
+        liveGammaFlip(),
+        vexFlipRef.current,
+        darkPoolRef.current
+      );
       if (liveSession) {
         maybeScrollToLive(chart);
       }
@@ -996,7 +2709,7 @@ export function VectorChart({
     // too would just double the work; it only needs the CURRENT cursorTime on the renders
     // where timeframe/replayMode/liveSession actually change.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [timeframe, replayMode, liveSession, refreshTrails, applyFrame]);
+  }, [timeframe, replayMode, liveSession, refreshTrails, refreshOverlays, applyFrame, liveGexWalls, liveGammaFlip]);
 
   const handleLens = (next: VectorWallLens) => {
     if (next === "vex" && !vexAvailable) return;
@@ -1018,6 +2731,9 @@ export function VectorChart({
         lens={lens}
         vexAvailable={vexAvailable}
         onLens={handleLens}
+        dteHorizon={dteHorizon}
+        onDteHorizon={(h) => setDteHorizon(normalizeDteHorizon(h))}
+        dteAvailable={dteAvailable}
         gexAsOf={gexAsOf}
         vexAsOf={vexAsOf}
         liveSession={liveSession && !replayMode}
@@ -1037,19 +2753,34 @@ export function VectorChart({
         onJumpOpen={jumpReplayOpen}
         onJumpClose={jumpReplayClose}
         onToggleLoop={() => setReplayLoop((v) => !v)}
+        indicators={indicators}
+        onToggleIndicator={toggleIndicator}
+        onClearIndicators={clearIndicators}
+        barCount={displayBarCount}
+        leadSlot={leadSlot}
+        trailSlot={trailSlot}
       />
 
-      <VectorWallEventTicker events={wallEvents} lens={lens} />
+      {/* Regime banner sits directly above the canvas (passed in from the shell) so it still leads
+          the chart, without a tall page-level header block eating chart height. */}
+      {regimeSlot ? <div className="mb-2">{regimeSlot}</div> : null}
 
       <div className="relative">
-        <VectorCrosshairLegend state={crosshair} />
+        <VectorCrosshairLegend state={crosshair} ticker={ticker} />
         <p className="pointer-events-none absolute bottom-2 left-2 z-10 font-mono text-[10px] uppercase tracking-wide text-sky-300">
           SPY vol
         </p>
+        {/* Honesty label — visible whenever any modeled (reconstructed) bead is on screen, absent
+            once the trail is fully observed. Matches the SPY-vol caption's font-mono/opacity style. */}
+        {hasModeledBeads && (
+          <p className="pointer-events-none absolute bottom-2 right-2 z-10 font-mono text-[10px] uppercase tracking-wide text-sky-300/70">
+            ◇ dim = modeled · ● solid = recorded
+          </p>
+        )}
         <div
           ref={containerRef}
           className="vector-chart-canvas"
-          style={{ height: "calc(100vh - 200px)", minHeight: 480 }}
+          style={{ height: "calc(100vh - 132px)", minHeight: 520 }}
           aria-busy={liveSession && !replayMode}
         />
       </div>

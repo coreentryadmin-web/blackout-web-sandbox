@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { UserButton } from "@clerk/nextjs";
+import { AuthUserMenu } from "@/components/auth/AuthUserMenu";
 import { AnimatePresence, motion } from "framer-motion";
 import { getIosHeaderMeta } from "@/lib/ios-tool-routes";
 import { ProductMark } from "@/components/marks/ProductMark";
@@ -110,7 +110,7 @@ export function IosNativeHeader({ path, onMenuOpen }: Props) {
               </span>
             </button>
           ) : (
-            <UserButton appearance={CLERK_APPEARANCE} userProfileUrl="/account" />
+            <AuthUserMenu />
           )}
         </div>
       </div>

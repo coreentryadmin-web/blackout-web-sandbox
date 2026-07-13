@@ -11,7 +11,8 @@ import { execSync } from "node:child_process";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { chromium } from "playwright";
-import { mintIosPlaywrightSession, onboardingInitScript } from "./audit/lib/ios-playwright-auth.mjs";
+import { mintAppSession } from "./audit/lib/app-session.mjs";
+import { onboardingInitScript } from "./audit/lib/ios-playwright-auth.mjs";
 
 const BASE = (process.env.STAGING_BASE_URL ?? "https://staging.blackouttrades.com").replace(/\/$/, "");
 const SECRET_NAME = process.env.STAGING_SECRET_NAME ?? "blackout-staging/app/env";
@@ -27,6 +28,25 @@ const rec = (name, status, detail = "") => {
   console.log(`  ${icon} [${status}] ${name}${detail ? ` — ${detail}` : ""}`);
 };
 
+function playwrightCookiesFromHeader(header, domain) {
+  return header
+    .split(";")
+    .map((p) => p.trim())
+    .filter(Boolean)
+    .map((pair) => {
+      const eq = pair.indexOf("=");
+      return {
+        name: pair.slice(0, eq),
+        value: pair.slice(eq + 1),
+        domain,
+        path: "/",
+        secure: true,
+        sameSite: "Lax",
+        httpOnly: pair.startsWith("bo_cognito"),
+      };
+    });
+}
+
 function loadSecret() {
   const raw = execSync(
     `aws secretsmanager get-secret-value --secret-id "${SECRET_NAME}" --query SecretString --output text`,
@@ -38,7 +58,7 @@ function loadSecret() {
 const PUBLIC_PAGES = [
   { path: "/", mustMatch: /One engine|See the structure/i, label: "landing" },
   { path: "/sign-in", mustMatch: /sign in|Sign in/i, label: "sign-in" },
-  { path: "/sign-up", mustMatch: /sign up|Sign up|Create/i, label: "sign-up" },
+  { path: "/sign-up", mustMatch: /sign up|Sign up|Create|Signin|username/i, label: "sign-up" },
   { path: "/faq", mustMatch: /faq|question/i, label: "faq" },
   { path: "/learn", mustMatch: /learn|SPX|HELIX/i, label: "learn" },
   { path: "/learn/getting-started", mustMatch: /getting started|SPX/i, label: "learn-getting-started" },
@@ -289,6 +309,10 @@ async function main() {
   const secret = loadSecret();
   process.env.CLERK_SECRET_KEY = secret.CLERK_SECRET_KEY;
   process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY = secret.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY;
+  if (secret.AUTH_PROVIDER === "cognito") {
+    process.env.COGNITO_AUDIT_PASSWORD =
+      process.env.COGNITO_AUDIT_PASSWORD ?? secret.COGNITO_AUDIT_PASSWORD;
+  }
 
   const browser = await chromium.launch({ headless: true, args: ["--no-sandbox"] });
 
@@ -307,14 +331,15 @@ async function main() {
   await pubCtx.close();
 
   // --- Authed surfaces ---
-  console.log("\n--- Authed pages (Clerk admin/premium) ---");
-  const session = await mintIosPlaywrightSession({ appUrl: BASE });
+  const authProvider = secret.AUTH_PROVIDER ?? "clerk";
+  console.log(`\n--- Authed pages (${authProvider} admin/premium) ---`);
+  const session = await mintAppSession({ appUrl: BASE });
   if (session.skip) {
-    rec("auth:clerk", "FAIL", session.reason);
+    rec(`auth:${authProvider}`, "FAIL", session.reason);
     await browser.close();
     process.exit(1);
   }
-  rec("auth:clerk", "PASS", "session minted");
+  rec(`auth:${session.provider ?? authProvider}`, "PASS", "session minted");
 
   const authCtx = await browser.newContext({
     viewport: { width: 1440, height: 900 },
@@ -322,33 +347,25 @@ async function main() {
       "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36",
   });
   await authCtx.addInitScript(onboardingInitScript());
-  if (session.cookies?.length) await authCtx.addCookies(session.cookies);
-  const page = await authCtx.newPage();
-
-  if (session.satellite) {
-    try {
-      await page.goto(`${BASE}/dashboard`, { waitUntil: "domcontentloaded", timeout: 90_000 });
-      await page.waitForURL(/staging\.blackouttrades\.com\/dashboard/, { timeout: 30_000 }).catch(() => null);
-      rec("auth:satellite-sync", /dashboard/.test(page.url()) ? "PASS" : "WARN", page.url());
-    } catch (e) {
-      rec("auth:satellite-sync", "FAIL", e.message);
-    }
+  const cookieDomain = new URL(BASE).hostname;
+  if (session.cookies?.length) {
+    await authCtx.addCookies(session.cookies);
+  } else if (session.cookieHeader) {
+    await authCtx.addCookies(playwrightCookiesFromHeader(session.cookieHeader, cookieDomain));
   }
+  const page = await authCtx.newPage();
 
   try {
     await page.goto(`${BASE}/dashboard`, { waitUntil: "domcontentloaded", timeout: 90_000 });
-    await page.waitForFunction(() => window.Clerk?.status === "ready", { timeout: 45_000 });
-    const authed = await page.waitForFunction(
-      () => Boolean(window.Clerk?.user?.id) || document.querySelector(".cl-userButtonTrigger, [class*='userButton']"),
-      { timeout: 45_000 }
-    ).then(() => true).catch(() => false);
-    if (authed) rec("auth:browser", "PASS", "Clerk session active or UserButton visible");
-    else {
-      const onSignIn = /sign-in/.test(page.url());
-      const deskText = await page.locator("body").innerText().catch(() => "");
-      const serverAuthed = /SPX|Slayer|gamma|matrix/i.test(deskText);
-      if (serverAuthed) rec("auth:browser", "WARN", "Clerk.user pending — server session OK");
-      else rec("auth:browser", onSignIn ? "FAIL" : "WARN", "Clerk.user not hydrated");
+    await page.waitForTimeout(2500);
+    const url = page.url();
+    const deskText = await page.locator("body").innerText().catch(() => "");
+    if (/sign-in|amazoncognito/.test(url)) {
+      rec("auth:browser", "FAIL", `redirected to ${url.slice(0, 100)}`);
+    } else if (/SPX|Slayer|gamma|matrix/i.test(deskText)) {
+      rec("auth:browser", "PASS", "dashboard content rendered");
+    } else {
+      rec("auth:browser", "WARN", `title=${await page.title()}`);
     }
   } catch (e) {
     rec("auth:browser", "FAIL", e.message);

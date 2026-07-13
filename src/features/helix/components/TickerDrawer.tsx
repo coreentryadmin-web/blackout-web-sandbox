@@ -4,15 +4,12 @@ import { useEffect, useState, useCallback, useRef } from "react";
 import { motion } from "framer-motion";
 import { clsx } from "clsx";
 import { Drawer, Skeleton, EmptyState } from "@/components/ui";
+import { relativeAge } from "@/lib/relative-time";
 import { fetchFlows, fetchDarkPoolPrints, fmtPremium, type FlowAlert, type DarkPoolRow } from "@/lib/api";
 
-function timeAgo(iso: string): string {
-  const diff = Date.now() - new Date(iso).getTime();
-  const s = Math.floor(diff / 1000);
-  if (s < 60) return `${s}s ago`;
-  const m = Math.floor(s / 60);
-  if (m < 60) return `${m}m ago`;
-  return `${Math.floor(m / 60)}h ago`;
+// Guarded via the shared relativeAge: a null/unparseable alerted_at previously rendered "NaNh ago".
+function timeAgo(iso: string | null | undefined): string {
+  return relativeAge(iso, { suffix: true });
 }
 
 function fmtExpiry(expiry: string): string {

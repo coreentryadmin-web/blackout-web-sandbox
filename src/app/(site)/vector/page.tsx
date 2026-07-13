@@ -4,23 +4,9 @@ import { canAccessTool } from "@/lib/tool-access-server";
 import { ComingSoon } from "@/components/ComingSoon";
 import {
   VectorPageShell,
-  fetchVectorSeedBars,
-  getVectorDarkPoolLevels,
-  getVectorGammaFlip,
-  getVectorGexWalls,
-  getVectorVexFlip,
-  getVectorVexWalls,
-  getVectorWallHistory,
-  loadSessionWallHistory,
-  mergeWallHistory,
+  loadVectorSeedProps,
   normalizeVectorTicker,
-  primeVectorWallScope,
-  seedWallHistoryForDisplay,
-  type WallHistorySample,
 } from "@/features/vector";
-import { isEtCashRth } from "@/lib/et-market-hours";
-import { todayEt } from "@/features/nighthawk/lib/session";
-import { ensureDataSockets } from "@/lib/ws/init-data-sockets";
 
 export const metadata: Metadata = {
   title: "Vector · BlackOut",
@@ -38,43 +24,11 @@ export default async function VectorPage({ searchParams }: PageProps) {
   const { ticker: rawTicker } = await searchParams;
   const ticker = normalizeVectorTicker(rawTicker);
 
-  ensureDataSockets();
-  await primeVectorWallScope(ticker);
-  const [{ bars, sessionYmd }, walls, vexWalls, gammaFlip, vexFlip, darkPoolLevels] =
-    await Promise.all([
-      fetchVectorSeedBars(ticker),
-      Promise.resolve(getVectorGexWalls(ticker)),
-      Promise.resolve(getVectorVexWalls(ticker)),
-      getVectorGammaFlip(ticker),
-      Promise.resolve(getVectorVexFlip(ticker)),
-      getVectorDarkPoolLevels(ticker),
-    ]);
-  const persistedHistory = await loadSessionWallHistory(sessionYmd, ticker).catch(
-    () => [] as WallHistorySample[]
-  );
-  const today = todayEt();
-  const liveSession = sessionYmd === today && isEtCashRth();
-  const initialWallHistory = seedWallHistoryForDisplay(
-    mergeWallHistory(getVectorWallHistory(ticker), persistedHistory),
-    bars.map((b) => b.time),
-    walls,
-    gammaFlip,
-    vexWalls,
-    vexFlip
-  );
+  // Shared seed loader (2026-07-13, member-directed desk consolidation): the SPX Slayer dashboard
+  // embeds this same Vector surface, so ALL seed logic (bars, wall scope, observed-rail merge,
+  // modeled-prefix backfill, empty-case seeding) lives in loadVectorSeedProps — one code path for
+  // both routes, zero drift.
+  const seed = await loadVectorSeedProps(ticker);
 
-  return (
-    <VectorPageShell
-      ticker={ticker}
-      initialBars={bars}
-      initialWalls={walls}
-      initialVexWalls={vexWalls}
-      initialWallHistory={initialWallHistory}
-      initialGammaFlip={gammaFlip}
-      initialVexFlip={vexFlip}
-      initialDarkPoolLevels={darkPoolLevels}
-      sessionYmd={sessionYmd}
-      liveSession={liveSession}
-    />
-  );
+  return <VectorPageShell {...seed} />;
 }

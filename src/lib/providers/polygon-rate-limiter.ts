@@ -33,10 +33,17 @@ export { computeDegradedLocalRps } from "./provider-rate-limiter-shared";
 
 const envNumber = rateLimiterEnvNumber;
 
-/** Per-process pacing — PERMISSIVE. Default 40 rps; Polygon Advanced is high-throughput. */
-const MAX_RPS = envNumber("POLYGON_MAX_RPS", 40);
-/** Cluster-wide ceiling when REDIS_URL is set — shared by worker + web app. */
-const GLOBAL_MAX_RPS = envNumber("POLYGON_GLOBAL_MAX_RPS", 40);
+/**
+ * Per-process pacing — PERMISSIVE. Default 150 rps; Polygon/Massive Advanced is effectively
+ * unlimited (no published RPS cap), so the self-cap exists only to bound a runaway loop, not to
+ * respect a provider quota. Raised 40 → 150 to let the parallelizable heavy paths (GEX-heatmap
+ * chain pagination, intraday reconstruction's 40+ page chain pull) drain faster — "all the data,
+ * quickly rendered at the earliest." The consecutive-429 circuit breaker below still trips and
+ * cluster-broadcasts if the provider ever does push back, so a higher ceiling can't run away.
+ */
+const MAX_RPS = envNumber("POLYGON_MAX_RPS", 150);
+/** Cluster-wide ceiling when REDIS_URL is set — shared by worker + web app. Matches MAX_RPS. */
+const GLOBAL_MAX_RPS = envNumber("POLYGON_GLOBAL_MAX_RPS", 150);
 /** Live replica count of this service — divides the global budget across replicas on Redis loss. */
 const REPLICA_COUNT = Math.max(1, Math.floor(envNumber("REPLICA_COUNT", 1)));
 
@@ -50,7 +57,7 @@ const REPLICA_COUNT = Math.max(1, Math.floor(envNumber("REPLICA_COUNT", 1)));
  * starvation; for realistic N the cluster cap stays exact.
  */
 const DEGRADED_LOCAL_RPS = computeDegradedLocalRps(GLOBAL_MAX_RPS, REPLICA_COUNT);
-const MAX_CONCURRENCY = Math.max(1, Math.floor(envNumber("POLYGON_MAX_CONCURRENCY", 24)));
+const MAX_CONCURRENCY = Math.max(1, Math.floor(envNumber("POLYGON_MAX_CONCURRENCY", 48)));
 /** Default 0 — no inter-call spacing on the permissive Polygon path. */
 const MIN_SPACING_MS = Math.max(0, Math.floor(envNumber("POLYGON_MIN_SPACING_MS", 0)));
 /** Absorbs the old reactive breaker: 5 CONSECUTIVE 429s → pause. */

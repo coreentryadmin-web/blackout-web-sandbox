@@ -13,6 +13,8 @@ import { appendFileSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { chromium } from "playwright";
 import { fetchRetry } from "./audit/lib/fetch-retry.mjs";
+import { mintAppSession } from "./audit/lib/app-session.mjs";
+import { mintClerkPremiumSession } from "./audit/lib/prod-clerk-session.mjs";
 import { etParts } from "./gha-et-window.mjs";
 
 const STAGING = (process.env.STAGING_BASE_URL ?? "https://staging.blackouttrades.com").replace(/\/$/, "");
@@ -111,6 +113,14 @@ async function probeApi(base, cron, path) {
   }
 }
 
+function cookieHeaderToPlaywright(cookieHeader, domain) {
+  if (!cookieHeader) return [];
+  return cookieHeader.split("; ").map((c) => {
+    const [name, ...rest] = c.split("=");
+    return { name, value: rest.join("="), domain, path: "/" };
+  });
+}
+
 async function probePage(base, { path, label, public: isPublic, ready }, cookies) {
   const browser = await chromium.launch({ headless: true, args: ["--no-sandbox"] });
   const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
@@ -177,16 +187,21 @@ async function runCycle(secrets) {
     if (grade !== "PASS") issues.push({ path, grade, stagingMs: s.ms, prodMs: p.ms });
   }
 
-  // Browser pages — landing public; desk needs auth cookies from staging-live pattern
+  // Browser pages — landing public; desk needs auth cookies per environment
   process.env.CLERK_SECRET_KEY = secrets.clerkSecret;
   process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY = secrets.clerkPub;
-  const { mintIosPlaywrightSession } = await import("./audit/lib/ios-playwright-auth.mjs");
-  const session = await mintIosPlaywrightSession({ appUrl: STAGING });
-  const cookies = session.skip ? [] : session.cookies;
+  const stagingSession = await mintAppSession({ appUrl: STAGING });
+  const prodSession = await mintClerkPremiumSession({ appUrl: PROD });
+  const stagingCookies = stagingSession.skip
+    ? []
+    : cookieHeaderToPlaywright(stagingSession.cookieHeader, "staging.blackouttrades.com");
+  const prodCookies = prodSession.skip
+    ? []
+    : cookieHeaderToPlaywright(prodSession.cookieHeader, "blackouttrades.com");
 
   for (const spec of PAGE_PATHS) {
-    const s = await probePage(STAGING, spec, spec.public ? null : cookies);
-    const p = await probePage(PROD, spec, spec.public ? null : cookies);
+    const s = await probePage(STAGING, spec, spec.public ? null : stagingCookies);
+    const p = await probePage(PROD, spec, spec.public ? null : prodCookies);
     const delta = s.ms - (p.ms || 0);
     const grade = !s.ok ? "FAIL" : gradeStaging(s.ms, p.ms, PAGE_SLACK_MS, PAGE_FAIL_MS);
     rows.push({
@@ -206,7 +221,8 @@ async function runCycle(secrets) {
     if (grade !== "PASS") issues.push({ path: spec.path, grade, stagingMs: s.ms, prodMs: p.ms });
   }
 
-  if (!session.skip) await session.cleanup?.().catch(() => null);
+  if (!stagingSession.skip) await stagingSession.cleanup?.().catch(() => null);
+  if (!prodSession.skip) await prodSession.cleanup?.().catch(() => null);
 
   const fails = issues.filter((i) => i.grade === "FAIL");
   const warns = issues.filter((i) => i.grade === "WARN");

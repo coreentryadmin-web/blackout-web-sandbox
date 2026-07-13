@@ -18,8 +18,18 @@ const KIND_LABEL: Record<VectorWallEventKind, string> = {
   spot_crossed_flip: "CROSS",
   spot_broke_call: "BREAK",
   spot_broke_put: "BREAK",
+  call_wall_building: "BUILD",
+  put_wall_building: "BUILD",
+  call_wall_fading: "FADE",
+  put_wall_fading: "FADE",
+  call_wall_new: "NEW",
+  put_wall_new: "NEW",
+  call_wall_gone: "GONE",
+  put_wall_gone: "GONE",
 };
 
+const BUILD_TONE = "border-emerald-400/40 text-emerald-300";
+const FADE_TONE = "border-amber-400/40 text-amber-300";
 const KIND_TONE: Record<VectorWallEventKind, string> = {
   call_wall_shift: "border-cyan-400/40 text-cyan-400",
   put_wall_shift: "border-cyan-400/40 text-cyan-400",
@@ -27,6 +37,14 @@ const KIND_TONE: Record<VectorWallEventKind, string> = {
   spot_crossed_flip: "border-[#ffd60a]/40 text-[#ffd60a]",
   spot_broke_call: "border-rose-400/40 text-rose-300",
   spot_broke_put: "border-rose-400/40 text-rose-300",
+  call_wall_building: BUILD_TONE,
+  put_wall_building: BUILD_TONE,
+  call_wall_fading: FADE_TONE,
+  put_wall_fading: FADE_TONE,
+  call_wall_new: "border-cyan-400/40 text-cyan-300",
+  put_wall_new: "border-cyan-400/40 text-cyan-300",
+  call_wall_gone: FADE_TONE,
+  put_wall_gone: FADE_TONE,
 };
 
 /** Collapsible wall-structure feed — collapsed by default to preserve chart height. */

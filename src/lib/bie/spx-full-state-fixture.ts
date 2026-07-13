@@ -52,10 +52,10 @@ export const SPX_FULL_STATE_FIXTURE: SpxPlayPayload = {
   claude: {
     verdict: "APPROVE_BUY",
     direction: "long",
-    headline: "Claude confirms cold buy long",
+    headline: "BIE confirms cold buy long",
     thesis: "Grounded in live confluence factors",
     approved: true,
-    source: "claude",
+    source: "bie",
   },
   open_play: {
     id: 1,
