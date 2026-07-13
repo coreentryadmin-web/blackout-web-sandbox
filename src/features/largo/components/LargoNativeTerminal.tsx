@@ -2,6 +2,7 @@
 
 import { clsx } from "clsx";
 import { LargoMessageBody } from "@/features/largo/components/LargoMessageBody";
+import { LargoAnswerMessage } from "@/features/largo/components/LargoAnswerMessage";
 import { LargoThinkingState } from "@/features/largo/components/LargoThinkingState";
 import { resetIosViewport } from "@/hooks/useIosKeyboardInset";
 import { LARGO_SUGGESTIONS, largoToolLabel, useLargoChat } from "@/hooks/useLargoChat";
@@ -42,7 +43,7 @@ export function LargoNativeTerminal() {
         </div>
       )}
       <div className="largo-native-messages" role="log" aria-live="polite" aria-atomic="false">
-        {messages.map((msg) => (
+        {messages.map((msg, idx) => (
           <div
             key={msg.id}
             className={clsx(
@@ -53,7 +54,18 @@ export function LargoNativeTerminal() {
           >
             <p className="largo-native-bubble-label">{msg.role === "user" ? "You" : "Largo"}</p>
             {msg.role === "assistant" ? (
-              <LargoMessageBody content={msg.content} className="largo-native-body" />
+              msg.id === "welcome" ? (
+                <LargoMessageBody content={msg.content} className="largo-native-body" />
+              ) : (
+                <LargoAnswerMessage
+                  content={msg.content}
+                  streaming={
+                    loading && idx === messages.length - 1 && msg.role === "assistant"
+                  }
+                  className="largo-native-body"
+                  onFollowup={(q) => void runQuery(q)}
+                />
+              )
             ) : (
               <p className="largo-native-body whitespace-pre-wrap">{msg.content}</p>
             )}
