@@ -28,3 +28,6 @@ apps/blackout-ios/ios/
 
 # Claude Code transient git worktrees (never commit these)
 .claude/worktrees/
+
+# Root-level transient git worktrees created by background agents (never commit)
+.worktrees/
