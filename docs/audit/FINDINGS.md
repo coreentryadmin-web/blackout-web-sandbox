@@ -5060,7 +5060,23 @@ Every page/subpage/panel/button/layout/font; every number/level/matrix/flow valu
 
 ## INFRA — Cloudflare caches `_next/static` **404s** for a year → ChunkLoadError-forever after every deploy (2026-07-13)
 
-**Status:** OPEN — mitigation available (manual CF purge, already used on staging); the real fix is a **deploy-risky caching change flagged for user approval** (do NOT change caching headers or the deploy pipeline without a go-ahead).
+**Status:** ✅ FIXED (staging + prod) 2026-07-13 — via a Cloudflare Cache Rule edit (user-approved, applied with a Cache-Rules:Edit token). Root-cause write-up retained below for the record.
+
+**Resolution (what was changed):** the zone `blackouttrades.com` (Free plan) has a single cache ruleset `95d2e74be110459ea6d8f0da6729dba4` (phase `http_request_cache_settings`). The existing rule `6a0dbd89293348bfa1e86dbb0a6d0af6` — *"Cache Next.js static assets 1 year"*, `expression: (http.request.uri.path contains "/_next/static/")` — had `edge_ttl: { default: 31536000, mode: override_origin }`, which applied the 1-year TTL to **every** status including 404. PATCHed it to add a status override, leaving the 200-path untouched:
+```
+edge_ttl: { default: 31536000, mode: override_origin,
+  status_code_ttl: [ {400-499 → -1}, {500-599 → -1} ] }   // -1 = no-store
+```
+Renamed *"Cache Next.js static assets 1 year (4xx/5xx not cached)"*. The other 5 cache rules were untouched. A one-time `purge_everything` flushed the already-poisoned 404s.
+
+**Verified LIVE (both environments — staging + prod share the ONE zone; the rule has no host filter so it's zone-wide):**
+| | Missing chunk (404) | Real chunk (200) |
+|---|---|---|
+| before | `cf-cache-status: HIT` · `max-age=31536000` (cached 1yr) | cached 1yr |
+| after  | `cf-cache-status: BYPASS` · `cache-control: no-store` | `cf-cache-status: HIT` · `max-age=31536000, immutable` |
+Confirmed on `blackouttrades.com` (prod) and `staging.blackouttrades.com`. Deploy-window 404s now self-heal once the rollout settles — no manual purge, no ChunkLoadError boundary.
+
+**Residual hardening (optional, not yet applied — awaiting user OK):** the sibling cache rules (`/api/market/gex-positioning` 60s, `/api/market/news` 120s, `/api/market/regime` 30s, marketing `/` `/upgrade` `/learn` 7200s) also lack a 4xx/5xx override, so a transient error on those caches for the rule's TTL. Low-impact for the 30–120s API caches; the 2h marketing cache is the notable one. Same `status_code_ttl -1` override would harden them.
 
 **Severity:** HIGH — **affects production** (`blackout-web` main), not just staging. Every deploy can brick pages until someone manually purges the CDN.
 
