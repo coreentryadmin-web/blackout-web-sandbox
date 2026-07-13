@@ -218,6 +218,13 @@ type Props = {
   /** Regime banner (or similar), rendered as a thin strip between the toolbar and the canvas so it
    *  still leads the chart without a tall separate header block above the whole page. */
   regimeSlot?: React.ReactNode;
+  /** Initial DTE horizon override (host-desk seam, 2026-07-13): the SPX Slayer dashboard embed
+   *  opens on 0DTE (SPX day-trading desk) while the standalone /vector page keeps WEEKLY. Initial
+   *  state only — the member's toggle still rules after mount. */
+  defaultDteHorizon?: VectorDteHorizon;
+  /** Initial candle interval override (same seam): the dashboard embed opens on 3-minute candles;
+   *  the standalone page keeps 1-minute. Initial state only. */
+  defaultTimeframe?: VectorTimeframeMinutes;
 };
 
 function lensVisuals(lens: VectorWallLens) {
@@ -876,6 +883,8 @@ export function VectorChart({
   leadSlot,
   trailSlot,
   regimeSlot,
+  defaultDteHorizon,
+  defaultTimeframe,
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
@@ -1050,7 +1059,9 @@ export function VectorChart({
   // Default WEEKLY: "All" is no longer a member-facing option (2026-07-13), and 0DTE is empty
   // mid-week for most single names (only SPX/SPY/QQQ have daily expiries) — weekly always has a
   // real chain to scope to. SPX day-traders tap 0DTE once; the choice persists per session.
-  const [dteHorizon, setDteHorizon] = useState<VectorDteHorizon>("weekly");
+  // Host desks may override the OPENING horizon (defaultDteHorizon — the SPX Slayer embed opens
+  // on 0DTE); after mount the member's toggle rules either way.
+  const [dteHorizon, setDteHorizon] = useState<VectorDteHorizon>(defaultDteHorizon ?? "weekly");
   // Per-expiry walls are now computed from the Polygon options chain for EVERY ticker
   // (per-contract expiry + OI + IV → BSM GEX ladder at spot), not just the 3 UW-oracle
   // names, so the horizon toggle is real everywhere. Vector only ever loads optionable
@@ -1071,7 +1082,9 @@ export function VectorChart({
   );
   const [gexAsOf, setGexAsOf] = useState<number | null>(null);
   const [vexAsOf, setVexAsOf] = useState<number | null>(null);
-  const [timeframe, setTimeframe] = useState<VectorTimeframeMinutes>(1);
+  // 1m is the seed resolution; host desks may open on a coarser preset (defaultTimeframe — the
+  // SPX Slayer embed opens on 3-minute candles). Aggregation is client-side from the same 1m bars.
+  const [timeframe, setTimeframe] = useState<VectorTimeframeMinutes>(defaultTimeframe ?? 1);
   const [chartReady, setChartReady] = useState(false);
   // Enabled overlay indicators (default none — the chart stays clean until the member opts in).
   const [indicators, setIndicators] = useState<Set<VectorIndicatorId>>(() => new Set());

@@ -8801,6 +8801,47 @@ body::before {
     @apply gap-0;
   }
 
+  /* Desk v3 (2026-07-13, member-directed consolidation): Largo | Matrix | embedded SPX Vector
+     chart (chart-only — the Trade Alerts + Slayer terminal columns are gone; NO terminal on SPX
+     Slayer). Applied ON TOP of --desk-v2, which keeps the shared rail styling; v3 only swaps the
+     grid template from four rails to three and styles the vector column. Declared AFTER the v2
+     rules so the equal-specificity template override wins in the cascade. */
+  @media (min-width: 1024px) {
+    .spx-sniper-triple.spx-sniper-triple--desk-v3 {
+      /* Chart is the hero: Largo + matrix stay readable fixed-ish rails, Vector takes the rest.
+         minmax(0, …) on the chart track so the canvas can shrink — no horizontal overflow. */
+      grid-template-columns: minmax(280px, 0.85fr) minmax(300px, 0.95fr) minmax(0, 2.2fr);
+      grid-template-areas: "largo matrix vector";
+    }
+
+    .spx-sniper-triple--desk-v3 .spx-sniper-vector-col {
+      grid-area: vector;
+    }
+  }
+
+  .spx-sniper-triple--desk-v3 .spx-sniper-vector-col {
+    @apply flex flex-col min-h-0 h-full min-w-0 overflow-hidden;
+  }
+
+  /* Fill the desk column instead of the standalone page's viewport-based inline height
+     (calc(100vh - 132px) assumes only the site nav above the chart; the flagship desk adds the
+     Slayer header + banners, so that math overflows here). The flex chain below gives the canvas
+     wrapper a definite height, and !important beats the element's inline style. */
+  .spx-sniper-vector-col .vector-embed-chart-only,
+  .spx-sniper-vector-col .vector-chart-wrap {
+    @apply flex flex-col flex-1 min-h-0 min-w-0;
+  }
+
+  .spx-sniper-vector-col .vector-chart-wrap > .relative {
+    flex: 1 1 0;
+    min-height: 0;
+  }
+
+  .spx-sniper-vector-col .vector-chart-canvas {
+    height: 100% !important;
+    min-height: 420px !important;
+  }
+
   .spx-sniper-plays-col {
     @apply flex flex-col min-h-0 min-w-0 h-full overflow-hidden;
   }

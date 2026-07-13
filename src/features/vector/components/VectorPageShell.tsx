@@ -9,6 +9,7 @@ import type { VectorBar } from "@/features/vector/components/VectorChart";
 import type { VectorDarkPoolLevel, VectorWalls } from "@/lib/api";
 import type { WallHistorySample, VectorWallLens } from "@/features/vector/lib/vector-wall-history";
 import type { VectorDteHorizon } from "@/features/vector/lib/vector-dte-horizon";
+import type { VectorTimeframeMinutes } from "@/features/vector/lib/vector-bar-timeframes";
 import { VectorTickerSelect } from "@/features/vector/components/VectorTickerSelect";
 import { VectorScanner } from "@/features/vector/components/VectorScanner";
 import { VectorDeskTerminal } from "@/features/vector/components/VectorDeskTerminal";
@@ -55,6 +56,21 @@ type Props = {
   initialDarkPoolLevels: VectorDarkPoolLevel[];
   sessionYmd: string;
   liveSession: boolean;
+  /**
+   * Embed seam (2026-07-13, member-directed desk consolidation): "chart-only" renders JUST the
+   * Vector chart surface — toolbar (timeframe / DTE toggle / indicators / lens / replay), regime
+   * banner, freshness chip, and the alert toast — with NO PageShell wrapper, NO ticker select
+   * (the host pins the ticker), NO GEX ladder rail, NO desk terminal, NO alerts panel, and NO
+   * universe scanner. Used by the SPX Slayer dashboard, which supplies its own page chrome and
+   * explicitly wants a terminal-free desk. Default (undefined) is the full /vector page.
+   */
+  embed?: "chart-only";
+  /** Opening DTE horizon override for host desks (SPX Slayer embed opens on 0DTE; the standalone
+   *  /vector page keeps the chart's WEEKLY default). Initial state only — the toggle rules after. */
+  defaultDteHorizon?: VectorDteHorizon;
+  /** Opening candle interval override (SPX Slayer embed opens on 3-minute candles; standalone
+   *  page keeps 1-minute). Initial state only. */
+  defaultTimeframe?: VectorTimeframeMinutes;
 };
 
 function formatSessionLabel(ymd: string): string {
@@ -79,17 +95,22 @@ export function VectorPageShell({
   initialDarkPoolLevels,
   sessionYmd,
   liveSession,
+  embed,
+  defaultDteHorizon,
+  defaultTimeframe,
 }: Props) {
+  const chartOnly = embed === "chart-only";
   const router = useRouter();
   const sessionLabel = formatSessionLabel(sessionYmd);
   const [streamUpdatedAt, setStreamUpdatedAt] = useState<number | null>(null);
   const [wallEvents, setWallEvents] = useState<VectorWallEvent[]>([]);
   const [lens, setLens] = useState<VectorWallLens>("gex");
   // Mirror the chart's DTE horizon so the GEX ladder re-scopes to the same expiries the walls use.
-  // Must match VectorChart's default ("weekly") — this copy drives the GEX ladder's scope label +
-  // fetch. When it defaulted to "all" while the chart defaulted to weekly, the ladder's first paint
-  // showed the near-term aggregate against a weekly-scoped chart until hydration converged them.
-  const [dteHorizon, setDteHorizon] = useState<VectorDteHorizon>("weekly");
+  // Must match VectorChart's default ("weekly", or the host's defaultDteHorizon override) — this
+  // copy drives the GEX ladder's scope label + fetch. When it defaulted to "all" while the chart
+  // defaulted to weekly, the ladder's first paint showed the near-term aggregate against a
+  // weekly-scoped chart until hydration converged them.
+  const [dteHorizon, setDteHorizon] = useState<VectorDteHorizon>(defaultDteHorizon ?? "weekly");
   const [now, setNow] = useState<number | null>(null);
   const [scannerOpen, setScannerOpen] = useState(false);
   const activeTicker = ticker || VECTOR_DEFAULT_TICKER;
@@ -240,7 +261,15 @@ export function VectorPageShell({
       <span className="hidden font-mono text-[10px] uppercase tracking-[0.2em] text-cyan-400/60 md:inline">
         · {kicker}
       </span>
-      <VectorTickerSelect ticker={activeTicker} />
+      {/* Embedded desks pin the ticker (a select would navigate away from the host page) — show a
+          static chip instead so the member still sees exactly which symbol the chart is locked to. */}
+      {chartOnly ? (
+        <span className="rounded border border-cyan-500/30 bg-cyan-500/10 px-1.5 py-0.5 font-mono text-[11px] font-bold tracking-widest text-cyan-200">
+          {activeTicker}
+        </span>
+      ) : (
+        <VectorTickerSelect ticker={activeTicker} />
+      )}
     </div>
   );
   const chartFreshness = (
@@ -250,6 +279,49 @@ export function VectorPageShell({
       label={liveSession ? "Live session" : `${sessionLabel} close`}
     />
   );
+
+  // Chart-only embed (SPX Slayer flagship desk): the SAME VectorChart with the SAME seed props and
+  // the SAME toolbar/regime/freshness/toast plumbing — just none of the page chrome or side rails.
+  // Saved alert rules for the pinned ticker still evaluate + toast here, so a member's /vector
+  // wall-touch alerts keep ringing on the dashboard. Terminal narration is deliberately absent
+  // (member-directed: no terminals on SPX Slayer, 2026-07-13).
+  if (chartOnly) {
+    return (
+      <div className="vector-embed-chart-only min-w-0">
+        <VectorChart
+          key={activeTicker}
+          ticker={activeTicker}
+          initialBars={initialBars}
+          initialWalls={initialWalls}
+          initialVexWalls={initialVexWalls}
+          initialWallHistory={initialWallHistory}
+          initialGammaFlip={initialGammaFlip}
+          initialVexFlip={initialVexFlip}
+          initialDarkPoolLevels={initialDarkPoolLevels}
+          sessionYmd={sessionYmd}
+          liveSession={liveSession}
+          defaultDteHorizon={defaultDteHorizon}
+          defaultTimeframe={defaultTimeframe}
+          onFreshness={liveSession ? setStreamUpdatedAt : undefined}
+          onRegimeChange={setRegime}
+          alertRules={alertRules}
+          onAlertsFired={handleAlertsFired}
+          leadSlot={chartLead}
+          trailSlot={chartFreshness}
+          regimeSlot={<VectorRegimeBanner regime={regime} />}
+        />
+        {toast && (
+          <div className="vector-alert-toast" role="status" aria-live="polite">
+            <span className="vector-alert-toast-dot" aria-hidden="true" />
+            <span className="vector-alert-toast-msg">🔔 {toast.message}</span>
+            <button type="button" className="vector-alert-toast-x" onClick={() => setToast(null)} aria-label="Dismiss">
+              ✕
+            </button>
+          </div>
+        )}
+      </div>
+    );
+  }
 
   return (
     <PageShell fullBleed className="vector-page-shell">
@@ -287,6 +359,8 @@ export function VectorPageShell({
               initialDarkPoolLevels={initialDarkPoolLevels}
               sessionYmd={sessionYmd}
               liveSession={liveSession}
+              defaultDteHorizon={defaultDteHorizon}
+              defaultTimeframe={defaultTimeframe}
               onFreshness={liveSession ? setStreamUpdatedAt : undefined}
               onWallEventsChange={setWallEvents}
               onLensChange={setLens}
