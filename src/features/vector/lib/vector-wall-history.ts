@@ -113,6 +113,59 @@ export function trailsByStrike(
   return map;
 }
 
+/** A strike's bead row plus its birth/fade lifecycle metadata (see strikeTrailLifecycle). */
+export type StrikeTrail = {
+  strike: number;
+  points: StrikeTrailPoint[];
+  /** First bucket this strike appeared as a wall — the wall's BIRTH candle. */
+  bornAt: number;
+  /** Most recent bucket this strike was a wall. */
+  lastSeen: number;
+  /** True when the strike is still in the latest bucket THIS SIDE recorded a wall in — i.e. the
+   *  wall is currently forming/holding, not one that has dropped out of the set. */
+  active: boolean;
+};
+
+/**
+ * Per-strike lifecycle view of the bead trails. Each strike carries its birth (first observed
+ * bucket), last-seen bucket, and whether it is still in the latest bucket this side recorded.
+ *
+ * This is the birth→fade contract the chart renders against (BUG 3 — "beat Skylit"): a wall's
+ * beads START at its birth candle, never back-filled to the session open (inherited directly
+ * from {@link trailsByStrike}, which only records a point in the buckets where the strike is
+ * actually a wall — a strike that first entered the set at 14:00 has no point before 14:00),
+ * and a wall that has left the set is flagged `active:false` so the marker layer can fade/stop
+ * it instead of drawing a stale full-width rail. `active` is computed PER SIDE (against the
+ * latest bucket where this side had any wall), so calls being briefly absent from the newest
+ * bucket doesn't falsely mark every put as dead, and vice-versa.
+ */
+export function strikeTrailLifecycle(
+  history: WallHistorySample[],
+  side: "callWalls" | "putWalls",
+  lens: VectorWallLens = "gex"
+): StrikeTrail[] {
+  const trails = trailsByStrike(history, side, lens);
+  // Latest bucket in which THIS side had any wall — the reference point for "still active".
+  let latest = Number.NEGATIVE_INFINITY;
+  for (const pts of trails.values()) {
+    const tail = pts[pts.length - 1]?.time;
+    if (tail != null && tail > latest) latest = tail;
+  }
+  const out: StrikeTrail[] = [];
+  for (const [strike, points] of trails) {
+    if (!points.length) continue;
+    const lastSeen = points[points.length - 1]!.time;
+    out.push({
+      strike,
+      points,
+      bornAt: points[0]!.time,
+      lastSeen,
+      active: lastSeen === latest,
+    });
+  }
+  return out;
+}
+
 /**
  * Weight a strike row for the top-N render cap. Blends PEAK strength with mean, so a wall that
  * is strong RIGHT NOW (or peaked hard) keeps its slot instead of being buried by a weaker wall

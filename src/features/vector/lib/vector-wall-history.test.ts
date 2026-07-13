@@ -11,6 +11,7 @@ import {
   pickActiveStrikes,
   recordWallSample,
   seedWallHistoryForDisplay,
+  strikeTrailLifecycle,
   strikeTrailWeight,
   trailsByStrike,
   trailForFlipLevel,
@@ -120,6 +121,41 @@ test("trailsByStrike: groups horizontal bead rows per strike — migration split
   assert.equal(callTrails.size, 2);
   assert.deepEqual(callTrails.get(6800)?.map((p) => p.time), [100, 160]);
   assert.deepEqual(callTrails.get(6810)?.map((p) => p.time), [220]);
+});
+
+test("strikeTrailLifecycle: a late-appearing strike is birth-anchored, a departed one stops", () => {
+  // 6800 is a wall in the first two buckets then drops out; 6810 only appears in the last two.
+  const history: WallHistorySample[] = [
+    { time: 100, walls: walls([6800], []) },
+    { time: 160, walls: walls([6800], []) },
+    { time: 220, walls: walls([6810], []) },
+    { time: 280, walls: walls([6810], []) },
+  ];
+  const life = strikeTrailLifecycle(history, "callWalls");
+  const byStrike = new Map(life.map((t) => [t.strike, t]));
+
+  const late = byStrike.get(6810)!;
+  // Birth-anchored: markers begin at first appearance (220), NOT back-filled to the open (100).
+  assert.deepEqual(late.points.map((p) => p.time), [220, 280]);
+  assert.equal(late.bornAt, 220);
+  assert.equal(late.active, true); // still in the latest bucket → currently forming/holding
+
+  const departed = byStrike.get(6800)!;
+  // A wall that left the set stops at its last bucket (160) and is flagged inactive → the marker
+  // layer fades it instead of persisting a full-width rail.
+  assert.deepEqual(departed.points.map((p) => p.time), [100, 160]);
+  assert.equal(departed.lastSeen, 160);
+  assert.equal(departed.active, false);
+});
+
+test("strikeTrailLifecycle: active is per-side — a put present at the latest bucket stays active", () => {
+  const history: WallHistorySample[] = [
+    { time: 100, walls: walls([6800], [6700]) },
+    { time: 160, walls: walls([6810], [6700]) }, // call migrated, put 6700 held through latest bucket
+  ];
+  const puts = new Map(strikeTrailLifecycle(history, "putWalls").map((t) => [t.strike, t]));
+  assert.equal(puts.get(6700)!.active, true);
+  assert.equal(puts.get(6700)!.bornAt, 100);
 });
 
 test("pickActiveStrikes: keeps the heaviest rows when capped", () => {

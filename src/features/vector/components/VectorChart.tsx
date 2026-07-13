@@ -66,9 +66,9 @@ import {
   narrowedHorizonTrail,
   pickActiveStrikes,
   pickReplayTrailSource,
-  trailsByStrike,
+  strikeTrailLifecycle,
   trimHistoryForLiveTrails,
-  type StrikeTrailPoint,
+  type StrikeTrail,
   type VectorWallLens,
   type WallHistorySample,
 } from "@/features/vector/lib/vector-wall-history";
@@ -158,6 +158,13 @@ const VECTOR_RIGHT_OFFSET_BARS = 6;
 const SPY_VOLUME_BACKFILL_MS = 60_000;
 /** If the viewport is within this many bars of the live edge, new bars may follow (TradingView-style). */
 const LIVE_FOLLOW_THRESHOLD_BARS = 2;
+/** Opacity multiplier for a strike row that has LEFT the current wall set (its last bead predates
+ *  this side's latest bucket). A closed/faded wall dims to this fraction so a member reads it as
+ *  receding history, not a live rail — the birth→fade lifecycle Skylit shows (BUG 3). */
+const STALE_TRAIL_FADE = 0.4;
+/** Extra opacity added to a wall's BIRTH bead (its first observed candle) so the moment/price a
+ *  new wall forms visibly pops out of its trail rather than looking identical to every other bead. */
+const BIRTH_BEAD_ALPHA_BOOST = 0.35;
 
 function chartIsFollowingLive(chart: IChartApi): boolean {
   const pos = chart.timeScale().scrollPosition();
@@ -698,8 +705,7 @@ function applyWallsToSeries(
 }
 
 function buildWallBeadMarkers(
-  trails: Map<number, StrikeTrailPoint[]>,
-  activeStrikes: number[],
+  trails: StrikeTrail[],
   baseColor: string
 ): SeriesMarker<Time>[] {
   const markers: SeriesMarker<Time>[] = [];
@@ -711,15 +717,18 @@ function buildWallBeadMarkers(
   // king / thin-straggler contrast at any concentration, and — because a strike's pct varies
   // over the session — also makes a wall's band bulge thicker in the stretch where it built up.
   let maxPct = 0;
-  for (const strike of activeStrikes) {
-    const points = trails.get(strike);
-    if (!points) continue;
-    for (const p of points) if (p.pct > maxPct) maxPct = p.pct;
+  for (const trail of trails) {
+    for (const p of trail.points) if (p.pct > maxPct) maxPct = p.pct;
   }
-  for (const strike of activeStrikes) {
-    const points = trails.get(strike);
-    if (!points) continue;
-    for (const p of points) {
+  for (const trail of trails) {
+    // BUG 3 birth→fade lifecycle: a strike that has LEFT the current wall set (active:false)
+    // dims to STALE_TRAIL_FADE so it reads as receding/closed rather than a live rail. Its beads
+    // already stop at its last-seen bucket (trailsByStrike never back-fills or extends), so a
+    // departed wall neither runs to "now" nor to session open — it occupies exactly its lifespan.
+    const staleFade = trail.active ? 1 : STALE_TRAIL_FADE;
+    const points = trail.points;
+    for (let i = 0; i < points.length; i++) {
+      const p = points[i]!;
       const time = p.time as Time;
       // Modeled (reconstructed) beads read as a FAINT, smaller GHOST of an observed bead: same
       // color/shape, alpha scaled to MODELED_ALPHA_SCALE (0.15) and size to 0.6×, so a real recorded
@@ -727,7 +736,7 @@ function buildWallBeadMarkers(
       // — and a full-width reconstruction reads as a quiet underlay, not axis-to-axis walls.
       // Observed beads (modeled falsy) are unchanged.
       const modeled = p.modeled === true;
-      const alphaScale = modeled ? MODELED_ALPHA_SCALE : 1;
+      const alphaScale = (modeled ? MODELED_ALPHA_SCALE : 1) * staleFade;
       const size = markerSizeForPctRel(p.pct, maxPct) * (modeled ? 0.6 : 1);
       const coreAlpha = alphaForPctRel(p.pct, maxPct) * alphaScale;
       const glowAlpha = glowAlphaForPctRel(p.pct, maxPct) * alphaScale;
@@ -735,7 +744,7 @@ function buildWallBeadMarkers(
       markers.push({
         time,
         position: "atPriceMiddle",
-        price: strike,
+        price: trail.strike,
         shape: "circle",
         color: withAlpha(baseColor, glowAlpha),
         size: size * 2.2,
@@ -743,11 +752,25 @@ function buildWallBeadMarkers(
       markers.push({
         time,
         position: "atPriceMiddle",
-        price: strike,
+        price: trail.strike,
         shape: "circle",
         color: withAlpha(baseColor, coreAlpha),
         size,
       });
+      // BIRTH bead: the candle where this wall first appeared. A new wall naturally starts at the
+      // current candle (birth-anchored), and we brighten that origin bead so a member can SEE when
+      // and at what price the wall formed — the "where did this new wall come from" cue. Skip for
+      // modeled ghosts (they fill the whole session and have no meaningful single birth).
+      if (i === 0 && !modeled) {
+        markers.push({
+          time,
+          position: "atPriceMiddle",
+          price: trail.strike,
+          shape: "circle",
+          color: withAlpha(baseColor, Math.min(1, coreAlpha + BIRTH_BEAD_ALPHA_BOOST)),
+          size: size + 1.5,
+        });
+      }
     }
   }
   return markers;
@@ -763,11 +786,17 @@ function applyWallBeadMarkers(
 ): number[] {
   if (!beadsPlugin) return [];
   const bucketed = bucketWallHistoryForInterval(history, intervalMinutes);
-  const trails = trailsByStrike(bucketed, side, lens);
+  // Lifecycle carries each strike's birth/last-seen/active flags so the marker layer can anchor
+  // beads to the birth candle and fade departed walls (BUG 3). It wraps trailsByStrike, so the
+  // point lists are identical to before — only the per-strike metadata is added.
+  const lifecycle = strikeTrailLifecycle(bucketed, side, lens);
+  const trailMap = new Map(lifecycle.map((t) => [t.strike, t.points]));
   // Bead strike-rows scale with the timeframe the same way the wall guides do — few near-spot
   // rows on 1m, more (further-out) rows on higher timeframes.
-  const active = pickActiveStrikes(trails, wallCountForTimeframe(intervalMinutes));
-  beadsPlugin.setMarkers(buildWallBeadMarkers(trails, active, baseColor));
+  const active = pickActiveStrikes(trailMap, wallCountForTimeframe(intervalMinutes));
+  const activeSet = new Set(active);
+  const rendered = lifecycle.filter((t) => activeSet.has(t.strike));
+  beadsPlugin.setMarkers(buildWallBeadMarkers(rendered, baseColor));
   // Return the strikes actually drawn so the caller can widen the price axis to cover them —
   // otherwise a drawn bead outside the current-ladder range clips out on zoom (see beadStrikesRef).
   return active;
