@@ -59,11 +59,11 @@ export function LargoNativeTerminal() {
               ) : (
                 <LargoAnswerMessage
                   content={msg.content}
+                  envelope={msg.envelope}
                   streaming={
                     loading && idx === messages.length - 1 && msg.role === "assistant"
                   }
                   className="largo-native-body"
-                  onFollowup={(q) => void runQuery(q)}
                 />
               )
             ) : (

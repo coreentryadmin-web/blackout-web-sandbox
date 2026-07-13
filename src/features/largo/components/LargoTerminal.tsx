@@ -144,11 +144,11 @@ export function LargoTerminal({
                     // structured card once the full answer is in (idx === last & loading).
                     <LargoAnswerMessage
                       content={msg.content}
+                      envelope={msg.envelope}
                       streaming={
                         loading && idx === messages.length - 1 && msg.role === "assistant"
                       }
                       className={fullPage ? "text-sm md:text-[15px] lg:text-base" : "text-sm"}
-                      onFollowup={(q) => void runQuery(q)}
                     />
                   )
                 ) : (

@@ -1,4 +1,5 @@
 import type { ClaimVerification } from "@/lib/bie/verifier";
+import type { BieAnswerEnvelope } from "@/lib/bie/answer-envelope";
 
 const INTEL_BASE = "/api/engine";
 const MARKET_BASE = "/api/market";
@@ -435,7 +436,13 @@ export const fetchMarketNews = () =>
 const LARGO_STREAM_TIMEOUT_MS = 130_000;
 
 export const queryLargo = (question: string, sessionId: string) =>
-  marketFetch<{ answer: string; session_id: string; source?: string; tools_used?: string[] }>(
+  marketFetch<{
+    answer: string;
+    session_id: string;
+    source?: string;
+    tools_used?: string[];
+    envelope?: BieAnswerEnvelope | null;
+  }>(
     "/largo/query",
     {
       method: "POST",
@@ -470,6 +477,8 @@ export async function queryLargoStream(
   tools_used?: string[];
   followups?: string[];
   verification?: ClaimVerification;
+  /** Populated structured answer (synthesis #59). Absent on trivial/string answers. */
+  envelope?: BieAnswerEnvelope | null;
 }> {
   const abort = new AbortController();
   const timeout = setTimeout(() => abort.abort(), LARGO_STREAM_TIMEOUT_MS);
@@ -533,6 +542,7 @@ export async function queryLargoStream(
         tools_used?: string[];
         followups?: string[];
         verification?: ClaimVerification;
+        envelope?: BieAnswerEnvelope | null;
       }
     | null = null;
 
@@ -562,6 +572,7 @@ export async function queryLargoStream(
           tools_used?: string[];
           followups?: string[];
           verification?: ClaimVerification;
+          envelope?: BieAnswerEnvelope | null;
         };
 
         if (event.type === "ping") continue;
@@ -576,6 +587,7 @@ export async function queryLargoStream(
             tools_used: event.tools_used,
             followups: event.followups,
             verification: event.verification,
+            envelope: event.envelope ?? null,
           };
         }
         if (event.type === "error") {
