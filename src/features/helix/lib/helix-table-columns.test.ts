@@ -6,7 +6,7 @@ import {
   groupStartIds,
   matchesDteFilter,
   tableMinWidth,
-  tableColWidths,
+  tableGridTemplate,
 } from "./helix-table-columns.ts";
 
 describe("columnsForDensity", () => {
@@ -68,15 +68,18 @@ describe("tableMinWidth", () => {
 });
 
 describe("column slack distribution", () => {
-  // Under table-layout:fixed the leftover width is spread proportionally to the
-  // specified column widths, so the WIDEST column absorbs the most slack. Signals
-  // (the intel column) is intentionally the widest so the extra desk space makes
-  // the flags/notional context breathe — not the 3rem TIME/DTE columns.
-  it("signals is the widest column at every density so it absorbs the most slack", () => {
+  // The grid tracks are minmax(<rem>, <rem>fr): leftover desk width is spread proportionally to
+  // the fr weights (= the rem widths), so the WIDEST column absorbs the most slack. Signals (the
+  // intel column) is intentionally the widest so the extra desk space makes the flags/notional
+  // context breathe — not the narrow TIME/DTE columns.
+  it("signals has the largest grow weight at every density so it absorbs the most slack", () => {
+    // Grow weight = growWeight ?? rem width. `time` has a large 9rem FLOOR (to fit the full
+    // timestamp) but a deliberately small grow weight, so signals stays the widest-growing column.
     for (const density of ["essential", "standard", "full"] as const) {
       const cols = columnsForDensity(density);
-      const widest = cols.reduce((a, b) => (parseFloat(b.width) > parseFloat(a.width) ? b : a));
-      assert.equal(widest.id, "signals", `widest at ${density} was ${widest.id}`);
+      const grow = (c: (typeof cols)[number]) => c.growWeight ?? parseFloat(c.width);
+      const widest = cols.reduce((a, b) => (grow(b) > grow(a) ? b : a));
+      assert.equal(widest.id, "signals", `widest-growing at ${density} was ${widest.id}`);
     }
   });
 });
@@ -104,31 +107,39 @@ describe("groupHeaderSpans", () => {
   });
 });
 
-describe("tableColWidths", () => {
-  it("returns one percentage per column, summing to 100% (fills the table, no gutter)", () => {
+describe("tableGridTemplate", () => {
+  it("emits one minmax(<floor>, <weight>fr) track per column, floor = the column rem width", () => {
     for (const density of ["essential", "standard", "full"] as const) {
       const cols = columnsForDensity(density);
-      const widths = tableColWidths(cols);
-      assert.equal(widths.length, cols.length, `${density}: one width per column`);
-      assert.ok(widths.every((w) => w.endsWith("%")), `${density}: all percentages`);
-      const sum = widths.reduce((s, w) => s + parseFloat(w), 0);
-      assert.ok(Math.abs(sum - 100) < 0.01, `${density}: widths sum to 100% (got ${sum})`);
+      const tracks = tableGridTemplate(cols).split(" ").reduce<string[]>((acc, part) => {
+        // Re-join the space-split pieces back into whole `minmax(a, b)` tokens.
+        if (part.startsWith("minmax(")) acc.push(part);
+        else acc[acc.length - 1] += ` ${part}`;
+        return acc;
+      }, []);
+      assert.equal(tracks.length, cols.length, `${density}: one track per column`);
+      tracks.forEach((track, i) => {
+        assert.match(track, /^minmax\(.+,\s.+fr\)$/, `${density}: track ${i} is minmax(...fr)`);
+        assert.ok(track.includes(cols[i].width), `${density}: track ${i} floor is ${cols[i].width}`);
+      });
     }
   });
 
-  it("preserves relative proportion — the widest rem column stays the widest percentage", () => {
+  it("the largest fr weight belongs to signals (the widest-growing column)", () => {
     const cols = columnsForDensity("full");
-    const widths = tableColWidths(cols).map(parseFloat);
-    const widestRemIdx = cols.reduce((mi, c, i) => (parseFloat(c.width) > parseFloat(cols[mi].width) ? i : mi), 0);
-    const widestPctIdx = widths.reduce((mi, w, i) => (w > widths[mi] ? i : mi), 0);
-    assert.equal(widestPctIdx, widestRemIdx, "signals (widest rem) is also the widest percentage");
-    // Ratio preserved: a 2× rem column is ~2× the percentage.
-    const time = cols.findIndex((c) => c.id === "time");
-    const signals = cols.findIndex((c) => c.id === "signals");
-    const remRatio = parseFloat(cols[signals].width) / parseFloat(cols[time].width);
-    const pctRatio = widths[signals] / widths[time];
-    // Tolerance accommodates the 4-decimal rounding in the percentage strings (~1e-4 ratio error).
-    assert.ok(Math.abs(remRatio - pctRatio) < 1e-2, `rem ratio ${remRatio} ≈ pct ratio ${pctRatio}`);
+    const frOf = (track: string) => parseFloat(track.match(/,\s*([\d.]+)fr\)/)?.[1] ?? "0");
+    const tracks = tableGridTemplate(cols).match(/minmax\([^)]*\)/g) ?? [];
+    const widestFrIdx = tracks.reduce((mi, t, i) => (frOf(t) > frOf(tracks[mi]) ? i : mi), 0);
+    assert.equal(cols[widestFrIdx].id, "signals", "signals carries the largest fr weight");
+  });
+
+  it("floors and grow weights can diverge — time keeps a 9rem floor but a small fr", () => {
+    // Regression guard for the timestamp widening: the floor must be the large 9rem (so the full
+    // "MM/DD/YYYY - HH:MM" fits) while the fr weight stays small so time doesn't hog desk slack.
+    const cols = columnsForDensity("essential");
+    const tracks = tableGridTemplate(cols).match(/minmax\([^)]*\)/g) ?? [];
+    const timeIdx = cols.findIndex((c) => c.id === "time");
+    assert.match(tracks[timeIdx], /minmax\(9rem,\s*3\.25fr\)/, "time = minmax(9rem, 3.25fr)");
   });
 });
 

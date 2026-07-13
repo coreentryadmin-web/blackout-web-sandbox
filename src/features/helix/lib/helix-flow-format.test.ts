@@ -6,6 +6,7 @@ import {
   flowSignals,
   flowTimeMs,
   fmtExpiryShort,
+  fmtFullTimestamp,
   ruleLabel,
   sortFlows,
 } from "./helix-flow-format";
@@ -28,6 +29,27 @@ test("flowTimeMs returns null for missing alerted_at", () => {
 
 test("fmtExpiryShort formats YYYY-MM-DD", () => {
   assert.equal(fmtExpiryShort("2026-07-11"), "07/11/26");
+});
+
+test("fmtFullTimestamp renders MM/DD/YYYY - HH:MM in US Eastern (24h)", () => {
+  // 2026-07-15T15:45:00Z is 11:45 EDT (UTC-4, mid-July) — well inside one ET calendar day, so
+  // there's no midnight/DST-boundary ambiguity in the assertion.
+  assert.equal(fmtFullTimestamp("2026-07-15T15:45:00.000Z"), "07/15/2026 - 11:45");
+});
+
+test("fmtFullTimestamp zero-pads month, day, hour, and minute", () => {
+  // 2026-03-05T13:07:00Z → 08:07 EST (UTC-5; US DST 2026 begins Mar 8, so Mar 5 is still standard).
+  assert.equal(fmtFullTimestamp("2026-03-05T13:07:00.000Z"), "03/05/2026 - 08:07");
+});
+
+test("fmtFullTimestamp uses 24-hour clock for afternoon prints", () => {
+  // 2026-07-15T20:30:00Z → 16:30 EDT (not 4:30 PM).
+  assert.equal(fmtFullTimestamp("2026-07-15T20:30:00.000Z"), "07/15/2026 - 16:30");
+});
+
+test("fmtFullTimestamp returns em-dash for empty or invalid input", () => {
+  assert.equal(fmtFullTimestamp(""), "—");
+  assert.equal(fmtFullTimestamp("not-a-date"), "—");
 });
 
 test("ruleLabel maps sweep and repeat", () => {

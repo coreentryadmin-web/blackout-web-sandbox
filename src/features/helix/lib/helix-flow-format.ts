@@ -33,6 +33,42 @@ export function timeAgo(iso: string): string {
   return `${Math.floor(h / 24)}d`;
 }
 
+/**
+ * Absolute print timestamp for the tape's TIME column — `"MM/DD/YYYY - HH:MM"` in **US Eastern**,
+ * 24-hour, zero-padded (e.g. `"07/15/2026 - 11:45"`). The options tape is an ET tape (the column
+ * hint already reads "ET"), so we format the instant in `America/New_York` regardless of the
+ * runtime's own zone. Replaces the old relative `timeAgo()` in the tape so members read the exact
+ * fill time, not a fuzzy age. Returns `"—"` for empty/invalid input.
+ *
+ * WHY formatToParts (not toLocaleString): en-US `toLocaleString` yields `"07/15/2026, 11:45"` — the
+ * comma + no dash separator and locale-dependent ordering would need brittle string surgery to reach
+ * the exact `MM/DD/YYYY - HH:MM`. Assembling from parts gives us the format verbatim and stable.
+ */
+export function fmtFullTimestamp(iso: string): string {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  if (!Number.isFinite(d.getTime())) return "—";
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/New_York",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).formatToParts(d);
+  const get = (type: string) => parts.find((p) => p.type === type)?.value ?? "";
+  const mm = get("month");
+  const dd = get("day");
+  const yyyy = get("year");
+  // Some engines emit hourCycle "24" (a literal "24" at midnight) under hour12:false — normalize.
+  let hh = get("hour");
+  if (hh === "24") hh = "00";
+  const min = get("minute");
+  if (!mm || !dd || !yyyy || !hh || !min) return "—";
+  return `${mm}/${dd}/${yyyy} - ${hh}:${min}`;
+}
+
 export function fmtExpiryShort(expiry: string): string {
   if (!expiry) return "—";
   const [y, m, d] = expiry.split("-");

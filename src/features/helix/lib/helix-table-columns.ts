@@ -15,8 +15,15 @@ export type HelixColumnDef = {
   sortKey?: HelixFlowSortKey;
   align?: "left" | "right";
   density: HelixTableDensity;
-  /** Fixed width — keeps header/body columns aligned (table-layout: fixed) */
+  /** Column FLOOR (rem) — the grid track's `minmax()` minimum; also the horizontal-scroll floor. */
   width: string;
+  /**
+   * How eagerly the column grows to absorb leftover desk width (the `fr` weight). Defaults to the
+   * numeric `width`, so a column's growth tracks its size. Override when the FLOOR must be large but
+   * the content is FIXED-width and shouldn't hog slack — e.g. `time` needs a 9rem floor to fit the
+   * full timestamp yet should barely grow, leaving the extra desk space for `signals`.
+   */
+  growWeight?: number;
 };
 
 const GROUP_LABELS: Record<HelixColumnGroup, string> = {
@@ -36,7 +43,12 @@ export const HELIX_TABLE_COLUMNS: HelixColumnDef[] = [
     group: "print",
     sortKey: "time",
     density: "essential",
-    width: "3.25rem",
+    // Wide enough for the full absolute stamp "07/15/2026 - 11:45" in the monospace tape font
+    // (17 glyphs). Was 3.25rem when the cell showed a relative age like "2d"/"11h".
+    width: "9rem",
+    // The stamp is fixed-width, so keep the growth weight at the OLD 3.25 — the column holds its
+    // 9rem floor but yields desktop slack to the columns that benefit (signals stays widest-growing).
+    growWeight: 3.25,
   },
   {
     id: "ticker",
@@ -196,23 +208,36 @@ export function tableMinWidth(cols: HelixColumnDef[]): string {
 }
 
 /**
- * Per-column widths as PERCENTAGES of the fixed-width total, for the `<colgroup>`.
+ * `grid-template-columns` for the tape's CSS grid. Each column becomes `minmax(<width>, <weight>fr)`:
  *
- * WHY: the tape is `table-layout: fixed` with `width: 100%`. With every column carrying an absolute
- * `rem` width whose sum (~72rem ≈ 1150px) is LESS than the desktop table width (~1870px at 1920),
- * fixed-layout does NOT stretch the fixed columns to fill — it leaves the ~700px of slack as EMPTY
- * trailing space inside the table (measured live: table 1870px, column content ends at ~853px → a
- * right gutter). Converting the same rem values into percentages that sum to 100% makes fixed-layout
- * distribute the full table width across the columns in the SAME relative proportions, so the tape
- * fills edge-to-edge on wide screens. The rem values are retained by `tableMinWidth` as the
- * horizontal-scroll floor, so on a narrow viewport the table still scrolls instead of crushing.
+ *  - the fixed `<width>` (rem) is the column FLOOR — on a narrow (mobile) viewport the row can't
+ *    shrink columns below it, so the tape scrolls horizontally instead of crushing/decoupling. This
+ *    is the per-column equivalent of the old table `min-width` scroll floor (`tableMinWidth`, still
+ *    applied to the grid container as the aggregate floor);
+ *  - the `<weight>fr` (weight = the same rem number) distributes leftover width proportionally on a
+ *    wide desk, so the tape fills edge-to-edge with no right gutter — the same proportions the old
+ *    percentage `<colgroup>` produced.
+ *
+ * WHY grid (not the old `table-layout: fixed` + percentage `<colgroup>`): the header row and every
+ * body row consume this SAME template via one CSS custom property, so column geometry is computed
+ * once and shared. That makes header↔body misalignment structurally impossible. The table approach
+ * resolved the percentage columns inconsistently between `<thead>` and `<tbody>` when a `min-width`
+ * forced the table wider than a mobile viewport — measured live at 390px the body cells drifted a
+ * full column right of their headers (up to ~136px). A single grid template can't drift.
  */
-export function tableColWidths(cols: HelixColumnDef[]): string[] {
-  const weights = cols.map((c) => parseFloat(c.width));
-  const total = weights.reduce((sum, w) => sum + (Number.isFinite(w) && w > 0 ? w : 0), 0);
-  // Degenerate guard (no parseable widths) → equal split so the table still fills, never NaN%.
-  if (!(total > 0)) return cols.map(() => `${(100 / cols.length).toFixed(4)}%`);
-  return weights.map((w) => `${(((Number.isFinite(w) && w > 0 ? w : 0) / total) * 100).toFixed(4)}%`);
+export function tableGridTemplate(cols: HelixColumnDef[]): string {
+  return cols
+    .map((c) => {
+      const w = parseFloat(c.width);
+      const ok = Number.isFinite(w) && w > 0;
+      // Degenerate guard (unparseable width) → a sane 3rem floor/weight so the row never emits an
+      // invalid track (which would collapse the whole grid), matching the old NaN guard's intent.
+      const floor = ok ? c.width : "3rem";
+      const gw = c.growWeight;
+      const weight = Number.isFinite(gw) && (gw as number) > 0 ? (gw as number) : ok ? w : 3;
+      return `minmax(${floor}, ${weight}fr)`;
+    })
+    .join(" ");
 }
 
 /** First column id in each group — used for vertical group dividers. */
