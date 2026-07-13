@@ -7654,6 +7654,502 @@ body::before {
     background: #040407;
   }
 
+  /* ── BieAnswerEnvelope rich answer UI (task #64 PR 2) ──
+     Presentational rendering of the structured answer contract. Styled for the
+     Largo terminal's dark surface (consistent with sibling .largo-* classes);
+     high-contrast text, semantic bias/confidence/freshness tones. No @apply so the
+     opacity guard never trips. */
+  .bie-answer {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+    width: 100%;
+    color: #f0f0f8;
+    font-family: var(--font-jetbrains), monospace;
+  }
+  .bie-answer-head {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+  .bie-answer-head-row {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+  }
+  .bie-answer-headline {
+    font-family: var(--font-syne, sans-serif);
+    font-size: clamp(1.05rem, 2.4vw, 1.5rem);
+    line-height: 1.2;
+    font-weight: 700;
+    color: #f8fafc;
+    margin: 0;
+  }
+  .bie-answer-body {
+    margin-top: -0.25rem;
+  }
+  .bie-answer-sections {
+    display: flex;
+    flex-direction: column;
+    gap: 0.85rem;
+  }
+
+  /* Shared block label */
+  .bie-block-label {
+    font-family: var(--font-mono, monospace);
+    font-size: 10px;
+    letter-spacing: 0.24em;
+    text-transform: uppercase;
+    color: rgba(34, 211, 238, 0.75);
+    margin-bottom: 0.4rem;
+  }
+
+  /* ── Bias pill ── */
+  .bie-pill {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.15rem 0.55rem;
+    border-radius: 9999px;
+    font-family: var(--font-mono, monospace);
+    font-size: 10px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    border: 1px solid transparent;
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+  .bie-bias-bullish {
+    color: #34f5a0;
+    border-color: rgba(52, 245, 160, 0.4);
+    background: rgba(52, 245, 160, 0.1);
+  }
+  .bie-bias-bearish {
+    color: #ff6b81;
+    border-color: rgba(255, 107, 129, 0.4);
+    background: rgba(255, 107, 129, 0.1);
+  }
+  .bie-bias-neutral {
+    color: #7dd3fc;
+    border-color: rgba(125, 211, 252, 0.4);
+    background: rgba(125, 211, 252, 0.1);
+  }
+  .bie-bias-mixed {
+    color: #fbbf24;
+    border-color: rgba(251, 191, 36, 0.4);
+    background: rgba(251, 191, 36, 0.1);
+  }
+
+  /* ── Confidence badge ── */
+  .bie-conf {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 0.4rem;
+    padding: 0.3rem 0.6rem;
+    border-radius: 0.5rem;
+    border: 1px solid rgba(148, 163, 184, 0.25);
+    background: rgba(148, 163, 184, 0.06);
+    font-size: 11px;
+    line-height: 1.4;
+    max-width: 100%;
+  }
+  .bie-conf-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 9999px;
+    flex-shrink: 0;
+    align-self: center;
+    background: currentColor;
+  }
+  .bie-conf-level {
+    font-family: var(--font-mono, monospace);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    font-size: 10px;
+    white-space: nowrap;
+  }
+  .bie-conf-why {
+    color: #c7d2e0;
+    font-size: 11px;
+  }
+  .bie-conf-high {
+    color: #34f5a0;
+    border-color: rgba(52, 245, 160, 0.35);
+    background: rgba(52, 245, 160, 0.08);
+  }
+  .bie-conf-moderate {
+    color: #7dd3fc;
+    border-color: rgba(125, 211, 252, 0.35);
+    background: rgba(125, 211, 252, 0.08);
+  }
+  .bie-conf-low {
+    color: #fbbf24;
+    border-color: rgba(251, 191, 36, 0.35);
+    background: rgba(251, 191, 36, 0.08);
+  }
+  .bie-conf-insufficient {
+    color: #fca5a5;
+    border-color: rgba(252, 165, 165, 0.35);
+    background: rgba(252, 165, 165, 0.08);
+  }
+
+  /* ── Evidence-kind chip ── */
+  .bie-kind {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.1rem 0.4rem;
+    border-radius: 0.3rem;
+    font-family: var(--font-mono, monospace);
+    font-size: 9px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    border: 1px solid transparent;
+    flex-shrink: 0;
+  }
+  .bie-kind-fact {
+    color: #34f5a0;
+    border-color: rgba(52, 245, 160, 0.4);
+    background: rgba(52, 245, 160, 0.08);
+  }
+  .bie-kind-calc {
+    color: #7dd3fc;
+    border-color: rgba(125, 211, 252, 0.4);
+    background: rgba(125, 211, 252, 0.08);
+  }
+  .bie-kind-inference {
+    color: #c4b5fd;
+    border-color: rgba(196, 181, 253, 0.4);
+    background: rgba(196, 181, 253, 0.08);
+  }
+  .bie-kind-scenario {
+    color: #fbbf24;
+    border-color: rgba(251, 191, 36, 0.4);
+    background: rgba(251, 191, 36, 0.08);
+  }
+
+  /* ── Source stamp (provenance) ── */
+  .bie-source {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-family: var(--font-mono, monospace);
+    font-size: 10px;
+    color: #9fb3c8;
+    white-space: nowrap;
+  }
+  .bie-source-label {
+    color: #bae6fd;
+    letter-spacing: 0.04em;
+  }
+  .bie-source-time {
+    color: #8ba0b6;
+  }
+  .bie-fresh {
+    padding: 0.02rem 0.3rem;
+    border-radius: 0.25rem;
+    font-size: 9px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    border: 1px solid transparent;
+  }
+  .bie-fresh-live {
+    color: #34f5a0;
+    border-color: rgba(52, 245, 160, 0.35);
+  }
+  .bie-fresh-recent {
+    color: #7dd3fc;
+    border-color: rgba(125, 211, 252, 0.35);
+  }
+  .bie-fresh-stale {
+    color: #fbbf24;
+    border-color: rgba(251, 191, 36, 0.45);
+    background: rgba(251, 191, 36, 0.08);
+  }
+  .bie-fresh-unknown {
+    color: #9fb3c8;
+    border-color: rgba(159, 179, 200, 0.3);
+  }
+
+  /* ── Unavailable chip ── */
+  .bie-unavailable {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 0.3rem 0.55rem;
+    border-radius: 0.45rem;
+    border: 1px dashed rgba(251, 191, 36, 0.5);
+    background: rgba(251, 191, 36, 0.07);
+    color: #fcd34d;
+    font-size: 11px;
+    line-height: 1.35;
+  }
+
+  /* ── Section card ── */
+  .bie-section {
+    border: 1px solid rgba(148, 163, 184, 0.16);
+    border-left: 2px solid rgba(34, 211, 238, 0.5);
+    border-radius: 0.6rem;
+    background: rgba(148, 163, 184, 0.04);
+    padding: 0.85rem 1rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+  }
+  .bie-section-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.6rem;
+  }
+  .bie-section-title {
+    font-family: var(--font-syne, sans-serif);
+    font-size: 13px;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: #e2e8f0;
+    margin: 0;
+  }
+  .bie-section-conf {
+    align-self: flex-start;
+  }
+  .bie-section-source {
+    margin-top: -0.1rem;
+  }
+
+  /* ── Evidence panel ── */
+  .bie-evidence-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+  .bie-evidence-item {
+    display: flex;
+    align-items: baseline;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    font-size: 13px;
+    line-height: 1.5;
+  }
+  .bie-evidence-text {
+    color: #e8eef6;
+    flex: 1 1 12rem;
+    min-width: 0;
+  }
+
+  /* ── Key levels table ── */
+  .bie-levels-grid {
+    display: flex;
+    flex-direction: column;
+    border: 1px solid rgba(148, 163, 184, 0.16);
+    border-radius: 0.5rem;
+    overflow: hidden;
+  }
+  .bie-levels-head,
+  .bie-levels-row {
+    display: grid;
+    grid-template-columns: minmax(6rem, 1.2fr) minmax(4rem, 0.8fr) minmax(6rem, 2fr);
+    gap: 0.5rem;
+    padding: 0.45rem 0.7rem;
+    align-items: baseline;
+  }
+  .bie-levels-head {
+    font-family: var(--font-mono, monospace);
+    font-size: 9px;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: #7dd3fc;
+    background: rgba(34, 211, 238, 0.06);
+  }
+  .bie-levels-row {
+    border-top: 1px solid rgba(148, 163, 184, 0.1);
+    font-size: 13px;
+  }
+  .bie-levels-label {
+    color: #e2e8f0;
+  }
+  .bie-levels-price {
+    font-family: var(--font-mono, monospace);
+    color: #f8fafc;
+    font-variant-numeric: tabular-nums;
+  }
+  .bie-levels-note {
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+    color: #9fb3c8;
+    font-size: 12px;
+    min-width: 0;
+  }
+
+  /* ── Scenario cards ── */
+  .bie-scenarios-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 0.6rem;
+  }
+  @media (min-width: 768px) {
+    .bie-scenarios-grid {
+      grid-template-columns: repeat(3, 1fr);
+    }
+  }
+  .bie-scenario {
+    border: 1px solid rgba(148, 163, 184, 0.16);
+    border-top: 2px solid rgba(148, 163, 184, 0.4);
+    border-radius: 0.55rem;
+    padding: 0.7rem 0.8rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    background: rgba(148, 163, 184, 0.03);
+  }
+  .bie-scenario-bull {
+    border-top-color: rgba(52, 245, 160, 0.6);
+  }
+  .bie-scenario-base {
+    border-top-color: rgba(125, 211, 252, 0.6);
+  }
+  .bie-scenario-bear {
+    border-top-color: rgba(255, 107, 129, 0.6);
+  }
+  .bie-scenario-kind {
+    font-family: var(--font-mono, monospace);
+    font-size: 10px;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: #cbd5e1;
+    margin: 0;
+  }
+  .bie-scenario-bull .bie-scenario-kind {
+    color: #34f5a0;
+  }
+  .bie-scenario-base .bie-scenario-kind {
+    color: #7dd3fc;
+  }
+  .bie-scenario-bear .bie-scenario-kind {
+    color: #ff6b81;
+  }
+  .bie-scenario-thesis {
+    color: #eef2f7;
+    font-size: 13px;
+    line-height: 1.4;
+    margin: 0 0 0.15rem;
+  }
+  .bie-scenario-line {
+    display: flex;
+    gap: 0.4rem;
+    font-size: 11.5px;
+    line-height: 1.4;
+    margin: 0;
+  }
+  .bie-scenario-line-label {
+    font-family: var(--font-mono, monospace);
+    font-size: 9px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: #8ba0b6;
+    flex-shrink: 0;
+    min-width: 4.5rem;
+    padding-top: 0.1rem;
+  }
+  .bie-scenario-line-value {
+    color: #d7e0ea;
+  }
+
+  /* ── Invalidation + footer ── */
+  .bie-answer-invalidation {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    align-items: baseline;
+    font-size: 13px;
+    line-height: 1.5;
+    color: #f3d5d5;
+    border: 1px solid rgba(255, 107, 129, 0.3);
+    border-radius: 0.5rem;
+    background: rgba(255, 107, 129, 0.06);
+    padding: 0.6rem 0.8rem;
+    margin: 0;
+  }
+  .bie-answer-invalidation-label {
+    font-family: var(--font-mono, monospace);
+    font-size: 9px;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: #ff9aa8;
+  }
+  .bie-answer-unavailable {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+  }
+  .bie-answer-foot {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+    align-items: center;
+    padding-top: 0.5rem;
+    border-top: 1px solid rgba(148, 163, 184, 0.14);
+    font-family: var(--font-mono, monospace);
+    font-size: 10px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: #8ba0b6;
+  }
+  .bie-answer-parts {
+    color: #34f5a0;
+  }
+  .bie-answer-parts-partial {
+    color: #fbbf24;
+  }
+
+  /* ── Follow-up chips ── */
+  .bie-answer-followups-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.45rem;
+  }
+  .bie-followup-chip {
+    padding: 0.4rem 0.7rem;
+    border-radius: 9999px;
+    border: 1px solid rgba(34, 211, 238, 0.28);
+    background: rgba(34, 211, 238, 0.06);
+    color: #bae6fd;
+    font-size: 12px;
+    cursor: pointer;
+    transition: border-color 0.2s ease, background 0.2s ease;
+  }
+  .bie-followup-chip:hover {
+    border-color: rgba(34, 211, 238, 0.6);
+    background: rgba(34, 211, 238, 0.14);
+  }
+  .bie-followup-chip:focus-visible {
+    outline: 2px solid rgba(34, 211, 238, 0.7);
+    outline-offset: 2px;
+  }
+
+  /* ── Admin preview harness ── */
+  .bie-preview {
+    display: flex;
+    flex-direction: column;
+    gap: 2rem;
+    max-width: 52rem;
+  }
+  .bie-preview-caption {
+    font-family: var(--font-mono, monospace);
+    font-size: 10px;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: #7dd3fc;
+    margin-bottom: 0.6rem;
+  }
+  .bie-preview-surface {
+    border: 1px solid rgba(34, 211, 238, 0.18);
+    border-radius: 0.9rem;
+    background: #08090e;
+    padding: 1.25rem;
+  }
+
   .largo-input-wrap {
     position: relative;
     container-type: inline-size;
