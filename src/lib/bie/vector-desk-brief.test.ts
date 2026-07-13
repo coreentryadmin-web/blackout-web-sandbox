@@ -20,6 +20,7 @@ describe("composeVectorDeskBrief", () => {
       "MAGNET",
       "MAX PAIN",
       "EXPECTED MOVE",
+      "TECHNICALS",
       "LADDER",
       "VEX",
       "DARK POOL",

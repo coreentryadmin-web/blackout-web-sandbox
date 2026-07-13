@@ -13,6 +13,7 @@ import {
   vexBriefLine,
   darkPoolBriefLine,
   wallDynamicsBriefLine,
+  technicalsBriefLine,
   knownVectorNumbers,
 } from "@/lib/bie/vector-desk-intel";
 
@@ -110,6 +111,20 @@ describe("vector-desk-intel brief lines", () => {
     assert.match(line!, /2 rail samples/);
   });
 
+  test("technicalsBriefLine: VWAP / EMA stack / RSI / MACD from server technicals", () => {
+    const line = technicalsBriefLine(state);
+    assert.ok(line);
+    assert.match(line!, /TECHNICALS/);
+    assert.match(line!, /VWAP \{\{7,?558\.00\}\}/);
+    assert.match(line!, /EMA 9\/21\/50/);
+    assert.match(line!, /RSI \{\{52\}\}/);
+    assert.match(line!, /MACD bullish/);
+  });
+
+  test("technicalsBriefLine: null when technicals are unavailable", () => {
+    assert.equal(technicalsBriefLine({ ...state, technicals: null }), null);
+  });
+
   test("ladderBriefLine: names the call king and put king strikes", () => {
     const line = ladderBriefLine(state);
     assert.ok(line);
@@ -157,6 +172,7 @@ describe("knownVectorNumbers", () => {
       magnetBriefLine(state),
       maxPainBriefLine(state),
       expectedMoveBriefLine(state),
+      technicalsBriefLine(state),
       ladderBriefLine(state),
       vexBriefLine(state),
       darkPoolBriefLine(state),

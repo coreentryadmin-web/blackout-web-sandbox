@@ -133,6 +133,24 @@ export function flowBriefLine(state: VectorFullState): string | null {
   return `FLOW  ${parts.join(" · ")}`;
 }
 
+/** TECHNICALS — server-computed chart read: VWAP, EMA stack, RSI, MACD, golden pocket, structure. */
+export function technicalsBriefLine(state: VectorFullState): string | null {
+  const tech = state.technicals;
+  if (!tech) return null;
+  const parts: string[] = [];
+  if (tech.vwap != null) parts.push(`VWAP ${n(tech.vwap)}`);
+  if (tech.emaStack) {
+    const word = tech.emaStack === "up" ? "stacked bull" : tech.emaStack === "down" ? "stacked bear" : "mixed";
+    parts.push(`EMA 9/21/50 ${word}`);
+  }
+  if (tech.rsi != null) parts.push(`RSI {{${Math.round(tech.rsi)}}}`);
+  if (tech.macd) parts.push(`MACD ${tech.macd === "bull" ? "bullish" : "bearish"}`);
+  if (tech.goldenPocket) parts.push(`golden pocket ${n(tech.goldenPocket.low)}–${n(tech.goldenPocket.high)}`);
+  if (tech.structure) parts.push(`${tech.structure.type} ${tech.structure.direction} @ ${n(tech.structure.level)}`);
+  if (!parts.length) return null;
+  return `TECHNICALS  ${parts.join(" · ")}`;
+}
+
 /** VEX — the dealer VANNA lens: zero-vanna flip + top vanna walls (second lens BIE should see). */
 export function vexBriefLine(state: VectorFullState): string | null {
   const flip = num(state.vexFlip);
@@ -272,6 +290,19 @@ export function knownVectorNumbers(state: VectorFullState): number[] {
   for (const l of state.darkPoolLevels ?? []) {
     add(l.strike);
     add(l.pct);
+  }
+
+  // Server-computed chart technicals the TECHNICALS line cites (VWAP, RSI, golden-pocket edges,
+  // structure level). EMA 9/21/50 are described as a stack word, not numbers, so nothing to add.
+  const tech = state.technicals;
+  if (tech) {
+    add(tech.vwap);
+    if (tech.rsi != null) add(Math.round(tech.rsi));
+    if (tech.goldenPocket) {
+      add(tech.goldenPocket.low);
+      add(tech.goldenPocket.high);
+    }
+    if (tech.structure) add(tech.structure.level);
   }
 
   // Current bead strengths — the latest rail sample's wall strikes + per-strike strength (`pct`),
