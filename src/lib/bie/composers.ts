@@ -261,6 +261,78 @@ async function composeConceptRead(question: string): Promise<BieComposed | null>
   return { answer, context: { term: entry.term, category: entry.category } };
 }
 
+/** Split a "path?a=1&b=2" token into a path + params object. */
+function splitPathQuery(raw: string): { path: string; params: Record<string, string> } {
+  const [path, query] = raw.split("?");
+  const params: Record<string, string> = {};
+  if (query) {
+    for (const kv of query.split("&")) {
+      const [k, v] = kv.split("=");
+      if (k) params[decodeURIComponent(k)] = decodeURIComponent(v ?? "");
+    }
+  }
+  return { path: path!, params };
+}
+
+/**
+ * Universal lookup — "pull / look up X from <internal path | provider>". Resolves the referenced
+ * endpoint through the GOVERNED readers (callInternalApiRead / readUw / readPolygon — all read-only,
+ * allowlisted) and returns the JSON, or an honest "name the endpoint/source" + gap-log when it can't
+ * resolve one. Deterministic: it only acts on an explicitly-named path/provider (the router gate
+ * guarantees one is present); it never guesses a natural-language resource → endpoint mapping (that's
+ * the LLM tool path via get_uw/get_polygon/call_internal_api).
+ */
+async function composeUniversal(question: string): Promise<BieComposed | null> {
+  const { recordBieGap } = await import("@/lib/bie/gap-log");
+  const internalMatch = question.match(/\/api\/[\w\-\/]+(?:\?[\w=&%.\-]+)?/)?.[0] ?? null;
+  const providerMatch =
+    question.match(/\/v[0-9x]+\/[\w\-\/.]+(?:\?[\w=&%.\-]+)?/i)?.[0] ??
+    question.match(/\/(?:snapshot|reference|marketstatus|aggs)[\w\-\/.]*(?:\?[\w=&%.\-]+)?/i)?.[0] ??
+    null;
+  const mentionsPolygon = /\b(polygon|massive)\b/i.test(question);
+  const mentionsUw = /\b(unusual ?whales|uw)\b/i.test(question);
+
+  let result: { ok?: boolean; error?: string; data?: unknown } | null = null;
+  let source = "";
+
+  if (mentionsUw && internalMatch) {
+    const { readUw } = await import("@/lib/bie/provider-read");
+    const { path, params } = splitPathQuery(internalMatch);
+    result = await readUw(path, params);
+    source = `Unusual Whales ${path}`;
+  } else if (providerMatch || (mentionsPolygon && internalMatch)) {
+    const { readPolygon } = await import("@/lib/bie/provider-read");
+    const { path, params } = splitPathQuery(providerMatch ?? internalMatch!);
+    result = await readPolygon(path, params);
+    source = `Polygon ${path}`;
+  } else if (internalMatch) {
+    const { callInternalApiRead } = await import("@/lib/bie/internal-api");
+    const { path, params } = splitPathQuery(internalMatch);
+    result = await callInternalApiRead(path, params);
+    source = `internal ${path}`;
+  }
+
+  if (result == null) {
+    void recordBieGap({ question, intent: "universal_lookup", reason: "universal_unresolved" });
+    return {
+      answer:
+        "I can pull live platform data — just name the endpoint or source. E.g. \"pull /api/market/gex-positioning?ticker=SPY\", " +
+        "\"get /v3/reference/tickers from Polygon\", or a UW data path like \"/api/darkpool/NVDA from unusual whales\". Which endpoint?",
+      context: { reason: "universal_unresolved" },
+    };
+  }
+  if (!result.ok) {
+    void recordBieGap({ question, intent: "universal_lookup", reason: result.error ?? "read_failed" });
+    return {
+      answer: `I couldn't read ${source} — ${result.error ?? "the read failed"}. That path is either denied (read-only + governed) or currently unavailable.`,
+      context: result,
+    };
+  }
+  const json = JSON.stringify(result.data ?? result, null, 2);
+  const body = json.length > 2500 ? `${json.slice(0, 2500)}\n… (truncated)` : json;
+  return { answer: `**${source}**\n\n\`\`\`json\n${body}\n\`\`\``, context: result };
+}
+
 async function composeSpxInvalidation(): Promise<BieComposed | null> {
   const platform = await getCachedBiePlatformContext({ scope: "desk" });
   const desk = platform.desk;
@@ -468,6 +540,8 @@ async function composeBieAnswerUncached(route: BieRoute, opts?: ComposeBieOpts):
           : null;
       case "concept_read":
         return await composeConceptRead(opts?.question ?? "");
+      case "universal_lookup":
+        return await composeUniversal(opts?.question ?? "");
       default:
         return null;
     }

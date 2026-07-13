@@ -20,7 +20,8 @@ export type BieIntent =
   | "ticker_advice"
   | "ticker_compare"
   | "vector_read"
-  | "concept_read";
+  | "concept_read"
+  | "universal_lookup";
 
 export type BieRoute = {
   intent: BieIntent;
@@ -106,6 +107,18 @@ function isConceptQuestion(q: string): boolean {
   return true;
 }
 
+// Universal lookup — "pull / look up / fetch / show me X from Y", where the question names an
+// explicit internal endpoint (/api/…) or a provider (polygon / unusual whales / uw) + a path. The
+// deterministic composeUniversal resolves it through the GOVERNED readers (call_internal_api /
+// get_uw / get_polygon). A verbing lead-in alone isn't enough — it must reference a path/source, so
+// this never steals a plain "show me the SPX setup" (that has no path/provider).
+const UNIVERSAL_VERB_RE = /\b(look\s?up|pull|fetch|grab|show me|get me|get|read|query|hit)\b/i;
+const UNIVERSAL_SOURCE_RE = /(\/api\/[\w\-\/]+|\/v[0-9x]+\/[\w\-\/.]+|\bfrom (the )?(polygon|massive|unusual ?whales|uw|internal api|api)\b)/i;
+
+function isUniversalLookup(q: string): boolean {
+  return UNIVERSAL_VERB_RE.test(q) && UNIVERSAL_SOURCE_RE.test(q);
+}
+
 /** Vector DTE horizon named in the question, defaulting to "all" (whole-chain view). */
 function extractHorizon(q: string): string {
   if (/\b0\s*dte\b/i.test(q)) return "0dte";
@@ -151,6 +164,10 @@ export function classifyBieIntent(question: string, ledgerTickers: Set<string>):
   // "vector" branch) so "what is Vector" / "what is GEX" / "what does Night Hawk do" resolve to a
   // DEFINITION, while a live "vector setup on NVDA" (has a ticker) still routes to vector_read below.
   if (isConceptQuestion(q)) return { intent: "concept_read", ticker: null };
+
+  // "pull/look up X from <internal path | provider>" → the governed universal reader. Only fires
+  // when a path or provider is explicitly named, so a plain "show me the SPX setup" isn't stolen.
+  if (isUniversalLookup(q)) return { intent: "universal_lookup", ticker: extractKnownTicker(q) };
 
   // Explicit "vector" mention → the deterministic Vector desk read, for ANY ticker (incl. SPX on
   // Vector). Placed first so the Vector product wins over the SPX-Sniper branches when named.
@@ -218,6 +235,7 @@ export function isSpxDeskFallbackQuestion(question: string): boolean {
 export function classifyBieStagingFallback(question: string): BieRoute {
   const q = question.trim();
   if (isConceptQuestion(q)) return { intent: "concept_read", ticker: null };
+  if (isUniversalLookup(q)) return { intent: "universal_lookup", ticker: extractKnownTicker(q) };
   if (VECTOR_RE.test(q)) {
     return { intent: "vector_read", ticker: extractKnownTicker(q) ?? "SPX", horizon: extractHorizon(q) };
   }
@@ -286,5 +304,7 @@ export function bieFollowups(intent: BieIntent): string[] {
       ];
     case "concept_read":
       return ["What is a King node?", "What is the gamma flip?", "What does Night Hawk do?"];
+    case "universal_lookup":
+      return ["Pull the GEX positioning for SPY", "Show me the platform snapshot", "What is GEX?"];
   }
 }
