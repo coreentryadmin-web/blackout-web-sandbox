@@ -23,7 +23,7 @@ function input(overrides: Partial<ZeroDteGateInput> = {}): ZeroDteGateInput {
     nowMs: NOW_MS,
     bias: "down",
     biasAsOfMs: NOW_MS - 60_000, // 1-minute-old SPY bar — fresh
-    governor: { open_count: 0, stops: [] },
+    governor: { open_plans: [], stops: [] },
     ...overrides,
   };
 }
@@ -136,17 +136,144 @@ test("G-5: three stopped plays halt every further commit for the session", () =>
     { ticker: "MU", direction: "long" as const, at_ms: null },
     { ticker: "AMD", direction: "long" as const, at_ms: null },
   ];
-  const v = evaluateZeroDteGates(input({ governor: { open_count: 0, stops } }));
+  const v = evaluateZeroDteGates(input({ governor: { open_plans: [], stops } }));
   assert.equal(v.verdict, "BLOCKED");
   assert.deepEqual(v.blocks.map((b) => b.code), ["governor_session_stops"]);
 });
 
 test("G-5: committedThisCycle counts toward the concurrency cap within one scan pass", () => {
-  const governor = { open_count: 1, stops: [] };
-  assert.equal(evaluateZeroDteGates(input({ governor, committedThisCycle: 1 })).verdict, "COMMIT");
-  const v = evaluateZeroDteGates(input({ governor, committedThisCycle: 2 }));
+  const governor = { open_plans: [{ ticker: "TSLA", direction: "short" as const }], stops: [] };
+  assert.equal(
+    evaluateZeroDteGates(
+      input({ governor, committedThisCycle: [{ ticker: "AMZN", direction: "short" }] })
+    ).verdict,
+    "COMMIT"
+  );
+  const v = evaluateZeroDteGates(
+    input({
+      governor,
+      committedThisCycle: [
+        { ticker: "AMZN", direction: "short" },
+        { ticker: "GOOGL", direction: "short" },
+      ],
+    })
+  );
   assert.equal(v.verdict, "BLOCKED");
   assert.deepEqual(v.blocks.map((b) => b.code), ["governor_max_concurrent"]);
+});
+
+test("G-5/B-3: a commit accepted earlier in the SAME cycle also anchors the correlated-conflict check", () => {
+  // Cycle accepts SPY long first; a QQQ short later in the same pass must block
+  // even though the ledger snapshot predates both.
+  const v = evaluateZeroDteGates(
+    input({
+      ticker: "QQQ",
+      direction: "short",
+      governor: { open_plans: [], stops: [] },
+      committedThisCycle: [{ ticker: "SPY", direction: "long" }],
+    })
+  );
+  assert.equal(v.verdict, "BLOCKED");
+  assert.deepEqual(v.blocks.map((b) => b.code), ["correlated_conflict"]);
+});
+
+// ── G-4 · VIX regime throttle (CALIBRATION — logs, never blocks) ────────────────────
+
+test("G-4 calibration: normal / elevated / extreme tiers with the would-block rules", () => {
+  // Normal (<17): no verdict beyond the tier.
+  const normal = evaluateZeroDteGates(input({ vixDayOpen: 16.32 }));
+  assert.equal(normal.calibration.g4_vix.tier, "normal");
+  assert.equal(normal.calibration.g4_vix.would_block, false);
+
+  // Elevated (>=17): hardened rule needs alignment AND score >= 75.
+  const weak = evaluateZeroDteGates(input({ vixDayOpen: 18, score: 70 }));
+  assert.equal(weak.calibration.g4_vix.tier, "elevated");
+  assert.equal(weak.calibration.g4_vix.would_block, true, "aligned but score < 75");
+  assert.equal(weak.verdict, "COMMIT", "calibration mode NEVER blocks");
+  const strong = evaluateZeroDteGates(input({ vixDayOpen: 18, score: 80 }));
+  assert.equal(strong.calibration.g4_vix.would_block, false, "aligned + score >= 75 clears");
+
+  // Extreme (>=20): index/ETF survives at half size, single names would block.
+  const qqq = evaluateZeroDteGates(input({ vixDayOpen: 22, score: 90 }));
+  assert.equal(qqq.calibration.g4_vix.tier, "extreme");
+  assert.equal(qqq.calibration.g4_vix.would_block, false);
+  assert.equal(qqq.calibration.g4_vix.would_halve_size, true);
+  const nvda = evaluateZeroDteGates(input({ ticker: "NVDA", direction: "short", vixDayOpen: 22, score: 90 }));
+  assert.equal(nvda.calibration.g4_vix.would_block, true, "single name in extreme VIX");
+  assert.equal(nvda.verdict, "COMMIT", "still calibration-only");
+});
+
+test("G-4 calibration: unknown VIX is recorded as unknown — never guessed, never blocking", () => {
+  const v = evaluateZeroDteGates(input({ vixDayOpen: null }));
+  assert.equal(v.calibration.g4_vix.tier, "unknown");
+  assert.equal(v.calibration.g4_vix.would_block, false);
+  assert.equal(v.verdict, "COMMIT");
+});
+
+// ── G-6 · cross-system conflict (CALIBRATION — logs, never blocks) ──────────────────
+
+test("G-6 calibration: opposing Night Hawk's take on the same ticker flags CONFLICT but commits", () => {
+  // The 7/13 case: META short (score 67) vs Night Hawk's 7/10 edition LONG A.
+  const v = evaluateZeroDteGates(
+    input({
+      ticker: "META",
+      direction: "short",
+      score: 67,
+      nighthawkTake: { direction: "long", edition_for: "2026-07-10" },
+    })
+  );
+  assert.equal(v.verdict, "COMMIT", "G-6 is calibration mode — the commit still prints");
+  assert.equal(v.calibration.g6_conflict.conflict, true);
+  assert.deepEqual(v.calibration.g6_conflict.against, ["nighthawk_edition"]);
+  assert.equal(v.calibration.g6_conflict.would_block, true, "hardened G-6 needs score >= 80");
+  assert.match(v.calibration.g6_conflict.note, /2026-07-10/);
+});
+
+test("G-6 calibration: opposing the live Slayer play counts only for SPX-correlated tickers", () => {
+  const slayerLive = { direction: "long" as const };
+  // SPY short vs a live Slayer long = desk disagreement.
+  const spy = evaluateZeroDteGates(input({ ticker: "SPY", direction: "short", slayerLive }));
+  assert.equal(spy.calibration.g6_conflict.conflict, true);
+  assert.deepEqual(spy.calibration.g6_conflict.against, ["spx_slayer"]);
+  // A single-name short is not correlated exposure to Slayer's SPX book.
+  const intc = evaluateZeroDteGates(input({ ticker: "INTC", direction: "short", slayerLive }));
+  assert.equal(intc.calibration.g6_conflict.conflict, false);
+  // Same direction as Slayer — no conflict.
+  const qqqLong = evaluateZeroDteGates(input({ ticker: "QQQ", direction: "long", bias: "up", slayerLive }));
+  assert.equal(qqqLong.calibration.g6_conflict.conflict, false);
+});
+
+test("G-6 calibration: score >= 80 clears the hardened rule (CONFLICT still flagged)", () => {
+  const v = evaluateZeroDteGates(
+    input({
+      ticker: "META",
+      direction: "short",
+      score: 85,
+      nighthawkTake: { direction: "long", edition_for: "2026-07-10" },
+    })
+  );
+  assert.equal(v.calibration.g6_conflict.conflict, true);
+  assert.equal(v.calibration.g6_conflict.would_block, false);
+});
+
+import { recentNighthawkTake } from "./gates";
+
+test("recentNighthawkTake: recency-bounded (<=5 days) and strictly directional", () => {
+  const take = { direction: "long", edition_for: "2026-07-10" };
+  assert.deepEqual(recentNighthawkTake(take, "2026-07-13"), {
+    direction: "long",
+    edition_for: "2026-07-10",
+  });
+  assert.equal(recentNighthawkTake(take, "2026-07-20"), null, "a week-old take is history, not context");
+  assert.equal(recentNighthawkTake({ direction: "mixed", edition_for: "2026-07-13" }, "2026-07-13"), null);
+  assert.equal(recentNighthawkTake(null, "2026-07-13"), null);
+});
+
+test("calibration record carries the C-2 context columns (score, bias, ET time bucket)", () => {
+  const v = evaluateZeroDteGates(input({ score: 71.4, nowEtMinutes: 12 * 60 + 40, vixDayOpen: 16.32 }));
+  assert.equal(v.calibration.score_at_commit, 71);
+  assert.equal(v.calibration.market_bias, "down");
+  assert.equal(v.calibration.committed_at_et, "12:40");
 });
 
 // ── rejection-row bridge ───────────────────────────────────────────────────────────

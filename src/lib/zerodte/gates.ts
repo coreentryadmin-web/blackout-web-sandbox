@@ -19,7 +19,7 @@
 
 import type { MarketBias } from "./intraday";
 import type { EnrichedZeroDteSetup, ZeroDteGateFailure, ZeroDteGateRejection } from "./board";
-import { evaluateZeroDteGovernor, type GovernorSnapshot } from "./governor";
+import { evaluateZeroDteGovernor, type GovernorOpenPlan, type GovernorSnapshot } from "./governor";
 
 // ── G-1 · Tape-alignment block ──────────────────────────────────────────────────
 // Evidence (nh0dte forensics, 2026-07-13): counter-tape entries are the single most
@@ -44,6 +44,65 @@ export const MARKET_BIAS_MAX_AGE_MS = 15 * 60 * 1000;
 // unchanged and live upstream (persistZeroDteScan / PLAN_RULES).
 export const OPENING_WINDOW_UNLOCK_ET_MINUTES = 10 * 60 + 30;
 export const OPENING_WINDOW_UNLOCK_LABEL = "10:30 ET";
+
+// ── G-4 · VIX regime throttle — CALIBRATION MODE (logs, never blocks) ───────────
+// Evidence (F-1): the strongest per-play split in the whole forensics dataset —
+// Slayer plays on days opening VIX 15-17 ran 69.2% WR (n=13, +1.85 pts avg) vs
+// 25.0% WR (n=12, −1.54 pts) at 17-20. But it's a LOW-N Slayer-side cut, so per the
+// decision doc it runs as calibration for ≥30 sessions: the verdict is computed and
+// PINNED on every commit (gate_calibration_json), and the data decides whether to
+// harden or drop it. would_block encodes the rule that WOULD apply:
+//   VIX ≥ 17 → require tape alignment AND score ≥ 75;
+//   VIX ≥ 20 → index/ETF products only, at half plan size.
+export const VIX_ELEVATED_THRESHOLD = 17;
+export const VIX_EXTREME_THRESHOLD = 20;
+export const VIX_ELEVATED_SCORE_FLOOR = 75;
+/** Products that stay tradable (at half size) in an extreme-VIX regime — broad
+ *  index options + their ETF wrappers, where 0DTE liquidity survives a vol spike. */
+export const INDEX_ETF_TICKERS = new Set([
+  "SPX", "SPXW", "XSP", "SPY", "QQQ", "NDX", "NDXP", "IWM", "RUT", "RUTW", "DIA",
+]);
+
+export type ZeroDteVixCalibration = {
+  day_open_vix: number | null;
+  tier: "unknown" | "normal" | "elevated" | "extreme";
+  /** Would the hardened G-4 have blocked this commit? (Logged, not enforced.) */
+  would_block: boolean;
+  /** Extreme tier's surviving index/ETF plays would print at half size. */
+  would_halve_size: boolean;
+  note: string;
+};
+
+// ── G-6 · Cross-system conflict — CALIBRATION MODE (logs, never blocks) ─────────
+// Evidence (v1 §2.2): 7/13's META short opposed Night Hawk's 7/10 edition LONG A on
+// META and was surfaced to members only as a whisper-echo. Slayer has an explicit
+// satellite-conflict module; this is the 0DTE analogue. Hardened form would require
+// score ≥ 80 to print a CONFLICT-flagged setup.
+export const CONFLICT_SCORE_FLOOR = 80;
+/** Tickers that trade the same broad-market direction as Slayer's SPX play — a
+ *  0DTE short on any of these against a live Slayer long IS a desk disagreement. */
+export const SPX_CORRELATED_TICKERS = new Set(["SPX", "SPXW", "XSP", "SPY", "QQQ", "NDX", "NDXP"]);
+
+export type ZeroDteConflictCalibration = {
+  conflict: boolean;
+  /** Which system(s) this setup opposes (empty when clear). */
+  against: Array<"spx_slayer" | "nighthawk_edition">;
+  would_block: boolean;
+  note: string;
+};
+
+/** The full calibration record pinned onto a committed ledger row
+ *  (zerodte_setup_log.gate_calibration_json) — the C-2 context columns: after 30
+ *  gated sessions this is what decides whether G-4/G-6 harden or drop. */
+export type ZeroDteGateCalibration = {
+  score_at_commit: number;
+  market_bias: MarketBias | null;
+  /** "HH:MM" ET at evaluation — the time-of-day bucket key for the calibration
+   *  loop (e.g. measuring the 9:45–10:30 band the user chose to keep open). */
+  committed_at_et: string;
+  g4_vix: ZeroDteVixCalibration;
+  g6_conflict: ZeroDteConflictCalibration;
+};
 
 // ── G-3 · Score floor ───────────────────────────────────────────────────────────
 // Evidence (F-2): the engine's OWN 14-day calibration (38 graded plays) says the
@@ -70,6 +129,9 @@ export type ZeroDteGateVerdict = {
   /** Every hard gate that failed — ALL of them, not just the first, so the SKIP
    *  card can say "tape + window" instead of hiding the second reason. */
   blocks: ZeroDteGateBlock[];
+  /** G-4/G-6 calibration verdict (logged on every evaluation, pinned to the ledger
+   *  row on commit; NEVER blocks while in calibration mode). */
+  calibration: ZeroDteGateCalibration;
 };
 
 export type ZeroDteGateInput = {
@@ -88,8 +150,16 @@ export type ZeroDteGateInput = {
   /** G-5 session state (./governor.ts). Null = state unreadable → fail closed. */
   governor: GovernorSnapshot | null;
   /** Fresh commits already accepted earlier in this same scan cycle — feeds the
-   *  governor's concurrency cap so one cycle can't overshoot it. */
-  committedThisCycle?: number;
+   *  governor's concurrency cap + correlated-conflict check so one cycle can't
+   *  overshoot the cap or commit correlated-but-opposed plans together. */
+  committedThisCycle?: GovernorOpenPlan[];
+  /** Day-open VIX (Polygon I:VIX daily bar open). Null = unavailable — G-4 is
+   *  calibration-only, so unknown is logged honestly, never guessed or blocking. */
+  vixDayOpen?: number | null;
+  /** SPX Slayer's live open play today (direction only). Null = none/unreadable. */
+  slayerLive?: { direction: "long" | "short" } | null;
+  /** Night Hawk's most recent take on THIS ticker (recency-filtered upstream). */
+  nighthawkTake?: { direction: "long" | "short"; edition_for: string } | null;
 };
 
 /**
@@ -165,12 +235,140 @@ export function evaluateZeroDteGates(input: ZeroDteGateInput): ZeroDteGateVerdic
         { ticker: input.ticker, direction: input.direction },
         input.governor,
         input.nowMs,
-        input.committedThisCycle ?? 0
+        input.committedThisCycle ?? []
       )
     );
   }
 
-  return { verdict: blocks.length > 0 ? "BLOCKED" : "COMMIT", blocks };
+  return {
+    verdict: blocks.length > 0 ? "BLOCKED" : "COMMIT",
+    blocks,
+    calibration: computeGateCalibration(input),
+  };
+}
+
+/** "HH:MM" from ET minutes-since-midnight. */
+function etLabel(etMinutes: number): string {
+  const h = Math.floor(etMinutes / 60);
+  const m = etMinutes % 60;
+  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+}
+
+/**
+ * G-4 (VIX regime) + G-6 (cross-system conflict) — CALIBRATION MODE. Computed on
+ * every evaluation and pinned to the ledger row at commit; deliberately NOT in the
+ * blocking path until ≥30 sessions of would_block data say they earn it (both rest
+ * on LOW-N cuts today — see the G-4/G-6 module docs above). Pure and deterministic.
+ */
+export function computeGateCalibration(input: ZeroDteGateInput): ZeroDteGateCalibration {
+  const ticker = input.ticker.toUpperCase();
+  const aligned: boolean | null =
+    input.bias == null || input.bias === "flat"
+      ? null
+      : (input.bias === "up") === (input.direction === "long");
+
+  // G-4 — VIX regime throttle verdict.
+  const vix = input.vixDayOpen ?? null;
+  let g4: ZeroDteVixCalibration;
+  if (vix == null) {
+    g4 = {
+      day_open_vix: null,
+      tier: "unknown",
+      would_block: false,
+      would_halve_size: false,
+      note: "Day-open VIX unavailable — no G-4 verdict recorded (never guessed).",
+    };
+  } else if (vix >= VIX_EXTREME_THRESHOLD) {
+    const isIndexEtf = INDEX_ETF_TICKERS.has(ticker);
+    g4 = {
+      day_open_vix: vix,
+      tier: "extreme",
+      would_block: !isIndexEtf,
+      would_halve_size: isIndexEtf,
+      note: isIndexEtf
+        ? `VIX ${vix} ≥ ${VIX_EXTREME_THRESHOLD}: index/ETF product survives at HALF plan size under hardened G-4.`
+        : `VIX ${vix} ≥ ${VIX_EXTREME_THRESHOLD}: single names blocked under hardened G-4 (index/ETF only).`,
+    };
+  } else if (vix >= VIX_ELEVATED_THRESHOLD) {
+    const clears = aligned === true && input.score >= VIX_ELEVATED_SCORE_FLOOR;
+    g4 = {
+      day_open_vix: vix,
+      tier: "elevated",
+      would_block: !clears,
+      would_halve_size: false,
+      note: clears
+        ? `VIX ${vix} ≥ ${VIX_ELEVATED_THRESHOLD}: aligned with score ≥ ${VIX_ELEVATED_SCORE_FLOOR} — clears hardened G-4.`
+        : `VIX ${vix} ≥ ${VIX_ELEVATED_THRESHOLD}: hardened G-4 needs tape alignment AND score ≥ ${VIX_ELEVATED_SCORE_FLOOR} (17-20 regime ran 25% WR vs 69% at 15-17).`,
+    };
+  } else {
+    g4 = {
+      day_open_vix: vix,
+      tier: "normal",
+      would_block: false,
+      would_halve_size: false,
+      note: `VIX ${vix} < ${VIX_ELEVATED_THRESHOLD}: normal regime.`,
+    };
+  }
+
+  // G-6 — cross-system conflict verdict.
+  const against: Array<"spx_slayer" | "nighthawk_edition"> = [];
+  if (
+    input.slayerLive != null &&
+    SPX_CORRELATED_TICKERS.has(ticker) &&
+    input.slayerLive.direction !== input.direction
+  ) {
+    against.push("spx_slayer");
+  }
+  if (input.nighthawkTake != null && input.nighthawkTake.direction !== input.direction) {
+    against.push("nighthawk_edition");
+  }
+  const conflict = against.length > 0;
+  const g6: ZeroDteConflictCalibration = {
+    conflict,
+    against,
+    would_block: conflict && input.score < CONFLICT_SCORE_FLOOR,
+    note: conflict
+      ? `CONFLICT: ${input.direction} opposes ${against
+          .map((a) =>
+            a === "spx_slayer"
+              ? `the live SPX Slayer ${input.slayerLive!.direction}`
+              : `Night Hawk's ${input.nighthawkTake!.direction} take (edition ${input.nighthawkTake!.edition_for})`
+          )
+          .join(" and ")} — hardened G-6 would require score ≥ ${CONFLICT_SCORE_FLOOR}.`
+      : "No cross-system conflict.",
+  };
+
+  return {
+    score_at_commit: Math.round(input.score),
+    market_bias: input.bias,
+    committed_at_et: etLabel(input.nowEtMinutes),
+    g4_vix: g4,
+    g6_conflict: g6,
+  };
+}
+
+// ── G-6 input normalization ────────────────────────────────────────────────────────
+
+/** How far back a Night Hawk take on a ticker still counts as "today's context".
+ *  The 7/13 META conflict was against the 7/10 edition (3 calendar days) — the
+ *  echo's most-recent-row-per-ticker can reach back arbitrarily far, and a
+ *  two-week-old edition take is history, not a live desk position. */
+export const NIGHTHAWK_TAKE_MAX_AGE_DAYS = 5;
+
+/** Normalize a nighthawk_echo row into a G-6 input: recency-bounded, direction
+ *  strictly long/short (anything else is not a directional take). Pure. */
+export function recentNighthawkTake(
+  echo: { direction: string; edition_for: string } | null | undefined,
+  todayYmd: string
+): { direction: "long" | "short"; edition_for: string } | null {
+  if (!echo) return null;
+  if (echo.direction !== "long" && echo.direction !== "short") return null;
+  const editionMs = Date.parse(echo.edition_for);
+  const todayMs = Date.parse(todayYmd);
+  if (!Number.isFinite(editionMs) || !Number.isFinite(todayMs)) return null;
+  const ageDays = (todayMs - editionMs) / 86_400_000;
+  if (ageDays < 0 || ageDays > NIGHTHAWK_TAKE_MAX_AGE_DAYS) return null;
+  return { direction: echo.direction, edition_for: echo.edition_for.slice(0, 10) };
 }
 
 // ── Rejection-row bridge ───────────────────────────────────────────────────────────

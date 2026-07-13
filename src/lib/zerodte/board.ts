@@ -246,6 +246,7 @@ export type ZeroDteGateFailure =
   | "governor_max_concurrent" // G-5: 3 plans already open
   | "governor_session_stops" // G-5: 3 stops today — halted for the session
   | "governor_reentry_lock" // G-5: same-direction re-entry within 20m of that ticker's stop
+  | "correlated_conflict" // G-5/B-3: opposes an OPEN plan on a correlated ticker
   | "gate_context_unavailable"; // fail-closed: gate inputs (ledger/governor) unreadable
 
 export type ZeroDteGateRejection = {

@@ -11,7 +11,7 @@
 // a proven closed-ledger effect (48% WR from a ~42% signal environment).
 //
 // State model — deterministic and replica-safe:
-// - open_count and the stopped-play COUNT derive from the Postgres ledger
+// - open plans and the stopped-play COUNT derive from the Postgres ledger
 //   (zerodte_setup_log), which every replica already shares — the halt decision
 //   never depends on a cache being warm.
 // - Stop TIMESTAMPS (which Postgres doesn't store) are recorded to Redis via the
@@ -46,12 +46,31 @@ export type GovernorStopEvent = {
   at_ms: number | null;
 };
 
+export type GovernorOpenPlan = { ticker: string; direction: "long" | "short" };
+
 export type GovernorSnapshot = {
-  /** Plans currently not CLOSED (null status = just committed, presumptively live). */
-  open_count: number;
+  /** Plans currently not CLOSED (null status = just committed, presumptively live).
+   *  Carried as (ticker, direction) pairs — one source for BOTH the concurrency
+   *  count and the correlated-conflict check. */
+  open_plans: GovernorOpenPlan[];
   /** One entry per stopped ticker this session (ledger ∪ Redis-recorded). */
   stops: GovernorStopEvent[];
 };
+
+// B-3 (docs/audit/0DTE-BREAKTHROUGH-LEDGER.md) — correlated-conflict rule.
+// Evidence: 7/13 ran SPY long AND QQQ short simultaneously — correlated
+// instruments, one guaranteed loser. v1 keeps ONE static group (the broad
+// index/ETF complex); sector pairs (e.g. NVDA/AMD) come later via the calibration
+// loop once per-play evidence says which pairs actually co-move enough to matter.
+export const CORRELATION_GROUPS: ReadonlyArray<ReadonlySet<string>> = [
+  new Set(["SPY", "QQQ", "IWM", "DIA", "SPX", "SPXW", "NDX", "XSP"]),
+];
+
+/** The correlation group a ticker belongs to, or null. */
+function correlationGroupOf(ticker: string): ReadonlySet<string> | null {
+  for (const g of CORRELATION_GROUPS) if (g.has(ticker)) return g;
+  return null;
+}
 
 /** The ledger fields the governor reads — subset so tests need no full row. */
 export type GovernorLedgerRow = Pick<
@@ -77,12 +96,12 @@ function ledgerRowStopped(r: GovernorLedgerRow): boolean {
 /** Deterministic snapshot from today's ledger rows (the shared-Postgres half). */
 export function deriveGovernorFromLedger(rows: GovernorLedgerRow[]): GovernorSnapshot {
   const stops: GovernorStopEvent[] = [];
-  let openCount = 0;
+  const openPlans: GovernorOpenPlan[] = [];
   for (const r of rows) {
-    if (r.status !== "CLOSED") openCount += 1;
+    if (r.status !== "CLOSED") openPlans.push({ ticker: r.ticker.toUpperCase(), direction: r.direction });
     if (ledgerRowStopped(r)) stops.push({ ticker: r.ticker.toUpperCase(), direction: r.direction, at_ms: null });
   }
-  return { open_count: openCount, stops };
+  return { open_plans: openPlans, stops };
 }
 
 /** Union ledger-derived stops with Redis-recorded ones (per ticker). A recorded
@@ -105,10 +124,10 @@ export function mergeGovernorStops(
 }
 
 /**
- * The pure G-5 verdict for one fresh candidate. `committedThisCycle` counts fresh
+ * The pure G-5 verdict for one fresh candidate. `committedThisCycle` carries fresh
  * commits ALREADY accepted earlier in this same scan pass (setups arrive
- * score-ranked), so a single cycle can never blow through the concurrency cap by
- * committing N candidates against the same pre-cycle open_count.
+ * score-ranked), so a single cycle can never blow through the concurrency cap — or
+ * commit two correlated-but-opposed plans — against the same pre-cycle snapshot.
  *
  * Note on reachability: the ledger's (session_date, ticker) primary key already
  * prevents a second same-session commit on a stopped ticker, so the re-entry lock
@@ -119,7 +138,7 @@ export function evaluateZeroDteGovernor(
   candidate: { ticker: string; direction: "long" | "short" },
   snap: GovernorSnapshot,
   nowMs: number,
-  committedThisCycle = 0
+  committedThisCycle: GovernorOpenPlan[] = []
 ): ZeroDteGateBlock[] {
   const blocks: ZeroDteGateBlock[] = [];
 
@@ -136,15 +155,42 @@ export function evaluateZeroDteGovernor(
     return blocks;
   }
 
-  if (snap.open_count + committedThisCycle >= GOVERNOR_MAX_CONCURRENT_PLANS) {
+  const liveExposure = [...snap.open_plans, ...committedThisCycle];
+
+  if (liveExposure.length >= GOVERNOR_MAX_CONCURRENT_PLANS) {
     blocks.push({
       code: "governor_max_concurrent",
       reason:
-        `Session governor: ${snap.open_count + committedThisCycle} plans already live (max ` +
+        `Session governor: ${liveExposure.length} plans already live (max ` +
         `${GOVERNOR_MAX_CONCURRENT_PLANS} concurrent) — manage what's open before adding exposure.`,
       threshold: GOVERNOR_MAX_CONCURRENT_PLANS,
       unlock_et: null,
     });
+  }
+
+  // B-3 — correlated conflict: a new plan must not fight an OPEN plan on a
+  // correlated instrument (7/13 ran SPY long + QQQ short at once — one guaranteed
+  // loser). Direction AGREEMENT is fine; only opposition blocks.
+  const candidateTicker = candidate.ticker.toUpperCase();
+  const group = correlationGroupOf(candidateTicker);
+  if (group) {
+    const opposed = liveExposure.find(
+      (p) =>
+        p.ticker.toUpperCase() !== candidateTicker &&
+        group.has(p.ticker.toUpperCase()) &&
+        p.direction !== candidate.direction
+    );
+    if (opposed) {
+      blocks.push({
+        code: "correlated_conflict",
+        reason:
+          `Session governor: ${candidateTicker} ${candidate.direction} opposes the OPEN ` +
+          `${opposed.ticker.toUpperCase()} ${opposed.direction} — correlated index/ETF exposure ` +
+          "in both directions is one guaranteed loser (7/13 ran SPY long + QQQ short simultaneously).",
+        threshold: null,
+        unlock_et: null,
+      });
+    }
   }
 
   const ticker = candidate.ticker.toUpperCase();

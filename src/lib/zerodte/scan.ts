@@ -16,6 +16,7 @@
 import {
   dbConfigured,
   fetchLatestNighthawkEdition,
+  fetchOpenSpxPlay,
   fetchRecentFlows,
   fetchUngradedZeroDteRows,
   fetchZeroDteSetupLog,
@@ -27,6 +28,7 @@ import {
   type ZeroDteSetupLogRow,
   type ZeroDteSetupLogUpsert,
 } from "@/lib/db";
+import { fetchNighthawkEchoForTickers } from "@/lib/bie/ecosystem-context";
 import { LEVERAGED_ETP_SET } from "@/features/nighthawk/lib/constants";
 import { createDossierBuildCache, fetchTickerDossier } from "@/features/nighthawk/lib/dossier";
 import { etNowParts, todayEt } from "@/features/nighthawk/lib/session";
@@ -47,7 +49,7 @@ import {
   type ZeroDteGateRejection,
 } from "./board";
 import { persistZeroDteRejections } from "./rejections";
-import { evaluateZeroDteGates, gateRejectionFor } from "./gates";
+import { evaluateZeroDteGates, gateRejectionFor, recentNighthawkTake } from "./gates";
 import {
   deriveGovernorFromLedger,
   loadRecordedGovernorStops,
@@ -287,13 +289,48 @@ async function attachGateVerdicts(
   const recordedStops = await loadRecordedGovernorStops(today).catch(() => []);
   const ledgerGovernor = deriveGovernorFromLedger(ledgerRows);
   const governor: GovernorSnapshot = {
-    open_count: ledgerGovernor.open_count,
+    open_plans: ledgerGovernor.open_plans,
     stops: mergeGovernorStops(ledgerGovernor.stops, recordedStops),
   };
 
+  // G-4/G-6 calibration context — all best-effort (calibration LOGS, never blocks,
+  // so a missing input degrades to an honest "unknown"/no-conflict verdict, never a
+  // stalled scan): day-open VIX cached per session, Slayer's live play briefly,
+  // Night Hawk takes in one batched echo query for just the fresh tickers.
+  const freshTickers = setups.map((s) => s.ticker.toUpperCase()).filter((t) => !committed.has(t));
+  const [vixDayOpen, slayerLive, nhEcho] = await Promise.all([
+    within(
+      withServerCache<number | null>(`zerodte:vix-open:${today}`, 10 * 60 * 1000, async () => {
+        const bars = await fetchAggBars("I:VIX", 1, "day", today, today);
+        const open = bars.length ? bars[0]!.o : null;
+        return open != null && Number.isFinite(open) ? open : null;
+      }),
+      2_500
+    ),
+    dbConfigured()
+      ? within(
+          withServerCache<{ direction: "long" | "short" } | null>(
+            `zerodte:slayer-live:${today}`,
+            30_000,
+            async () => {
+              const play = await fetchOpenSpxPlay(today).catch(() => null);
+              return play ? { direction: play.direction } : null;
+            }
+          ),
+          2_500
+        )
+      : null,
+    freshTickers.length > 0 && dbConfigured()
+      ? fetchNighthawkEchoForTickers(freshTickers).catch(
+          () => new Map<string, { direction: string; edition_for: string }>()
+        )
+      : new Map<string, { direction: string; edition_for: string }>(),
+  ]);
+
   // Setups arrive score-ranked, so the concurrency budget goes to the best finds:
-  // committedThisCycle counts earlier accepted fresh commits within this same pass.
-  let committedThisCycle = 0;
+  // committedThisCycle carries earlier accepted fresh commits within this same pass
+  // (both for the cap and the correlated-conflict check).
+  const committedThisCycle: Array<{ ticker: string; direction: "long" | "short" }> = [];
   for (const s of setups) {
     if (committed.has(s.ticker.toUpperCase())) continue;
     s.gate = evaluateZeroDteGates({
@@ -306,8 +343,11 @@ async function attachGateVerdicts(
       biasAsOfMs,
       governor,
       committedThisCycle,
+      vixDayOpen,
+      slayerLive,
+      nighthawkTake: recentNighthawkTake(nhEcho.get(s.ticker.toUpperCase()) ?? null, today),
     });
-    if (s.gate.verdict === "COMMIT") committedThisCycle += 1;
+    if (s.gate.verdict === "COMMIT") committedThisCycle.push({ ticker: s.ticker, direction: s.direction });
   }
 }
 
@@ -412,7 +452,10 @@ export async function persistZeroDteScan(setups: EnrichedZeroDteSetup[]): Promis
     entry_premium: resolveLedgerEntryPremium(s.plan?.entry_max, s.top_strike_avg_fill),
     flow_avg_fill: s.top_strike_avg_fill,
     plan_json: s.plan ? ({ ...s.plan } as unknown as Record<string, unknown>) : null,
-    gate_calibration_json: null,
+    // G-4/G-6 calibration verdict at commit (C-2 context columns). Refresh-lane
+    // setups carry gate=null and pass null here — the upsert's COALESCE pin keeps
+    // the original commit-time verdict untouched either way.
+    gate_calibration_json: s.gate ? ({ ...s.gate.calibration } as unknown as Record<string, unknown>) : null,
     flags_json: {
       ...(s.earnings ? { earnings: s.earnings } : {}),
       ...(s.news_hot ? { news_hot: s.news_hot.title } : {}),

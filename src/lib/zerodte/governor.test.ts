@@ -42,7 +42,7 @@ test("deriveGovernorFromLedger: non-CLOSED rows count as open — including null
     row({ ticker: "D", status: null }), // committed this cycle, cron hasn't synced yet
     row({ ticker: "E", status: "CLOSED" }),
   ]);
-  assert.equal(snap.open_count, 4);
+  assert.deepEqual(snap.open_plans.map((p) => p.ticker).sort(), ["A", "B", "C", "D"]);
 });
 
 test("deriveGovernorFromLedger: a stop is detected from the graded plan_outcome OR the latched trough", () => {
@@ -82,22 +82,52 @@ test("mergeGovernorStops: recorded (timestamped) events win over timeless ledger
 
 test("governor: 3 stops halt the session — single dominating block", () => {
   const stops = ["SPY", "MU", "AMD"].map((t) => ({ ticker: t, direction: "long" as const, at_ms: null }));
-  const blocks = evaluateZeroDteGovernor({ ticker: "NVDA", direction: "long" }, { open_count: 0, stops }, NOW);
+  const blocks = evaluateZeroDteGovernor({ ticker: "NVDA", direction: "long" }, { open_plans: [], stops }, NOW);
   assert.deepEqual(blocks.map((b) => b.code), ["governor_session_stops"]);
   assert.equal(blocks[0]!.threshold, GOVERNOR_MAX_SESSION_STOPS);
 });
 
 test("governor: concurrency cap at 3 open plans (2 passes, 3 blocks)", () => {
-  const ok = evaluateZeroDteGovernor({ ticker: "NVDA", direction: "long" }, { open_count: 2, stops: [] }, NOW);
+  const two = [
+    { ticker: "TSLA", direction: "long" as const },
+    { ticker: "AMZN", direction: "long" as const },
+  ];
+  const ok = evaluateZeroDteGovernor({ ticker: "NVDA", direction: "long" }, { open_plans: two, stops: [] }, NOW);
   assert.deepEqual(ok, []);
-  const blocked = evaluateZeroDteGovernor({ ticker: "NVDA", direction: "long" }, { open_count: 3, stops: [] }, NOW);
+  const three = [...two, { ticker: "GOOGL", direction: "long" as const }];
+  const blocked = evaluateZeroDteGovernor({ ticker: "NVDA", direction: "long" }, { open_plans: three, stops: [] }, NOW);
   assert.deepEqual(blocked.map((b) => b.code), ["governor_max_concurrent"]);
   assert.equal(blocked[0]!.threshold, GOVERNOR_MAX_CONCURRENT_PLANS);
 });
 
+test("governor/B-3: QQQ short against an OPEN SPY long is a correlated conflict — blocked", () => {
+  // 7/13 ran exactly this pair live: SPY long (09:55) and QQQ short (10:20) at once.
+  const snap = { open_plans: [{ ticker: "SPY", direction: "long" as const }], stops: [] };
+  const blocked = evaluateZeroDteGovernor({ ticker: "QQQ", direction: "short" }, snap, NOW);
+  assert.deepEqual(blocked.map((b) => b.code), ["correlated_conflict"]);
+  assert.match(blocked[0]!.reason, /OPEN SPY long/, "the open ticker is named in the detail");
+});
+
+test("governor/B-3: direction AGREEMENT with the open correlated plan is allowed", () => {
+  const snap = { open_plans: [{ ticker: "SPY", direction: "long" as const }], stops: [] };
+  assert.deepEqual(evaluateZeroDteGovernor({ ticker: "QQQ", direction: "long" }, snap, NOW), []);
+});
+
+test("governor/B-3: no open plays — nothing to conflict with", () => {
+  assert.deepEqual(
+    evaluateZeroDteGovernor({ ticker: "QQQ", direction: "short" }, { open_plans: [], stops: [] }, NOW),
+    []
+  );
+});
+
+test("governor/B-3: v1 groups are the index/ETF complex only — a single name doesn't trip it", () => {
+  const snap = { open_plans: [{ ticker: "SPY", direction: "long" as const }], stops: [] };
+  assert.deepEqual(evaluateZeroDteGovernor({ ticker: "NVDA", direction: "short" }, snap, NOW), []);
+});
+
 test("governor: 20-min same-direction re-entry lock — inside blocks, outside/opposite/untimed pass", () => {
   const stopAt = NOW - 10 * 60_000; // 10 minutes ago
-  const snap = { open_count: 0, stops: [{ ticker: "META", direction: "short" as const, at_ms: stopAt }] };
+  const snap = { open_plans: [], stops: [{ ticker: "META", direction: "short" as const, at_ms: stopAt }] };
 
   const locked = evaluateZeroDteGovernor({ ticker: "META", direction: "short" }, snap, NOW);
   assert.deepEqual(locked.map((b) => b.code), ["governor_reentry_lock"]);
@@ -107,7 +137,7 @@ test("governor: 20-min same-direction re-entry lock — inside blocks, outside/o
   const later = NOW - GOVERNOR_REENTRY_LOCK_MS - (NOW - stopAt);
   const expired = evaluateZeroDteGovernor(
     { ticker: "META", direction: "short" },
-    { open_count: 0, stops: [{ ticker: "META", direction: "short", at_ms: later }] },
+    { open_plans: [], stops: [{ ticker: "META", direction: "short", at_ms: later }] },
     NOW
   );
   assert.deepEqual(expired, []);
@@ -116,7 +146,7 @@ test("governor: 20-min same-direction re-entry lock — inside blocks, outside/o
   assert.deepEqual(evaluateZeroDteGovernor({ ticker: "META", direction: "long" }, snap, NOW), []);
 
   // Untimed (ledger-only) stop can't drive the timed lock — never fabricate timing.
-  const untimed = { open_count: 0, stops: [{ ticker: "META", direction: "short" as const, at_ms: null }] };
+  const untimed = { open_plans: [], stops: [{ ticker: "META", direction: "short" as const, at_ms: null }] };
   assert.deepEqual(evaluateZeroDteGovernor({ ticker: "META", direction: "short" }, untimed, NOW), []);
 });
 
@@ -131,7 +161,7 @@ test("governor state: a simulated 3-stop session persists, reloads, and halts", 
   const recorded = await loadRecordedGovernorStops(day);
   assert.equal(recorded.length, 3);
 
-  const snap = { open_count: 0, stops: mergeGovernorStops([], recorded) };
+  const snap = { open_plans: [], stops: mergeGovernorStops([], recorded) };
   const blocks = evaluateZeroDteGovernor({ ticker: "NVDA", direction: "long" }, snap, NOW);
   assert.deepEqual(blocks.map((b) => b.code), ["governor_session_stops"]);
 });
