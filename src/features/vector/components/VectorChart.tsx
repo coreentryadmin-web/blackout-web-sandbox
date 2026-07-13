@@ -84,6 +84,7 @@ import { levelLinesFor, type LevelLine, type PriorDayOhlc } from "@/features/vec
 import { buildStructureMarkers } from "@/features/vector/lib/vector-structure-markers";
 import { confluenceZones, confluenceCallouts, topConfluenceBand, type ConfluenceLevel } from "@/features/vector/lib/vector-confluence";
 import { summarizeTechnicals, technicalsCallouts } from "@/features/vector/lib/vector-technicals";
+import { evaluateAlerts, type AlertRule, type AlertState, type FiredAlert } from "@/features/vector/lib/vector-alerts";
 import { sessionHodLod } from "@/features/vector/lib/vector-key-levels";
 import { dominantSwing, goldenPocket } from "@/features/vector/lib/vector-fib-swing";
 import {
@@ -191,6 +192,10 @@ type Props = {
   /** Pre-formatted always-on technicals lines (VWAP/EMA/RSI/MACD/pocket/structure) for the desk
    *  terminal — computed from the shown bars REGARDLESS of which overlays are toggled. Empty = warming up. */
   onTechnicalsChange?: (lines: string[]) => void;
+  /** Member-defined alert rules for THIS ticker (wall-touch / flip-cross). Evaluated on each live tick. */
+  alertRules?: AlertRule[];
+  /** Fired alerts from the latest tick (already deduped/cooled-down by the engine) — for toast + terminal. */
+  onAlertsFired?: (fired: FiredAlert[]) => void;
   /** Compact page title + ticker cluster, rendered at the far left of the chart toolbar row. */
   leadSlot?: React.ReactNode;
   /** Freshness/status chip, rendered at the far right of the toolbar row. */
@@ -742,6 +747,8 @@ export function VectorChart({
   onLensChange,
   onDteHorizonChange,
   onTechnicalsChange,
+  alertRules,
+  onAlertsFired,
   leadSlot,
   trailSlot,
   regimeSlot,
@@ -757,6 +764,16 @@ export function VectorChart({
   const lastTechnicalsRef = useRef<string>("");
   useEffect(() => {
     onTechnicalsChangeRef.current = onTechnicalsChange;
+  });
+  // Alerts: the member's rules + the engine's per-rule state + the prior spot (for flip-cross), all
+  // in refs so the []-dep tick handler reads the latest without re-subscribing the SSE stream.
+  const alertRulesRef = useRef<AlertRule[]>(alertRules ?? []);
+  const alertStateRef = useRef<AlertState>({});
+  const priorSpotRef = useRef<number | null>(null);
+  const onAlertsFiredRef = useRef(onAlertsFired);
+  useEffect(() => {
+    alertRulesRef.current = alertRules ?? [];
+    onAlertsFiredRef.current = onAlertsFired;
   });
   const callGuideRefs = useRef<(IPriceLine | null)[]>(emptyGuideRefs());
   const putGuideRefs = useRef<(IPriceLine | null)[]>(emptyGuideRefs());
@@ -1465,6 +1482,27 @@ export function VectorChart({
     onWallIntegrityChange(integ);
   }, [onWallIntegrityChange, liveGexWalls]);
 
+  // Evaluate the member's alert rules against the CURRENT live tick (spot + horizon-scoped walls +
+  // flip). The pure engine does the dedupe/cooldown/hysteresis; we just persist its state + the prior
+  // spot (for flip-cross) and forward any fired alerts. No-op when there are no rules or no callback.
+  const evaluateAlertsNow = useCallback(() => {
+    const cb = onAlertsFiredRef.current;
+    const rules = alertRulesRef.current;
+    const spot = spotRef.current;
+    if (!cb || rules.length === 0 || !(spot && spot > 0)) {
+      if (spot && spot > 0) priorSpotRef.current = spot; // still track spot so the first real cross is honest
+      return;
+    }
+    const { fired, state } = evaluateAlerts(
+      rules,
+      { spot, priorSpot: priorSpotRef.current, walls: liveGexWalls(), flip: liveGammaFlip(), nowMs: Date.now() },
+      alertStateRef.current
+    );
+    alertStateRef.current = state;
+    priorSpotRef.current = spot;
+    if (fired.length) cb(fired);
+  }, [liveGexWalls, liveGammaFlip]);
+
   // DTE horizon → repaint GEX walls. "all" follows the live stream; a narrower
   // horizon fetches expiry-scoped walls on demand (keeping the shared per-second
   // SSE stream untouched) and repaints, refreshing on an interval while live.
@@ -1814,9 +1852,10 @@ export function VectorChart({
         emitConfluence();
         paintConfluenceBand(); // live SSE tick moved the walls — re-fit the band to the new stack
         emitWallIntegrity();
+        evaluateAlertsNow(); // spot/walls/flip just advanced — check the member's alert rules
       }
     });
-  }, [sessionYmd, refreshTrails, refreshOverlays, onFreshness, ticker, liveGexWalls, liveGammaFlip, emitRegime, emitProximity, emitMagnet, emitConfluence, paintConfluenceBand, emitWallIntegrity, paintOverlays]);
+  }, [sessionYmd, refreshTrails, refreshOverlays, onFreshness, ticker, liveGexWalls, liveGammaFlip, emitRegime, emitProximity, emitMagnet, emitConfluence, paintConfluenceBand, emitWallIntegrity, evaluateAlertsNow, paintOverlays]);
 
   useEffect(() => {
     const container = containerRef.current;

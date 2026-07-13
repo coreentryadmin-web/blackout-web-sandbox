@@ -14,6 +14,9 @@ import { VectorScanner } from "@/features/vector/components/VectorScanner";
 import { VectorDeskTerminal } from "@/features/vector/components/VectorDeskTerminal";
 import { VectorGexLadder } from "@/features/vector/components/VectorGexLadder";
 import { VectorRegimeBanner } from "@/features/vector/components/VectorRegimeBanner";
+import { VectorAlertsPanel } from "@/features/vector/components/VectorAlertsPanel";
+import type { AlertRule, AlertKind, FiredAlert } from "@/features/vector/lib/vector-alerts";
+import { loadAlertRules, saveAlertRules, buildAlertRule } from "@/features/vector/lib/vector-alerts-store";
 import { deriveVectorRegime, type VectorRegime } from "@/features/vector/lib/vector-regime";
 import { deriveWallProximity, type WallProximity } from "@/features/vector/lib/vector-wall-proximity";
 import { deriveGammaMagnet, type GammaMagnet } from "@/features/vector/lib/vector-gamma-magnet";
@@ -107,6 +110,11 @@ export function VectorPageShell({
   // Always-on technicals lines (VWAP/EMA/RSI/MACD/pocket/structure) — narrated by the terminal even
   // when the member hasn't toggled the overlays on the chart.
   const [technicals, setTechnicals] = useState<string[]>([]);
+  // Alerts (in-page delivery): the member's rules (persisted per ticker), recent fires (for the
+  // panel + terminal), and the transient toast for the newest fire.
+  const [alertRules, setAlertRules] = useState<AlertRule[]>([]);
+  const [recentAlerts, setRecentAlerts] = useState<FiredAlert[]>([]);
+  const [toast, setToast] = useState<FiredAlert | null>(null);
   const [magnet, setMagnet] = useState<GammaMagnet | null>(() =>
     deriveGammaMagnet({
       spot: initialBars.length ? initialBars[initialBars.length - 1]!.close : null,
@@ -130,6 +138,36 @@ export function VectorPageShell({
     const id = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(id);
   }, [liveSession]);
+
+  // Load the member's saved alert rules whenever the ticker changes (and clear the recent history so
+  // one ticker's fires don't bleed into another). Persisted per ticker in localStorage.
+  useEffect(() => {
+    setAlertRules(loadAlertRules(activeTicker));
+    setRecentAlerts([]);
+    setToast(null);
+  }, [activeTicker]);
+
+  // Auto-dismiss the toast a few seconds after the newest fire.
+  useEffect(() => {
+    if (!toast) return;
+    const id = setTimeout(() => setToast(null), 6000);
+    return () => clearTimeout(id);
+  }, [toast]);
+
+  const persistRules = (next: AlertRule[]) => {
+    setAlertRules(next);
+    saveAlertRules(activeTicker, next);
+  };
+  const handleAddRule = (kind: AlertKind, tolerancePct?: number) =>
+    persistRules([...alertRules, buildAlertRule(alertRules, activeTicker, kind, tolerancePct)]);
+  const handleToggleRule = (id: string) =>
+    persistRules(alertRules.map((r) => (r.id === id ? { ...r, enabled: !r.enabled } : r)));
+  const handleRemoveRule = (id: string) => persistRules(alertRules.filter((r) => r.id !== id));
+  const handleAlertsFired = (fired: FiredAlert[]) => {
+    if (!fired.length) return;
+    setRecentAlerts((prev) => [...fired].reverse().concat(prev).slice(0, 20));
+    setToast(fired[fired.length - 1]!);
+  };
 
   const candleAgeSec =
     liveSession && streamUpdatedAt != null && now != null
@@ -213,6 +251,8 @@ export function VectorPageShell({
               onWallIntegrityChange={setWallIntegrity}
               onDteHorizonChange={setDteHorizon}
               onTechnicalsChange={setTechnicals}
+              alertRules={alertRules}
+              onAlertsFired={handleAlertsFired}
               leadSlot={chartLead}
               trailSlot={chartFreshness}
               regimeSlot={<VectorRegimeBanner regime={regime} />}
@@ -231,10 +271,30 @@ export function VectorPageShell({
               magnet={magnet}
               confluence={confluence}
               technicals={technicals}
+              alerts={recentAlerts.slice(0, 5).map((f) => f.message)}
               wallIntegrity={wallIntegrity}
+            />
+            <VectorAlertsPanel
+              ticker={activeTicker}
+              rules={alertRules}
+              recent={recentAlerts}
+              onAdd={handleAddRule}
+              onToggle={handleToggleRule}
+              onRemove={handleRemoveRule}
             />
           </div>
         </div>
+
+        {/* Transient toast for the newest fired alert (in-page delivery; Web Push lands in slice 2). */}
+        {toast && (
+          <div className="vector-alert-toast" role="status" aria-live="polite">
+            <span className="vector-alert-toast-dot" aria-hidden="true" />
+            <span className="vector-alert-toast-msg">🔔 {toast.message}</span>
+            <button type="button" className="vector-alert-toast-x" onClick={() => setToast(null)} aria-label="Dismiss">
+              ✕
+            </button>
+          </div>
+        )}
 
         <details className="vector-scanner-panel" open={scannerOpen}>
           <summary
