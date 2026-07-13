@@ -1713,6 +1713,70 @@ export function VectorChart({
       repaintLive();
     };
 
+    // Max-pain and the expected-move cone are HORIZON-INDEPENDENT reads: each has its own endpoint
+    // that accepts ?dte= and returns a value for EVERY horizon, including "all" (verified live — the
+    // "all" response carries a real band/strike). They must therefore fire on every selection and are
+    // defined + invoked HERE, ABOVE the "all" early-return below. The early-return only skips the
+    // horizon-SCOPED walls/history fetch (on "all" the chart follows the live SSE stream, so there's
+    // nothing scoped to fetch). Before this move both reads sat AFTER the return, so on the DEFAULT
+    // "all" view they never ran — the max-pain line and the ±1σ/2σ cone silently never rendered until
+    // the member toggled to a narrower DTE. Same root cause, both fixed together.
+    const fetchMaxPain = async () => {
+      try {
+        const res = await fetch(
+          `/api/market/vector/max-pain?ticker=${encodeURIComponent(ticker)}&dte=${dteHorizon}`
+        );
+        if (cancelled || dteHorizonRef.current !== dteHorizon) return;
+        const strike =
+          res.ok && seriesRef.current
+            ? ((await res.json()) as { maxPain?: number | null }).maxPain ?? null
+            : null;
+        if (cancelled || dteHorizonRef.current !== dteHorizon || !seriesRef.current) return;
+        maxPainValueRef.current = strike;
+        applyMaxPainLine(seriesRef.current, maxPainLineRef, strike);
+        emitConfluence(); // the max-pain level just landed — the zone stack may have changed
+        paintConfluenceBand();
+      } catch {
+        // Network throw: keep the last-drawn line rather than blank it on a transient blip.
+      }
+    };
+
+    // Options-implied EXPECTED MOVE for the current (ticker, horizon) — the ±1σ/2σ range the chain
+    // is pricing through the horizon's front expiry. Emits pre-formatted callouts to the terminal
+    // (#15 cone, slice 3a) and stores the band for the chart draw (slice 3b). Best-effort: on any
+    // failure or a null (no real ATM IV) it emits [] so the terminal drops the section rather than
+    // showing stale, and the band clears.
+    const fetchExpectedMove = async () => {
+      const cb = onExpectedMoveChangeRef.current;
+      if (!cb) return;
+      try {
+        const res = await fetch(
+          `/api/market/vector/expected-move?ticker=${encodeURIComponent(ticker)}&dte=${dteHorizon}`
+        );
+        if (cancelled || dteHorizonRef.current !== dteHorizon) return;
+        const em = res.ok
+          ? ((await res.json()) as { expectedMove?: ExpectedMove | null }).expectedMove ?? null
+          : null;
+        if (cancelled || dteHorizonRef.current !== dteHorizon) return;
+        const lines = expectedMoveCallouts(em);
+        const key = lines.join("|");
+        if (key !== lastExpectedMoveRef.current) {
+          lastExpectedMoveRef.current = key;
+          cb(lines);
+        }
+        // Store the band + repaint so the chart lines redraw when the toggle is on (slice 3b). The
+        // repaint is a no-op for the band's sig-check when nothing changed; paintOverlays gates the
+        // actual draw on the "expected-move" toggle.
+        expectedMoveBandsRef.current = em;
+        paintOverlays(lastDisplayBarsRef.current);
+      } catch {
+        // Network throw: keep the last-emitted lines rather than blank the section on a blip.
+      }
+    };
+
+    void fetchMaxPain();
+    void fetchExpectedMove();
+
     if (dteHorizon === "all") {
       horizonWallsRef.current = null;
       horizonFlipRef.current = null;
@@ -1773,65 +1837,8 @@ export function VectorChart({
       }
     };
 
-    // Max-pain level for the current (ticker, horizon). Independent of the walls/history fetch — it
-    // reads OI-by-strike, not the gamma ladder — so it lands and draws on its own. Best-effort: on
-    // any failure or a null strike the line is simply removed (no honest level to pin).
-    const fetchMaxPain = async () => {
-      try {
-        const res = await fetch(
-          `/api/market/vector/max-pain?ticker=${encodeURIComponent(ticker)}&dte=${dteHorizon}`
-        );
-        if (cancelled || dteHorizonRef.current !== dteHorizon) return;
-        const strike =
-          res.ok && seriesRef.current
-            ? ((await res.json()) as { maxPain?: number | null }).maxPain ?? null
-            : null;
-        if (cancelled || dteHorizonRef.current !== dteHorizon || !seriesRef.current) return;
-        maxPainValueRef.current = strike;
-        applyMaxPainLine(seriesRef.current, maxPainLineRef, strike);
-        emitConfluence(); // the max-pain level just landed — the zone stack may have changed
-        paintConfluenceBand();
-      } catch {
-        // Network throw: keep the last-drawn line rather than blank it on a transient blip.
-      }
-    };
-
-    // Options-implied EXPECTED MOVE for the current (ticker, horizon) — the ±1σ/2σ range the chain
-    // is pricing through the horizon's front expiry. Same DTE-scoped fetch shape as max-pain; emits
-    // pre-formatted callouts to the terminal (#15 cone, slice 3a). Best-effort: on any failure or a
-    // null (no real ATM IV) it emits [] so the terminal drops the section rather than showing stale.
-    const fetchExpectedMove = async () => {
-      const cb = onExpectedMoveChangeRef.current;
-      if (!cb) return;
-      try {
-        const res = await fetch(
-          `/api/market/vector/expected-move?ticker=${encodeURIComponent(ticker)}&dte=${dteHorizon}`
-        );
-        if (cancelled || dteHorizonRef.current !== dteHorizon) return;
-        const em = res.ok
-          ? ((await res.json()) as { expectedMove?: ExpectedMove | null }).expectedMove ?? null
-          : null;
-        if (cancelled || dteHorizonRef.current !== dteHorizon) return;
-        const lines = expectedMoveCallouts(em);
-        const key = lines.join("|");
-        if (key !== lastExpectedMoveRef.current) {
-          lastExpectedMoveRef.current = key;
-          cb(lines);
-        }
-        // Store the band + repaint so the chart lines redraw when the toggle is on (slice 3b). The
-        // repaint is a no-op for the band's sig-check when nothing changed; paintOverlays gates the
-        // actual draw on the "expected-move" toggle.
-        expectedMoveBandsRef.current = em;
-        paintOverlays(lastDisplayBarsRef.current);
-      } catch {
-        // Network throw: keep the last-emitted lines rather than blank the section on a blip.
-      }
-    };
-
     void fetchScoped();
     void fetchHistory();
-    void fetchMaxPain();
-    void fetchExpectedMove();
     // Only the current walls need the 15s cadence; the recorded trail advances at the recorder's
     // 5-min bucket, so refresh it on a slower interval in RTH (and once, above, off-hours).
     const id = liveSession ? setInterval(fetchScoped, 15_000) : null;

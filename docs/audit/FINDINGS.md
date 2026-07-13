@@ -8,6 +8,26 @@ and required CI (`verify`) are green — no per-PR approval, no end-of-day hold.
 here and merge the PR in the same session. Supersedes all earlier "leave OPEN for review" notes
 in this file.
 
+## 🟠 P2 FOUND+FIXED 2026-07-13 — VECTOR expected-move cone + max-pain line silently never rendered on the DEFAULT "all" horizon (dead code behind an early return)
+
+**Surface:** `src/features/vector/components/VectorChart.tsx` — the DTE-horizon data effect (the same effect that fetches horizon-scoped walls/history/max-pain/expected-move).
+
+**Symptom (caught in live signed-in verification, not by any test):** on `/vector` with the default **ALL** horizon, the desk terminal showed no "EXPECTED MOVE — options-implied range" section and toggling the "Expected move" indicator drew **no** ±1σ/2σ band on the chart — even though `/api/market/vector/expected-move` returns a valid, correct band for every horizon incl. `all` (probed live: SPX spot 7575.39, ATM IV 0.12, ±1σ 51.77 pts → 7523.62/7627.16, ±2σ 103.55 → 7471.84/7678.94). The cone only appeared after toggling to a narrower DTE (0DTE/Weekly/Monthly).
+
+**Root cause:** the effect early-returns on the default horizon —
+```
+if (dteHorizon === "all") { …clear scoped refs…; repaint(); return; }
+```
+— because on `all` the chart follows the live SSE stream and has no horizon-*scoped* walls to fetch. But `fetchMaxPain()` and `fetchExpectedMove()` were defined and invoked **after** that return, so on the default view they were dead code: never called → `expectedMoveBandsRef` stayed null (no band) and `onExpectedMoveChange` was never fired (no terminal section). Max-pain has the **identical** bug from the same return (same root cause, blast radius) — its line only drew on a narrowed DTE. Both reads are horizon-*independent* (their endpoints accept `?dte=` and return a value for `all`), so they never belonged below the scoped-only early return.
+
+**Why it wasn't caught earlier:** the pure engine (`vector-expected-move.ts`) is fully unit-tested and green, and the endpoint returns correct data — the bug was purely the *placement* of the client fetch relative to an unrelated early return, which no unit test exercises. The per-push E2E gate didn't assert the cone on the default horizon (now the gap to close).
+
+**Fix (`fix/vector-cone-default-horizon`):** move the two horizon-independent fetch definitions **and** their `void fetch…()` invocations **above** the `dteHorizon === "all"` early return, so max-pain and the expected-move cone fetch on every selection including the default `all`. The scoped walls/history fetches stay below the return (correctly skipped on `all`). In-code comment records why the two reads sit above the return.
+
+**Evidence:** live API probe (all 4 horizons return a stable band); before — terminal had CONFLUENCE/TECHNICALS but no EXPECTED MOVE and the chart had no cyan dashed band with the toggle on; after (re-verified post-deploy) — section + band render on the default view. `tsc --noEmit` clean; `vector-expected-move*.test.ts` 10/10; tailwind opacity guard clean.
+
+**Status:** FIXED (draft PR) — undraft+merge on `verify` green, then re-run the signed-in live-verify on the default `all` view.
+
 ## 🟡 P3 FOUND+FIXED 2026-07-13 — HELIX contract drilldown discarded the clicked print's own real payload (member: "click a flow, no real detail")
 
 **Surface:** `src/features/helix/components/ContractDrilldownDrawer.tsx` + `FlowFeed.tsx`. The tape row's own hint says "Click any row for contract drilldown," and the member reported the resulting window showed no real per-print detail.
