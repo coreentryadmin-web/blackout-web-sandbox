@@ -55,10 +55,18 @@ export async function synthesizeTickerVerdict(
   const t = ctx.ticker;
   const bias = structuralBias(ctx);
   const fb = flowBias(ctx);
+  // #60 data arsenal — the Track-B color already folded onto the shared ecosystem context, RELEVANCE-
+  // GATED at fetch time (a single name carries earnings/short-interest/peers/news; an index carries
+  // macro/breadth/catalysts). Honesty: cite ONLY what's actually present here; a requested-but-thin
+  // leg is surfaced verbatim from arsenal.unavailable_sources below, never fabricated.
+  const ars = ctx.arsenal;
   const lines: string[] = [`**${t} — desk verdict**`, ""];
 
+  // Real event risk now comes from the arsenal's actual earnings date too, not just question keywords:
+  // an imminent confirmed print IS an event window whether or not the member typed "earnings".
+  const earningsImminent = ars.earnings?.days_until != null && ars.earnings.days_until <= 5;
   const eventRisk =
-    /\b(earnings|cpi|fomc|opex|expir|into the)\b/i.test(question) ? "HIGH event-window risk" : null;
+    /\b(earnings|cpi|fomc|opex|expir|into the)\b/i.test(question) || earningsImminent ? "HIGH event-window risk" : null;
 
   lines.push(
     `VERDICT  Structure reads **${bias}**${fb ? ` · HELIX flow ${fb}` : ""}${eventRisk ? ` · ${eventRisk}` : ""} — market-structure read only, not financial advice.`
@@ -82,7 +90,41 @@ export async function synthesizeTickerVerdict(
   if (ctx.gex_positioning?.gamma_posture) {
     align.push(`GEX ${ctx.gex_positioning.gamma_posture} γ`);
   }
+  // Elevated short interest is an asymmetric-upside (squeeze) tell — align it only when actually high.
+  if (ars.fundamentals?.days_to_cover != null && ars.fundamentals.days_to_cover >= 5) {
+    align.push(`days-to-cover ${fmt(ars.fundamentals.days_to_cover, 1)} (squeeze fuel)`);
+  }
   if (align.length) lines.push(`ALIGNMENT  ${align.join(" · ")}`);
+
+  // CONTEXT — the arsenal color that isn't itself a directional-bias input: the earnings countdown,
+  // the macro backdrop / breadth (index), any recent news/catalysts, and peers. Cited, not scored.
+  const context: string[] = [];
+  if (ars.earnings?.earnings_date) {
+    const e = ars.earnings;
+    context.push(
+      `earnings ${e.days_until != null ? `${e.days_until}d out` : e.earnings_date}${e.report_time && e.report_time !== "unknown" ? ` ${e.report_time}` : ""}${e.is_confirmed ? " (confirmed)" : ""}`
+    );
+  }
+  if (ars.fundamentals?.days_to_cover != null && ars.fundamentals.days_to_cover < 5) {
+    // Present but not elevated — still worth stating (honest: SI was read, it's just not squeeze fuel).
+    context.push(`days-to-cover ${fmt(ars.fundamentals.days_to_cover, 1)}`);
+  }
+  if (ars.macro && (ars.macro.yield_10_year != null || ars.macro.cpi != null)) {
+    const m = ars.macro;
+    const bits: string[] = [];
+    if (m.yield_10_year != null) bits.push(`10y ${fmt(m.yield_10_year, 2)}%`);
+    if (m.curve_10y_1y_spread != null) bits.push(`10y-1y ${fmt(m.curve_10y_1y_spread, 2)}${m.curve_10y_1y_spread < 0 ? " inverted" : ""}`);
+    if (m.cpi != null) bits.push(`CPI ${fmt(m.cpi, 1)}`);
+    if (bits.length) context.push(`macro ${bits.join(", ")}`);
+  }
+  if (ars.breadth) context.push(`breadth ${ars.breadth.tone.replace(/_/g, " ")}`);
+  if (ars.news && ars.news.count > 0) {
+    // "news" is a mass noun (never "newss"); only "catalyst" pluralizes.
+    const noun = ars.scope === "index" ? `catalyst${ars.news.count === 1 ? "" : "s"}` : "news";
+    context.push(`${ars.news.count} recent ${noun}${ars.news.headlines[0] ? ` ("${ars.news.headlines[0]}")` : ""}`);
+  }
+  if (ars.related && ars.related.length) context.push(`peers ${ars.related.slice(0, 4).join(", ")}`);
+  if (context.length) lines.push(`CONTEXT  ${context.join(" · ")}.`);
 
   const friction: string[] = [];
   if (ctx.recent_anomalies.length) {
@@ -97,6 +139,10 @@ export async function synthesizeTickerVerdict(
     friction.push("no 0DTE Command play on board today");
   }
   if (eventRisk) friction.push("event risk — size down or wait for tape post-print");
+  // A confirmed imminent print makes a HOLD a binary bet, not a technical trade — state it plainly.
+  if (earningsImminent && /\b(hold|buy|into|swing|overnight|keep)\b/i.test(question)) {
+    friction.push(`earnings in ${ars.earnings!.days_until}d — holding through the print is a binary event, not a technical trade`);
+  }
   if (fb && bias === "bullish" && fb === "put-led") friction.push("put-led flow vs bullish structure");
   if (fb && bias === "bearish" && fb === "call-led") friction.push("call-led flow vs bearish structure");
   if (!ctx.flow_feed_fresh) friction.push("flow pipeline stale — treat tape as unconfirmed");
@@ -122,9 +168,17 @@ export async function synthesizeTickerVerdict(
     /* optional */
   }
 
+  // Honesty spine: name the arsenal legs that were requested for this ticker class but came back
+  // thin/empty — surfaced, never silently dropped (mirrors the ecosystem narrative's own note).
+  if (ars.unavailable_sources.length) {
+    lines.push(
+      `UNAVAILABLE  ${ars.unavailable_sources.map((u) => `${u.source} (${u.reason})`).join(", ")}.`
+    );
+  }
+
   lines.push(
     "",
-    "_Desk verdict from Night Hawk, 0DTE Command, HELIX flow, and Thermal GEX — zero Claude cost._"
+    "_Desk verdict from Night Hawk, 0DTE Command, HELIX flow, Thermal GEX, and the data arsenal (earnings · short interest · macro/breadth · news · peers) — zero Claude cost._"
   );
 
   return { lines, precedentLine };
