@@ -8,6 +8,7 @@ import {
   isVectorOverlayId,
   isVectorOverlayFamilyId,
   isVectorLevelId,
+  isVectorGexHeatmapId,
   overlayFamilyAvailability,
 } from "./vector-indicators-config";
 
@@ -87,6 +88,17 @@ test("overlayFamilyAvailability: full / partial / none track the bar count vs me
   assert.equal(overlayFamilyAvailability("sma", 200).status, "full");
 });
 
+test("isVectorGexHeatmapId: accepts the heatmap id only, rejects other toggle ids + junk", () => {
+  assert.ok(isVectorGexHeatmapId("gex-heatmap"));
+  assert.ok(!isVectorGexHeatmapId("expected-move"));
+  assert.ok(!isVectorGexHeatmapId("flow-markers"));
+  assert.ok(!isVectorGexHeatmapId("vwap"), "overlay family id is not the heatmap id");
+  assert.ok(!isVectorGexHeatmapId(null));
+  // id space is disjoint from the families/levels the enabled Set also holds.
+  assert.ok(!isVectorOverlayFamilyId("gex-heatmap"));
+  assert.ok(!isVectorLevelId("gex-heatmap"));
+});
+
 test("VECTOR_INDICATOR_GROUPS: covers every family + level + structure id exactly once (the toggle space)", () => {
   const grouped = VECTOR_INDICATOR_GROUPS.flatMap((g) => g.items.map((i) => i.id));
   const expected = [
@@ -98,6 +110,7 @@ test("VECTOR_INDICATOR_GROUPS: covers every family + level + structure id exactl
     "confluence-band",
     "flow-markers",
     "expected-move",
+    "gex-heatmap",
   ];
   assert.deepEqual([...grouped].sort(), [...expected].sort());
 });

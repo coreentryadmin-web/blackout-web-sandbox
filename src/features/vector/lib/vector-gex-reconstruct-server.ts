@@ -143,6 +143,23 @@ async function fetchUnderlyingBars(ticker: string, sessionYmd: string): Promise<
   return fetchStockMinuteBars(t, sessionYmd, sessionYmd).catch(() => []);
 }
 
+/**
+ * The downsampled intraday spot PATH for a session — the x-axis (time) samples both the wall-rail
+ * reconstruction and the strike×time heatmap ride on. Exported so the live-chain heatmap server
+ * (`vector-gex-heatmap-server.ts`) can reuse the exact same bars fetch + bucketing the reconstruction
+ * uses, instead of duplicating the index-vs-stock symbol routing. Returns [] (never throws) when the
+ * session has no bars. `everySec` defaults to the 5-min recorder cadence.
+ */
+export async function loadSessionSpotSamples(
+  ticker: string,
+  sessionYmd: string,
+  everySec = 300
+): Promise<SpotSample[]> {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(sessionYmd))) return [];
+  const bars = await fetchUnderlyingBars(ticker, sessionYmd);
+  return barsToSpotSamples(bars, everySec);
+}
+
 export type ReconstructRailOptions = {
   ticker: string;
   /** Session date YYYY-MM-DD (ET) to reconstruct. */

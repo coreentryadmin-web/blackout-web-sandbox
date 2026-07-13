@@ -201,6 +201,22 @@ export function isVectorExpectedMoveId(v: unknown): v is VectorExpectedMoveId {
 }
 
 /**
+ * "Positioning" — the strike×time dealer-gamma (GEX) surface drawn as a background HEATMAP BEHIND
+ * the candles (task #14). x = time, y = strike (price axis), cell colour = signed net GEX intensity
+ * (call-dominated positive → cyan/teal, put-dominated negative → magenta). One toggle (default OFF);
+ * the chart maps it to a lightweight-charts series PRIMITIVE whose paneView renders at `zOrder:
+ * "bottom"` so the surface sits under the price action. DTE-aware (re-scopes with the horizon toggle
+ * like the walls/max-pain/cone) and real-data-only — an empty/absent grid draws nothing, never a
+ * fabricated surface. Distinct from `/api/market/gex-heatmap` (the standalone strike×EXPIRY matrix
+ * page): this is a horizon-scoped strike×TIME grid fed by the same reconstruction the walls use.
+ */
+export type VectorGexHeatmapId = "gex-heatmap";
+
+export function isVectorGexHeatmapId(v: unknown): v is VectorGexHeatmapId {
+  return v === "gex-heatmap";
+}
+
+/**
  * Every toggleable indicator id — a moving-average FAMILY (not an individual line), a level, a
  * structure toggle, or an oscillator. This is what the enabled Set and the menu deal in; the chart
  * expands each to its lines/markers/panes at draw time.
@@ -212,7 +228,8 @@ export type VectorIndicatorId =
   | VectorOscillatorId
   | VectorConfluenceId
   | VectorFlowId
-  | VectorExpectedMoveId;
+  | VectorExpectedMoveId
+  | VectorGexHeatmapId;
 
 /** Menu structure — the toggle menu renders straight from this (title + its items). */
 export const VECTOR_INDICATOR_GROUPS: ReadonlyArray<{
@@ -251,5 +268,10 @@ export const VECTOR_INDICATOR_GROUPS: ReadonlyArray<{
     title: "Expected move",
     // Cyan matches the dashed ±1σ/2σ band lines drawn on the chart.
     items: [{ id: "expected-move", label: "Expected move (±1σ/2σ range)", color: "#22d3ee" }],
+  },
+  {
+    title: "Positioning",
+    // Teal swatch = the call/positive pole of the diverging surface (puts render magenta).
+    items: [{ id: "gex-heatmap", label: "GEX heatmap (dealer positioning surface)", color: "#2dd4bf" }],
   },
 ];

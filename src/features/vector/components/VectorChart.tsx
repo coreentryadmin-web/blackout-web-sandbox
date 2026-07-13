@@ -80,6 +80,8 @@ import {
   type VectorOverlayId,
   type VectorIndicatorId,
 } from "@/features/vector/lib/vector-indicators-config";
+import { GexHeatmapPrimitive } from "@/features/vector/lib/vector-gex-heatmap-primitive";
+import type { GexHeatmapGrid } from "@/features/vector/lib/vector-gex-reconstruct";
 import { levelLinesFor, type LevelLine, type PriorDayOhlc } from "@/features/vector/lib/vector-key-levels";
 import { buildStructureMarkers } from "@/features/vector/lib/vector-structure-markers";
 import { buildFlowMarkers, DEFAULT_FLOW_MAX_MARKERS, type FlowPrint } from "@/features/vector/lib/vector-flow-markers";
@@ -860,6 +862,13 @@ export function VectorChart({
   const expectedMoveBandsRef = useRef<ExpectedMove | null>(null);
   const emBandLinesRef = useRef<IPriceLine[]>([]);
   const emBandSigRef = useRef<string>("");
+  // GEX positioning heatmap (#14): the strike×time surface primitive attached BEHIND the candles
+  // (zOrder "bottom"), plus the last horizon-scoped grid it draws. The grid is fetched in the
+  // DTE-scoped effect (like max-pain/expected-move) and visibility is gated on the "gex-heatmap"
+  // toggle; a null grid or the toggle off makes the primitive draw nothing. Cleared on ticker
+  // switch / unmount — chart.remove() disposes the series (and its primitives), so we just drop refs.
+  const gexHeatmapPrimitiveRef = useRef<GexHeatmapPrimitive | null>(null);
+  const gexHeatmapGridRef = useRef<GexHeatmapGrid | null>(null);
   const lastConfluenceRef = useRef<string>("");
   // Opt-in technical overlays (VWAP/EMA/SMA) — one lightweight-charts line series per enabled
   // indicator, created on demand and removed when toggled off. Default: none. `indicatorsRef`
@@ -1236,6 +1245,12 @@ export function VectorChart({
           enabled.has("expected-move")
         );
       }
+      // GEX positioning heatmap (#14) — push the last horizon-scoped grid + toggle state to the
+      // background primitive (attached at zOrder "bottom", so candles/walls stay readable on top).
+      // Cheap: the primitive just stores refs and requests a redraw; a null grid or the toggle off
+      // draws nothing. This lives in paintOverlays so a toggle flip (which repaints here via the
+      // indicators effect) shows/hides the surface instantly; the fetch pushes fresh data directly.
+      gexHeatmapPrimitiveRef.current?.setData(gexHeatmapGridRef.current, enabled.has("gex-heatmap"));
     }
 
     // Oscillator sub-panes (RSI / MACD) in their OWN panes below price. The pane LAYOUT is rebuilt
@@ -1774,8 +1789,37 @@ export function VectorChart({
       }
     };
 
+    // GEX positioning heatmap (#14) — the horizon-scoped strike×time surface behind the candles.
+    // HORIZON-INDEPENDENT in the same sense as max-pain/expected-move: /api/market/vector/gex-heatmap
+    // accepts ?dte= and returns a grid for EVERY horizon (including "all"), so it must fire on every
+    // selection and is defined + invoked HERE, ABOVE the "all" early-return — otherwise the DEFAULT
+    // "all" view would never fetch it and the surface would only appear after toggling a narrower DTE
+    // (the exact class of bug #237 fixed for the cone/max-pain). Stores the grid and pushes it to the
+    // background primitive with the current toggle state; the primitive paints only when the
+    // "gex-heatmap" toggle is on, and a null grid (no honest surface) clears it — never fabricated.
+    const fetchGexHeatmap = async () => {
+      try {
+        const res = await fetch(
+          `/api/market/vector/gex-heatmap?ticker=${encodeURIComponent(ticker)}&dte=${dteHorizon}` +
+            `&session=${encodeURIComponent(sessionYmd)}`
+        );
+        if (cancelled || dteHorizonRef.current !== dteHorizon) return;
+        const grid = res.ok
+          ? ((await res.json()) as { grid?: GexHeatmapGrid | null }).grid ?? null
+          : null;
+        if (cancelled || dteHorizonRef.current !== dteHorizon) return;
+        gexHeatmapGridRef.current = grid;
+        // Push straight to the primitive with the current toggle state — no full repaint needed
+        // (paintOverlays also re-pushes on a toggle flip, so both entry points stay consistent).
+        gexHeatmapPrimitiveRef.current?.setData(grid, indicatorsRef.current.has("gex-heatmap"));
+      } catch {
+        // Network throw: keep the last-drawn surface rather than blank it on a transient blip.
+      }
+    };
+
     void fetchMaxPain();
     void fetchExpectedMove();
+    void fetchGexHeatmap();
 
     if (dteHorizon === "all") {
       horizonWallsRef.current = null;
@@ -2155,6 +2199,13 @@ export function VectorChart({
     putBeadsRef.current = createSeriesMarkers(series, []);
     structureMarkersRef.current = createSeriesMarkers(series, []);
     flowMarkersRef.current = createSeriesMarkers(series, []);
+    // GEX positioning heatmap (#14): attach the background surface primitive to the candle series.
+    // It renders at zOrder "bottom" (under the candles + every overlay); its data/visibility are
+    // pushed via setData from paintOverlays + the DTE-scoped fetch, so it stays hidden (draws
+    // nothing) until the member enables the "gex-heatmap" toggle AND a real grid has landed.
+    const gexHeatmap = new GexHeatmapPrimitive();
+    series.attachPrimitive(gexHeatmap);
+    gexHeatmapPrimitiveRef.current = gexHeatmap;
 
     refreshTrails("gex");
     refreshOverlays("gex", initialWalls, initialVexWalls, initialGammaFlip, initialVexFlip, initialDarkPoolLevels);
@@ -2247,6 +2298,10 @@ export function VectorChart({
       flowMarkersRef.current = null;
       flowPrintsRef.current = [];
       lastFlowTruncatedRef.current = -1;
+      // chart.remove() disposes the series and its attached primitives; drop the refs + last grid so
+      // a remount (ticker switch) re-attaches a fresh primitive instead of touching a dead one.
+      gexHeatmapPrimitiveRef.current = null;
+      gexHeatmapGridRef.current = null;
       volumeSeriesRef.current = null;
       setChartReady(false);
     };
