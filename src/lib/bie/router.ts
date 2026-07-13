@@ -23,7 +23,8 @@ export type BieIntent =
   | "vector_read"
   | "concept_read"
   | "universal_lookup"
-  | "compound_lookup";
+  | "compound_lookup"
+  | "system_diagnostic";
 
 export type BieRoute = {
   intent: BieIntent;
@@ -129,6 +130,16 @@ function isUniversalLookup(q: string): boolean {
   return UNIVERSAL_VERB_RE.test(q) && UNIVERSAL_SOURCE_RE.test(q);
 }
 
+// Self-diagnosis (task #56) — "why isn't NVDA GEX / MSFT beads forming", "is the flow pipeline
+// healthy", "what's failing right now". Answered from REAL ops signals (composeDiagnostic), NOT
+// Claude — so this MUST be classified BEFORE REASONING_RE, or the "why" bails to the LLM.
+const DIAGNOSTIC_RE =
+  /\b(why (is|isn't|are|aren't|won't|not)\b[^?]*\b(form|forming|showing|updating|building|empty|blank|missing|work(ing)?|load(ing)?|render(ing)?|populat)|why (can't|cant|do(n't| not))\b[^?]*\b(see|show|get|find)\b|is the .{0,30}(pipeline|feed|recorder|cron|flow|gex|data) (healthy|up|down|working|stale|broken)|what('| i)?s (failing|broken|wrong|stale|down)|(pipeline|recorder|feed) (health|status|down|stale|broken))\b/i;
+
+function isDiagnosticQuestion(q: string): boolean {
+  return DIAGNOSTIC_RE.test(q);
+}
+
 /** Vector DTE horizon named in the question, defaulting to "all" (whole-chain view). */
 function extractHorizon(q: string): string {
   if (/\b0\s*dte\b/i.test(q)) return "0dte";
@@ -178,6 +189,11 @@ export function classifyBieIntent(question: string, ledgerTickers: Set<string>):
   // "pull/look up X from <internal path | provider>" → the governed universal reader. Only fires
   // when a path or provider is explicitly named, so a plain "show me the SPX setup" isn't stolen.
   if (isUniversalLookup(q)) return { intent: "universal_lookup", ticker: extractKnownTicker(q) };
+
+  // "why isn't X forming / is the pipeline healthy / what's failing" → self-diagnosis from real ops
+  // signals. MUST be before REASONING_RE (and before the vector branch, whose "forming" overlaps),
+  // or "why" bails to Claude / the surface gets read as a normal Vector question.
+  if (isDiagnosticQuestion(q)) return { intent: "system_diagnostic", ticker: extractKnownTicker(q) };
 
   // Explicit "vector" mention → the deterministic Vector desk read, for ANY ticker (incl. SPX on
   // Vector). Placed first so the Vector product wins over the SPX-Sniper branches when named.
@@ -246,6 +262,7 @@ export function classifyBieStagingFallback(question: string): BieRoute {
   const q = question.trim();
   if (isConceptQuestion(q)) return { intent: "concept_read", ticker: null };
   if (isUniversalLookup(q)) return { intent: "universal_lookup", ticker: extractKnownTicker(q) };
+  if (isDiagnosticQuestion(q)) return { intent: "system_diagnostic", ticker: extractKnownTicker(q) };
   if (VECTOR_RE.test(q)) {
     return { intent: "vector_read", ticker: extractKnownTicker(q) ?? "SPX", horizon: extractHorizon(q) };
   }
@@ -318,5 +335,7 @@ export function bieFollowups(intent: BieIntent): string[] {
       return ["Pull the GEX positioning for SPY", "Show me the platform snapshot", "What is GEX?"];
     case "compound_lookup":
       return ["Ask a single question for the full read", "What's the SPX setup right now?", "What is a King node?"];
+    case "system_diagnostic":
+      return ["Is the flow pipeline healthy?", "Why isn't SPX GEX updating?", "What's the SPX setup right now?"];
   }
 }

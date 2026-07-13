@@ -636,6 +636,10 @@ async function composeBieAnswerUncached(route: BieRoute, opts?: ComposeBieOpts):
         return await composeConceptRead(opts?.question ?? "");
       case "universal_lookup":
         return await composeUniversal(opts?.question ?? "");
+      case "system_diagnostic": {
+        const { composeDiagnostic } = await import("@/lib/bie/diagnostic");
+        return await composeDiagnostic(route.ticker ?? "SPX", opts?.question ?? "");
+      }
       default:
         return null;
     }
