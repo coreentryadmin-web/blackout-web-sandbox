@@ -31,6 +31,8 @@
     "validate:staging-cron-watch": "node scripts/staging-cron-watch.mjs",
     "validate:staging-cron-watch:once": "node scripts/staging-cron-watch.mjs --once",
     "validate:staging-bie": "node scripts/staging-bie-validate.mjs",
+    "eval:bie": "node scripts/bie-eval/run.mjs",
+    "eval:bie:score-test": "node --test scripts/bie-eval/lib/scoring.test.mjs",
     "validate:staging-playbook": "node scripts/validate-staging-playbook.mjs",
     "playbook:evidence-report": "node --import tsx scripts/playbook-evidence-report.mjs",
     "analyze:track-record-staging": "node --import tsx scripts/analyze-track-record-staging.mjs",
