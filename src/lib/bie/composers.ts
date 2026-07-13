@@ -207,7 +207,19 @@ async function composeVectorRead(
     normalizeDteHorizon(horizon),
     timeframeMinFromQuestion(question)
   );
-  if (!state) return null;
+  // No live state (markets closed, cold matrix, off-universe ticker) — fetchVectorFullState
+  // fail-opens to null. Returning null here let the route 502 / fall back to an SPX desk-dump; the
+  // honest behavior is to SAY we can't read it and record the gap, never crash or dump the wrong
+  // desk. (BUG 1 from the live audit — SPY/QQQ/NVDA off-hours 502'd.)
+  const { recordBieGap } = await import("@/lib/bie/gap-log");
+  const { noLiveVectorStateMessage } = await import("@/lib/bie/vector-read-fallback");
+  if (!state) {
+    void recordBieGap({ question: question ?? "", intent: "vector_read", reason: "no_live_state" });
+    return {
+      answer: noLiveVectorStateMessage(ticker),
+      context: { ticker: ticker.toUpperCase(), reason: "no_live_state" },
+    };
+  }
 
   const brief = composeVectorDeskBrief(state, question);
   const answer = stripGroundingTokens(
