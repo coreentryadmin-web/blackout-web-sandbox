@@ -51,6 +51,59 @@ test("fetchVectorSeedBars: stock ticker uses stock minute bars", async () => {
   assert.equal(bars.bars[0]?.volume, 1000);
 });
 
+test("fetchVectorSeedBars: seeds today plus prior sessions, ascending unique time, latest sessionYmd", async () => {
+  // Every queried day returns one bar whose timestamp is derived from that day, so older
+  // sessions naturally have smaller times — lets us assert ascending order across boundaries.
+  const queried: string[] = [];
+  const res = await fetchVectorSeedBars(
+    "SPX",
+    new Date("2026-07-06T15:00:00Z"),
+    async (sym, from) => {
+      queried.push(from);
+      if (sym !== "I:SPX") return [];
+      const t = new Date(`${from}T14:30:00Z`).getTime();
+      return [{ t, o: 7500, h: 7510, l: 7490, c: 7505 }];
+    },
+    async () => [],
+    async () => new Map()
+  );
+
+  // Multiple sessions seeded (today + prior context), not a single session.
+  assert.ok(res.bars.length >= 2, `expected multiple sessions, got ${res.bars.length}`);
+  // sessionYmd stays pinned to the LATEST (today) session, not the oldest one included.
+  assert.equal(res.sessionYmd, "2026-07-06");
+  assert.equal(queried[0], "2026-07-06");
+  // Strictly ascending + unique timestamps across the concatenated sessions.
+  for (let i = 1; i < res.bars.length; i++) {
+    assert.ok(
+      res.bars[i]!.time > res.bars[i - 1]!.time,
+      `timestamps must strictly ascend at index ${i}`
+    );
+  }
+});
+
+test("fetchVectorSeedBars: weekend — latest session is Friday, still with prior context", async () => {
+  // now = Sunday 2026-07-12; Friday is 2026-07-10. Return bars for Fri + two prior sessions.
+  const withData = new Set(["2026-07-10", "2026-07-09", "2026-07-08"]);
+  const res = await fetchVectorSeedBars(
+    "SPX",
+    new Date("2026-07-12T15:00:00Z"),
+    async (sym, from) => {
+      if (sym !== "I:SPX" || !withData.has(from)) return [];
+      const t = new Date(`${from}T14:30:00Z`).getTime();
+      return [{ t, o: 7500, h: 7510, l: 7490, c: 7505 }];
+    },
+    async () => [],
+    async () => new Map()
+  );
+  // Latest session becomes Friday (today/weekend had no bars), and prior days seed context.
+  assert.equal(res.sessionYmd, "2026-07-10");
+  assert.ok(res.bars.length >= 2, `expected Friday + prior context, got ${res.bars.length}`);
+  for (let i = 1; i < res.bars.length; i++) {
+    assert.ok(res.bars[i]!.time > res.bars[i - 1]!.time, "ascending across sessions");
+  }
+});
+
 test("fetchVectorSeedBars: falls back to prior trading day when today is empty", async () => {
   const calls: string[] = [];
   const bars = await fetchVectorSeedBars(
