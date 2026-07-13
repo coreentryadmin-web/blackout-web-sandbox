@@ -8670,6 +8670,104 @@ body::before {
     @apply text-xs;
   }
 
+  /* ── Ribbon single-strip polish (fix/largo-hardening, user spec 2026-07-13) ──
+     APPEND-ONLY additions. One numeric strip across the header top:
+     [EMA][SMA][Session] blocks (compacted to pill height) then the stat pills.
+     Fills the band (no dead middle), one line at ≥1440px, graceful wrap below,
+     never a horizontal scroll. Fluid type keeps values readable without overflow. */
+
+  .spx-desk-top-stats--strip {
+    justify-content: flex-start;
+    align-items: stretch;
+    gap: clamp(0.25rem, 0.4vw, 0.5rem);
+  }
+
+  .spx-desk-top-stats--strip .spx-hero-stat-pill {
+    /* Uniform pill silhouette: consistent height (tap-target floor), centered content. */
+    min-height: 2.5rem;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    padding: 0.25rem clamp(0.375rem, 0.5vw, 0.625rem);
+  }
+
+  .spx-desk-top-stats--strip .spx-hero-stat-label {
+    /* Slightly stronger label contrast; tighter gap to the value line. */
+    font-size: clamp(8px, 0.55vw, 10px);
+    margin-bottom: 0.125rem;
+    color: rgba(186, 230, 253, 0.95);
+  }
+
+  .spx-desk-top-stats--strip .spx-hero-stat-value,
+  .spx-desk-top-stats--strip .spx-hero-metric-row-value {
+    /* Value type steps up with viewport width but can never force overflow. */
+    font-size: clamp(10px, 0.72vw, 14px);
+  }
+
+  .spx-desk-top-stats--strip .spx-hero-metric-row-label {
+    font-size: clamp(8px, 0.55vw, 10px);
+  }
+
+  /* Inline metric group (EMA/SMA/Session compacted to pill height). */
+  .spx-hero-stat-group-row {
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    gap: clamp(0.375rem, 0.6vw, 0.75rem);
+    flex-wrap: nowrap;
+  }
+
+  .spx-hero-stat-group-item {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 0.25rem;
+    white-space: nowrap;
+  }
+
+  @media (max-width: 640px) {
+    /* Phones: the 4-value Session group would exceed ~340px — let items wrap inside
+       the pill instead of ever forcing a horizontal scroll. */
+    .spx-hero-stat-group-row {
+      flex-wrap: wrap;
+      row-gap: 0.125rem;
+    }
+  }
+
+  @media (min-width: 1440px) {
+    /* One line at desktop: no wrap; leftover width distributes between items so the
+       strip spans the whole band instead of hugging one corner. Text pills may
+       shrink/truncate as a last resort; metric groups keep their numbers intact. */
+    .spx-desk-top-stats--strip {
+      flex-wrap: nowrap;
+      justify-content: space-between;
+    }
+
+    .spx-desk-top-stats--strip .spx-hero-stat-pill {
+      min-width: 0;
+    }
+
+    .spx-desk-top-stats--strip .spx-hero-stat-pill--group {
+      flex: 0 0 auto;
+    }
+  }
+
+  /* Stale-honesty: frozen tape (feed_stalled) dims every value tone — opacity/filter
+     only, zero layout shift — so last-good numbers never wear live-confidence color. */
+  .spx-hero-stats-stale .spx-hero-stat-value,
+  .spx-hero-stats-stale .spx-hero-metric-row-value {
+    opacity: 0.55;
+    filter: saturate(0.5);
+    transition: opacity 200ms ease, filter 200ms ease;
+  }
+
+  /* "VW" affordance on the VWAP pill when the value is truly volume-weighted. */
+  .spx-hero-vw-badge {
+    @apply ml-1 inline-flex items-center rounded-sm border border-emerald-400/40 bg-emerald-400/10 px-0.5 font-mono text-[8px] font-bold tracking-wider text-emerald-300;
+    line-height: 1.2;
+    vertical-align: middle;
+    letter-spacing: 0.08em;
+  }
+
   .spx-sniper-command .spx-sniper-title {
     @apply font-anton text-4xl md:text-6xl leading-none tracking-wide uppercase;
   }
