@@ -46,6 +46,7 @@ import {
   type SetupDossierView,
   type ZeroDteGateRejection,
 } from "./board";
+import { buildZeroDteEntryContext, fetchZeroDteSessionContext } from "./entry-context";
 import { persistZeroDteRejections } from "./rejections";
 import {
   computeIntradayRead,
@@ -294,6 +295,12 @@ export async function persistZeroDteScan(setups: EnrichedZeroDteSetup[]): Promis
     eligible = setups.filter((s) => existing.has(s.ticker));
     if (eligible.length === 0) return 0;
   }
+  // Context-at-entry (C-2): one cached session read per scan (day-open VIX + SPY
+  // bias), merged per-row with the name's own gamma regime + committed score. The
+  // upsert pins it at FIRST flag, so refresh ticks sending fresh context never
+  // re-stamp an existing row. Best-effort: null context never blocks a commit.
+  const sessionCtx = await fetchZeroDteSessionContext().catch(() => null);
+  const committedAtMs = Date.now();
   const rows: ZeroDteSetupLogUpsert[] = eligible.map((s) => ({
     session_date: today,
     ticker: s.ticker,
@@ -312,6 +319,11 @@ export async function persistZeroDteScan(setups: EnrichedZeroDteSetup[]): Promis
     entry_premium: resolveLedgerEntryPremium(s.plan?.entry_max, s.top_strike_avg_fill),
     flow_avg_fill: s.top_strike_avg_fill,
     plan_json: s.plan ? ({ ...s.plan } as unknown as Record<string, unknown>) : null,
+    entry_context: buildZeroDteEntryContext(
+      { score: s.score, gamma_regime: s.gamma_regime },
+      sessionCtx,
+      committedAtMs
+    ) as unknown as Record<string, unknown>,
     flags_json: {
       ...(s.earnings ? { earnings: s.earnings } : {}),
       ...(s.news_hot ? { news_hot: s.news_hot.title } : {}),
