@@ -9,6 +9,7 @@ import type { VectorBar } from "@/features/vector/components/VectorChart";
 import type { VectorDarkPoolLevel, VectorWalls } from "@/lib/api";
 import type { WallHistorySample, VectorWallLens } from "@/features/vector/lib/vector-wall-history";
 import type { VectorDteHorizon } from "@/features/vector/lib/vector-dte-horizon";
+import type { VectorPriceScaleMap } from "@/features/vector/lib/vector-price-scale-map";
 import type { VectorTimeframeMinutes } from "@/features/vector/lib/vector-bar-timeframes";
 import { VectorTickerSelect } from "@/features/vector/components/VectorTickerSelect";
 import { VectorScanner } from "@/features/vector/components/VectorScanner";
@@ -71,6 +72,10 @@ type Props = {
   /** Opening candle interval override (SPX Slayer embed opens on 3-minute candles; standalone
    *  page keeps 1-minute). Initial state only. */
   defaultTimeframe?: VectorTimeframeMinutes;
+  /** SHARED PRICE AXIS seam (2026-07-13): forwarded verbatim to VectorChart so a host desk
+   *  (SPX Slayer) can align its strike ladder to the chart's live y-scale. Only meaningful
+   *  for embeds; the standalone /vector page never sets it. See vector-price-scale-map.ts. */
+  onPriceScaleRender?: (map: VectorPriceScaleMap) => void;
 };
 
 function formatSessionLabel(ymd: string): string {
@@ -98,6 +103,7 @@ export function VectorPageShell({
   embed,
   defaultDteHorizon,
   defaultTimeframe,
+  onPriceScaleRender,
 }: Props) {
   const chartOnly = embed === "chart-only";
   const router = useRouter();
@@ -302,6 +308,7 @@ export function VectorPageShell({
           liveSession={liveSession}
           defaultDteHorizon={defaultDteHorizon}
           defaultTimeframe={defaultTimeframe}
+          onPriceScaleRender={onPriceScaleRender}
           onFreshness={liveSession ? setStreamUpdatedAt : undefined}
           onRegimeChange={setRegime}
           alertRules={alertRules}

@@ -41,15 +41,22 @@ import {
   voiceSnapshotFromDesk,
   type SpxBiasDirection,
   type SpxTriggerLevel,
-  type SpxVoiceEvent,
   type SpxVoiceEventTone,
   type SpxVoicePlayState,
   type SpxVoiceSnapshot,
 } from "@/lib/bie/spx-live-voice";
 import { useSpxPlay } from "@/features/spx/hooks/useSpxPlay";
+import {
+  LARGO_FEED_CACHE_KEY,
+  LARGO_FEED_CACHE_MAX_AGE_MS,
+  announceLargoFeedUpdated,
+  type LargoFeedItem,
+} from "@/features/spx/lib/spx-largo-feed-cache";
 
-const FEED_CACHE_KEY = "spx-largo-signal-feed";
-const FEED_CACHE_MAX_AGE_MS = 12 * 60 * 60 * 1000;
+// Cache key + persisted item shape moved to spx-largo-feed-cache.ts (2026-07-13) so the
+// session time bar can render the SAME events as dots without lifting this rail's state.
+const FEED_CACHE_KEY = LARGO_FEED_CACHE_KEY;
+const FEED_CACHE_MAX_AGE_MS = LARGO_FEED_CACHE_MAX_AGE_MS;
 /** Pinned bias card is re-voiced on bias change OR at most every 5 minutes. */
 const BIAS_REFRESH_MS = 5 * 60 * 1000;
 /** Same-key event cooldown — the anti-spam discipline (see filterFreshVoiceEvents). */
@@ -67,13 +74,9 @@ type PinnedBias = {
   at: number;
 };
 
-type FeedItem = {
-  id: string;
-  at: number;
-  tone: SpxVoiceEventTone;
-  line: string;
-  kind: SpxVoiceEvent["kind"];
-};
+// Structural contract with the sessionStorage cache (and the time bar's dots) lives in
+// spx-largo-feed-cache.ts — alias it so a drift here is a type error, not a silent skew.
+type FeedItem = LargoFeedItem;
 
 type PersistedRail = { pinned: PinnedBias | null; feed: FeedItem[] };
 
@@ -106,9 +109,14 @@ function EventLine({ item }: { item: FeedItem }) {
 export function SpxCommentaryRail({
   desk,
   live,
+  focus,
 }: {
   desk?: SpxDeskPayload;
   live?: boolean;
+  /** FOCUS MODE (2026-07-13): collapse to a slim vertical bias strip — the brain-tick
+   *  effects keep running (state/feed keep accumulating) so exiting focus restores the
+   *  full rail with nothing missed. */
+  focus?: boolean;
 }) {
   const [pinned, setPinned] = useState<PinnedBias | null>(null);
   const [feed, setFeed] = useState<FeedItem[]>([]);
@@ -128,6 +136,9 @@ export function SpxCommentaryRail({
 
   const persist = (nextPinned: PinnedBias | null, nextFeed: FeedItem[]) => {
     writeSessionCache<PersistedRail>(FEED_CACHE_KEY, { pinned: nextPinned, feed: nextFeed.slice(0, MAX_FEED_ITEMS) });
+    // Same-tab consumers (the session time bar's event dots) refresh on this — storage
+    // events only fire in OTHER tabs.
+    announceLargoFeedUpdated();
   };
 
   // Hydrate pinned card + feed from sessionStorage so a reload keeps session context.
@@ -239,6 +250,24 @@ export function SpxCommentaryRail({
 
   const offlineCopy = pickCommentaryOfflineCopy(desk);
   const offlineTone = commentaryOfflineTone(desk);
+
+  // FOCUS MODE rail — rendered AFTER all hooks so the component never remounts on toggle:
+  // the bias/event effects above keep accumulating while collapsed.
+  if (focus) {
+    const dir = pinned?.direction ?? "neutral";
+    return (
+      <aside
+        className={clsx("spx-largo-focus-rail", `spx-largo-focus-rail--${dir}`)}
+        aria-label={`Largo bias: ${dir}`}
+        title={pinned ? `${pinned.headerLine} (${pinned.conviction})` : "Largo standing by"}
+      >
+        <span className="spx-largo-focus-rail-label" aria-hidden>
+          LARGO
+        </span>
+        <span className="spx-largo-focus-rail-strip" aria-hidden />
+      </aside>
+    );
+  }
 
   return (
     <aside

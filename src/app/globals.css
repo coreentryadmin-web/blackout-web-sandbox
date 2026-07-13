@@ -8842,6 +8842,290 @@ body::before {
     min-height: 420px !important;
   }
 
+  /* ── SESSION TIME BAR (desk upgrade #2, 2026-07-13): thin full-width RTH timeline under the
+     desk header — playbook/macro window bands (two lanes), Largo event dots, now-cursor. ── */
+  .spx-desk-timebar-row {
+    @apply flex w-full items-center gap-2 min-w-0;
+  }
+
+  .spx-desk-timebar {
+    @apply relative flex-1 min-w-0 overflow-hidden rounded border border-white/10;
+    height: 28px;
+    background: rgba(255, 255, 255, 0.03);
+  }
+
+  .spx-desk-timebar-edge {
+    @apply shrink-0 font-mono text-[9px] tabular-nums text-white/40;
+  }
+
+  .spx-desk-timebar-tick {
+    @apply absolute top-0 bottom-0 w-px bg-white/[0.07];
+  }
+
+  .spx-desk-timebar-band {
+    @apply absolute overflow-hidden rounded-[2px] border;
+    top: 2px;
+    height: calc(50% - 3px);
+  }
+
+  .spx-desk-timebar-band[data-lane="1"] {
+    top: calc(50% + 1px);
+  }
+
+  .spx-desk-timebar-band span {
+    @apply block px-1 font-mono text-[8px] font-bold uppercase tracking-[0.08em] leading-[10px] whitespace-nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .spx-desk-timebar-band--or {
+    background: rgba(251, 191, 36, 0.14);
+    border-color: rgba(251, 191, 36, 0.35);
+    color: rgba(252, 211, 77, 0.9);
+  }
+
+  .spx-desk-timebar-band--drift {
+    background: rgba(56, 189, 248, 0.12);
+    border-color: rgba(56, 189, 248, 0.3);
+    color: rgba(125, 211, 252, 0.9);
+  }
+
+  .spx-desk-timebar-band--power {
+    background: rgba(0, 230, 118, 0.12);
+    border-color: rgba(0, 230, 118, 0.32);
+    color: rgba(110, 231, 183, 0.9);
+  }
+
+  .spx-desk-timebar-band--macro {
+    background: rgba(244, 63, 94, 0.13);
+    border-color: rgba(244, 63, 94, 0.35);
+    color: rgba(253, 164, 175, 0.9);
+  }
+
+  .spx-desk-timebar-dot {
+    @apply absolute rounded-full;
+    bottom: 3px;
+    width: 5px;
+    height: 5px;
+    transform: translateX(-50%);
+    background: rgba(125, 211, 252, 0.9);
+  }
+
+  .spx-desk-timebar-dot--bull {
+    background: #00e676;
+    box-shadow: 0 0 4px rgba(0, 230, 118, 0.7);
+  }
+
+  .spx-desk-timebar-dot--bear {
+    background: #ff2d55;
+    box-shadow: 0 0 4px rgba(255, 45, 85, 0.7);
+  }
+
+  .spx-desk-timebar-dot--warn {
+    background: #fbbf24;
+    box-shadow: 0 0 4px rgba(251, 191, 36, 0.7);
+  }
+
+  .spx-desk-timebar-now {
+    @apply absolute top-0 bottom-0 w-px;
+    background: #22d3ee;
+    box-shadow: 0 0 6px rgba(34, 211, 238, 0.8);
+  }
+
+  .spx-desk-timebar-phase {
+    @apply absolute inset-0 flex items-center justify-center font-mono text-[9px] uppercase tracking-[0.16em] text-white/50;
+  }
+
+  .spx-desk-focus-btn {
+    @apply hidden shrink-0 rounded border border-white/15 px-2 py-1 font-mono text-[10px] uppercase tracking-[0.14em] text-sky-300/80 transition-colors lg:inline-flex;
+  }
+
+  .spx-desk-focus-btn:hover {
+    @apply border-cyan-400/50 text-cyan-200;
+  }
+
+  .spx-desk-focus-btn--active {
+    @apply border-cyan-400/70 bg-cyan-500/15 text-cyan-200;
+  }
+
+  /* ── SHARED PRICE AXIS strike ladder (desk upgrade #1): bars extend left(−)/right(+) from a
+     center spine; row y-positions come from the embedded chart's live price scale. ── */
+  .spx-strike-ladder {
+    @apply relative flex-1 min-h-0 overflow-hidden;
+  }
+
+  .spx-strike-ladder-spine {
+    @apply absolute top-0 bottom-0 w-px bg-white/10;
+    left: 50%;
+  }
+
+  .spx-strike-ladder-row {
+    @apply absolute left-0 right-0;
+    height: 0;
+  }
+
+  .spx-strike-ladder-bar {
+    @apply absolute rounded-[1px];
+    top: 0;
+    transform: translateY(-50%);
+  }
+
+  .spx-strike-ladder-bar--pos {
+    left: calc(50% + 1px);
+    background: rgba(52, 211, 153, 0.65);
+  }
+
+  .spx-strike-ladder-bar--neg {
+    right: calc(50% + 1px);
+    background: rgba(251, 113, 133, 0.65);
+  }
+
+  .spx-strike-ladder-bar--vex.spx-strike-ladder-bar--pos {
+    background: rgba(125, 211, 252, 0.65);
+  }
+
+  .spx-strike-ladder-bar--vex.spx-strike-ladder-bar--neg {
+    background: rgba(251, 113, 133, 0.55);
+  }
+
+  .spx-strike-ladder-strike {
+    @apply absolute font-mono text-[9px] tabular-nums text-sky-300/70;
+    left: 2px;
+    top: 0;
+    transform: translateY(-50%);
+    line-height: 1;
+  }
+
+  .spx-strike-ladder-row--king .spx-strike-ladder-strike {
+    @apply font-bold text-amber-300;
+  }
+
+  .spx-strike-ladder-row--king .spx-strike-ladder-bar {
+    box-shadow: 0 0 8px rgba(251, 191, 36, 0.75);
+  }
+
+  .spx-strike-ladder-row--call-wall .spx-strike-ladder-strike {
+    color: rgba(110, 231, 183, 0.95);
+  }
+
+  .spx-strike-ladder-row--put-wall .spx-strike-ladder-strike {
+    color: rgba(253, 164, 175, 0.95);
+  }
+
+  .spx-strike-ladder-king-star {
+    @apply absolute text-[11px] leading-none text-amber-400;
+    right: 2px;
+    top: 0;
+    transform: translateY(-50%);
+    text-shadow: 0 0 6px rgba(251, 191, 36, 0.9);
+  }
+
+  /* ONE spot line across the ladder at the chart's exact spot pixel height. */
+  .spx-strike-ladder-spot {
+    @apply absolute left-0 right-0;
+    top: 0;
+    height: 0;
+    border-top: 1px solid rgba(34, 211, 238, 0.85);
+    box-shadow: 0 0 6px rgba(34, 211, 238, 0.6);
+  }
+
+  .spx-strike-ladder-spot-label {
+    @apply absolute rounded-sm px-1 font-mono text-[9px] font-bold tabular-nums;
+    right: 2px;
+    top: -1px;
+    transform: translateY(-50%);
+    color: #67e8f9;
+    background: rgba(8, 8, 14, 0.9);
+    border: 1px solid rgba(34, 211, 238, 0.4);
+  }
+
+  .spx-strike-ladder-flip {
+    @apply absolute left-0 right-0;
+    top: 0;
+    height: 0;
+    border-top: 1px dashed rgba(34, 211, 238, 0.35);
+  }
+
+  .spx-strike-ladder-flip span {
+    @apply absolute font-mono text-[8px] uppercase tracking-wider;
+    left: 2px;
+    top: 1px;
+    color: rgba(34, 211, 238, 0.6);
+  }
+
+  .spx-strike-ladder-empty {
+    @apply absolute inset-0 flex items-center justify-center text-center px-2;
+  }
+
+  /* ── FOCUS MODE (desk upgrade #3): Largo + ladder collapse to 3rem rails, chart fills.
+     Focus track list keeps the minmax() structure of the base template so supporting
+     browsers interpolate the 200ms grid transition; others snap (acceptable). ── */
+  @media (min-width: 1024px) {
+    .spx-sniper-triple.spx-sniper-triple--desk-v3 {
+      transition: grid-template-columns 200ms ease;
+    }
+
+    .spx-sniper-triple.spx-sniper-triple--desk-v3.spx-sniper-triple--focus {
+      grid-template-columns: minmax(3rem, 0fr) minmax(3rem, 0fr) minmax(0, 1fr);
+    }
+  }
+
+  .spx-largo-focus-rail {
+    @apply relative flex h-full min-h-0 w-full flex-col items-center gap-2 overflow-hidden rounded border border-white/10 py-2;
+    background: rgba(255, 255, 255, 0.02);
+  }
+
+  .spx-largo-focus-rail-label {
+    @apply font-mono text-[8px] font-bold tracking-[0.2em] text-purple-light/70;
+    writing-mode: vertical-rl;
+  }
+
+  .spx-largo-focus-rail-strip {
+    @apply w-1.5 flex-1 rounded-full;
+    background: rgba(148, 163, 184, 0.4);
+  }
+
+  .spx-largo-focus-rail--bullish .spx-largo-focus-rail-strip {
+    background: linear-gradient(180deg, rgba(0, 230, 118, 0.9), rgba(0, 230, 118, 0.25));
+    box-shadow: 0 0 10px rgba(0, 230, 118, 0.45);
+  }
+
+  .spx-largo-focus-rail--bearish .spx-largo-focus-rail-strip {
+    background: linear-gradient(180deg, rgba(255, 45, 85, 0.9), rgba(255, 45, 85, 0.25));
+    box-shadow: 0 0 10px rgba(255, 45, 85, 0.45);
+  }
+
+  .spx-matrix-focus-rail {
+    @apply flex h-full min-h-0 w-full flex-col overflow-hidden rounded border border-white/10 py-1;
+    background: rgba(255, 255, 255, 0.02);
+  }
+
+  .spx-matrix-focus-rail .spx-strike-ladder--focus {
+    @apply flex-1 min-h-0;
+  }
+
+  .spx-strike-ladder-marker {
+    @apply absolute rounded-full;
+    left: 50%;
+    top: 0;
+    width: 8px;
+    height: 8px;
+    transform: translate(-50%, -50%);
+  }
+
+  .spx-strike-ladder-marker--king {
+    background: #fbbf24;
+    box-shadow: 0 0 8px rgba(251, 191, 36, 0.9);
+  }
+
+  .spx-strike-ladder-marker--pos {
+    background: rgba(52, 211, 153, 0.9);
+  }
+
+  .spx-strike-ladder-marker--neg {
+    background: rgba(251, 113, 133, 0.9);
+  }
+
   .spx-sniper-plays-col {
     @apply flex flex-col min-h-0 min-w-0 h-full overflow-hidden;
   }
