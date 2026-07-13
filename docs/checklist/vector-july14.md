@@ -20,3 +20,9 @@
 - [ ] N4-2: ladder body empty ~5s before fill (add skeleton?) — P2
 - [ ] Ghost backfill for narrowed horizons (first-day gap) — not built yet
 - [ ] AAPL one-sided horizon walls boundary flapping — watch
+
+## Added post-sweep-#5 (2026-07-13 late)
+- [ ] **N5-1 (P1) TSLA flip incoherence**: Vector narrowed flip ~420-425 SHORT-γ vs Largo 393.48 LONG-γ (was agreeing ~394.68 pre-2c6c689). Investigate at open with live ladder signs: is the OI-only per-expiry crossing (420 shelf, +7% from spot) the artifact, or the blended 393.5? Decide ONE flip source for all surfaces (ties into surface-sync merge); consider tightening plausibility band or nearest-spot tie-breaking by ladder-sign coherence.
+- [ ] N5-2 (P2): Largo NEWS line leaks raw HTML entity (&#34;) — decode entities in the news composer.
+- [ ] N5-3 (P2): Largo offline "SESSION WRAPPED" headline clips at 1920/1440 — CSS fix.
+- [ ] BIE Largo bias card + triggers + feed: could not be exercised post-close — MUST verify live at open (14:05).
