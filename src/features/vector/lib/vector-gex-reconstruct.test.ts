@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
+  gammaFlipFromLadder,
   gammaPerShare,
   gexLadderAtSpot,
   reconstructGexRail,
@@ -110,4 +111,47 @@ test("reconstructGexHeatmapGrid: empty/invalid inputs → empty grid, never thro
     cells: [],
     maxAbs: 0,
   });
+});
+
+test("gammaFlipFromLadder: interpolates the single zero-crossing of cumulative net GEX", () => {
+  // Cumulative low→high: 7400→-2, 7500→-2+(-1)=-3? build so the sum crosses once between two strikes.
+  // Use a simple monotone-cross ladder: puts negative below, calls positive above.
+  const ladder = new Map<number, number>([
+    [7400, -4],
+    [7500, -2], // cum: -4, -6
+    [7550, 8], // cum: 2 → crossed between 7500 (-6) and 7550 (2)
+    [7600, 3], // cum: 5
+  ]);
+  const flip = gammaFlipFromLadder(ladder, 7525)!;
+  // Linear interp between 7500 (cum -6) and 7550 (cum 2): frac = 6/8 = 0.75 → 7500 + 0.75*50 = 7537.5
+  assert.ok(Math.abs(flip - 7537.5) < 1e-6, `expected ~7537.5, got ${flip}`);
+});
+
+test("gammaFlipFromLadder: returns the crossing NEAREST spot, not the first from the bottom (weekly 5991 regression)", () => {
+  // Reproduces the live bug: a spurious deep-OTM up-crossing far below spot PLUS the real near-spot
+  // crossing. Spot 7575. Before the fix this returned the ~5990 crossing; it must return ~7470.
+  const ladder = new Map<number, number>([
+    [5900, -1], // cum: -1
+    [6000, 3], //  cum:  2  → spurious up-crossing ~5967 (thin far-OTM noise)
+    [6500, -5], // cum: -3  → back negative through the put-dominated body
+    [7000, -4], // cum: -7
+    [7450, -2], // cum: -9
+    [7500, 6], //  cum: -3
+    [7550, 8], //  cum:  5  → REAL up-crossing between 7500 (-3) and 7550 (5): 7500 + 3/8*50 = 7518.75
+    [7600, 4], //  cum:  9
+  ]);
+  const spot = 7575;
+  const flip = gammaFlipFromLadder(ladder, spot)!;
+  assert.ok(flip > 7000, `flip must be the near-spot crossing, not the deep-OTM one — got ${flip}`);
+  assert.ok(Math.abs(flip - 7518.75) < 1e-6, `expected ~7518.75, got ${flip}`);
+  // And it must be far closer to spot than the spurious ~5967 crossing.
+  assert.ok(Math.abs(flip - spot) < Math.abs(5967 - spot));
+});
+
+test("gammaFlipFromLadder: null when no up-crossing and when <2 strikes", () => {
+  // All-negative cumulative (never turns net-long) → no honest flip.
+  assert.equal(gammaFlipFromLadder(new Map([[7400, -1], [7500, -2], [7600, -3]]), 7500), null);
+  // All-positive (starts net-long, never was short) → the running sum only ever rises, no ≤0→>0 edge.
+  assert.equal(gammaFlipFromLadder(new Map([[7400, 1], [7500, 2]]), 7450) === null, false); // first strike >0 registers a crossing at the bottom strike
+  assert.equal(gammaFlipFromLadder(new Map([[7500, 5]]), 7500), null); // <2 strikes
 });
