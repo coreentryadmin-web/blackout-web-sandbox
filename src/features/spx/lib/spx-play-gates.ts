@@ -4,6 +4,7 @@ import type { PlayConfirmationResult } from "@/features/spx/lib/spx-play-confirm
 import { buildPlayIdeaIntel } from "@/features/spx/lib/spx-play-intel";
 import { shouldBlockForTradingHalt } from "@/lib/ws/uw-socket";
 import { todayEtYmd } from "@/lib/providers/spx-session";
+import { isStagingDeploy } from "@/lib/clerk-env";
 import {
   gradeRank,
   playBuyCooldownAplusBypass,
@@ -232,9 +233,15 @@ export function evaluatePlayGates(
     const pbId = opts?.playbook_primary_id ?? null;
 
     if (!pbId) {
-      blocks.push(
-        `No playbook trigger — playbook live gate requires a fired primary (staging lab=${playbookStagingLabEnabled()})`
-      );
+      // STAGING FULL-ENABLEMENT (user directive): do NOT strangle the desk when no playbook primary
+      // has fired — on staging let plays ALSO flow from the legacy confluence engine (they still face
+      // the score/grade quality gates below). PROD keeps requiring a fired primary when the live gate
+      // is on (conservative), so prod behavior is UNCHANGED.
+      if (!isStagingDeploy()) {
+        blocks.push(
+          `No playbook trigger — playbook live gate requires a fired primary (staging lab=${playbookStagingLabEnabled()})`
+        );
+      }
     } else if (!isPlaybookLiveAllowlisted(pbId)) {
       const allowlist = playbookLiveAllowlist();
       const listed = allowlist ? [...allowlist].join(", ") : "none";
