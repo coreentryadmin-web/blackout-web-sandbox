@@ -53,3 +53,13 @@ test("levels are optional — read omits them cleanly when walls absent", () => 
   assert.equal(r.posture, "long");
   assert.doesNotMatch(r.read, /resistance|support/);
 });
+
+test("NaN wall level is OMITTED, never rendered as 'NaN' (AAPL banner bug from 10-ticker sweep)", () => {
+  const r = deriveVectorRegime({ spot: 316, gammaFlip: 310, topCallWall: 320, topPutWall: NaN });
+  assert.match(r.read, /resistance 320/);
+  assert.doesNotMatch(r.read, /NaN/);
+  assert.doesNotMatch(r.read, /support/);
+  // Both NaN → no levels clause at all.
+  const r2 = deriveVectorRegime({ spot: 316, gammaFlip: 310, topCallWall: NaN, topPutWall: NaN });
+  assert.doesNotMatch(r2.read, /NaN|resistance|support/);
+});

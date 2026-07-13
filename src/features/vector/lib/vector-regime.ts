@@ -59,8 +59,12 @@ export function deriveVectorRegime(input: {
     };
   }
 
-  const res = input.topCallWall != null ? `resistance ${fmt(input.topCallWall)}` : null;
-  const sup = input.topPutWall != null ? `support ${fmt(input.topPutWall)}` : null;
+  // Number.isFinite (not just != null): a NaN strike from an upstream data hiccup passes both `??`
+  // and `!= null`, and toLocaleString(NaN) happily renders "NaN" — which is exactly what members
+  // saw ("resistance 320, support NaN" on AAPL, caught by the 10-ticker hardcore sweep). A level we
+  // can't state as a real number is omitted, never rendered as noise.
+  const res = Number.isFinite(input.topCallWall ?? NaN) ? `resistance ${fmt(input.topCallWall!)}` : null;
+  const sup = Number.isFinite(input.topPutWall ?? NaN) ? `support ${fmt(input.topPutWall!)}` : null;
   const levels = [res, sup].filter(Boolean).join(", ");
   const levelsClause = levels ? ` ${levels}.` : "";
 
