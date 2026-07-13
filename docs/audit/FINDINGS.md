@@ -8,6 +8,35 @@ and required CI (`verify`) are green — no per-PR approval, no end-of-day hold.
 here and merge the PR in the same session. Supersedes all earlier "leave OPEN for review" notes
 in this file.
 
+## 🟡 P3 FOUND+FIXED 2026-07-13 — HELIX contract drilldown discarded the clicked print's own real payload (member: "click a flow, no real detail")
+
+**Surface:** `src/features/helix/components/ContractDrilldownDrawer.tsx` + `FlowFeed.tsx`. The tape row's own hint says "Click any row for contract drilldown," and the member reported the resulting window showed no real per-print detail.
+
+**Root cause (data-plumbing, not a wrong number):** `FlowFeed`'s `onContractClick` projected the clicked `FlowAlert` down to a bare `ContractPick` (`ticker/strike/expiry/option_type`) before opening the drawer, throwing away every rich field the row already carried and had already rendered — `premium`, `fill_price`, `underlying_price` (spot-at-fill), `open_interest`, `implied_volatility`, `otm_pct`, `dte`, `score`, `ask_pct`, `alert_rule`, `gex_proximity`. The drawer then re-fetched only *aggregate* contract data (OI / day-volume / intraday) keyed by the contract, so in-sandbox (and whenever UW returned no per-contract rows) the window looked empty even though the clicked print was fully populated. The specific trade the member clicked was never shown.
+
+**Fix (`feat/helix-flow-drilldown`):** pass the full `FlowAlert` to the drawer and render a "This print" panel from that real payload (side, premium, fill/share, spot-at-fill, DTE, OTM, OI, IV, aggressor from `ask_pct`, rule + gamma-wall proximity tags), then keep the aggregate contract activity below it. Two fields (contract **size**, **notional**) are *derived* from `premium ÷ (fill × 100)` and are explicitly labelled **est.** — no fabricated fields; anything the payload lacks is omitted, not invented. Pure derivations live in `helix-print-detail.ts` with unit tests (`helix-print-detail.test.ts`).
+
+**Evidence:** before — drawer props were `Pick<FlowAlert, "ticker"|"strike"|"expiry"|"option_type">`; after — full `FlowAlert`, 7 new `*.test.ts` cases green (`estContractSize`/`estNotional` verified against the closed form premium×strike/fill). `tsc --noEmit` clean, tailwind opacity guard clean.
+
+**Status:** FIXED (draft PR). Live per-row cross-check of the served numbers still needs the authed prod tape — see the data-validation note below.
+
+## ℹ️ INFO / VERIFIED-CORRECT 2026-07-13 — HELIX tape + drilldown numbers audited: math/units CORRECT, systemic float bug already mitigated
+
+**Scope:** every number the HELIX tape + drilldown render — strike, premium, fill, DTE, spot, ask%, OI, IV, OTM%, score, plus the drilldown's est. size/notional, aggressor, bid-share, intraday series.
+
+**Findings:**
+- **premium** = UW `total_premium` (already contracts×fill×100 dollars) — rendered by `fmtPremium` as-is, no double-×100. CORRECT.
+- **est. size / est. notional** (drilldown) = `premium ÷ (fill×100)` and `size×100×strike` — DERIVED, labelled **est.**, unit-tested.
+- **DTE** = `(expiry − ET-today)` calendar days server-side (`db.ts`), client `daysToExpiry` matches (ET boundary). Consistent, calendar (not trading) days.
+- **OTM%** = `(isCall? k−spot : spot−k)/spot` server-side, negatives shown as "ITM". Sign correct.
+- **spot** (`underlying_price`) is dollar-denominated — ground-truthed against Polygon prev-close (SPY 754.95, SPX 7575.39, ratio 10.03 ≈ 10×; AAPL 315.32, NVDA 210.96). No cents/scaling bug.
+- **Systemic unrounded-float bug:** NOT present on HELIX — both `/api/market/flows` (lines 60 & 80) and `/api/market/option-contract` (line 76) wrap responses in `roundFloats(dp=2)`. Verified.
+- **Caveat (low sev, pre-existing, NOT fixed):** `fmtIv` + `parseContractMeta` use an `iv < 3 ? iv×100 : iv` fraction-vs-percent heuristic that misclassifies a genuine IV ≥ 300% (fraction ≥ 3.0). Out of normal range; changing it risks the common case. Logged as a caveat only.
+
+**Not validated in-sandbox (honest gap):** per-row live cross-check of a specific tape print's served `underlying_price`/`iv`/`oi` against UW requires the authed prod tape — direct Postgres is TCP-blocked here, so the live `/flows` read can't be exercised from the sandbox. The math/units above are validated statically + via Polygon spot ground truth; a full live check runs from the prod-side `data-validator.mjs` path.
+
+**Status:** VERIFIED-CORRECT — no numeric fix required.
+
 ## ℹ️ INFO / VERIFIED-CORRECT 2026-07-12 — "no put wall below spot" on SPX is REAL, not a bug — the ladder shows NET dealer gamma, and near-term positioning is genuinely call-dominant down to ~7500
 
 **Surface:** `src/features/vector/lib/vector-gex-ladder.ts` + `src/lib/providers/polygon-options-gex.ts` (`strike_totals`). Member report (screenshot): SPX spot 7,575 and "no put wall literally from 7575 to 7475 — there definitely will be at least a weak put wall."
