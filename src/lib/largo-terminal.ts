@@ -15,6 +15,7 @@ import { LARGO_TOOL_DEFS, getToolsForIntent } from "@/lib/largo/tool-defs";
 import { runLargoTool } from "@/lib/largo/run-tool";
 import { bieFollowups, bieIntentBucket, classifyBieIntent, classifyBieStagingFallback, isSpxDeskFallbackQuestion, type BieRoute } from "@/lib/bie/router";
 import { composeBieAnswer, composeCompound } from "@/lib/bie/composers";
+import type { BieAnswerEnvelope } from "@/lib/bie/answer-envelope";
 import { isCompoundQuestion } from "@/lib/bie/decompose";
 import { collectContextNumbers, verifyClaims, type ClaimVerification } from "@/lib/bie/verifier";
 import { resetLargoSpxDeskCache } from "@/lib/largo/spx-desk-cache";
@@ -64,8 +65,42 @@ export type LargoStreamEvent =
       // which numeric claims traced to this turn's source data, independent of the in-text
       // caveat's own display threshold.
       verification: ClaimVerification;
+      // The structured BieAnswerEnvelope (task #59/#63/#64) — present ONLY when the composer produced
+      // a genuinely RICH envelope (verdict/synthesis). The client renders it as evidence/level/
+      // scenario cards; a trivial string leg omits it and the client falls back to `answer` markdown.
+      envelope?: BieAnswerEnvelope;
     }
   | { type: "error"; message: string };
+
+/**
+ * Is this a RICH structured envelope worth surfacing as member-facing cards — as opposed to the
+ * transition shim composeBieAnswer wraps a plain-string leg in (one "Read" section, no
+ * evidence/levels/scenarios/provenance)? Only rich envelopes are attached to the query response as
+ * `envelope`; a trivial string answer omits it so the client renders its `answer` markdown honestly
+ * (its own shim), never a hollow single-section card that adds nothing over the text.
+ *
+ * There is no marker field on the (stable) envelope contract, so this is a STRUCTURAL test: the shim
+ * is exactly one bare section and nothing else, so any of multi-section / top-level evidence /
+ * scenarios / levels / unavailableSources / a section carrying its own evidence·levels·provenance·
+ * bias·confidence means the synthesis layer actually populated it.
+ */
+export function isRichBieEnvelope(env: BieAnswerEnvelope | null | undefined): boolean {
+  if (!env) return false;
+  const sections = env.sections ?? [];
+  if (sections.length > 1) return true;
+  if ((env.evidence?.length ?? 0) > 0) return true;
+  if ((env.scenarios?.length ?? 0) > 0) return true;
+  if ((env.levels?.length ?? 0) > 0) return true;
+  if ((env.unavailableSources?.length ?? 0) > 0) return true;
+  return sections.some(
+    (s) =>
+      (s.evidence?.length ?? 0) > 0 ||
+      (s.levels?.length ?? 0) > 0 ||
+      s.provenance != null ||
+      s.bias != null ||
+      s.confidence != null
+  );
+}
 
 /**
  * Dynamic follow-up prompts — 3 short questions that continue THIS exact exchange
@@ -250,7 +285,7 @@ async function prepareLargoTurn(
  *  Node 20. See logBie's doc comment below for the identical root cause on the DB write. */
 async function tryBieRoute(
   question: string
-): Promise<{ route: BieRoute; answer: string; context: unknown } | null> {
+): Promise<{ route: BieRoute; answer: string; context: unknown; envelope: BieAnswerEnvelope | null } | null> {
   try {
     const ledger = await readZeroDteLedger().catch(() => []);
     const ledgerTickers = new Set(ledger.map((r) => r.ticker));
@@ -266,6 +301,7 @@ async function tryBieRoute(
           route: { intent: "compound_lookup", ticker: null },
           answer: composed.answer,
           context: composed.context,
+          envelope: composed.envelope ?? null,
         };
       }
     }
@@ -273,7 +309,7 @@ async function tryBieRoute(
     const route = classifyBieIntent(question, ledgerTickers);
     if (route) {
       const composed = await composeBieAnswer(route, { question });
-      if (composed) return { route, answer: composed.answer, context: composed.context };
+      if (composed) return { route, answer: composed.answer, context: composed.context, envelope: composed.envelope ?? null };
     }
 
     // BIE-only staging: broad SPX asks that missed the router still get the Live Desk brief.
@@ -284,6 +320,7 @@ async function tryBieRoute(
           route: { intent: "spx_desk_read", ticker: "SPX" },
           answer: composed.answer,
           context: composed.context,
+          envelope: composed.envelope ?? null,
         };
       }
     }
@@ -293,7 +330,7 @@ async function tryBieRoute(
       const fallback = classifyBieStagingFallback(question);
       const composed = await composeBieAnswer(fallback, { question });
       if (composed) {
-        return { route: fallback, answer: composed.answer, context: composed.context };
+        return { route: fallback, answer: composed.answer, context: composed.context, envelope: composed.envelope ?? null };
       }
       const lastResort = await composeBieAnswer({ intent: "market_context", ticker: null });
       if (lastResort) {
@@ -301,6 +338,7 @@ async function tryBieRoute(
           route: { intent: "market_context", ticker: null },
           answer: lastResort.answer,
           context: lastResort.context,
+          envelope: lastResort.envelope ?? null,
         };
       }
     }
@@ -351,6 +389,10 @@ export async function runLargoQuery(
   tools_used: string[];
   followups: string[];
   verification: ClaimVerification;
+  // Structured answer for the rich member cards — present ONLY on a genuinely rich BIE synthesis
+  // (verdict/etc.); undefined for a trivial string answer or a Claude turn, so JSON serialization
+  // omits it and the client falls back to `answer` markdown (its own shim). See isRichBieEnvelope.
+  envelope?: BieAnswerEnvelope;
 }> {
   const startedAt = Date.now();
   // Layer 3 first: deterministic BLACKOUT Intelligence answer when the question
@@ -396,6 +438,9 @@ export async function runLargoQuery(
       tools_used: ["blackout_intelligence"],
       followups: bieFollowups(routed.route.intent),
       verification,
+      // Attach the structured envelope ONLY when it's genuinely rich — a trivial string leg's shim
+      // envelope is dropped here so the client renders `answer` markdown, never a hollow card.
+      envelope: isRichBieEnvelope(routed.envelope) ? routed.envelope ?? undefined : undefined,
     };
   }
 
@@ -549,6 +594,8 @@ export async function runLargoQueryStream(
         tools_used: ["blackout_intelligence"],
         followups: bieFollowups(routed.route.intent),
         verification,
+        // Same rich-only gate as the non-streaming path — the client consumer branches on this.
+        envelope: isRichBieEnvelope(routed.envelope) ? routed.envelope ?? undefined : undefined,
       } as LargoStreamEvent);
     } catch {
       // client disconnected — turn already persisted
