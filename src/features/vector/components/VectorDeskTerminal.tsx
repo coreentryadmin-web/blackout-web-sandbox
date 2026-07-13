@@ -27,6 +27,8 @@ type Props = {
   /** Always-on technicals lines (VWAP/EMA/RSI/MACD/pocket/structure) — narrated even with the chart
    *  overlays toggled OFF. Empty while warming up. Pre-formatted by the chart (which knows spot). */
   technicals?: string[];
+  /** Recent fired-alert messages (newest first) for the ALERTS section. Empty when none have fired. */
+  alerts?: string[];
   wallIntegrity?: { call: WallIntegrity | null; put: WallIntegrity | null };
 };
 
@@ -43,6 +45,7 @@ export function VectorDeskTerminal({
   magnet,
   confluence,
   technicals,
+  alerts,
   wallIntegrity,
 }: Props) {
   const normalized = normalizeVectorTicker(ticker);
@@ -132,9 +135,17 @@ export function VectorDeskTerminal({
         intel.push({ icon: "level", tone: "neutral", text: t, indent: 2 });
       }
     }
+    // ALERTS — the member's rules that FIRED (price touched a wall / crossed the flip). Newest first,
+    // tone 'bull' so they stand out. Empty until something fires. (In-page delivery, slice 1b.)
+    if (alerts?.length) {
+      intel.push({ icon: "section", tone: "accent", text: "ALERTS — fired", indent: 1 });
+      for (const a of alerts) {
+        intel.push({ icon: "level", tone: "bull", text: `🔔 ${a}`, indent: 2 });
+      }
+    }
     if (intel.length) return [base[0]!, ...intel, ...base.slice(1)];
     return base;
-  }, [isSpx, spxPlay, spxPlayError, liveSession, normalized, lens, wallEvents, proximity, magnet, confluence, technicals, wallIntegrity]);
+  }, [isSpx, spxPlay, spxPlayError, liveSession, normalized, lens, wallEvents, proximity, magnet, confluence, technicals, alerts, wallIntegrity]);
 
   const cmd = isSpx ? "playbook --spx --vector-desk" : `vector --ticker ${normalized} --structure`;
 
