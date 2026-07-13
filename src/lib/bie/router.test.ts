@@ -107,6 +107,46 @@ describe("router: concept_read intent", () => {
   test("bieFollowups has a concept_read branch", () => {
     assert.equal(bieFollowups("concept_read").length, 3);
   });
+
+  test("BOUNDARY: a live-EDITION/temporal question is NOT stolen by concept_read", () => {
+    // "what is tonight's Night Hawk edition" is a LIVE request — it must not return the Night Hawk
+    // DEFINITION. It falls through (→ Claude → get_nighthawk_edition), not concept_read.
+    assert.notEqual(classifyBieIntent("what is tonight's Night Hawk edition", NO_LEDGER)?.intent, "concept_read");
+    assert.notEqual(classifyBieIntent("what's the latest Night Hawk edition", NO_LEDGER)?.intent, "concept_read");
+    assert.notEqual(classifyBieIntent("what is today's edition", NO_LEDGER)?.intent, "concept_read");
+    // The plain PRODUCT definition still resolves to concept_read.
+    assert.equal(classifyBieIntent("what is Night Hawk", NO_LEDGER)?.intent, "concept_read");
+    assert.equal(classifyBieIntent("what does Night Hawk do", NO_LEDGER)?.intent, "concept_read");
+  });
+});
+
+describe("router: universal_lookup intent", () => {
+  test("verb + explicit internal path routes to universal_lookup", () => {
+    assert.equal(classifyBieIntent("pull /api/market/gex-positioning?ticker=SPY", NO_LEDGER)?.intent, "universal_lookup");
+    assert.equal(classifyBieIntent("show me /api/platform/intel", NO_LEDGER)?.intent, "universal_lookup");
+  });
+
+  test("verb + named provider routes to universal_lookup", () => {
+    assert.equal(classifyBieIntent("get /v3/reference/tickers from Polygon", NO_LEDGER)?.intent, "universal_lookup");
+    assert.equal(classifyBieIntent("pull the darkpool data from unusual whales", NO_LEDGER)?.intent, "universal_lookup");
+  });
+
+  test("BOUNDARY: a verb WITHOUT a path/provider is NOT universal_lookup", () => {
+    // "show me the SPX setup" has no path/source → stays a normal desk read, not universal.
+    assert.notEqual(classifyBieIntent("show me the SPX setup", NO_LEDGER)?.intent, "universal_lookup");
+    // A plain concept question isn't universal either.
+    assert.equal(classifyBieIntent("what is GEX", NO_LEDGER)?.intent, "concept_read");
+    // A plain Vector question stays vector_read.
+    assert.equal(classifyBieIntent("show me the vector walls for NVDA", NO_LEDGER)?.intent, "vector_read");
+  });
+
+  test("staging fallback also routes explicit-endpoint questions to universal_lookup", () => {
+    assert.equal(classifyBieStagingFallback("pull /api/market/spx/desk").intent, "universal_lookup");
+  });
+
+  test("bieFollowups has a universal_lookup branch", () => {
+    assert.equal(bieFollowups("universal_lookup").length, 3);
+  });
 });
 
 describe("router: universal_lookup intent", () => {
