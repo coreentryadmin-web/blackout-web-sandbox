@@ -263,9 +263,12 @@ async function composeConceptRead(question: string): Promise<BieComposed | null>
       context: { reason: "no_definition", question },
     };
   }
-  // Glossary definitions carry no {{…}} markers, so no stripping needed.
-  const answer = `**${entry.term}**\n\n${entry.definition}`;
-  return { answer, context: { term: entry.term, category: entry.category } };
+  // Rich concept answer: a full multi-section EXPLANATION (What it is · How it works · Why it matters
+  // · Example · On the platform) instead of a single dictionary line — BIE teaching the concept like a
+  // desk analyst, deterministic + grounded. Glossary/rich content carries no {{…}} markers.
+  const { buildConceptEnvelope } = await import("@/lib/bie/concept-narrative");
+  const envelope = buildConceptEnvelope(entry);
+  return { answer: envelope.markdown, context: { term: entry.term, category: entry.category }, envelope };
 }
 
 /** Split a "path?a=1&b=2" token into a path + params object. */

@@ -46,6 +46,29 @@ maxpain by dte) — larger, desk-internal; this PR is the small routing fix the 
 the minimum. **Test:** `src/lib/bie/router.test.ts` — weekly/monthly → Vector with the right horizon;
 bare/no-figure asks stay on the desk; staging fallback likewise. **Status:** FIXED — PR open.
 
+## 🟢 ENRICHMENT 2026-07-13 — BIE concept answers: one-line definition → full multi-section explanation (PR1 of the "BIE IS the AI" push)
+
+**Mission:** BIE is the deterministic AI (never Claude). Answers were too terse (one-liners); the user's
+bar is SPX-commentary depth. **PR1 scope:** the CONCEPT path ("what is X") + a shared rich-narrative
+helper. **Before:** `composeConceptRead` returned a single block — `**${term}**\n\n${definition}`.
+**After:** it returns a full `BieAnswerEnvelope` with up to 5 sections — *What it is · How it works · Why
+it matters · Example · On the platform* — plus a confidence line and follow-ups. **Real before→after
+(composer output, captured in `concept-narrative.test.ts`):**
+- "what is GEX": **510 chars, 1 block → 2,012 chars, 5 sections.**
+- Every battery concept (GEX, VEX, gamma flip, King node, call/put wall, max pain, expected move,
+  gamma regime, 0DTE, Helix, Thermal, Night Hawk, Largo, Vector, Anchor) now renders ≥3 substantive
+  sections.
+**How:** new shared `rich-narrative.ts` (`buildRichEnvelope` — the one constructor rich composers call,
+mirrors spx-desk-brief's sectioning); `concept-rich.ts` (explanatory content keyed by term — the
+"teach it" layer, kept out of the glossary index so it can grow); `concept-narrative.ts`
+(`buildConceptEnvelope`). **Honesty preserved:** examples are labelled "Illustrative"; a term with no
+rich content still answers from its definition as ONE clean section (no padded empty headers); unknown
+terms still hit the honest gap-logged miss. **Test:** `concept-narrative.test.ts` (rich ≥3 sections,
+materially longer than the old one-liner, core concepts carry all 4 rich fields, thin-term fallback,
+sample capture). Full bie sweep 382/382, tsc + opacity clean. **Next PRs:** data-read composers
+(flip/walls/regime/desk → THESIS/WHY/MECHANIC/LEVELS), broaden router coverage. **Live proof:** re-run
+the Largo battery after deploy to show member-facing answers got richer. **Status:** PR1 open.
+
 ## ✅ AUDIT 2026-07-13 — De-Claude coverage map: staging is 100% BIE, no surface silently returns empty (task #61)
 
 **What was audited:** every staging-reachable Claude call-site, to prove that with `claudeEnabled()===false` on staging (`src/lib/ai-env.ts:9` — `isStagingDeploy()` ⇒ false unless `STAGING_CLAUDE=1`) no user-facing surface degrades to null/empty. Every Anthropic call funnels through the two gated wrappers `anthropicText` (`src/lib/providers/anthropic.ts:365`) and `anthropicToolLoop` (`:447`), both of which `return null` when `!claudeEnabled()`. Verified via `grep -rn "claudeEnabled|anthropicText|anthropicToolLoop" src/` that NO raw Anthropic SDK usage bypasses those wrappers (the only two Claude-invoking exports are `anthropicText`/`anthropicToolLoop`).
