@@ -212,3 +212,47 @@ describe("router: system_diagnostic intent", () => {
     assert.equal(bieFollowups("system_diagnostic").length, 3);
   });
 });
+
+describe("router: verdict intent (cross-tool synthesis, task #59)", () => {
+  test("the flagship grading question routes to verdict with its ticker", () => {
+    const r = classifyBieIntent("is SPX 7500 0DTE good today", NO_LEDGER);
+    assert.equal(r?.intent, "verdict");
+    assert.equal(r?.ticker, "SPX");
+  });
+
+  test("imperative hold-into-earnings routes to verdict for the named ticker", () => {
+    const r = classifyBieIntent("hold NVDA into earnings", NO_LEDGER);
+    assert.equal(r?.intent, "verdict");
+    assert.equal(r?.ticker, "NVDA");
+  });
+
+  test("explicit verdict language routes to verdict", () => {
+    assert.equal(classifyBieIntent("what's the verdict on SPX", NO_LEDGER)?.intent, "verdict");
+    assert.equal(classifyBieIntent("give me the call on NVDA", NO_LEDGER)?.intent, "verdict");
+  });
+
+  test("market risk-on/off is a market-wide verdict", () => {
+    assert.equal(classifyBieIntent("is the market risk-on today", NO_LEDGER)?.intent, "verdict");
+    assert.equal(classifyBieIntent("is the market risk-off right now", NO_LEDGER)?.intent, "verdict");
+  });
+
+  test("BOUNDARY: a 'should I ...' question stays ticker_advice, NOT verdict (tested advice shapes preserved)", () => {
+    const LEDGER = new Set<string>(["NVDA", "TSLA"]);
+    assert.equal(classifyBieIntent("Should I buy NVDA calls into earnings?", LEDGER)?.intent, "ticker_advice");
+    assert.equal(classifyBieIntent("Should I hold my TSLA play into the close?", LEDGER)?.intent, "ticker_advice");
+  });
+
+  test("BOUNDARY: 'compare X vs Y' stays ticker_compare, not verdict", () => {
+    assert.equal(classifyBieIntent("compare NVDA vs AMD", NO_LEDGER)?.intent, "ticker_compare");
+  });
+
+  test("staging fallback also routes verdict questions to verdict", () => {
+    assert.equal(classifyBieStagingFallback("is SPX 7500 0DTE good today").intent, "verdict");
+    assert.equal(classifyBieStagingFallback("hold NVDA into earnings").intent, "verdict");
+    assert.equal(classifyBieStagingFallback("is the market risk-on today").intent, "verdict");
+  });
+
+  test("bieFollowups has a verdict branch", () => {
+    assert.equal(bieFollowups("verdict").length, 3);
+  });
+});
