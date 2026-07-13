@@ -598,7 +598,7 @@ export function FlowFeed() {
   );
   const dataStale = dataAgeMs != null && dataAgeMs > 5 * 60_000;
   const newestAgeLabel =
-    dataAgeMs == null
+    dataAgeMs == null || !Number.isFinite(dataAgeMs)
       ? "—"
       : dataAgeMs < 60_000
         ? `${Math.round(dataAgeMs / 1000)}s ago`

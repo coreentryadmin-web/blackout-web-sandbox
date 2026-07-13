@@ -156,7 +156,15 @@ export function SpxTradeAlerts({ desk, live, sessionActive = true, iosHidden = f
   useEffect(() => {
     if (livePlaybook?.verdicts?.length) writeCachedPlaybookShadow(livePlaybook);
   }, [livePlaybook]);
-  const [cachedPlaybook] = useState<PlaybookShadowPanel | null>(() => readCachedPlaybookShadow());
+  // Read the sessionStorage playbook cache AFTER mount, not in a lazy useState initializer. Reading
+  // it during render returned the cached panel on the client but null on the server (no
+  // sessionStorage), so the first client render diverged from SSR → React hydration error #418 on
+  // the /dashboard flagship desk off-hours (when !sessionLive selects this cached panel below).
+  // Seeding null (matching the server) then filling in on the client keeps hydration deterministic.
+  const [cachedPlaybook, setCachedPlaybook] = useState<PlaybookShadowPanel | null>(null);
+  useEffect(() => {
+    setCachedPlaybook(readCachedPlaybookShadow());
+  }, []);
   const playbookPanel = livePlaybook?.verdicts?.length
     ? livePlaybook
     : !sessionLive
