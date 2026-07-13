@@ -10,6 +10,7 @@
 import type { SpxDeskPayload } from "@/features/spx/lib/spx-desk";
 import { PLAYBOOK_REGISTRY, type PlaybookId } from "@/features/spx/lib/playbook-registry";
 import { etClock, etMinutes } from "@/features/spx/lib/spx-play-session-time";
+import { isStagingDeploy } from "@/lib/clerk-env";
 
 export type PlaybookRegimeBucket =
   | "trend_bull"
@@ -85,6 +86,13 @@ export function eligiblePlaybookIds(
   desk: SpxDeskPayload,
   now: number = Date.now()
 ): PlaybookId[] {
+  // STAGING FULL-ENABLEMENT (user directive): every playbook is regime-eligible on staging so the
+  // full set — incl. the mean-reversion family that the trend-regime bucket would otherwise exclude
+  // (the router keys on desk.regime, not gamma_regime) — can arm/trigger and be measured. PROD keeps
+  // the conservative regime-bucket routing UNCHANGED.
+  if (isStagingDeploy()) {
+    return PLAYBOOK_REGISTRY.map((pb) => pb.id);
+  }
   const bucket = classifyPlaybookRegime(desk, now);
   return PLAYBOOK_REGISTRY.filter((pb) => ELIGIBILITY[pb.id].has(bucket)).map((pb) => pb.id);
 }

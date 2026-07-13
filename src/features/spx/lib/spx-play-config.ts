@@ -460,13 +460,27 @@ export function parsePlaybookLiveAllowlist(
   return null;
 }
 
+/** All registered playbook ids — the STAGING full-enablement set. */
+const ALL_PLAYBOOK_IDS: readonly PlaybookId[] = [...VALID_PLAYBOOK_IDS];
+
 /** When non-null, gate A17 only permits BUY for these primary playbook ids. */
 export function playbookLiveAllowlist(): ReadonlySet<PlaybookId> | null {
+  // STAGING FULL-ENABLEMENT (user directive): on staging every playbook (PB-01..PB-14) is allowlisted
+  // so the WHOLE SPX Slayer engine runs live to test + measure. An explicit env override still wins
+  // (research escape hatch). PROD IS UNCHANGED — prod keeps the env/high-fidelity default below.
+  if (isStagingDeploy() && !process.env.PLAYBOOK_LIVE_ALLOWLIST?.trim()) {
+    return new Set(ALL_PLAYBOOK_IDS);
+  }
   return parsePlaybookLiveAllowlist(process.env.PLAYBOOK_LIVE_ALLOWLIST, isStagingDeploy());
 }
 
 export function isPlaybookLiveAllowlisted(id: PlaybookId | null | undefined): boolean {
   if (!id) return false;
+  // STAGING FULL-ENABLEMENT: every playbook is paper-executable on staging (test bed), so the
+  // execution-mode gate (which keeps mvp matchers shadow-only on prod) is lifted here. PROD UNCHANGED.
+  if (isStagingDeploy() && !process.env.PLAYBOOK_LIVE_ALLOWLIST?.trim()) {
+    return VALID_PLAYBOOK_IDS.has(id);
+  }
   const def = playbookDef(id);
   const allowlist = playbookLiveAllowlist();
   if (allowlist == null) {

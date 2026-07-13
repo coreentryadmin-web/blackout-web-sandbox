@@ -83,6 +83,26 @@ export function sessionStatsFromMinuteBars(bars: AggBar[]): {
   };
 }
 
+/**
+ * Merge external per-minute share volume (keyed by bar-start SECONDS) into index minute bars that lack
+ * native volume, so {@link sessionStatsFromMinuteBars} yields a TRUE volume-weighted VWAP. SPX index
+ * bars carry v=0 (ISSUE-16); SPY 1-minute volume is the standard proxy (the same one the Vector chart
+ * uses). Bars that already have real volume are left untouched, and a bar with no matching proxy volume
+ * is left as-is (weights to 1 downstream). PURE — the caller fetches the volume map.
+ */
+export function mergeVolumeIntoBars(
+  bars: AggBar[],
+  volumeByBarSec: Map<number, number>
+): AggBar[] {
+  if (!volumeByBarSec.size) return bars;
+  return bars.map((b) => {
+    if ((b.v ?? 0) > 0) return b;
+    if (b.t == null || !Number.isFinite(b.t)) return b;
+    const vol = volumeByBarSec.get(Math.floor(b.t / 1000));
+    return vol != null && Number.isFinite(vol) && vol > 0 ? { ...b, v: vol } : b;
+  });
+}
+
 /** Calendar date (YYYY-MM-DD) of a bar timestamp in US Eastern (exchange) time. */
 function etYmdFromMs(ms: number): string {
   return new Intl.DateTimeFormat("en-CA", {

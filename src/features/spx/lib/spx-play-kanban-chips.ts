@@ -2,6 +2,7 @@ import type { SpxPlayPayload } from "@/features/spx/lib/spx-play-engine";
 import type { LottoPlayPayload } from "@/features/spx/lib/spx-lotto-engine";
 import type { PowerHourPlayPayload } from "@/features/spx/lib/spx-power-hour-engine";
 import { formatSpxContractChipLabel } from "@/features/spx/lib/spx-play-contract-label";
+import { isStagingDeploy } from "@/lib/clerk-env";
 
 export type PlayKanbanKind = "structure" | "lotto" | "power";
 export type PlayKanbanColumn = "open" | "watch" | "closed";
@@ -140,6 +141,23 @@ export function buildPlayKanbanChips(input: {
         label,
         prefix: "STR",
         tone: "closed",
+      });
+    } else if (isStagingDeploy() && sessionLive) {
+      // WATCH VISIBILITY (STAGING FULL-ENABLEMENT, user directive): never a blank desk — surface the
+      // best current candidate as an HONEST low-conviction SCANNING chip when nothing stronger
+      // qualifies (SCANNING/HOLD, below the watch floor). Truthfully labeled "SCAN + lean + grade",
+      // muted tone, in the watch column — NEVER dressed as a strong/open play. PROD IS UNCHANGED (prod
+      // keeps the blank-until-qualified behavior). No fabricated conviction: the grade is the real one.
+      const strike = structureStrikeChip(play);
+      const lean = play.direction === "long" ? "▲" : play.direction === "short" ? "▼" : "·";
+      const label = `SCAN ${strike ?? lean}${play.grade ? ` ${play.grade}` : ""}`.trim();
+      watch.push({
+        id: "structure-scanning",
+        column: "watch",
+        kind: "structure",
+        label,
+        prefix: "STR",
+        tone: "neutral",
       });
     }
   }

@@ -56,12 +56,15 @@ import { isPremarketPlanningWindow } from "@/features/spx/lib/spx-play-session-g
 import {
   distancePct,
   inferRegime,
+  mergeVolumeIntoBars,
   priorDayFromDailyBars,
   priorEtYmd,
   sessionStatsFromMinuteBars,
   todayEtYmd,
   widenSessionExtremesWithSpot,
 } from "@/lib/providers/spx-session";
+import { fetchSpyVolumeByMinute } from "@/features/vector/lib/vector-spy-volume";
+import { isStagingDeploy } from "@/lib/clerk-env";
 import {
   fetchUwDarkPool,
   fetchUwDarkPoolMarketWide,
@@ -92,6 +95,31 @@ import { getActiveTradingHalts, isTradingHaltChannelStale } from "@/lib/ws/uw-so
 /** GEX-wall ladder size — a balanced ~5-per-side two-sided ladder (call wall above spot,
  *  put wall below). 10 fits the scrollable panel without crushing the Live Tape (bug #93). */
 const GEX_WALL_LADDER_LIMIT = 10;
+
+/**
+ * SPX session stats with a TRUE volume-weighted VWAP on STAGING via the SPY-volume proxy.
+ *
+ * STAGING FULL-ENABLEMENT (user directive): SPX index minute bars carry no volume (ISSUE-16), so the
+ * desk VWAP is an equal-weight typical price and `vwap_volume_weighted` is always false — which
+ * permanently hard-blocks PB-01/PB-02 (they require a volume-weighted VWAP). On staging we merge SPY
+ * 1-minute share volume (the standard index proxy the Vector chart already uses) into the SPX bars so
+ * the VWAP becomes genuinely volume-weighted and `vwap_volume_weighted` can be true, unblocking those
+ * playbooks. Fail-open: any SPY-fetch miss falls back to the current typical-price VWAP.
+ *
+ * PROD IS UNCHANGED — prod keeps the existing typical-price VWAP (no SPY fetch, no value change).
+ */
+async function sessionStatsWithProxyVwap(
+  minuteBars: Parameters<typeof sessionStatsFromMinuteBars>[0],
+  ymd: string
+): Promise<ReturnType<typeof sessionStatsFromMinuteBars>> {
+  if (!isStagingDeploy()) return sessionStatsFromMinuteBars(minuteBars);
+  try {
+    const volumeByBarSec = await fetchSpyVolumeByMinute(ymd);
+    return sessionStatsFromMinuteBars(mergeVolumeIntoBars(minuteBars, volumeByBarSec));
+  } catch {
+    return sessionStatsFromMinuteBars(minuteBars);
+  }
+}
 
 /** Round price-like desk numerics at the data layer (deep sweep #21). */
 function roundDeskNum(n: number | null | undefined): number | null {
@@ -1226,7 +1254,7 @@ export async function buildSpxDesk(): Promise<SpxDeskPayload> {
   // shows a non-zero-but-stale price; surface its age + stall so the UI never labels it live.
   const spxFeed = getIndexFeedFreshness(SPX);
 
-  const session = sessionStatsFromMinuteBars(minuteBars);
+  const session = await sessionStatsWithProxyVwap(minuteBars, today);
   const intraday = computeIntradayRead(
     minuteBars
       .filter((b) => Number.isFinite(b.t))
@@ -1510,7 +1538,7 @@ async function refreshPulseStructureIfNeeded(today: string): Promise<PulseStruct
       serverCache("breadth-universe", 60_000, () => fetchBreadthUniverseSnapshots()).catch(() => []),
     ]);
 
-  const session = sessionStatsFromMinuteBars(minuteBars);
+  const session = await sessionStatsWithProxyVwap(minuteBars, today);
   const leaderStocks = leaderStocksFromBreadth(breadthAll ?? []);
   cachedPulseStructure = {
     fetchedAt: now,
