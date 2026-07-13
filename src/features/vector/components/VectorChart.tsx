@@ -116,6 +116,12 @@ import {
   type VectorTimeframeMinutes,
 } from "@/features/vector/lib/vector-bar-timeframes";
 import { mergeSpyVolumeRows } from "@/features/vector/lib/vector-spy-volume-merge";
+import {
+  createRenderThrottle,
+  priceScaleMapChanged,
+  type PriceScaleSnapshot,
+  type VectorPriceScaleMap,
+} from "@/features/vector/lib/vector-price-scale-map";
 
 export type VectorBar = {
   time: UTCTimestamp;
@@ -225,6 +231,17 @@ type Props = {
   /** Initial candle interval override (same seam): the dashboard embed opens on 3-minute candles;
    *  the standalone page keeps 1-minute. Initial state only. */
   defaultTimeframe?: VectorTimeframeMinutes;
+  /**
+   * SHARED PRICE AXIS seam (SPX desk, 2026-07-13): reports the price pane's live y-mapping
+   * (series.priceToCoordinate + visible price range + pane height + viewport top) so a host
+   * desk can render sibling panels — the SPX strike ladder — on the SAME y-scale as the
+   * candles. Emitted only when the scale actually changes, throttled to ~250ms (a 250ms poll
+   * + change-compare, because lightweight-charts has no public "autoscale changed" event;
+   * pan/zoom additionally triggers via subscribeVisibleLogicalRangeChange for responsiveness).
+   * Strictly optional: when undefined (the standalone /vector page) no poller is created and
+   * behavior is byte-identical.
+   */
+  onPriceScaleRender?: (map: VectorPriceScaleMap) => void;
 };
 
 function lensVisuals(lens: VectorWallLens) {
@@ -885,10 +902,18 @@ export function VectorChart({
   regimeSlot,
   defaultDteHorizon,
   defaultTimeframe,
+  onPriceScaleRender,
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const seriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
+  // Shared-price-axis seam: latest callback in a ref (the mount effect is []-dep), plus the
+  // last emitted snapshot so the 250ms poll only calls back when the scale actually moved.
+  const onPriceScaleRenderRef = useRef(onPriceScaleRender);
+  const lastPriceScaleSnapRef = useRef<PriceScaleSnapshot | null>(null);
+  useEffect(() => {
+    onPriceScaleRenderRef.current = onPriceScaleRender;
+  });
   const volumeSeriesRef = useRef<ISeriesApi<"Histogram"> | null>(null);
   // Always-on technicals narration (VWAP/EMA/RSI/MACD/pocket/structure) → terminal, computed on
   // every paint from the shown bars regardless of which overlays are toggled. `onTechnicalsChangeRef`
@@ -2365,10 +2390,63 @@ export function VectorChart({
       });
     });
 
+    // SHARED PRICE AXIS seam — only wired when a host asked for it at mount (the SPX desk
+    // passes a stable setState from its first render; the standalone /vector page never sets
+    // the prop, so no interval/subscription is created there and behavior is unchanged).
+    let priceScaleTimer: ReturnType<typeof setInterval> | null = null;
+    let priceScaleThrottle: ReturnType<typeof createRenderThrottle> | null = null;
+    if (onPriceScaleRenderRef.current) {
+      const emitPriceScale = () => {
+        const cb = onPriceScaleRenderRef.current;
+        // Read through the refs (not the effect locals) so a mid-teardown tick no-ops.
+        const liveChart = chartRef.current;
+        const liveSeries = seriesRef.current;
+        const el = containerRef.current;
+        if (!cb || !liveChart || !liveSeries || !el) return;
+        const height = liveChart.paneSize(0).height;
+        if (!(height > 0)) return;
+        // Visible price range = the prices at the pane's pixel edges (no public API exposes
+        // the autoscaled range directly; inverting the coordinate map is exact).
+        const top = liveSeries.coordinateToPrice(0);
+        const bottom = liveSeries.coordinateToPrice(height);
+        if (top == null || bottom == null || !(top > bottom)) return;
+        const snap: PriceScaleSnapshot = {
+          rangeMin: bottom as number,
+          rangeMax: top as number,
+          height,
+          // paneTop in viewport coords: pane 0 starts at the canvas container's top (time
+          // axis + sub-panes are below it), so the container rect top IS the pane top.
+          paneTop: el.getBoundingClientRect().top,
+        };
+        if (!priceScaleMapChanged(lastPriceScaleSnapRef.current, snap)) return;
+        lastPriceScaleSnapRef.current = snap;
+        cb({
+          ...snap,
+          // Guarded through the ref so a host calling priceToY after unmount gets null
+          // instead of a disposed-series throw.
+          priceToY: (price: number) => {
+            const s = seriesRef.current;
+            if (s !== liveSeries || s == null) return null;
+            const y = s.priceToCoordinate(price);
+            return y == null ? null : (y as number);
+          },
+        });
+      };
+      priceScaleThrottle = createRenderThrottle(emitPriceScale, 250);
+      // Poll catch-all (autoscale/data paints have no public event) + immediate response to
+      // pan/zoom via the logical-range subscription; both funnel through the same throttle.
+      priceScaleTimer = setInterval(() => priceScaleThrottle!.call(), 250);
+      chart.timeScale().subscribeVisibleLogicalRangeChange(() => priceScaleThrottle?.call());
+      emitPriceScale();
+    }
+
     if (liveSession) connectLive();
 
     return () => {
       stopReplayTimer();
+      if (priceScaleTimer != null) clearInterval(priceScaleTimer);
+      priceScaleThrottle?.cancel();
+      lastPriceScaleSnapRef.current = null;
       connRef.current?.close();
       chart.remove();
       chartRef.current = null;
