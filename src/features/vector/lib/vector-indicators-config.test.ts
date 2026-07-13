@@ -96,6 +96,7 @@ test("VECTOR_INDICATOR_GROUPS: covers every family + level + structure id exactl
     "rsi",
     "macd",
     "confluence-band",
+    "flow-markers",
   ];
   assert.deepEqual([...grouped].sort(), [...expected].sort());
 });

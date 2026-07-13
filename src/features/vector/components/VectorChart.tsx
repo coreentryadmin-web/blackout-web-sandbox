@@ -82,6 +82,7 @@ import {
 } from "@/features/vector/lib/vector-indicators-config";
 import { levelLinesFor, type LevelLine, type PriorDayOhlc } from "@/features/vector/lib/vector-key-levels";
 import { buildStructureMarkers } from "@/features/vector/lib/vector-structure-markers";
+import { buildFlowMarkers, DEFAULT_FLOW_MAX_MARKERS, type FlowPrint } from "@/features/vector/lib/vector-flow-markers";
 import { confluenceZones, confluenceCallouts, topConfluenceBand, type ConfluenceLevel } from "@/features/vector/lib/vector-confluence";
 import { summarizeTechnicals, technicalsCallouts } from "@/features/vector/lib/vector-technicals";
 import { evaluateAlerts, type AlertRule, type AlertState, type FiredAlert } from "@/features/vector/lib/vector-alerts";
@@ -832,6 +833,15 @@ export function VectorChart({
   const putBeadsRef = useRef<ISeriesMarkersPluginApi<Time> | null>(null);
   // Market-structure markers (pivot labels + BOS/CHOCH) — own instance, cleared with the beads.
   const structureMarkersRef = useRef<ISeriesMarkersPluginApi<Time> | null>(null);
+  // Options-flow markers (large trades at strike/time) — its OWN createSeriesMarkers instance so it
+  // never clobbers the two bead instances or the structure instance. `flowPrintsRef` holds the last
+  // horizon-scoped fetch; paintOverlays draws it when the toggle is on and clears it when off.
+  const flowMarkersRef = useRef<ISeriesMarkersPluginApi<Time> | null>(null);
+  const flowPrintsRef = useRef<FlowPrint[]>([]);
+  const flowMinPremiumRef = useRef<number>(0);
+  // Dedupe the truncation console note so a steady poll doesn't spam it — only log when the dropped
+  // count changes. (No SILENT truncation: the cap is always announced when prints are dropped.)
+  const lastFlowTruncatedRef = useRef<number>(-1);
   const wallHistoryRef = useRef<WallHistorySample[]>(initialWallHistory);
   /** Canonical 1m session bars — SSE live ticks and Polygon seed write here only. */
   const minuteBarsRef = useRef<VectorBar[]>(initialBars);
@@ -1138,6 +1148,27 @@ export function VectorChart({
             : []
         );
       }
+      // Options-flow markers — one arrow per notable LARGE print at its strike (price axis) + trade
+      // time (time axis): calls green ↑, puts red ↓, size scaled by premium. Drawn from the last
+      // horizon-scoped fetch (flowPrintsRef, populated by the flow effect) so they track the SAME
+      // bars/timeframe as everything else and clear the instant the toggle goes off. The markers sit
+      // at exact trade times (atPriceMiddle + price), so they don't need to align to a bar boundary —
+      // lightweight-charts snaps them onto the axis, matching how the wall beads use sample times.
+      if (flowMarkersRef.current) {
+        flowMarkersRef.current.setMarkers(
+          enabled.has("flow-markers")
+            ? buildFlowMarkers(flowPrintsRef.current, flowMinPremiumRef.current).map((m) => ({
+                time: m.time as Time,
+                position: m.position,
+                price: m.price,
+                color: m.color,
+                shape: m.shape,
+                text: m.text,
+                size: m.size,
+              }))
+            : []
+        );
+      }
     }
 
     // Oscillator sub-panes (RSI / MACD) in their OWN panes below price. The pane LAYOUT is rebuilt
@@ -1259,6 +1290,58 @@ export function VectorChart({
       cancelled = true;
     };
   }, [indicators, ticker, paintOverlays]);
+
+  // Lazy options-flow fetch: ONLY when the "Options flow" toggle is enabled (the underlying pull is a
+  // bounded Massive/Polygon per-OCC trades fan-out — don't spend it on members who never opt in). Re-
+  // fetches on ticker / DTE-horizon change, and on a slow poll while the session is live so fresh
+  // prints appear. Scoped to the SAME horizon the walls use so flow and walls describe one expiry set.
+  // On success the prints land in flowPrintsRef and we repaint; toggling off clears them and repaints.
+  useEffect(() => {
+    const enabled = indicators.has("flow-markers");
+    if (!enabled) {
+      // Cleared → drop any prints and repaint so the markers disappear immediately (not on next tick).
+      if (flowPrintsRef.current.length) {
+        flowPrintsRef.current = [];
+        paintOverlays(lastDisplayBarsRef.current);
+      }
+      return;
+    }
+    let cancelled = false;
+    const fetchFlow = async () => {
+      try {
+        const res = await fetch(
+          `/api/market/vector/flow?ticker=${encodeURIComponent(ticker)}&dte=${dteHorizon}`
+        );
+        if (cancelled || !res.ok) return;
+        const data = (await res.json()) as {
+          prints?: FlowPrint[];
+          meta?: { minPremium?: number; truncated?: number };
+        };
+        if (cancelled) return;
+        flowPrintsRef.current = Array.isArray(data.prints) ? data.prints : [];
+        flowMinPremiumRef.current = data.meta?.minPremium ?? 0;
+        // NO silent truncation: when the server dropped large prints past the display cap, say so
+        // once (deduped) — the member is seeing the top N by premium, not every large print.
+        const truncated = data.meta?.truncated ?? 0;
+        if (truncated > 0 && truncated !== lastFlowTruncatedRef.current) {
+          console.info(
+            `[vector] options-flow markers capped: showing top ${flowPrintsRef.current.length} by premium (max ${DEFAULT_FLOW_MAX_MARKERS}); ${truncated} additional large print(s) not drawn.`
+          );
+        }
+        lastFlowTruncatedRef.current = truncated;
+        paintOverlays(lastDisplayBarsRef.current);
+      } catch {
+        /* best-effort — the flow markers simply don't draw if the fetch fails (honest empty) */
+      }
+    };
+    void fetchFlow();
+    // Live sessions get fresh prints as they hit; off-hours a single fetch is enough (static tape).
+    const id = liveSession ? setInterval(fetchFlow, 30_000) : null;
+    return () => {
+      cancelled = true;
+      if (id) clearInterval(id);
+    };
+  }, [indicators, ticker, dteHorizon, liveSession, paintOverlays]);
 
   const toggleIndicator = useCallback((id: VectorIndicatorId) => {
     setIndicators((prev) => {
@@ -1964,6 +2047,7 @@ export function VectorChart({
     callBeadsRef.current = createSeriesMarkers(series, []);
     putBeadsRef.current = createSeriesMarkers(series, []);
     structureMarkersRef.current = createSeriesMarkers(series, []);
+    flowMarkersRef.current = createSeriesMarkers(series, []);
 
     refreshTrails("gex");
     refreshOverlays("gex", initialWalls, initialVexWalls, initialGammaFlip, initialVexFlip, initialDarkPoolLevels);
@@ -2047,6 +2131,11 @@ export function VectorChart({
       callBeadsRef.current = null;
       putBeadsRef.current = null;
       structureMarkersRef.current = null;
+      // chart.remove() disposed the flow markers instance too — drop the ref + prints so a remount
+      // (ticker switch) starts clean and doesn't touch a dead series.
+      flowMarkersRef.current = null;
+      flowPrintsRef.current = [];
+      lastFlowTruncatedRef.current = -1;
       volumeSeriesRef.current = null;
       setChartReady(false);
     };

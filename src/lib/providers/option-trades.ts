@@ -163,8 +163,13 @@ type RawTrade = {
 type TradesResponse = { results?: RawTrade[]; next_url?: string; status?: string };
 
 type ChainRow = {
-  ticker?: string; // OCC, e.g. "O:SPXW260626C07340000"
-  details?: { strike_price?: number; contract_type?: string; expiration_date?: string };
+  // OCC contract symbol, e.g. "O:SPXW260626C07340000". Live-verified (2026-07-13) that the
+  // /v3/snapshot/options/{underlying} response carries this under `details.ticker`, NOT top-level —
+  // the top-level `ticker` field does NOT exist on this endpoint. `ticker` is kept as a fallback
+  // only. (See discoverNearTheMoneyContracts: reading the wrong field yielded zero contracts, so the
+  // whole option-trades fan-out — this reconstruction AND the flow markers — returned empty.)
+  ticker?: string;
+  details?: { strike_price?: number; contract_type?: string; expiration_date?: string; ticker?: string };
   /** Last NBBO from the SAME banded snapshot — used (for free) to side-classify trades. */
   last_quote?: { bid?: number; ask?: number };
 };
@@ -224,7 +229,11 @@ async function discoverNearTheMoneyContracts(
   const rows = page?.results ?? [];
   const all: DiscoveredContract[] = [];
   for (const r of rows) {
-    const occ = typeof r.ticker === "string" ? r.ticker : "";
+    // OCC is under `details.ticker` on this endpoint (live-verified); fall back to the top-level
+    // field defensively. Reading only the (nonexistent) top-level `ticker` skipped every row.
+    const occ =
+      (typeof r.details?.ticker === "string" && r.details.ticker) ||
+      (typeof r.ticker === "string" ? r.ticker : "");
     const strike = Number(r.details?.strike_price);
     const t = String(r.details?.contract_type ?? "").toLowerCase();
     if (!occ || !Number.isFinite(strike) || strike <= 0) continue;
@@ -415,6 +424,173 @@ export async function fetchOptionTrades(
         sideClassifiedPrints,
       },
     } satisfies OptionTradesAggregate;
+  });
+}
+
+// ---------------------------------------------------------------------------
+// LARGE per-print flow — the individual notable trades behind the aggregate above.
+//
+// `fetchOptionTrades` AGGREGATES every print into by-strike premium and LOSES the per-print time.
+// The Vector "options flow markers" overlay (feature #20) needs the opposite: the individual LARGE
+// prints WITH their strike + timestamp, to plot each one on the price chart where big money hit.
+//
+// This sibling reuses the SAME bounded, rate-limited, cached fan-out (discoverNearTheMoneyContracts
+// + fetchTradesForContract + the multi-leg/canceled condition filter + the ns→ms clock) so there is
+// ONE options-trades fetch path with one set of bounds — it just KEEPS the qualifying prints instead
+// of summing them, applies a premium floor, and returns the top-N by premium. Separate cache key so
+// the two never collide. Never throws; returns null only when not configured / no spot.
+// ---------------------------------------------------------------------------
+
+/** Default premium floor for a print to count as "large" (env: OPTION_TRADES_LARGE_MIN_PREMIUM). */
+const LARGE_MIN_PREMIUM = envInt("OPTION_TRADES_LARGE_MIN_PREMIUM", 250_000);
+/** Default hard cap on prints returned (top-N by premium). Keeps payload + chart readable. */
+const LARGE_MAX_PRINTS = envInt("OPTION_TRADES_LARGE_MAX_PRINTS", 50);
+
+/** One large, single-leg option print (strike + side + premium + size + time + aggressor). */
+export type LargeOptionPrint = {
+  occ: string;
+  strike: number;
+  type: "call" | "put";
+  price: number;
+  size: number;
+  /** price × size × 100. */
+  premium: number;
+  /** epoch ms. */
+  tsMs: number;
+  /** quote-rule side vs the discovery-snapshot NBBO: buy (≥ask), sell (≤bid), or null (mid/unknown). */
+  aggressor: "buy" | "sell" | null;
+};
+
+export type LargeOptionPrintsResult = {
+  ticker: string;
+  optionsRoot: string;
+  expiry: string;
+  windowStartMs: number;
+  windowEndMs: number;
+  /** Top-N large prints, DESC by premium. */
+  prints: LargeOptionPrint[];
+  meta: {
+    minPremium: number;
+    contractsRequested: number;
+    contractsWithTrades: number;
+    contractsCapped: boolean;
+    /** Total large prints found before the top-N cap. */
+    largeFound: number;
+    /** True when largeFound > prints.length — some large prints were dropped by the cap (annotate). */
+    truncated: boolean;
+    /** True when at least one upstream contract pull failed (partial result). */
+    partial: boolean;
+  };
+};
+
+/**
+ * Fetch the recent LARGE single-leg option prints for a ticker/expiry, near the money, DESC by
+ * premium and capped. Reuses the exact bounded fan-out `fetchOptionTrades` uses. Cached (short TTL)
+ * on ticker/expiry/window/floor/cap so concurrent togglers collapse to one fan-out. Returns null only
+ * when Polygon isn't configured or no spot is resolvable; otherwise an honest (possibly empty) result.
+ */
+export async function fetchLargeOptionPrints(
+  ticker: string,
+  opts: { windowMin?: number; expiry?: string; minPremium?: number; maxPrints?: number } = {}
+): Promise<LargeOptionPrintsResult | null> {
+  if (!polygonConfigured()) return null;
+  const { root, optionsRoot } = resolveOptionsRoot(ticker);
+  const win = Math.max(1, Math.floor(opts.windowMin ?? DEFAULT_WINDOW_MIN));
+  const expiry = opts.expiry ?? todayEtYmd();
+  const minPremium = opts.minPremium != null && opts.minPremium > 0 ? opts.minPremium : LARGE_MIN_PREMIUM;
+  const maxPrints = opts.maxPrints != null && opts.maxPrints > 0 ? Math.floor(opts.maxPrints) : LARGE_MAX_PRINTS;
+  const cacheKey = `large-option-prints:${optionsRoot}:${expiry}:${win}m:${minPremium}:${maxPrints}`;
+
+  return serverCache(cacheKey, RECON_TTL_MS, async () => {
+    const now = Date.now();
+    const windowEndMs = now;
+    const windowStartMs = now - win * 60_000;
+    const empty = (metaOverride: Partial<LargeOptionPrintsResult["meta"]> = {}): LargeOptionPrintsResult => ({
+      ticker: root,
+      optionsRoot,
+      expiry,
+      windowStartMs,
+      windowEndMs,
+      prints: [],
+      meta: {
+        minPremium,
+        contractsRequested: 0,
+        contractsWithTrades: 0,
+        contractsCapped: false,
+        largeFound: 0,
+        truncated: false,
+        partial: false,
+        ...metaOverride,
+      },
+    });
+
+    const spot = await spotFor(optionsRoot);
+    if (!(spot > 0)) return empty();
+
+    const { contracts, capped } = await discoverNearTheMoneyContracts(optionsRoot, spot, expiry);
+    if (contracts.length === 0) return empty({ contractsCapped: capped });
+
+    const windowStartNs = windowStartMs * 1e6;
+    const large: LargeOptionPrint[] = [];
+    let contractsWithTrades = 0;
+    let partial = false;
+
+    // SEQUENTIAL fan-out (same as fetchOptionTrades): each call awaits a rate-limiter slot, so this
+    // is naturally paced and bounded by MAX_CONTRACTS — no unbounded Promise.all burst.
+    for (const c of contracts) {
+      const { trades, ok } = await fetchTradesForContract(c.occ, windowStartNs);
+      if (!ok) {
+        partial = true;
+        continue;
+      }
+      let counted = 0;
+      for (const t of trades) {
+        const ms = tradeMs(t);
+        if (ms > 0 && (ms < windowStartMs || ms > windowEndMs)) continue; // page-boundary re-filter
+        if (isExcludedTrade(t.conditions)) continue; // multi-leg / canceled / late — not a clean bet
+        const price = Number(t.price);
+        const size = Number(t.decimal_size ?? t.size);
+        if (!Number.isFinite(price) || price <= 0 || !Number.isFinite(size) || size <= 0) continue;
+        const premium = price * size * 100;
+        counted += 1;
+        if (premium < minPremium) continue; // only LARGE prints become markers
+        const side = classifyTradeSide(price, c.bid, c.ask); // −1 sell / 0 mid / +1 buy
+        large.push({
+          occ: c.occ,
+          strike: c.strike,
+          type: c.type,
+          price,
+          size,
+          premium,
+          tsMs: ms,
+          aggressor: side > 0 ? "buy" : side < 0 ? "sell" : null,
+        });
+      }
+      if (counted > 0) contractsWithTrades += 1;
+    }
+
+    // Top-N by premium — the biggest bets survive the cap; `truncated` flags when we dropped some.
+    large.sort((a, b) => b.premium - a.premium);
+    const largeFound = large.length;
+    const prints = large.slice(0, maxPrints);
+
+    return {
+      ticker: root,
+      optionsRoot,
+      expiry,
+      windowStartMs,
+      windowEndMs,
+      prints,
+      meta: {
+        minPremium,
+        contractsRequested: contracts.length,
+        contractsWithTrades,
+        contractsCapped: capped,
+        largeFound,
+        truncated: largeFound > prints.length,
+        partial,
+      },
+    } satisfies LargeOptionPrintsResult;
   });
 }
 
