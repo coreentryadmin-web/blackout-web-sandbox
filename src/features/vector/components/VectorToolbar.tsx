@@ -1,5 +1,6 @@
-import { VectorDteToggle } from "@/features/vector/components/VectorDteToggle";
 "use client";
+
+import { VectorDteToggle } from "@/features/vector/components/VectorDteToggle";
 
 import { VectorLensToggle } from "@/features/vector/components/VectorLensToggle";
 import { VectorReplayControls } from "@/features/vector/components/VectorReplayControls";
