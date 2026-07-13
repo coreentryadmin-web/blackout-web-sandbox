@@ -163,6 +163,17 @@ async function uwGet<T>(path: string, params: Record<string, string | number> = 
   });
 }
 
+/**
+ * Governed raw READ passthrough for BIE's get_uw tool — a thin exported wrapper over the private
+ * uwGet so BIE can read arbitrary (allowlisted) UW data endpoints WITHOUT bypassing the circuit
+ * breaker / request-coalescer / rate limiter that live inside uwGet. Read-only by construction (GET
+ * only). The path allowlist is enforced by the caller (provider-read-guard.ts); this keeps the
+ * limiter+cache in the path. Never call this with an unvalidated path.
+ */
+export async function uwReadRaw<T>(path: string, params: Record<string, string | number> = {}): Promise<T> {
+  return uwGet<T>(path, params);
+}
+
 function extractRows(payload: unknown, depth = 0): Record<string, unknown>[] {
   if (Array.isArray(payload)) return payload.filter((r) => r && typeof r === "object") as Record<string, unknown>[];
   if (payload && typeof payload === "object") {

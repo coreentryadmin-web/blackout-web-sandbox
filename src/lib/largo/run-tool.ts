@@ -950,6 +950,22 @@ export async function runLargoTool(name: string, input: Record<string, unknown>,
       return callInternalApiRead(String(input.path ?? ""), rawParams);
     }
 
+    case "get_uw": {
+      const { readUw } = await import("@/lib/bie/provider-read");
+      const p = input.params && typeof input.params === "object" && !Array.isArray(input.params)
+        ? (input.params as Record<string, unknown>)
+        : undefined;
+      return readUw(String(input.endpoint ?? ""), p);
+    }
+
+    case "get_polygon": {
+      const { readPolygon } = await import("@/lib/bie/provider-read");
+      const p = input.params && typeof input.params === "object" && !Array.isArray(input.params)
+        ? (input.params as Record<string, unknown>)
+        : undefined;
+      return readPolygon(String(input.endpoint ?? ""), p);
+    }
+
     case "get_vector_full_state": {
       const [{ fetchVectorFullState }, { normalizeDteHorizon }] = await Promise.all([
         import("@/lib/bie/vector-full-state"),
