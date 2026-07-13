@@ -120,7 +120,7 @@ export const VECTOR_FULL_STATE_FIXTURE: VectorFullState = {
     dataAge: 1200,
   },
   asOf: "2026-07-13T14:40:00.000Z",
-  flow: {
+  flowMarkers: {
     available: true,
     expiry: "2026-07-13",
     spot: 7560,
@@ -130,6 +130,42 @@ export const VECTOR_FULL_STATE_FIXTURE: VectorFullState = {
     ],
     meta: { minPremium: 250_000, largeFound: 5, truncated: 3, partial: false },
   },
+  // The rail — the "beads" over the session. The call wall at 7,600 stacks 8% → 11% between the two
+  // samples, so the derived wallEvents below narrate a "building" (fadeness) event.
+  wallHistory: [
+    {
+      time: 1_752_417_300,
+      walls: { callWalls: [{ strike: 7600, pct: 8 }], putWalls: [{ strike: 7500, pct: 7 }] },
+      gammaFlip: 7520,
+      vexWalls: { callWalls: [{ strike: 7620, pct: 5 }], putWalls: [{ strike: 7480, pct: 4 }] },
+      vexFlip: 7515,
+    },
+    {
+      time: 1_752_417_600,
+      walls: { callWalls: [{ strike: 7600, pct: 11 }], putWalls: [{ strike: 7500, pct: 7 }] },
+      gammaFlip: 7520,
+      vexWalls: { callWalls: [{ strike: 7620, pct: 5 }], putWalls: [{ strike: 7480, pct: 4 }] },
+      vexFlip: 7515,
+    },
+  ],
+  wallEvents: [
+    {
+      time: 1_752_417_600,
+      lens: "gex",
+      kind: "call_wall_building",
+      message: "Call wall 7,600 building — 8% → 11% gamma",
+      severity: "info",
+    },
+  ],
+  vexWalls: {
+    callWalls: [{ strike: 7620, pct: 5 }],
+    putWalls: [{ strike: 7480, pct: 4 }],
+  },
+  vexFlip: 7515,
+  darkPoolLevels: [
+    { strike: 7550, premium: 5_000_000, pct: 40 },
+    { strike: 7500, premium: 3_000_000, pct: 24 },
+  ],
   ladder: {
     spot: 7560,
     maxAbs: 4_200_000_000,

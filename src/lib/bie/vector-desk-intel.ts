@@ -120,7 +120,7 @@ export function expectedMoveBriefLine(state: VectorFullState): string | null {
 
 /** FLOW — large options prints on the horizon's front expiry (feature #20). */
 export function flowBriefLine(state: VectorFullState): string | null {
-  const f = state.flow;
+  const f = state.flowMarkers;
   if (!f || !f.available) return null;
   const shown = f.prints.length;
   if (shown === 0 && f.meta.largeFound === 0) return null;
@@ -131,6 +131,46 @@ export function flowBriefLine(state: VectorFullState): string | null {
   const top = f.prints[0];
   if (top) parts.push(`top ${top.side} ${n(top.strike)} ${fmtPremium(top.premium)}`);
   return `FLOW  ${parts.join(" · ")}`;
+}
+
+/** VEX — the dealer VANNA lens: zero-vanna flip + top vanna walls (second lens BIE should see). */
+export function vexBriefLine(state: VectorFullState): string | null {
+  const flip = num(state.vexFlip);
+  const call = state.vexWalls?.callWalls?.[0];
+  const put = state.vexWalls?.putWalls?.[0];
+  if (flip == null && !call && !put) return null;
+  const parts: string[] = [];
+  if (flip != null) parts.push(`vanna flip ${n(flip)}`);
+  if (call) parts.push(`vanna+ wall ${n(call.strike)}`);
+  if (put) parts.push(`vanna− wall ${n(put.strike)}`);
+  return `VEX  ${parts.join(" · ")}`;
+}
+
+/** DARK POOL — top institutional dark-pool strike levels. */
+export function darkPoolBriefLine(state: VectorFullState): string | null {
+  const levels = state.darkPoolLevels ?? [];
+  if (levels.length === 0) return null;
+  const parts = levels.slice(0, 3).map((l) => `${n(l.strike)} (${l.pct.toFixed(0)}%)`);
+  return `DARK POOL  ${parts.join(" · ")}`;
+}
+
+/**
+ * WALL DYNAMICS — the "fadeness" over time: what the dealer walls are DOING (building / fading /
+ * new / dissolved / shifted), derived from the wall-history rail. This is the temporal narration
+ * the static WALLS/LADDER lines miss — beads growing and fading through the session.
+ */
+export function wallDynamicsBriefLine(state: VectorFullState): string | null {
+  const events = state.wallEvents ?? [];
+  const beads = state.wallHistory?.length ?? 0;
+  if (events.length === 0) {
+    // The rail is present but quiet (or off-hours) — say so honestly rather than nothing, so BIE
+    // can answer "are the walls moving?" with "no material re-stacking this session" + the count.
+    if (beads === 0) return null;
+    return `WALL DYNAMICS  no material wall re-stacking this session · ${beads} rail samples`;
+  }
+  // Most recent events first — the freshest "what just happened" the desk reads.
+  const recent = events.slice(-3).reverse().map((e) => e.message);
+  return `WALL DYNAMICS  ${recent.join(" · ")} · ${beads} rail samples`;
 }
 
 /** LADDER — the per-strike GEX ladder's dominant "king" strike each side + the strike count. */
@@ -215,7 +255,38 @@ export function knownVectorNumbers(state: VectorFullState): number[] {
   for (const r of state.ladder?.rows ?? []) add(r.strike);
 
   // Flow: the notable print's strike.
-  add(state.flow?.prints?.[0]?.strike);
+  add(state.flowMarkers?.prints?.[0]?.strike);
+
+  // VEX (vanna) lens — flip + top walls the VEX line cites.
+  add(state.vexFlip);
+  for (const w of state.vexWalls?.callWalls ?? []) {
+    add(w.strike);
+    add(w.pct);
+  }
+  for (const w of state.vexWalls?.putWalls ?? []) {
+    add(w.strike);
+    add(w.pct);
+  }
+
+  // Dark-pool strike levels + their premium-share pct.
+  for (const l of state.darkPoolLevels ?? []) {
+    add(l.strike);
+    add(l.pct);
+  }
+
+  // Current bead strengths — the latest rail sample's wall strikes + per-strike strength (`pct`),
+  // so a "walls are building/fading" read grounds against the strengths actually observed now.
+  const latest = state.wallHistory?.[state.wallHistory.length - 1];
+  if (latest) {
+    for (const w of latest.walls?.callWalls ?? []) {
+      add(w.strike);
+      add(w.pct);
+    }
+    for (const w of latest.walls?.putWalls ?? []) {
+      add(w.strike);
+      add(w.pct);
+    }
+  }
 
   return Array.from(set);
 }

@@ -16,10 +16,13 @@ describe("composeVectorDeskBrief", () => {
     for (const label of [
       "REGIME",
       "WALLS",
+      "WALL DYNAMICS",
       "MAGNET",
       "MAX PAIN",
       "EXPECTED MOVE",
       "LADDER",
+      "VEX",
+      "DARK POOL",
       "FLOW",
       "PLAY",
       "THESIS",

@@ -35,6 +35,9 @@ import { getGexPositioning } from "@/lib/providers/gex-positioning";
 import {
   getVectorGexWallsForHorizon,
   getVectorGammaFlipForHorizon,
+  getVectorVexWalls,
+  getVectorVexFlip,
+  getVectorDarkPoolLevels,
   getVectorWallHistory,
 } from "@/features/vector/lib/vector-snapshot";
 import { getHorizonStrikeTotals } from "@/features/vector/lib/vector-dte-walls-server";
@@ -43,6 +46,10 @@ import { getVectorExpectedMove } from "@/features/vector/lib/vector-expected-mov
 import { getVectorGexHeatmap } from "@/features/vector/lib/vector-gex-heatmap-server";
 import { getVectorFlowMarkers, type VectorFlowMarkers } from "@/features/vector/lib/vector-flow-markers-server";
 import { buildGexLadder, type GexLadder } from "@/features/vector/lib/vector-gex-ladder";
+import { eventsFromWallHistory, type VectorWallEvent } from "@/features/vector/lib/vector-wall-events";
+import type { WallHistorySample } from "@/features/vector/lib/vector-wall-history";
+import type { VectorDarkPoolLevel } from "@/features/vector/lib/vector-dark-pool-levels";
+import type { GexWalls } from "@/lib/providers/gex-wall-levels";
 import { deriveVectorRegime } from "@/features/vector/lib/vector-regime";
 import { deriveGammaMagnet } from "@/features/vector/lib/vector-gamma-magnet";
 import { deriveWallProximity } from "@/features/vector/lib/vector-wall-proximity";
@@ -73,20 +80,38 @@ export type VectorHeatmapSummary = {
  * The complete live Vector desk state for one (ticker, horizon). REUSES the canonical
  * `VectorSnapshot` contract (spot / regime / walls / flip / magnet / proximity / expected
  * move / max pain / confluence / wall integrity / technicals / the derived `play`) and
- * ADDS the desk-only context the snapshot has no slot for:
- *  - `asOf`   — when this state was assembled (ISO).
- *  - `flow`   — options-flow markers for the horizon's front expiry (feature #20).
- *  - `ladder` — the full per-strike GEX ladder (king strikes + magnitudes), not just the
- *               top walls the snapshot carries.
- *  - `heatmap`— compact presence summary of the strike×time GEX surface (see above).
+ * ADDS the desk-only context the snapshot has no slot for, so BIE sees EVERYTHING Vector
+ * shows — the static structure AND the temporal wall dynamics (beads forming/growing/fading):
+ *  - `asOf`          — when this state was assembled (ISO).
+ *  - `flowMarkers`   — options-flow prints for the horizon's front expiry (feature #20).
+ *  - `ladder`        — the full per-strike GEX ladder (king strikes + magnitudes), not just
+ *                      the top walls the snapshot carries.
+ *  - `heatmap`       — compact presence summary of the strike×time GEX surface (see above).
+ *  - `wallHistory`   — the session's wall-history RAIL (the "beads": each sample's walls +
+ *                      per-strike strength across ~15s buckets), so BIE can speak to walls
+ *                      forming/holding/moving over time, not just the current snapshot.
+ *  - `wallEvents`    — the "fadeness" narration derived FROM that rail (building / fading /
+ *                      new / dissolved / shifted per strike) — what the tape is doing.
+ *  - `vexWalls`/`vexFlip` — the VANNA (VEX) lens: dealer vanna walls + zero-vanna flip.
+ *  - `darkPoolLevels`     — top institutional dark-pool strike levels.
  *
- * Every added field is null when its read had nothing real — never fabricated.
+ * Every added field is null/empty when its read had nothing real — never fabricated.
  */
 export type VectorFullState = VectorSnapshot & {
   asOf: string;
-  flow: VectorFlowMarkers | null;
+  flowMarkers: VectorFlowMarkers | null;
   ladder: GexLadder | null;
   heatmap: VectorHeatmapSummary | null;
+  /** The wall-history rail — the "beads" over the session (walls + strength per ~15s sample). */
+  wallHistory: WallHistorySample[];
+  /** Wall-dynamics events derived from the rail — building / fading / new / gone / shift. */
+  wallEvents: VectorWallEvent[];
+  /** Dealer VANNA (VEX) walls — the second lens. */
+  vexWalls: GexWalls | null;
+  /** Zero-vanna flip. */
+  vexFlip: number | null;
+  /** Top institutional dark-pool strike levels. */
+  darkPoolLevels: VectorDarkPoolLevel[];
 };
 
 /**
@@ -111,7 +136,7 @@ export async function fetchVectorFullState(
     // Fail-open PER read (mirrors fetchEcosystemContext): most of these already .catch()
     // internally and resolve to null, but wrapping again guarantees one slow/throwing read
     // can never reject the whole fan-out.
-    const [positioning, gexWalls, gammaFlip, maxPainRes, expectedMove, strikeTotalsRes, flow] =
+    const [positioning, gexWalls, gammaFlip, maxPainRes, expectedMove, strikeTotalsRes, flowMarkers, darkPoolLevels] =
       await Promise.all([
         getGexPositioning(t).catch(() => null),
         getVectorGexWallsForHorizon(t, horizon).catch(() => null),
@@ -120,7 +145,18 @@ export async function fetchVectorFullState(
         getVectorExpectedMove(t, horizon).catch(() => null),
         getHorizonStrikeTotals(t, horizon).catch(() => null),
         getVectorFlowMarkers(t, horizon).catch(() => null),
+        getVectorDarkPoolLevels(t).catch(() => [] as VectorDarkPoolLevel[]),
       ]);
+
+    // VEX (vanna) lens + the wall-history rail are SYNCHRONOUS in-memory reads (no fetch) — the
+    // same per-second stream state the chart renders. vexWalls/vexFlip give BIE the second lens;
+    // the rail is the "beads" over the session, and eventsFromWallHistory narrates its dynamics.
+    const vexWalls = getVectorVexWalls(t);
+    const vexFlip = getVectorVexFlip(t);
+    const wallHistory = getVectorWallHistory(t);
+    // "Fadeness": building / fading / new / dissolved / shifted per strike, diffed across the rail
+    // for the primary (gamma) lens — the same detector the desk terminal's wall-events feed uses.
+    const wallEvents = eventsFromWallHistory(wallHistory, "gex");
 
     // Spot is the anchor for every deriver. Prefer the canonical positioning spot (SHARED with
     // SPX and the heatmap), then fall back to the spot the max-pain / expected-move reads
@@ -141,9 +177,9 @@ export async function fetchVectorFullState(
     const regime = deriveVectorRegime({ spot, gammaFlip, topCallWall, topPutWall });
     const magnet = deriveGammaMagnet({ spot, walls: gexWalls, posture: regime.posture });
     const proximity = deriveWallProximity({ spot, walls: gexWalls, gammaFlip });
-    // Wall integrity reads the in-memory history rail (persistence factor); an empty rail scores
-    // "unknown" (neutral), never a fabricated "held all session" — see scoreWallIntegrity.
-    const wallIntegrity = scoreTopWalls(gexWalls, getVectorWallHistory(t));
+    // Wall integrity reads the SAME rail (persistence factor); an empty rail scores "unknown"
+    // (neutral), never a fabricated "held all session" — see scoreWallIntegrity.
+    const wallIntegrity = scoreTopWalls(gexWalls, wallHistory);
 
     const maxPain = num(maxPainRes?.maxPain);
     const ladder = strikeTotalsRes
@@ -193,7 +229,7 @@ export async function fetchVectorFullState(
       ...snapshot,
       play,
       asOf: new Date().toISOString(),
-      flow: flow ?? null,
+      flowMarkers: flowMarkers ?? null,
       ladder,
       heatmap: heatmapGrid
         ? {
@@ -203,6 +239,11 @@ export async function fetchVectorFullState(
             maxAbs: heatmapGrid.maxAbs,
           }
         : null,
+      wallHistory,
+      wallEvents,
+      vexWalls: vexWalls ?? null,
+      vexFlip,
+      darkPoolLevels: darkPoolLevels ?? [],
     });
   } catch {
     return null; // whole-state failure is a no-surface, never a throw into the caller

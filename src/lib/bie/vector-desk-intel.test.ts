@@ -10,6 +10,9 @@ import {
   expectedMoveBriefLine,
   flowBriefLine,
   ladderBriefLine,
+  vexBriefLine,
+  darkPoolBriefLine,
+  wallDynamicsBriefLine,
   knownVectorNumbers,
 } from "@/lib/bie/vector-desk-intel";
 
@@ -66,11 +69,45 @@ describe("vector-desk-intel brief lines", () => {
   });
 
   test("flowBriefLine: null when flow is unavailable", () => {
-    assert.equal(flowBriefLine({ ...state, flow: null }), null);
+    assert.equal(flowBriefLine({ ...state, flowMarkers: null }), null);
     assert.equal(
-      flowBriefLine({ ...state, flow: { ...state.flow!, available: false } }),
+      flowBriefLine({ ...state, flowMarkers: { ...state.flowMarkers!, available: false } }),
       null
     );
+  });
+
+  test("vexBriefLine: cites the vanna flip and vanna walls (second lens)", () => {
+    const line = vexBriefLine(state);
+    assert.ok(line);
+    assert.match(line!, /VEX/);
+    assert.match(line!, /vanna flip \{\{7,?515\.00\}\}/);
+    assert.match(line!, /vanna\+ wall \{\{7,?620\.00\}\}/);
+  });
+
+  test("darkPoolBriefLine: top dark-pool strikes with share pct", () => {
+    const line = darkPoolBriefLine(state);
+    assert.ok(line);
+    assert.match(line!, /DARK POOL/);
+    assert.match(line!, /\{\{7,?550\.00\}\} \(40%\)/);
+  });
+
+  test("darkPoolBriefLine: null when there are no dark-pool levels", () => {
+    assert.equal(darkPoolBriefLine({ ...state, darkPoolLevels: [] }), null);
+  });
+
+  test("wallDynamicsBriefLine: narrates the fadeness/building events from the rail", () => {
+    const line = wallDynamicsBriefLine(state);
+    assert.ok(line);
+    assert.match(line!, /WALL DYNAMICS/);
+    assert.match(line!, /building/);
+    assert.match(line!, /rail samples/);
+  });
+
+  test("wallDynamicsBriefLine: honest 'no re-stacking' when the rail is quiet but present", () => {
+    const line = wallDynamicsBriefLine({ ...state, wallEvents: [] });
+    assert.ok(line);
+    assert.match(line!, /no material wall re-stacking/);
+    assert.match(line!, /2 rail samples/);
   });
 
   test("ladderBriefLine: names the call king and put king strikes", () => {
@@ -100,6 +137,8 @@ describe("knownVectorNumbers", () => {
     assert.ok(has(55), "1σ move pts");
     assert.ok(has(7555.5), "magnet strike");
     assert.ok(has(7450), "ladder / EM outer level");
+    assert.ok(has(7515), "vanna (VEX) flip");
+    assert.ok(has(7620), "vanna call wall");
   });
 
   test("includes the derived signed distances the wall/max-pain lines cite", () => {
@@ -114,10 +153,13 @@ describe("knownVectorNumbers", () => {
     const text = [
       regimeBriefLine(state),
       wallsBriefLine(state),
+      wallDynamicsBriefLine(state),
       magnetBriefLine(state),
       maxPainBriefLine(state),
       expectedMoveBriefLine(state),
       ladderBriefLine(state),
+      vexBriefLine(state),
+      darkPoolBriefLine(state),
       flowBriefLine(state),
     ]
       .filter(Boolean)

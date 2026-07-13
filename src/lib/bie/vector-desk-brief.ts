@@ -16,6 +16,9 @@ import {
   expectedMoveBriefLine,
   flowBriefLine,
   ladderBriefLine,
+  vexBriefLine,
+  darkPoolBriefLine,
+  wallDynamicsBriefLine,
 } from "@/lib/bie/vector-desk-intel";
 
 export type VectorDeskBriefResult = {
@@ -74,14 +77,18 @@ export function composeVectorDeskBrief(
     .trim()
     .slice(0, 180);
 
-  // Surface brief lines — one per Vector read, in the order a desk scans them.
+  // Surface brief lines — one per Vector read, in the order a desk scans them: static structure
+  // first, then the temporal wall dynamics ("fadeness"), then the second (VEX) lens + dark pool.
   const lines: string[] = [
     regimeBriefLine(state),
     wallsBriefLine(state),
+    wallDynamicsBriefLine(state),
     magnetBriefLine(state),
     maxPainBriefLine(state),
     expectedMoveBriefLine(state),
     ladderBriefLine(state),
+    vexBriefLine(state),
+    darkPoolBriefLine(state),
     flowBriefLine(state),
   ].filter(Boolean) as string[];
 
