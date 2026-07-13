@@ -170,3 +170,22 @@ test("gammaFlipFromLadder: rejects implausible far-from-spot crossings (SPX week
   const artifactOnly = new Map<number, number>([[6000, 1], [6500, -3], [7000, -1]]);
   assert.equal(gammaFlipFromLadder(artifactOnly, spot), null);
 });
+
+test("gexLadderAtSpot volumeAdjusted: today's volume builds walls OI can't see (mid-session births)", () => {
+  const contracts = [
+    { strike: 400, expiry: "2026-07-17", openInterest: 10000, dayVolume: 0, iv: 0.4, type: "call" as const },
+    // brand-new wall: barely any OI (built TODAY), huge same-day volume
+    { strike: 405, expiry: "2026-07-17", openInterest: 0, dayVolume: 25000, iv: 0.4, type: "call" as const },
+  ];
+  const oiOnly = gexLadderAtSpot(contracts, 402, "2026-07-13");
+  assert.equal(oiOnly.has(405), false, "OI-only: the new strike is invisible");
+  const volAdj = gexLadderAtSpot(contracts, 402, "2026-07-13", { volumeAdjusted: true });
+  assert.ok((volAdj.get(405) ?? 0) > (volAdj.get(400) ?? 0), "vol-adjusted: today's flow dominates");
+});
+
+test("gexLadderAtSpot: dayVolume absent → identical to OI-only (reconstruction unchanged)", () => {
+  const contracts = [{ strike: 400, expiry: "2026-07-17", openInterest: 5000, iv: 0.35, type: "put" as const }];
+  const a = gexLadderAtSpot(contracts, 402, "2026-07-13");
+  const b = gexLadderAtSpot(contracts, 402, "2026-07-13", { volumeAdjusted: true });
+  assert.deepEqual([...a.entries()], [...b.entries()]);
+});

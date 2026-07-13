@@ -51,7 +51,11 @@ export function perExpiryWallsFromContracts(
   const filtered = contracts.filter((c) => scoped.has(c.expiry));
   if (filtered.length === 0) return null;
 
-  const ladder = gexLadderAtSpot(filtered, spot, todayYmd);
+  // volumeAdjusted: LIVE walls blend today's traded volume into positioning (OI + dayVolume) so
+  // a strike printing heavy volume NOW becomes a wall NOW — mid-session births/deaths. OI-only
+  // strength froze the dominant set at the open (member-caught). Point-in-time honest here: this
+  // path reads the chain at THIS moment; the back-projected reconstruction stays OI-only.
+  const ladder = gexLadderAtSpot(filtered, spot, todayYmd, { volumeAdjusted: true });
   if (ladder.size === 0) return null;
 
   const walls = computeGexWalls(ladder, { maxPerSide: VECTOR_WALL_NODES_PER_SIDE });

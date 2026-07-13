@@ -35,6 +35,13 @@ export type ReconstructContract = {
   /** YYYY-MM-DD */
   expiry: string;
   openInterest: number;
+  /** Contracts traded TODAY (Polygon snapshot day.volume) — the live positioning delta. OI is
+   *  published once pre-market and never moves intraday, so OI-only strength means a wall can
+   *  mathematically NEVER be born mid-session (member-caught: "every bead origin is traced to the
+   *  day's opening"). Today's volume is the standard intraday proxy for positioning being built
+   *  RIGHT NOW — a strike printing heavy volume at 1pm becomes a wall at 1pm. Optional: absent →
+   *  0 (reconstruction fixtures, older callers). */
+  dayVolume?: number;
   iv: number;
   type: "call" | "put";
 };
@@ -65,16 +72,26 @@ export function gammaPerShare(spot: number, strike: number, t: number, sigma: nu
 export function gexLadderAtSpot(
   contracts: readonly ReconstructContract[],
   spot: number,
-  sessionYmd: string
+  sessionYmd: string,
+  opts?: {
+    /** Blend TODAY's traded volume into positioning (OI + dayVolume). LIVE paths only — the
+     *  reconstruction back-projects one end-of-fetch chain across the whole session, and giving
+     *  morning buckets the afternoon's cumulative volume would fabricate walls that did not exist
+     *  yet. Live per-expiry walls read the chain at THIS moment, so the blend is point-in-time
+     *  honest there — and it is what lets a wall be BORN mid-session (see dayVolume). */
+    volumeAdjusted?: boolean;
+  }
 ): Map<number, number> {
   const ladder = new Map<number, number>();
   if (!(spot > 0)) return ladder;
+  const volAdj = opts?.volumeAdjusted === true;
   for (const c of contracts) {
-    if (!(c.openInterest > 0) || !(c.iv > 0)) continue;
+    const positioning = c.openInterest + (volAdj ? Math.max(0, c.dayVolume ?? 0) : 0);
+    if (!(positioning > 0) || !(c.iv > 0)) continue;
     const t = yearsToExpiry(c.expiry, sessionYmd);
     const g = gammaPerShare(spot, c.strike, t, c.iv);
     if (g <= 0) continue;
-    const gex = (c.type === "call" ? 1 : -1) * g * c.openInterest * 100 * spot * spot * 0.01;
+    const gex = (c.type === "call" ? 1 : -1) * g * positioning * 100 * spot * spot * 0.01;
     ladder.set(c.strike, (ladder.get(c.strike) ?? 0) + gex);
   }
   return ladder;

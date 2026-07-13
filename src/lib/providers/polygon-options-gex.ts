@@ -40,7 +40,7 @@ export type ChainContract = {
   open_interest?: number;
   last_quote?: { bid?: number; ask?: number };
   last_trade?: { price?: number };
-  day?: { close?: number };
+  day?: { close?: number; volume?: number };
   underlying_asset?: { price?: number };
 };
 

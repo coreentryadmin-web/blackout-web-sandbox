@@ -32,9 +32,12 @@ export function chainToReconstructContracts(
     const type = ct === "call" ? "call" : ct === "put" ? "put" : null;
     const oi = Number(c.open_interest ?? 0);
     const iv = Number(c.implied_volatility ?? 0);
+    const dayVolume = Number(c.day?.volume ?? 0);
     if (!(strike > 0) || !YMD_RE.test(expiry) || !type) continue;
-    if (!(oi > 0) || !(iv > 0)) continue;
-    out.push({ strike, expiry, openInterest: oi, iv, type });
+    // Keep a 0-OI contract when it TRADED today: that is precisely a brand-new wall being built
+    // this session (yesterday's OI hasn't caught up yet). Dropping it hid every same-day wall.
+    if (!(oi > 0 || dayVolume > 0) || !(iv > 0)) continue;
+    out.push({ strike, expiry, openInterest: oi, iv, type , dayVolume });
   }
   return out;
 }
