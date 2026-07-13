@@ -30,6 +30,7 @@ export const CRON_SERVICE_NAMES = {
   "vector-universe-snapshot": "Vector-Universe-Snapshot",
   "vector-full-state-snapshot": "Vector-Full-State-Snapshot",
   "vector-dark-pool-warm": "Vector-Dark-Pool-Warm",
+  "bie-full-state-snapshot": "BIE-Full-State-Snapshot",
   "coaching-alerts": "Coaching-Alerts",
 };
 
