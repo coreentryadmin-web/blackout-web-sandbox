@@ -8,29 +8,31 @@ and required CI (`verify`) are green — no per-PR approval, no end-of-day hold.
 here and merge the PR in the same session. Supersedes all earlier "leave OPEN for review" notes
 in this file.
 
-## 🔴 P1 FOUND+FIXED 2026-07-13 (RTH) — gamma_regime desynced from net GEX + above_gamma_flip at spot≈flip
+## 🟡 REVISED 2026-07-13 (RTH) — gamma_regime single-snapshot coherence (net-GEX-override REFUTED, dropped)
 
-**Severity:** P1 (member-facing contradictory read). **Root cause:** `gamma_regime` was a pure
-spot-vs-flip function with sticky ±2pt hysteresis (`src/lib/providers/gamma-desk.ts:134`) that (a)
-never consulted the sign of **net GEX**, and (b) was computed from a **different snapshot** than
-`above_gamma_flip` — in the full desk payload `above_gamma_flip` read the live `price`
-(`spx-desk.ts:1323`) while `gamma_regime` inherited `canonicalGex.gamma_regime` (a canonical-spot
-snapshot, `spx-desk.ts:1328-1332`). **Evidence:** live RTH scan — at spot≈flip the desk served
-"amplification" (short γ) while netGex was **+20.7B** (dealers net LONG γ) and the walls pinned
-long-γ; `above_gamma_flip` and the regime label could point opposite ways.
-**Fix:**
-1. `gamma-desk.ts` — `gammaRegimeWithHysteresis` gains an optional `netGex`: inside the ambiguous
-   ±buffer band around the flip, the **net-GEX sign is authoritative** (positive → mean_revert /
-   long γ, negative → amplification). Outside the band, spot-vs-flip + hysteresis is unchanged;
-   null/absent netGex is fully backward-compatible.
-2. `spx-desk.ts` — the canonical site (`resolveCanonicalDeskGex`, ~:336) passes `pos.net_gex`; the
-   full-payload site derives `above_gamma_flip` AND `gamma_regime` from the **same** `(price,
-   gammaFlip, gexNet)` snapshot (moved `gexNet` above the label, dropped the divergent
-   canonical-regime branch) so the two surfaces can no longer contradict.
-**Sign convention:** positive net_gex = dealers net long gamma (pin/dampen) — confirmed in
-`gamma-desk.ts:162` / `polygon-options-gex.ts:258`. **Test:** `gamma-desk.test.ts` — net-GEX tie-break
-inside the band, no override outside it, null-net backward-compat. Full sweep 822/822, tsc + opacity
-clean. **Status:** FIXED — PR open.
+**Original claim (WRONG, retracted):** that `gamma_regime` should consult the **net-GEX sign** at
+spot≈flip because the desk served "amplification" while netGex was **+20.7B**.
+**Adversarial refutation (high confidence, accepted):** the regime is **by design** a *local*
+spot-vs-flip model — `gammaRegime` (`gamma-desk.ts:129-131`) returns `spot>flip ? mean_revert :
+amplification`, and `computeGexRegime` (`polygon-options-gex.ts`) is the canonical source. Spot just
+**below** the flip is **locally short-gamma (amplification) even when the AGGREGATE netGex is
+positive** — the local regime *at spot* and the total-book net sign measure **different things**.
+The observed "amplification at +20.7B" was **NOT a regime bug** — it was a *symptom of F1* (the two
+surfaces carried **different flip values** because the desk was horizon-blind), which **#294** fixes;
+and the terminal already honestly says "regime undecided at gamma flip" when spot≈flip. So making the
+net-GEX sign authoritative would **override an intended, theoretically-sound design**, not fix a bug.
+**→ The net-GEX-sign override was DROPPED** (`gammaRegimeWithHysteresis` reverts to pure spot-vs-flip;
+no `netGex` param).
+
+**What #295 KEEPS (the one genuine, refutation-surviving fix):** *single-snapshot coherence.* In the
+full desk payload, `above_gamma_flip` read the live `price` (`spx-desk.ts:1323`) while `gamma_regime`,
+in the non-intel-overlay branch, inherited `canonicalGex.gamma_regime` — a **canonical-spot snapshot
+against a possibly-different flip** — so for the *same* flip the two surfaces could disagree
+(above/below vs the regime label). Fix: derive **both** `above_gamma_flip` and `gamma_regime` from the
+**same `(price, gammaFlip)`** pair (`gammaFlip` already merges intel/canonical/lastGood), so they can
+never contradict. This is orthogonal to F1 and to the (rejected) net-GEX idea. **Test:**
+`gamma-desk.test.ts` — asserts the regime stays pure spot-vs-flip with **no** net-GEX override. Full
+sweep 820/820, tsc + opacity clean. **Status:** REVISED — PR open.
 
 ## ✅ AUDIT 2026-07-13 — De-Claude coverage map: staging is 100% BIE, no surface silently returns empty (task #61)
 

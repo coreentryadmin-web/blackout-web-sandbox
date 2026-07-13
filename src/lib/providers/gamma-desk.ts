@@ -130,33 +130,22 @@ export function gammaRegime(spot: number, flip: number | null): string {
   return spot > flip ? "mean_revert" : "amplification";
 }
 
-/**
- * Debounce flip churn — require spot to clear flip by bufferPts before regime changes.
+/** Debounce flip churn — require spot to clear flip by bufferPts before regime changes.
  *
- * Net-GEX tie-break (coherence fix): the ±bufferPts band around the flip is exactly where a raw
- * spot-vs-flip read is least trustworthy — a hair either side flips the label, and the sticky
- * hysteresis can hold a STALE regime that contradicts the actual dealer positioning. Inside that band
- * the SIGN OF NET GEX is authoritative (positive net = dealers net LONG gamma → they fade/pin →
- * mean_revert; negative = net SHORT → they chase → amplification). This is what a live RTH scan
- * caught: at spot≈flip the desk served "amplification" while netGex was +20.7B (long gamma) and the
- * walls pinned long-gamma. Outside the band, spot-vs-flip is unambiguous and hysteresis is unchanged.
- * `netGex` is optional so every existing caller (and the null-net case) keeps the prior behavior.
- */
+ *  This is the INTENDED local spot-vs-flip regime model: spot just below the flip is locally
+ *  short-gamma ("amplification") even when the aggregate net GEX is positive — the local regime at
+ *  spot and the total-book net sign measure different things, so this deliberately does NOT consult
+ *  net GEX. (An earlier revision tried a net-GEX-sign override inside the buffer; an adversarial
+ *  review refuted it — the observed "amplification at +20.7B netGex" was a symptom of the desk being
+ *  horizon-blind, i.e. the two surfaces used DIFFERENT flip values, which #294 fixes.) */
 export function gammaRegimeWithHysteresis(
   spot: number,
   flip: number | null,
   previous: string,
-  bufferPts = 2,
-  netGex?: number | null
+  bufferPts = 2
 ): string {
   const raw = gammaRegime(spot, flip);
-  if (flip == null || raw === "unknown") return raw;
-  // Inside the ambiguous ±buffer band, break the tie with the net-GEX sign when we know it — the
-  // desk's own dealer-positioning number wins over a knife-edge spot-vs-flip read or a sticky prior.
-  if (netGex != null && Number.isFinite(netGex) && Math.abs(spot - flip) < bufferPts) {
-    return netGex >= 0 ? "mean_revert" : "amplification";
-  }
-  if (previous === "unknown") return raw;
+  if (flip == null || raw === "unknown" || previous === "unknown") return raw;
   if (previous === raw) return raw;
   if (previous === "mean_revert" && raw === "amplification") {
     return spot <= flip - bufferPts ? "amplification" : "mean_revert";
