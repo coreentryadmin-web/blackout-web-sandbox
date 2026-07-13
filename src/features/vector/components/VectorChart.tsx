@@ -83,6 +83,7 @@ import {
 import { levelLinesFor, type LevelLine, type PriorDayOhlc } from "@/features/vector/lib/vector-key-levels";
 import { buildStructureMarkers } from "@/features/vector/lib/vector-structure-markers";
 import { confluenceZones, confluenceCallouts, topConfluenceBand, type ConfluenceLevel } from "@/features/vector/lib/vector-confluence";
+import { summarizeTechnicals, technicalsCallouts } from "@/features/vector/lib/vector-technicals";
 import { sessionHodLod } from "@/features/vector/lib/vector-key-levels";
 import { dominantSwing, goldenPocket } from "@/features/vector/lib/vector-fib-swing";
 import {
@@ -187,6 +188,9 @@ type Props = {
   /** Emits the current DTE horizon whenever the member toggles it, so sibling panels (the GEX
    *  ladder) can re-scope to the SAME expiries the chart's walls use. */
   onDteHorizonChange?: (horizon: VectorDteHorizon) => void;
+  /** Pre-formatted always-on technicals lines (VWAP/EMA/RSI/MACD/pocket/structure) for the desk
+   *  terminal — computed from the shown bars REGARDLESS of which overlays are toggled. Empty = warming up. */
+  onTechnicalsChange?: (lines: string[]) => void;
   /** Compact page title + ticker cluster, rendered at the far left of the chart toolbar row. */
   leadSlot?: React.ReactNode;
   /** Freshness/status chip, rendered at the far right of the toolbar row. */
@@ -737,6 +741,7 @@ export function VectorChart({
   onWallIntegrityChange,
   onLensChange,
   onDteHorizonChange,
+  onTechnicalsChange,
   leadSlot,
   trailSlot,
   regimeSlot,
@@ -745,6 +750,14 @@ export function VectorChart({
   const chartRef = useRef<IChartApi | null>(null);
   const seriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
   const volumeSeriesRef = useRef<ISeriesApi<"Histogram"> | null>(null);
+  // Always-on technicals narration (VWAP/EMA/RSI/MACD/pocket/structure) → terminal, computed on
+  // every paint from the shown bars regardless of which overlays are toggled. `onTechnicalsChangeRef`
+  // keeps the latest callback for the []-dep paintOverlays; `lastTechnicalsRef` dedupes emits.
+  const onTechnicalsChangeRef = useRef(onTechnicalsChange);
+  const lastTechnicalsRef = useRef<string>("");
+  useEffect(() => {
+    onTechnicalsChangeRef.current = onTechnicalsChange;
+  });
   const callGuideRefs = useRef<(IPriceLine | null)[]>(emptyGuideRefs());
   const putGuideRefs = useRef<(IPriceLine | null)[]>(emptyGuideRefs());
   // Strikes currently drawn on the chart — read by the candle series'
@@ -1115,6 +1128,20 @@ export function VectorChart({
     // fixed order so there's never an empty pane; the series DATA refreshes every paint. Drawing
     // nothing when the study can't compute (too few bars) is honest — the pane just stays empty.
     if (chart) paintOscillators(chart, enabled, bars, closes);
+
+    // ALWAYS-ON technicals narration for the terminal — computed here (every paint: tick, timeframe,
+    // replay frame, toggle) from the SHOWN bars, INDEPENDENT of the enabled-overlay set, so the desk
+    // terminal keeps reading VWAP/EMA/RSI/MACD/pocket/structure even when nothing is toggled on the
+    // chart. Deduped so an unchanged read is not re-emitted.
+    const techCb = onTechnicalsChangeRef.current;
+    if (techCb) {
+      const lines = technicalsCallouts(summarizeTechnicals(bars, spotRef.current));
+      const key = lines.join("|");
+      if (key !== lastTechnicalsRef.current) {
+        lastTechnicalsRef.current = key;
+        techCb(lines);
+      }
+    }
   }, []);
 
   // Rebuild oscillator panes when the enabled set changes; always refresh their data. Kept a plain
