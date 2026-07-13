@@ -5,6 +5,7 @@ import {
   mapFromStrikeTotalsRecord,
 } from "@/lib/providers/gex-wall-levels";
 import { vectorUniverseTickers } from "@/lib/heatmap-allowlist";
+import { listDynamicUniverseTickers } from "./vector-dynamic-universe";
 import { normalizeVectorTicker } from "./vector-ticker";
 import { roundFloats } from "@/lib/round-floats";
 import { bucketWallSampleTime, buildWallHistorySample } from "./vector-wall-sample";
@@ -73,9 +74,15 @@ const TTL_SEC = 48 * 60 * 60;
 export async function buildVectorUniverseSnapshot(
   opts: VectorUniverseBuildOpts = {}
 ): Promise<VectorUniverseSnapshot> {
-  const tickers = vectorUniverseTickers();
-  const rows: VectorUniverseRow[] = [];
   const { recordWallHistory = false, sessionYmd } = opts;
+  // Recording builds (the 5-min cron) union in the DYNAMIC universe — every ticker a member has
+  // opened in the last 14 days — so a name viewed once keeps recording from the next open onward
+  // (user-directed 2026-07-13). Scanner-only polls stay on the static set (no recording, no need
+  // to spend per-ticker fetches on the long tail). Dynamic names also surface in the screener
+  // rows on cron builds, which is the intended "it joined the universe" experience.
+  const dynamic = recordWallHistory ? await listDynamicUniverseTickers().catch(() => []) : [];
+  const tickers = [...new Set([...vectorUniverseTickers(), ...dynamic])];
+  const rows: VectorUniverseRow[] = [];
   // Snap every ticker's sample to ONE shared bucket for this build so a run
   // produces a single aligned column of beads across strikes (matches the live
   // path's 15s bucketing), not 21 slightly-staggered timestamps.

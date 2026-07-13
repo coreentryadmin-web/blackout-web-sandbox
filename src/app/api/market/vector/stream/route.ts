@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { authorizeMarketDeskApi } from "@/lib/market-api-auth";
 import { requireToolApi } from "@/lib/tool-access-server";
 import { normalizeVectorTicker, isVectorTickerAllowed } from "@/features/vector";
+import { touchDynamicUniverse } from "@/features/vector/lib/vector-dynamic-universe";
 import {
   attachVectorStreamSubscriber,
   detachVectorStreamSubscriber,
@@ -107,6 +108,10 @@ export async function GET(req: NextRequest) {
       };
 
       attachVectorStreamSubscriber(ticker);
+      // Dynamic universe: a member opened this chart → the recorder cron keeps recording the
+      // ticker from tomorrow's open onward (user-directed 2026-07-13: "open a new stock — it has
+      // to be added to the universe automatically"). Debounced + fire-and-forget in the module.
+      void touchDynamicUniverse(ticker);
       req.signal.addEventListener("abort", cleanup);
 
       interval = setInterval(send, TICK_MS);
