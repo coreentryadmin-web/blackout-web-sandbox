@@ -15,6 +15,11 @@ import {
 import { todayEtYmd } from "@/lib/providers/spx-session";
 import { persistWallSampleDebounced } from "./vector-wall-persist";
 import { bucketWallSampleTime, buildWallHistorySample } from "./vector-wall-sample";
+import {
+  RECORDED_WALL_HORIZONS,
+  pickNarrowedWallSample,
+  type NarrowedWallOutcome,
+} from "./vector-narrowed-wall-core";
 import { recordWallSample, type WallHistorySample } from "./vector-wall-history";
 import { roundFloats } from "@/lib/round-floats";
 import { getCachedVectorDarkPool, getCachedVectorDarkPoolWithAge } from "./vector-dark-pool-cache";
@@ -51,6 +56,14 @@ type TickerState = {
   wallHistory: WallHistorySample[];
   /** ET session the in-memory history belongs to — see session reset in buildVectorStreamPayload. */
   sessionYmd: string;
+  /**
+   * Last 15s bucket for which the narrowed-horizon (0dte/weekly/monthly) rails were recorded from
+   * this live hub. The hub previously wrote ONLY the "all" rail — narrowed rails were cron-only
+   * (5-min cadence), so a member watching the 0DTE lens saw a frozen rail. Gating the per-horizon
+   * write on a bucket rollover gives viewed narrowed rails the same 15s density as "all" without
+   * recomputing per-expiry walls on every 1s payload build.
+   */
+  lastNarrowedWallBucket: number;
 };
 
 function freshState(): TickerState {
@@ -69,6 +82,7 @@ function freshState(): TickerState {
     cachedFlipAt: 0,
     wallHistory: [],
     sessionYmd: "",
+    lastNarrowedWallBucket: 0,
   };
 }
 
@@ -338,6 +352,57 @@ export async function getVectorGammaFlip(ticker: string = VECTOR_DEFAULT_TICKER)
   return s.cachedFlip;
 }
 
+// ── Narrowed-horizon wall recording (shared by the live 15s hub and the 5-min universe cron) ──
+// Root cause of the "frozen 0DTE rail" bug: narrowed rails (0dte/weekly/monthly) were written ONLY
+// by the universe cron (5-min cadence, best-effort with a silent skip when the per-expiry SPXW
+// reconstruction came back empty), while the live hub wrote only the blended "all" rail. So a
+// member watching the 0DTE lens saw new walls at best every ~5 min — and for SPX far less, because
+// its per-expiry reconstruction empties out on most cron ticks. Both writers now share this path so
+// the rail (a) advances at the live 15s cadence when a ticker is viewed, and (b) FALLS BACK to the
+// blended near-term walls when the per-expiry reconstruction is momentarily empty (the documented
+// "null → blended near-term walls" contract) instead of dropping the bucket.
+
+/**
+ * Fetch + build the narrowed-horizon wall samples for a ticker at one bucket time. `blended` is the
+ * caller's current "all"/near-term reading (the hub passes its warm in-memory walls; the cron passes
+ * the heatmap walls it just computed) — used as the fallback when a horizon's per-expiry
+ * reconstruction is empty. Best-effort per horizon: a throw becomes an "error" outcome (logged by
+ * the caller), never propagates. Callers persist the non-null samples with their own semantics
+ * (debounced for the hub, awaited for the cron).
+ */
+export async function buildNarrowedHorizonWallSamples(
+  ticker: string,
+  sampleTime: number,
+  blended: { walls: GexWalls | null; flip: number | null }
+): Promise<NarrowedWallOutcome[]> {
+  const t = normalizeVectorTicker(ticker);
+  const out: NarrowedWallOutcome[] = [];
+  for (const horizon of RECORDED_WALL_HORIZONS) {
+    try {
+      const [hWalls, hFlip] = await Promise.all([
+        getVectorGexWallsForHorizon(t, horizon),
+        getVectorGammaFlipForHorizon(t, horizon),
+      ]);
+      const picked = pickNarrowedWallSample({
+        time: sampleTime,
+        horizonWalls: hWalls,
+        horizonFlip: hFlip,
+        blendedWalls: blended.walls,
+        blendedFlip: blended.flip,
+      });
+      out.push({ horizon, sample: picked.sample, source: picked.source });
+    } catch (err) {
+      out.push({
+        horizon,
+        sample: null,
+        source: "error",
+        reason: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+  return out;
+}
+
 /** Zero-vanna flip from the latest heatmap scope refresh. */
 export function getVectorVexFlip(ticker: string = VECTOR_DEFAULT_TICKER): number | null {
   refreshWallScope(ticker);
@@ -420,6 +485,26 @@ export async function buildVectorStreamPayload(
     if (sample) {
       s.wallHistory = recordWallSample(s.wallHistory, sample);
       persistWallSampleDebounced(sessionYmd, sample, t);
+    }
+
+    // Narrowed-horizon rails (0dte/weekly/monthly) at the live 15s cadence. Previously these were
+    // written ONLY by the 5-min universe cron, so a viewed 0DTE lens showed a frozen rail. Gate on
+    // a bucket rollover so the per-expiry walls are computed at most once per 15s bucket, and
+    // fire-and-forget so the hot SSE payload never blocks or breaks on the rail write. `walls` is
+    // this bucket's fresh blended near-term reading — the fallback when a horizon's per-expiry
+    // reconstruction is momentarily empty (keeps the rail advancing instead of dropping the bucket).
+    const narrowedBucket = bucketWallSampleTime(Math.floor(nowMs / 1000));
+    if (gexRecordable && s.lastNarrowedWallBucket !== narrowedBucket) {
+      s.lastNarrowedWallBucket = narrowedBucket;
+      void buildNarrowedHorizonWallSamples(t, narrowedBucket, { walls, flip: gammaFlip })
+        .then((rows) => {
+          for (const r of rows) {
+            if (r.sample) persistWallSampleDebounced(sessionYmd, r.sample, t, r.horizon);
+          }
+        })
+        .catch(() => {
+          /* best-effort: a narrowed-rail write must never disturb the live stream */
+        });
     }
   }
 

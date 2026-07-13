@@ -7,6 +7,7 @@ import {
   getVectorGammaFlipForHorizon,
 } from "@/features/vector/lib/vector-snapshot";
 import { normalizeDteHorizon } from "@/features/vector/lib/vector-dte-horizon";
+import { roundFloats } from "@/lib/round-floats";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -39,5 +40,8 @@ export async function GET(req: NextRequest) {
     getVectorGexWallsForHorizon(ticker, horizon),
     getVectorGammaFlipForHorizon(ticker, horizon),
   ]);
-  return NextResponse.json({ ticker, horizon, walls, flip });
+  // Round at the data layer (repo policy). This route was the ONLY vector read missing roundFloats
+  // (max-pain / gex-ladder / expected-move all round), so `flip` — a computed float — leaked full
+  // precision (e.g. 7622.690014281115) to every consumer. Wall strikes are already listed strikes.
+  return NextResponse.json(roundFloats({ ticker, horizon, walls, flip }));
 }
