@@ -25,3 +25,6 @@ apps/blackout-ios/ios/
 
 # AWS infra — separate repo (blackout-infra), own git remote
 /blackout-infra/
+
+# Claude Code transient git worktrees (never commit these)
+.claude/worktrees/
