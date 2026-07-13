@@ -426,6 +426,16 @@ export const LARGO_TOOL_DEFS: AnthropicToolDef[] = [
   ),
 
   t(
+    "call_internal_api",
+    "Read ANY of BlackOut's own internal READ endpoints for live platform data — the universal read-access tool. GOVERNED + READ-ONLY: only GET requests to routes the route-registry marks class:'read' are served (market quote/indices/news/heatmap/gex-positioning/dark-pool/flows/regime, the full SPX desk read family, the full Vector read family, Night Hawk edition, platform snapshot/intel, track record, health). Anything else is HARD-DENIED: any non-GET verb, any admin/cron/auth/webhook/push/membership/engine route, and every LLM-cost route (largo/query, spx/commentary, nighthawk/hunt) — the tool will refuse them, it cannot mutate, authenticate, spend, or reach a webhook. Pass `path` (e.g. '/api/market/gex-positioning') and optional `params` (query params object). Use when a question needs a specific platform surface not already covered by a dedicated tool; prefer the dedicated tool (get_ecosystem_context, get_vector_full_state, get_flow_tape, …) when one exists.",
+    {
+      path: { type: "string", description: "Internal API path, e.g. /api/market/gex-positioning. Must be a GET, class:read route." },
+      params: { type: "object", description: "Optional query params, e.g. {\"ticker\":\"NVDA\",\"dte\":\"all\"}." },
+    },
+    ["path"]
+  ),
+
+  t(
     "get_vector_full_state",
     "Vector's OWN complete live desk state for a ticker + DTE horizon — the exact same object the Vector chart's desk terminal reads and get_ecosystem_context returns as its vector_full_state field (via fetchVectorFullState). Hands you Vector's ENTIRE surface in one call: spot, gamma regime (long/short/transition), gamma walls (call/put, ranked) + per-wall INTEGRITY (firm/moderate/thin, held-% of session), gamma flip, the gamma magnet (pin vs pivot), wall-proximity, the options-implied expected move (±1σ/±2σ bands), max pain, confluence zones, the derived concrete PLAY (buildVectorPlay — style/bias/entry/targets/invalidation/conviction/grade), the full per-strike GEX ladder (king strikes + magnitudes), a compact heatmap-presence summary, options-flow prints, the wall-history RAIL (the 'beads' over the session) + its dynamics events (building/fading/new/dissolved/shifted — the 'fadeness'), the VANNA (VEX) lens (walls + zero-vanna flip), dark-pool levels, and server-computed chart technicals (VWAP/EMA stack/RSI/MACD/structure). horizon is one of 0dte/weekly/monthly/all (default all). Use for ANY question about what Vector shows for a ticker — 'what's the Vector setup / regime / play on NVDA', 'are the walls building or fading', 'where's the gamma flip and magnet', 'what's the expected move' — the deterministic Vector read, zero Claude cost. Runs for any optionable symbol.",
     { ...T, horizon: { type: "string", enum: ["0dte", "weekly", "monthly", "all"], description: "DTE horizon; defaults to 'all'." } },
@@ -468,6 +478,7 @@ export const LARGO_TOOL_DEFS: AnthropicToolDef[] = [
 // both consumers pick it up automatically instead of needing a second edit.
 export const BIE_TOOL_NAMES = [
   "get_ecosystem_context",
+  "call_internal_api",
   "get_vector_full_state",
   "get_hot_tickers",
   "get_market_regime",
