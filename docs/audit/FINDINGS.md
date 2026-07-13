@@ -82,3 +82,33 @@ evidence / fix / status per the CLAUDE.md policy.)
   escalated toward P0); SPX Slayer "Largo LIVE COMMENTARY" panel blank (pre-existing).
 - Ladder "21 UI rows vs 20 API" one-off on AAPL (suspect: spot-divider row class; re-check).
 - AAPL missing-put-side producer lead (above).
+
+## 2026-07-13 evening — wall-engine overhaul (member-driven)
+
+### P0 — Mid-session wall births were MATHEMATICALLY IMPOSSIBLE (FIXED — verify at 07-14 open)
+- **Root cause (the deepest one):** wall strength = OI × gamma, and OI is published once pre-market
+  and frozen all day → the dominant strike set was fixed at 9:30 regardless of session flow. No
+  render-side filter could ever produce a mid-day birth. The reference product's walls birth
+  mid-day because they accumulate TODAY's flow.
+- **Fix:** positioning = OI + today's per-strike traded volume (Polygon day.volume, live) in the
+  live per-expiry path; 0-OI contracts that traded today are kept (a brand-new same-day wall).
+  Back-projected reconstruction stays OI-only (no fabricated morning walls). `a63f162` + tests.
+- **Verification:** scheduled 2026-07-14T14:05Z — screenshots must show trails starting at
+  mid-session candles.
+
+### P0 — Narrowed rails contained blended data MISLABELED as the horizon (FIXED)
+- TSLA "0DTE" on a Monday (no 0DTE chain exists) drew a full-width static rail — the #301
+  blended-fallback recorded blended walls into narrowed rails when the chain was empty. Fallback
+  deleted: empty chain → honest gap. `bb4ddeb`. Today's contaminated rows age out at session end.
+
+### Product decisions (user-directed)
+- DTE toggle = 0DTE/WEEKLY/MONTHLY only ("All" option removed; back-end "all" APIs intact);
+  default weekly. `bb4ddeb` (corrects the over-removal in `b6697e4`).
+- King anchor price-lines removed (redundant with king beads). `b6697e4`, visually verified gone.
+- DOMINANT_WALLS_PER_BUCKET 6 → 3 (Skylit NODES=3): sparse rails, visible rotation. `bb4ddeb`.
+
+### Process failure logged honestly
+- THREE validation runs invalidated by launching inside rolling-deploy windows (mixed replicas
+  serve old+new builds for several minutes; per-navigation results flip). Rule going forward:
+  after a trunk push, wait ≥6 min AND confirm a marker (e.g. the toggle testids) before treating
+  any UI run as evidence.
