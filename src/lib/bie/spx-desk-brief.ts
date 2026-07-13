@@ -24,6 +24,11 @@ import {
 } from "@/lib/bie/spx-desk-intel";
 import { detectPremiseCorrections } from "@/lib/bie/spx-premise";
 import { synthesizeSpxDeskIntel } from "@/lib/bie/spx-desk-synthesis";
+import {
+  composeBiasVoice,
+  deriveSpxBias,
+  voiceSnapshotFromDesk,
+} from "@/lib/bie/spx-live-voice";
 
 export type SpxDeskBriefResult = {
   headline: string;
@@ -539,8 +544,16 @@ export function composeSpxDeskBrief(
   const flipLevel = stop ?? desk.gamma_flip ?? desk.vwap;
   const flips = `FLIPS IT  ${confluence.direction === "long" ? "Lose" : confluence.direction === "short" ? "Reclaim" : "Break"} ${n(flipLevel, 0)} = thesis dead — go flat.`;
 
+  // Shared voice brain (spx-live-voice.ts): the SAME 3–4 sentence BIE read the SPX rail
+  // pins client-side leads the Largo Q&A brief, so the terminal and the rail can never
+  // disagree on the bias/mechanic/posture. Voice numbers are desk values verbatim (or
+  // their rounding) — inside verifyClaims' 0.5% tolerance by construction.
+  const voiceSnap = voiceSnapshotFromDesk(desk);
+  const voiceRead = composeBiasVoice(voiceSnap, deriveSpxBias(voiceSnap));
+
   const bodyLines = [
     ...detectPremiseCorrections(question ?? "", desk),
+    `READ  ${voiceRead}`,
     synthesis.thesis,
     synthesis.mechanic,
     why,
