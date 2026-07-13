@@ -206,6 +206,19 @@ export async function ingestBieKnowledge(): Promise<{ stored: number }> {
     // registries unavailable in some contexts — skip
   }
 
+  // Foundational concept glossary (code-grounded definitions of GEX/VEX/King node/max pain/regime/
+  // the products, etc.). The deterministic lookupGlossary() in glossary.ts is the PRIMARY path for
+  // "what is X" questions; ingesting the same text here is belt-and-suspenders so the RAG/embedding
+  // layer also has correct definitions once Voyage is configured (the existing member glossary in
+  // src/lib/learn/guides/glossary.ts was never in the corpus — this closes that gap with the
+  // canonical, precise definitions rather than the generic ones).
+  try {
+    const { glossaryKnowledgeText } = await import("./glossary");
+    stored += await storeKnowledge("doc", "platform:glossary", glossaryKnowledgeText());
+  } catch {
+    // glossary import unavailable in some contexts — skip
+  }
+
   // BIE self-knowledge (generated, not hand-typed): the tool/field inventory
   // read straight from the source of truth (tool-defs.ts, ecosystem-context.ts)
   // instead of prose that has to be remembered and kept in sync by hand. This is
