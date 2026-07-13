@@ -6,7 +6,7 @@
 // Root cause it addresses: narrowed rails were written ONLY by the 5-min universe cron, and that
 // writer DROPPED the bucket whenever a horizon's per-expiry (SPXW) reconstruction returned empty —
 // so the SPX 0DTE rail advanced ~1/25min and looked frozen. Both the live 15s hub and the cron now
-// share this core, which FALLS BACK to the blended near-term walls (this bucket's fresh reading)
+// share this core. (The blended fallback that used to live here is gone — see pickNarrowedWallSample.)
 // when a horizon is momentarily empty, instead of dropping the bucket.
 
 import type { GexWalls } from "@/lib/providers/gex-wall-levels";
@@ -33,10 +33,15 @@ export type NarrowedWallOutcome = {
 /**
  * Choose the wall sample for one narrowed horizon:
  * - horizon walls present → record them ("horizon").
- * - else blended near-term walls present → record those so the rail keeps advancing
- *   ("blended-fallback"). This is NOT a stale carry-forward: the blended walls are this bucket's
- *   real current reading, just not horizon-scoped — the documented fallback contract.
- * - else nothing to record ("empty") — an honest gap.
+ * - else nothing to record ("empty") — an HONEST GAP.
+ *
+ * The blended-near-term fallback was REMOVED (2026-07-13, member-caught). It recorded the blended
+ * all-day-stable ladder INTO the narrowed rails whenever the per-expiry chain was empty — which for
+ * single names on non-expiry days (e.g. TSLA on a Monday: no 0DTE chain exists) meant the ENTIRE
+ * "0DTE" rail was blended data mislabeled as 0DTE: full-width static trails, no births, no deaths,
+ * immune to the dominance filter because the underlying set never changed. "Keeps the rail
+ * advancing" was the wrong goal — a rail of wrong-scope data is worse than an empty one. A member
+ * must be able to trust that every bead on a narrowed lens was genuinely that horizon's structure.
  */
 export function pickNarrowedWallSample(input: {
   time: number;
@@ -55,18 +60,6 @@ export function pickNarrowedWallSample(input: {
         vexFlip: null,
       }),
       source: "horizon",
-    };
-  }
-  if (hasWallNodes(input.blendedWalls)) {
-    return {
-      sample: buildWallHistorySample({
-        time: input.time,
-        gexWalls: input.blendedWalls,
-        gammaFlip: input.blendedFlip,
-        vexWalls: null,
-        vexFlip: null,
-      }),
-      source: "blended-fallback",
     };
   }
   return { sample: null, source: "empty" };

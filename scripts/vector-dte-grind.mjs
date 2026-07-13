@@ -34,11 +34,12 @@ const OUT = process.env.SHOT_DIR || "/tmp/claude-0/-home-user/464bea58-d425-5552
 const SECRET_NAME = process.env.STAGING_SECRET_NAME ?? "blackout-staging/app/env";
 const REGION = process.env.AWS_REGION ?? "";
 const TICKERS = (process.env.T ?? "SPX,SPY,NVDA").split(",").map((s) => s.trim());
+// "ALL" removed from the member UI (2026-07-13, user-corrected); the grind cycles the three
+// narrowed horizons. dte=all API checks live in the hardcore suite's H3 block instead.
 const DTES = [
   { btn: "0DTE", q: "0dte" },
   { btn: "WEEKLY", q: "weekly" },
   { btn: "MONTHLY", q: "monthly" },
-  { btn: "ALL", q: "all" },
 ];
 mkdirSync(OUT, { recursive: true });
 const sh = (c) => execSync(c, { encoding: "utf8", stdio: ["pipe", "pipe", "pipe"] }).trim();

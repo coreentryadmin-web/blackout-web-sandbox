@@ -29,7 +29,9 @@ const SECRET_NAME = process.env.STAGING_SECRET_NAME || "blackout-staging/app/env
 const REGION = process.env.AWS_REGION || "us-east-1";
 const TICKERS = (process.env.T || "SPY,NVDA,SPX").split(",").map((s) => s.trim());
 const RTH = process.env.RTH === "1";
-const DTES = ["0DTE", "WEEKLY", "MONTHLY", "ALL"];
+// "ALL" removed from the member UI (2026-07-13, user-corrected: remove the ALL option, keep the
+// narrowed horizons). The dte=all API stays for back-end consumers and the H3 ladder check.
+const DTES = ["0DTE", "WEEKLY", "MONTHLY"];
 const DTE_PARAM = { "0DTE": "0dte", WEEKLY: "weekly", MONTHLY: "monthly", ALL: "all" };
 const TFS = ["1 min", "15 min", "1H"];
 mkdirSync(OUT, { recursive: true });

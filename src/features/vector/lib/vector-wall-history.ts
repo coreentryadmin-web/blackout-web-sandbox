@@ -62,10 +62,13 @@ export const MAX_STRIKE_TRAILS_PER_SIDE = 8;
  * Keeping only each bucket's top-N by |gamma| share restores that: a level that is always among the
  * strongest stays full-width (correctly — it WAS a wall all day), while one that only spikes into
  * the dominant set at 2pm gets a trail born at 2pm. Tracks spot naturally, since gamma concentrates
- * near the money, so walls form where price actually is. 6 matches the reference's ~4–6 visible
- * levels per side without starving the top-N render cap above.
+ * near the money, so walls form where price actually is. 3 matches the reference product's default
+ * (NODES=3 in the Skylit SPY ref, 2026-07-13): sparse rails where a strike must be among the TOP
+ * THREE to earn a bead — which is what makes births/deaths visible even on names whose wider
+ * ladder barely rotates (member: TSLA looked static at top-6; the top-3 set genuinely churns).
+ * Presence windows + gaps are the product, not noise.
  */
-export const DOMINANT_WALLS_PER_BUCKET = 6;
+export const DOMINANT_WALLS_PER_BUCKET = 3;
 
 /** Live session: only render wall beads within this many seconds of the chart's leading edge. */
 export const LIVE_TRAIL_LOOKBACK_SEC = 45 * 60;

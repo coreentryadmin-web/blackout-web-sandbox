@@ -99,13 +99,21 @@ async function validateTicker(page, ticker, consoleErrors) {
   rec(`${ticker}: regime banner populated`, probe.regime > 0);
   rec(`${ticker}: indicator menu present`, probe.menu);
 
-  // DTE toggle REMOVED from the member UI (user-directed, 2026-07-13 — per-horizon scoping was
-  // the source of the cross-surface incoherence the DTE grind caught). The new contract is its
-  // ABSENCE: the chart always shows the blended live near-term scope.
-  for (const dte of DTES) {
-    const n = await page.locator(`button:has-text("${dte}")`).count().catch(() => 0);
-    rec(`${ticker}: DTE ${dte} toggle removed from UI`, n === 0, n ? `${n} still rendered` : "");
+  // DTE contract (user-corrected 2026-07-13): 0DTE / WEEKLY / MONTHLY present and clickable;
+  // the "ALL" option is REMOVED. Exact data-testid matching — has-text("ALL") substring-matched
+  // unrelated buttons ("wall…") and produced a false "still rendered" on every ticker.
+  for (const key of ["0dte", "weekly", "monthly"]) {
+    const btn = page.locator(`[data-testid="vector-dte-${key}"]`).first();
+    if (await btn.count().catch(() => 0)) {
+      await btn.click().catch(() => {});
+      await page.waitForTimeout(1200);
+      rec(`${ticker}: DTE ${key} toggles`, true);
+    } else {
+      rec(`${ticker}: DTE ${key} button present`, false);
+    }
   }
+  const allBtn = await page.locator('[data-testid="vector-dte-all"]').count().catch(() => 0);
+  rec(`${ticker}: DTE ALL option removed`, allBtn === 0, allBtn ? "still rendered" : "");
 
   // Timeframes — each must redraw without error.
   for (const tf of TFS) {

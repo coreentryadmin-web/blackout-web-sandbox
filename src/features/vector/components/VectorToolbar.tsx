@@ -1,3 +1,4 @@
+import { VectorDteToggle } from "@/features/vector/components/VectorDteToggle";
 "use client";
 
 import { VectorLensToggle } from "@/features/vector/components/VectorLensToggle";
@@ -133,14 +134,16 @@ export function VectorToolbar(props: Props) {
             vexAsOf={vexAsOf}
             liveSession={liveSession}
           />
-          {/* DTE horizon toggle REMOVED from the member UI (user-directed, 2026-07-13): the
-              per-horizon scoping was the source of every cross-surface incoherence the DTE grind
-              caught (flip flapping between chain snapshots, "All" meaning different things on
-              different tasks, sides going missing per-horizon) — member verdict: it "adds no value
-              and corrupts the system". The chart now always shows the blended live near-term scope
-              (the honest stream every other surface uses). The horizon APIs/back-end stay intact —
-              SPX Slayer + BIE still consume them — and the toggle can be restored by re-rendering
-              VectorDteToggle here. */}
+          {/* DTE horizon toggle: 0DTE / Weekly / Monthly. The "All" option was removed
+              (user-directed, 2026-07-13) — see VectorDteToggle for the rationale. */}
+          {lens === "gex" && (
+            <VectorDteToggle
+              horizon={dteHorizon}
+              onHorizon={onDteHorizon}
+              available={dteAvailable}
+              disabled={replayMode}
+            />
+          )}
           {trailSlot}
         </div>
       </div>

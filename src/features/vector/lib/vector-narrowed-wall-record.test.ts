@@ -31,7 +31,11 @@ test("horizon walls present → records the horizon-scoped walls", () => {
   assert.equal(sample.gammaFlip, 7536);
 });
 
-test("horizon empty but blended present → FALLS BACK to blended (rail advances, not dropped)", () => {
+test("horizon empty → HONEST GAP even when blended walls exist (fallback removed 2026-07-13)", () => {
+  // The old blended-fallback recorded the all-day-stable blended ladder INTO narrowed rails —
+  // on non-expiry days (TSLA Monday: no 0DTE chain) the entire "0DTE" rail became mislabeled
+  // blended data: full-width static trails, no births/deaths (member-caught live). Wrong-scope
+  // data is worse than a gap: a bead on a narrowed lens must BE that horizon's structure.
   const { sample, source } = pickNarrowedWallSample({
     time: 1000,
     horizonWalls: empty,
@@ -39,10 +43,8 @@ test("horizon empty but blended present → FALLS BACK to blended (rail advances
     blendedWalls,
     blendedFlip: 7540,
   });
-  assert.equal(source, "blended-fallback");
-  assert.ok(sample, "fallback must produce a sample — the old code dropped this bucket");
-  assert.equal(sample.walls.callWalls[0].strike, 7550);
-  assert.equal(sample.gammaFlip, 7540);
+  assert.equal(source, "empty");
+  assert.equal(sample, null);
 });
 
 test("both empty → honest gap (no sample)", () => {
@@ -57,7 +59,7 @@ test("both empty → honest gap (no sample)", () => {
   assert.equal(sample, null);
 });
 
-test("null horizon walls (reconstruction failed) also falls back to blended", () => {
+test("null horizon walls (reconstruction failed) → honest gap, never blended", () => {
   const { sample, source } = pickNarrowedWallSample({
     time: 1000,
     horizonWalls: null,
@@ -65,6 +67,6 @@ test("null horizon walls (reconstruction failed) also falls back to blended", ()
     blendedWalls,
     blendedFlip: 7540,
   });
-  assert.equal(source, "blended-fallback");
-  assert.ok(sample);
+  assert.equal(source, "empty");
+  assert.equal(sample, null);
 });

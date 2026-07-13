@@ -16,12 +16,16 @@ type Props = {
   disabled?: boolean;
 };
 
-/** Compact DTE horizon selector — 0DTE / Weekly / Monthly / All. */
+/** Compact DTE horizon selector — 0DTE / Weekly / Monthly.
+ *  "All" was REMOVED from the member UI (user-directed, 2026-07-13): the blended all-expiry scope
+ *  was the one whose definition drifted across surfaces/tasks (DTE grind findings) and it added no
+ *  decision value over the narrowed horizons. The "all" horizon still exists in the type + APIs
+ *  (SPX Slayer/BIE consume it); only the member-facing option is gone. */
 export function VectorDteToggle({ horizon, onHorizon, available, disabled = false }: Props) {
   if (!available) return null;
   return (
     <div className="flex items-center gap-1" role="group" aria-label="Expiry horizon">
-      {VECTOR_DTE_HORIZONS.map((key) => {
+      {VECTOR_DTE_HORIZONS.filter((k) => k !== "all").map((key) => {
         const active = horizon === key;
         return (
           <button
