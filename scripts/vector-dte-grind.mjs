@@ -169,7 +169,9 @@ async function grindTicker(page, ticker, consoleErrors) {
     const spot = spotM ? Number(spotM[1].replace(/,/g, "")) : null;
     if (spot != null && Number.isFinite(flip)) {
       const dist = Math.abs(spot - flip) / spot;
-      const wantAt = dist <= 0.0015;
+      // exact product TRANSITION_BAND (0.1%) — a wider harness band flagged NVDA's correct
+      // "above" wording as wrong when spot sat between 0.10% and 0.15% from the flip.
+      const wantAt = dist <= 0.001;
       const wantLong = spot > flip;
       const saysAt = /sitting on the gamma flip|AT GAMMA FLIP/i.test(snap.banner);
       const saysLong = /above the gamma flip|long gamma/i.test(snap.banner);

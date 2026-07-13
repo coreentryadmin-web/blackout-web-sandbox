@@ -13,7 +13,7 @@ import {
   type WallScopeState,
 } from "@/lib/providers/gex-wall-levels";
 import { todayEtYmd } from "@/lib/providers/spx-session";
-import { persistWallSampleDebounced } from "./vector-wall-persist";
+import { persistWallSampleDebounced, loadSessionWallHistory } from "./vector-wall-persist";
 import { bucketWallSampleTime, buildWallHistorySample } from "./vector-wall-sample";
 import {
   RECORDED_WALL_HORIZONS,
@@ -264,14 +264,23 @@ export async function getVectorGexWallsForHorizon(
     const primed = getVectorGexWalls(t);
     if (wallsHaveNodes(primed)) return primed;
 
-    // Heatmap STILL empty after priming. On a cold API task the shared heatmap can come back
-    // empty for a non-preset name (no cron warm on THIS task, a transient band fetch miss, or a
-    // short-lived cached empty matrix) even though the options chain is perfectly readable — proven
-    // live 2026-07-12: ASTS/PLTR/UBER/NVDA returned dte=all → 0 walls via the heatmap while every
-    // NARROWED horizon returned 12/12 via the per-expiry chain on the same request. So fall back to
-    // that same chain path over ALL live expiries (expiriesForHorizon(..., "all") = the whole
-    // near-term set), guaranteeing "All" is never blank when the chain has data. Heatmap still LEADS
-    // (it's the fast, warm-cron-fed aggregate); this only rescues the cold-miss case.
+    // Heatmap STILL empty after priming. Before recomputing from the chain, read the LAST RECORDED
+    // rail sample from shared Redis — that is literally the blended wall set the live stream showed
+    // members ≤15s ago, so a cold API task answers "All" with the SAME numbers every stream-fed
+    // surface (banner/kings/beads) is already displaying. Without this, the cold path jumped to an
+    // all-expiry CHAIN aggregate — a different definition of "All" — and cross-surface checks caught
+    // it live (DTE grind 2026-07-13: ASTS banner resistance 75 vs dte=all API 90, TSLA support
+    // 392.5 vs 380). Coherence beats recomputation; the chain stays as the last resort for tickers
+    // with no recorded rail this session (first view off-hours etc.).
+    const railTail = await loadSessionWallHistory(todayEtYmd(), t)
+      .then((h) => h[h.length - 1] ?? null)
+      .catch(() => null);
+    if (railTail?.walls && wallsHaveNodes(railTail.walls)) return railTail.walls;
+
+    // Last resort: recompute from the chain over the near-term expiry set — proven live 2026-07-12
+    // (ASTS/PLTR/UBER/NVDA: heatmap empty on a cold task while every narrowed horizon returned
+    // 12/12 via the per-expiry chain on the same request). Guarantees "All" is never blank when the
+    // chain has data.
     const chain = await getPerExpiryGexWalls(t, "all").catch(() => null);
     if (chain?.walls && wallsHaveNodes(chain.walls)) return chain.walls;
     return primed; // honest: return whatever we have (possibly empty) rather than throw

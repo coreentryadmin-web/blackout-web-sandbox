@@ -215,5 +215,15 @@ export function gammaFlipFromLadder(ladder: Map<number, number>, spot: number): 
   }
   // No sign change anywhere → no honest flip on this ladder; return null rather than guess.
   if (crossings.length === 0) return null;
-  return crossings.reduce((best, c) => (Math.abs(c - spot) < Math.abs(best - spot) ? c : best));
+  // PLAUSIBILITY BAND: a "flip" 20% away from spot is not an actionable regime boundary — it is a
+  // thin-far-strike artifact of the banded chain snapshot. Caught live (DTE grind, 2026-07-13):
+  // SPX weekly banner showed flip 5,996 with spot 7,522 (−20%) while the API — same code, one chain
+  // cache refresh later — showed 7,995: the band edge flapped which crossings even existed, and when
+  // the near-spot crossing vanished, nearest-spot happily returned the deep-OTM artifact. A crossing
+  // beyond ±FLIP_MAX_DIST_PCT of spot is rejected; if none survive, return null so callers fall back
+  // to the blended flip instead of narrating a fantasy level to members.
+  const FLIP_MAX_DIST_PCT = 0.12;
+  const plausible = crossings.filter((c) => Math.abs(c - spot) <= spot * FLIP_MAX_DIST_PCT);
+  if (plausible.length === 0) return null;
+  return plausible.reduce((best, c) => (Math.abs(c - spot) < Math.abs(best - spot) ? c : best));
 }

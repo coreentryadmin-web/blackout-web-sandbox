@@ -155,3 +155,18 @@ test("gammaFlipFromLadder: null when no up-crossing and when <2 strikes", () => 
   assert.equal(gammaFlipFromLadder(new Map([[7400, 1], [7500, 2]]), 7450) === null, false); // first strike >0 registers a crossing at the bottom strike
   assert.equal(gammaFlipFromLadder(new Map([[7500, 5]]), 7500), null); // <2 strikes
 });
+
+test("gammaFlipFromLadder: rejects implausible far-from-spot crossings (SPX weekly 5,996 artifact)", () => {
+  // Ladder shaped so the running sum crosses zero deep OTM (-20% from spot) AND near spot (+6%).
+  const ladder = new Map<number, number>([
+    [6000, 1], // deep-OTM artifact crossing (≤0 → >0 at 6000)
+    [6500, -3], // back negative
+    [8000, 5], // real crossing near-ish spot
+  ]);
+  const spot = 7522;
+  const flip = gammaFlipFromLadder(ladder, spot);
+  assert.ok(flip != null && Math.abs(flip - spot) <= spot * 0.12, `flip ${flip} within plausibility band`);
+  // Only-implausible-crossings ladder → null (honest no-flip), never the 20%-away artifact.
+  const artifactOnly = new Map<number, number>([[6000, 1], [6500, -3], [7000, -1]]);
+  assert.equal(gammaFlipFromLadder(artifactOnly, spot), null);
+});
