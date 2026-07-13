@@ -78,3 +78,42 @@ test("reconcileStrikeTotal: ignores non-finite strike values rather than propaga
   const block = { total: 5, strike_totals: { "1": 10, "2": NaN } };
   assert.equal(reconcileStrikeTotal(block)!.total, 10);
 });
+
+// RTH-scan regression (2026-07-13): Vector served the weekly gamma flip as 7622.381430556295. The
+// data-layer boundary (src/lib/bie/vector-full-state.ts wraps its whole return in roundFloats) must
+// serve every structure figure at 2dp. This pins the exact scanned number and a VectorFullState-
+// shaped nested object so a future refactor that drops the roundFloats wrap is caught here.
+test("Vector data-layer: the flagged unrounded weekly flip 7622.381430556295 serves as 7622.38", () => {
+  assert.equal(roundFloats(7622.381430556295), 7622.38);
+});
+
+test("Vector data-layer: flip / walls / max pain / vexFlip / ladder round while epoch-ints are untouched", () => {
+  const rounded = roundFloats({
+    gammaFlip: 7622.381430556295,
+    maxPain: 7554.987654321,
+    vexFlip: 7600.501999,
+    gexWalls: {
+      callWalls: [{ strike: 7647.111111, pct: 0.4123456 }],
+      putWalls: [{ strike: 7500.999999, pct: 0.31 }],
+    },
+    ladder: { rows: [{ strike: 7625.5, gex: 1234.56789, magnitude: 0.876543 }], maxAbs: 9999.99999 },
+    // Integer-valued fields must pass through UNCHANGED (epoch millis, counts).
+    asOfMs: 1720000000000,
+    strikeCount: 42,
+  }) as Record<string, unknown>;
+
+  assert.equal(rounded.gammaFlip, 7622.38);
+  assert.equal(rounded.maxPain, 7554.99);
+  assert.equal(rounded.vexFlip, 7600.5);
+  const walls = rounded.gexWalls as { callWalls: Array<{ strike: number; pct: number }>; putWalls: Array<{ strike: number }> };
+  assert.equal(walls.callWalls[0]!.strike, 7647.11);
+  assert.equal(walls.callWalls[0]!.pct, 0.41);
+  assert.equal(walls.putWalls[0]!.strike, 7501);
+  const ladder = rounded.ladder as { rows: Array<{ gex: number; magnitude: number }>; maxAbs: number };
+  assert.equal(ladder.rows[0]!.gex, 1234.57);
+  assert.equal(ladder.rows[0]!.magnitude, 0.88);
+  assert.equal(ladder.maxAbs, 10000);
+  // Untouched integers.
+  assert.equal(rounded.asOfMs, 1720000000000);
+  assert.equal(rounded.strikeCount, 42);
+});
