@@ -940,6 +940,16 @@ export async function runLargoTool(name: string, input: Record<string, unknown>,
       return fetchEcosystemContext(ticker);
     }
 
+    case "call_internal_api": {
+      const { callInternalApiRead } = await import("@/lib/bie/internal-api");
+      const rawParams =
+        input.params && typeof input.params === "object" && !Array.isArray(input.params)
+          ? (input.params as Record<string, string | number | boolean | null | undefined>)
+          : undefined;
+      // Governed + read-only: callInternalApiRead hard-denies anything not a GET class:read route.
+      return callInternalApiRead(String(input.path ?? ""), rawParams);
+    }
+
     case "get_vector_full_state": {
       const [{ fetchVectorFullState }, { normalizeDteHorizon }] = await Promise.all([
         import("@/lib/bie/vector-full-state"),
