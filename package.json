@@ -124,7 +124,7 @@
     "docx": "^9.7.1",
     "eslint": "^8",
     "eslint-config-next": "^15.5.19",
-    "eslint-plugin-tailwindcss": "^3.18.3",
+    "eslint-plugin-tailwindcss": "^4.1.0",
     "playwright": "^1.61.1",
     "postcss": "^8.5.16",
     "stylelint": "^17.14.0",
