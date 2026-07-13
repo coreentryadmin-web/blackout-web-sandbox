@@ -170,3 +170,30 @@ test("gammaRegimeWithHysteresis: holds prior regime until buffer cleared", () =>
   assert.equal(gammaRegimeWithHysteresis(5999, flip, "mean_revert"), "mean_revert");
   assert.equal(gammaRegimeWithHysteresis(5997, flip, "mean_revert"), "amplification");
 });
+
+test("gammaRegimeWithHysteresis: net-GEX sign breaks the tie inside the ±buffer band (coherence fix)", () => {
+  const flip = 6000;
+  // The live bug: spot a hair BELOW flip + a sticky "amplification" prior, but net GEX is POSITIVE
+  // (dealers net long γ → they pin/fade → mean_revert). Net GEX must win inside the band.
+  assert.equal(gammaRegimeWithHysteresis(5999, flip, "amplification", 2, 20_700_000_000), "mean_revert");
+  // Symmetric: spot a hair ABOVE flip but net GEX NEGATIVE (net short γ → amplify) → amplification.
+  assert.equal(gammaRegimeWithHysteresis(6001, flip, "mean_revert", 2, -5_000_000_000), "amplification");
+  // Exactly at the flip: net-GEX sign decides, not a coin-flip on the raw spot>flip.
+  assert.equal(gammaRegimeWithHysteresis(6000, flip, "unknown", 2, 1_000), "mean_revert");
+  assert.equal(gammaRegimeWithHysteresis(6000, flip, "unknown", 2, -1_000), "amplification");
+});
+
+test("gammaRegimeWithHysteresis: OUTSIDE the buffer, net GEX does NOT override an unambiguous spot-vs-flip read", () => {
+  const flip = 6000;
+  // 10pt above the flip is unambiguous long-γ territory — a (transient) negative net doesn't flip it.
+  assert.equal(gammaRegimeWithHysteresis(6010, flip, "mean_revert", 2, -9_000_000_000), "mean_revert");
+  // 10pt below is unambiguous short-γ — a positive net reading doesn't override the clear side.
+  assert.equal(gammaRegimeWithHysteresis(5990, flip, "amplification", 2, 9_000_000_000), "amplification");
+});
+
+test("gammaRegimeWithHysteresis: null/absent net GEX preserves the original spot-vs-flip hysteresis", () => {
+  const flip = 6000;
+  // Backward-compatible: no netGex arg (or null) → identical to the pre-fix behavior.
+  assert.equal(gammaRegimeWithHysteresis(5999, flip, "amplification"), "amplification");
+  assert.equal(gammaRegimeWithHysteresis(5999, flip, "amplification", 2, null), "amplification");
+});

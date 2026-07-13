@@ -8,6 +8,30 @@ and required CI (`verify`) are green — no per-PR approval, no end-of-day hold.
 here and merge the PR in the same session. Supersedes all earlier "leave OPEN for review" notes
 in this file.
 
+## 🔴 P1 FOUND+FIXED 2026-07-13 (RTH) — gamma_regime desynced from net GEX + above_gamma_flip at spot≈flip
+
+**Severity:** P1 (member-facing contradictory read). **Root cause:** `gamma_regime` was a pure
+spot-vs-flip function with sticky ±2pt hysteresis (`src/lib/providers/gamma-desk.ts:134`) that (a)
+never consulted the sign of **net GEX**, and (b) was computed from a **different snapshot** than
+`above_gamma_flip` — in the full desk payload `above_gamma_flip` read the live `price`
+(`spx-desk.ts:1323`) while `gamma_regime` inherited `canonicalGex.gamma_regime` (a canonical-spot
+snapshot, `spx-desk.ts:1328-1332`). **Evidence:** live RTH scan — at spot≈flip the desk served
+"amplification" (short γ) while netGex was **+20.7B** (dealers net LONG γ) and the walls pinned
+long-γ; `above_gamma_flip` and the regime label could point opposite ways.
+**Fix:**
+1. `gamma-desk.ts` — `gammaRegimeWithHysteresis` gains an optional `netGex`: inside the ambiguous
+   ±buffer band around the flip, the **net-GEX sign is authoritative** (positive → mean_revert /
+   long γ, negative → amplification). Outside the band, spot-vs-flip + hysteresis is unchanged;
+   null/absent netGex is fully backward-compatible.
+2. `spx-desk.ts` — the canonical site (`resolveCanonicalDeskGex`, ~:336) passes `pos.net_gex`; the
+   full-payload site derives `above_gamma_flip` AND `gamma_regime` from the **same** `(price,
+   gammaFlip, gexNet)` snapshot (moved `gexNet` above the label, dropped the divergent
+   canonical-regime branch) so the two surfaces can no longer contradict.
+**Sign convention:** positive net_gex = dealers net long gamma (pin/dampen) — confirmed in
+`gamma-desk.ts:162` / `polygon-options-gex.ts:258`. **Test:** `gamma-desk.test.ts` — net-GEX tie-break
+inside the band, no override outside it, null-net backward-compat. Full sweep 822/822, tsc + opacity
+clean. **Status:** FIXED — PR open.
+
 ## ✅ AUDIT 2026-07-13 — De-Claude coverage map: staging is 100% BIE, no surface silently returns empty (task #61)
 
 **What was audited:** every staging-reachable Claude call-site, to prove that with `claudeEnabled()===false` on staging (`src/lib/ai-env.ts:9` — `isStagingDeploy()` ⇒ false unless `STAGING_CLAUDE=1`) no user-facing surface degrades to null/empty. Every Anthropic call funnels through the two gated wrappers `anthropicText` (`src/lib/providers/anthropic.ts:365`) and `anthropicToolLoop` (`:447`), both of which `return null` when `!claudeEnabled()`. Verified via `grep -rn "claudeEnabled|anthropicText|anthropicToolLoop" src/` that NO raw Anthropic SDK usage bypasses those wrappers (the only two Claude-invoking exports are `anthropicText`/`anthropicToolLoop`).

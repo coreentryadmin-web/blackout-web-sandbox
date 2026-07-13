@@ -333,7 +333,10 @@ async function resolveCanonicalDeskGex(spot: number): Promise<CanonicalDeskGexSn
   const levels = strikeTotalsToLevels(hm.gex.strike_totals);
   const king = kingFromStrikeTotals(hm.gex.strike_totals);
   const flip = pos.flip;
-  const regime = gammaRegimeWithHysteresis(spot, flip, lastGoodGammaRegime);
+  // Regime + above_gamma_flip below are both derived from THIS one (spot, flip) snapshot, and the
+  // regime additionally respects the net-GEX sign inside the ±buffer band so the two can't contradict
+  // (net long γ at spot≈flip → mean_revert, never a stale "amplification").
+  const regime = gammaRegimeWithHysteresis(spot, flip, lastGoodGammaRegime, 2, pos.net_gex);
   const walls = levels.length ? topGexWalls(levels, spot, GEX_WALL_LADDER_LIMIT) : [];
 
   if (levels.length) {
@@ -1318,21 +1321,25 @@ export async function buildSpxDesk(): Promise<SpxDeskPayload> {
   const gammaFlip =
     intel?.gamma_flip ?? canonicalGex.gamma_flip ?? lastGoodGammaFlip ?? null;
   const aboveFlip = gammaFlip != null ? price > gammaFlip : false;
-  const intelFlipActive =
-    engineIntelOverlayEnabled() &&
-    intel != null &&
-    intel.gamma_flip != null;
-  const gammaRegimeLabel = intelFlipActive
-    ? gammaRegimeWithHysteresis(price, gammaFlip, lastGoodGammaRegime)
-    : canonicalGex.gamma_regime !== "unknown"
-      ? canonicalGex.gamma_regime
-      : lastGoodGammaRegime;
+  // Canonical matrix is the sole GEX source — no 0DTE recompute. Net GEX is computed BEFORE the
+  // regime label so the label can respect its sign at spot≈flip.
+  const gexNet = intel?.gex_net ?? canonicalGex.gex_net ?? null;
+  // above_gamma_flip and gamma_regime are derived from the SAME (price, gammaFlip) snapshot — and the
+  // regime respects the net-GEX sign inside the ±buffer band — so the two surfaces can never
+  // contradict. The bug: aboveFlip read the live `price` while the regime inherited a canonical-spot
+  // snapshot (a different price), and neither consulted net GEX at spot≈flip, so the desk could serve
+  // "amplification" with a positive net-GEX + long-γ walls. gammaFlip already merges intel/canonical/
+  // lastGood, so `price > gammaFlip` and the regime now read the identical flip.
+  const gammaRegimeLabel =
+    gammaFlip != null
+      ? gammaRegimeWithHysteresis(price, gammaFlip, lastGoodGammaRegime, 2, gexNet)
+      : canonicalGex.gamma_regime !== "unknown"
+        ? canonicalGex.gamma_regime
+        : lastGoodGammaRegime;
   const finalWalls = canonicalGex.gex_walls;
   const gexAgeMs = canonicalGex.gex_age_ms;
   const gexStale = canonicalGex.gex_stale;
 
-  // Canonical matrix is the sole GEX source — no 0DTE recompute.
-  const gexNet = intel?.gex_net ?? canonicalGex.gex_net ?? null;
   const gexKing = intel?.gex_king ?? canonicalGex.gex_king ?? null;
   maxPain = intel?.max_pain ?? maxPain ?? null;
 
