@@ -108,6 +108,16 @@ describe("router: concept_read intent", () => {
     assert.equal(bieFollowups("concept_read").length, 3);
   });
 
+  test("TERSE bare glossary term (no 'what is') routes to concept_read", () => {
+    // The compound terse-barrage shape: "GEX? VEX? max pain?" splits to bare terms.
+    for (const q of ["GEX", "VEX", "max pain", "king node", "dark pool"]) {
+      assert.equal(classifyBieIntent(q, NO_LEDGER)?.intent, "concept_read", `bare "${q}" → concept`);
+    }
+    // A bare TICKER is not a concept (it's a live read target), and an unknown short phrase isn't either.
+    assert.notEqual(classifyBieIntent("SPY", NO_LEDGER)?.intent, "concept_read");
+    assert.notEqual(classifyBieIntent("flongle", NO_LEDGER)?.intent, "concept_read");
+  });
+
   test("BOUNDARY: a live-EDITION/temporal question is NOT stolen by concept_read", () => {
     // "what is tonight's Night Hawk edition" is a LIVE request — it must not return the Night Hawk
     // DEFINITION. It falls through (→ Claude → get_nighthawk_edition), not concept_read.

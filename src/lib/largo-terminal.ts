@@ -14,7 +14,8 @@ import { LARGO_SYSTEM_PROMPT } from "@/lib/largo/system-prompt";
 import { LARGO_TOOL_DEFS, getToolsForIntent } from "@/lib/largo/tool-defs";
 import { runLargoTool } from "@/lib/largo/run-tool";
 import { bieFollowups, bieIntentBucket, classifyBieIntent, classifyBieStagingFallback, isSpxDeskFallbackQuestion, type BieRoute } from "@/lib/bie/router";
-import { composeBieAnswer } from "@/lib/bie/composers";
+import { composeBieAnswer, composeCompound } from "@/lib/bie/composers";
+import { isCompoundQuestion } from "@/lib/bie/decompose";
 import { collectContextNumbers, verifyClaims, type ClaimVerification } from "@/lib/bie/verifier";
 import { resetLargoSpxDeskCache } from "@/lib/largo/spx-desk-cache";
 import {
@@ -252,7 +253,24 @@ async function tryBieRoute(
 ): Promise<{ route: BieRoute; answer: string; context: unknown } | null> {
   try {
     const ledger = await readZeroDteLedger().catch(() => []);
-    const route = classifyBieIntent(question, new Set(ledger.map((r) => r.ticker)));
+    const ledgerTickers = new Set(ledger.map((r) => r.ticker));
+
+    // COMPOUND (task #57): a message that decomposes into ≥2 sub-questions is answered by fanning
+    // the EXISTING single-intent friends out in parallel and synthesizing one labeled answer. Gated
+    // tightly — isCompoundQuestion returns true ONLY for a confident multi-question message, so a
+    // normal single question falls straight through to the unchanged path below (no regression).
+    if (isCompoundQuestion(question)) {
+      const composed = await composeCompound(question, ledgerTickers);
+      if (composed) {
+        return {
+          route: { intent: "compound_lookup", ticker: null },
+          answer: composed.answer,
+          context: composed.context,
+        };
+      }
+    }
+
+    const route = classifyBieIntent(question, ledgerTickers);
     if (route) {
       const composed = await composeBieAnswer(route, { question });
       if (composed) return { route, answer: composed.answer, context: composed.context };

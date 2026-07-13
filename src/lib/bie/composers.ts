@@ -25,7 +25,13 @@ import {
 } from "@/lib/bie/platform-cache";
 import { withServerCache } from "@/lib/server-cache";
 import { stripGroundingTokens } from "@/lib/bie/grounding-markers";
-import type { BieRoute } from "./router";
+import { classifyBieIntent, type BieRoute } from "./router";
+import {
+  splitCompoundQuestion,
+  labelForSubQuestion,
+  synthesizeCompoundAnswer,
+  type CompoundPart,
+} from "./decompose";
 
 /** Optional member question — premise correction + advice routing context. */
 export type ComposeBieOpts = { question?: string };
@@ -491,6 +497,94 @@ async function composeFlowTape(ticker: string | null): Promise<BieComposed | nul
   return {
     answer: composeFlowTapeAnswer(platform, ticker),
     context: platform,
+  };
+}
+
+/** Per-sub-question deadline — a slow friend must never stall the whole compound answer. */
+const COMPOUND_FRIEND_TIMEOUT_MS = 4000;
+const COMPOUND_TIMEOUT = Symbol("compound-timeout");
+
+/**
+ * COMPOUND answer — the "15 questions in one ask" engine (task #57). Splits the message into
+ * sub-questions and, WHEN it is confidently compound (≥2), fans them out over the EXISTING single-
+ * intent path (classifyBieIntent → composeBieAnswer) in PARALLEL, each with a per-friend timeout,
+ * then synthesizes ONE labeled answer. Returns null when the message is a single question, so the
+ * caller falls through to the unchanged single path (no regression — the whole gate).
+ *
+ * Honesty spine: every part is EITHER real grounded data OR an honest "unavailable — timed out / no
+ * live data" note + recordBieGap — never fabricated, never silently dropped. State is request-scoped
+ * (the `ledger` local below), never shared/global, so concurrent calls can't cross-contaminate.
+ */
+export async function composeCompound(
+  question: string,
+  ledgerTickers: Set<string> = new Set()
+): Promise<BieComposed | null> {
+  const subQs = splitCompoundQuestion(question);
+  if (subQs.length < 2) return null; // single question → caller uses the normal path unchanged
+
+  const { recordBieGap } = await import("@/lib/bie/gap-log");
+
+  // Request-scoped ledger — fresh per call, one row per friend. Never global.
+  const ledger: Array<CompoundPart & { context: unknown }> = await Promise.all(
+    subQs.map(async (subQ, i): Promise<CompoundPart & { context: unknown }> => {
+      const index = i + 1;
+      const label = labelForSubQuestion(subQ);
+      const started = Date.now();
+      const unavailable = (reason: string, intent: string | null): CompoundPart & { context: unknown } => ({
+        index,
+        label,
+        ok: false,
+        text: `unavailable — ${reason}`,
+        intent,
+        ms: Date.now() - started,
+        context: null,
+      });
+
+      try {
+        const route = classifyBieIntent(subQ, ledgerTickers);
+        if (!route) {
+          void recordBieGap({ question: subQ, intent: "compound_part", reason: "no_route" });
+          return unavailable("no deterministic read for this part", null);
+        }
+        // Per-friend timeout: race the compose against a deadline so one slow read can't stall all.
+        const raced = await Promise.race([
+          composeBieAnswer(route, { question: subQ }),
+          new Promise<typeof COMPOUND_TIMEOUT>((res) => setTimeout(() => res(COMPOUND_TIMEOUT), COMPOUND_FRIEND_TIMEOUT_MS)),
+        ]);
+        if (raced === COMPOUND_TIMEOUT) {
+          void recordBieGap({ question: subQ, intent: route.intent, reason: "timeout" });
+          return unavailable("timed out", route.intent);
+        }
+        if (!raced || !raced.answer) {
+          void recordBieGap({ question: subQ, intent: route.intent, reason: "no_data" });
+          return unavailable("no live data returned", route.intent);
+        }
+        return {
+          index,
+          label,
+          ok: true,
+          text: raced.answer.trim(),
+          intent: route.intent,
+          ms: Date.now() - started,
+          context: raced.context,
+        };
+      } catch {
+        void recordBieGap({ question: subQ, intent: "compound_part", reason: "error" });
+        return unavailable("read failed", null);
+      }
+    })
+  );
+
+  const answer = synthesizeCompoundAnswer(ledger);
+  return {
+    answer,
+    // Context carries each part's own grounded context so Layer-4 verifyClaims can trace every
+    // number the synthesized answer cites back to the sub-answer it came from.
+    context: {
+      compound: true,
+      parts: ledger.map((p) => ({ index: p.index, label: p.label, ok: p.ok, intent: p.intent, ms: p.ms })),
+      subContexts: ledger.map((p) => p.context),
+    },
   };
 }
 
