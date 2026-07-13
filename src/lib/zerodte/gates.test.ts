@@ -77,6 +77,32 @@ test("G-1 fail-closed: bias present but its freshness unknown (no bar timestamp)
   assert.equal(v.blocks[0]!.code, "no_market_bias");
 });
 
+// ── G-2 · opening window ───────────────────────────────────────────────────────────
+
+test("G-2: an aligned setup before 10:30 ET is BLOCKED, with the unlock time on the card", () => {
+  // QQQ short flagged 10:20 on 7/13 — aligned, but inside the opening window.
+  const v = evaluateZeroDteGates(input({ nowEtMinutes: 10 * 60 + 20 }));
+  assert.equal(v.verdict, "BLOCKED");
+  assert.equal(v.blocks.length, 1, "only the window blocks — alignment is clean");
+  assert.equal(v.blocks[0]!.code, "opening_window");
+  assert.equal(v.blocks[0]!.unlock_et, "10:30 ET");
+});
+
+test("G-2: exactly 10:30 ET unlocks (boundary inclusive)", () => {
+  const v = evaluateZeroDteGates(input({ nowEtMinutes: 10 * 60 + 30 }));
+  assert.equal(v.verdict, "COMMIT");
+});
+
+test("G-1 + G-2: a counter-tape long at 09:55 collects BOTH blocks (all reasons visible)", () => {
+  // The 7/13 SPY long: flagged 09:55 on a down tape.
+  const v = evaluateZeroDteGates(input({ direction: "long", nowEtMinutes: 9 * 60 + 55 }));
+  assert.equal(v.verdict, "BLOCKED");
+  assert.deepEqual(
+    v.blocks.map((b) => b.code),
+    ["tape_alignment", "opening_window"]
+  );
+});
+
 // ── rejection-row bridge ───────────────────────────────────────────────────────────
 
 const rejectionSource = {
@@ -92,11 +118,15 @@ const rejectionSource = {
 };
 
 test("gateRejectionFor: one row per blocked setup — primary code, ALL reasons concatenated", () => {
-  const v = evaluateZeroDteGates(input({ ticker: "SPY", direction: "long", bias: "down" }));
+  // 09:55 counter-tape long → two blocks (G-1 + G-2), one durable row.
+  const v = evaluateZeroDteGates(
+    input({ ticker: "SPY", direction: "long", bias: "down", nowEtMinutes: 9 * 60 + 55 })
+  );
   const row = gateRejectionFor(rejectionSource, v);
   assert.equal(row.ticker, "SPY");
-  assert.equal(row.gate_failed, "tape_alignment");
+  assert.equal(row.gate_failed, "tape_alignment", "primary = first-evaluated failing gate");
   assert.match(String(row.reason), /fights the DOWN market tape/);
+  assert.match(String(row.reason), /10:30 ET/, "second block's sentence rides the same row");
   // Evidence-gate columns carry through so both gate families are comparable rows.
   assert.equal(row.gross_premium, 2_400_000);
   assert.equal(row.direction, "long");

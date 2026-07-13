@@ -30,6 +30,20 @@ import type { EnrichedZeroDteSetup, ZeroDteGateFailure, ZeroDteGateRejection } f
  *  stopped arriving 15+ minutes ago is a memory, not a market state — fail closed. */
 export const MARKET_BIAS_MAX_AGE_MS = 15 * 60 * 1000;
 
+// ── G-2 · Opening-window block ──────────────────────────────────────────────────
+// Evidence (F-4): the first ~hour is the weakest window on every surface that has
+// data — 0DTE Command's own calibration runs 36.8% WR in 9:50-11:00 (n=19), signal
+// observations hour-9 36.1% (n=147) vs hour-14 60.5% (n=126), and four of 7/13's
+// five opening-window entries died at the stop. Slayer's looser 9:50 line works
+// because its regime gates carry the rest; this surface has no such backstop, so it
+// gets the full 10:30 unlock. Setups found earlier stay visible as WATCH/SKIP cards
+// carrying this unlock time — the scanner re-evaluates every ~2 minutes, so a setup
+// still alive on the tape at 10:30 commits then (nothing is lost, only the worst
+// hour of entries). The existing no-new-plays->=15:00 + hard-exit-15:30 rules are
+// unchanged and live upstream (persistZeroDteScan / PLAN_RULES).
+export const OPENING_WINDOW_UNLOCK_ET_MINUTES = 10 * 60 + 30;
+export const OPENING_WINDOW_UNLOCK_LABEL = "10:30 ET";
+
 export type ZeroDteGateBlock = {
   /** Machine-readable code — same namespace as the evidence gates' gate_failed. */
   code: ZeroDteGateFailure;
@@ -91,6 +105,20 @@ export function evaluateZeroDteGates(input: ZeroDteGateInput): ZeroDteGateVerdic
         "counter-tape 0DTE entries are blocked (7/13 evidence: counter-tape longs went 0/5 at the stop).",
       threshold: null,
       unlock_et: null,
+    });
+  }
+
+  // G-2 — opening window. Clock-based, so the block self-expires: the card carries
+  // the unlock time and the next scan cycle at/after 10:30 re-evaluates cleanly.
+  if (input.nowEtMinutes < OPENING_WINDOW_UNLOCK_ET_MINUTES) {
+    blocks.push({
+      code: "opening_window",
+      reason:
+        `No new 0DTE commits before ${OPENING_WINDOW_UNLOCK_LABEL} — the opening hour is the weakest ` +
+        "entry window on this surface (36.8% WR 9:50-11:00 on its own 38-play calibration). " +
+        `Watching; commits unlock at ${OPENING_WINDOW_UNLOCK_LABEL} if the setup is still live.`,
+      threshold: OPENING_WINDOW_UNLOCK_ET_MINUTES,
+      unlock_et: OPENING_WINDOW_UNLOCK_LABEL,
     });
   }
 
