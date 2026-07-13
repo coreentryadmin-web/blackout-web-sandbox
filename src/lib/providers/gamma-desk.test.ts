@@ -170,3 +170,13 @@ test("gammaRegimeWithHysteresis: holds prior regime until buffer cleared", () =>
   assert.equal(gammaRegimeWithHysteresis(5999, flip, "mean_revert"), "mean_revert");
   assert.equal(gammaRegimeWithHysteresis(5997, flip, "mean_revert"), "amplification");
 });
+
+test("gammaRegimeWithHysteresis: stays a pure spot-vs-flip model — no aggregate net-GEX override", () => {
+  const flip = 6000;
+  // Spot just BELOW the flip is LOCALLY short-gamma (amplification) regardless of the total-book net
+  // GEX sign — the local regime at spot and the aggregate net sign measure different things, so the
+  // label must NOT flip to mean_revert just because the book is net long. (Adversarial-refuted
+  // override; see FINDINGS.) The function takes no netGex arg by design.
+  assert.equal(gammaRegimeWithHysteresis(5999, flip, "amplification"), "amplification");
+  assert.equal(gammaRegimeWithHysteresis(6001, flip, "mean_revert"), "mean_revert");
+});

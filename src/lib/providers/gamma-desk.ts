@@ -130,7 +130,14 @@ export function gammaRegime(spot: number, flip: number | null): string {
   return spot > flip ? "mean_revert" : "amplification";
 }
 
-/** Debounce flip churn — require spot to clear flip by bufferPts before regime changes. */
+/** Debounce flip churn — require spot to clear flip by bufferPts before regime changes.
+ *
+ *  This is the INTENDED local spot-vs-flip regime model: spot just below the flip is locally
+ *  short-gamma ("amplification") even when the aggregate net GEX is positive — the local regime at
+ *  spot and the total-book net sign measure different things, so this deliberately does NOT consult
+ *  net GEX. (An earlier revision tried a net-GEX-sign override inside the buffer; an adversarial
+ *  review refuted it — the observed "amplification at +20.7B netGex" was a symptom of the desk being
+ *  horizon-blind, i.e. the two surfaces used DIFFERENT flip values, which #294 fixes.) */
 export function gammaRegimeWithHysteresis(
   spot: number,
   flip: number | null,

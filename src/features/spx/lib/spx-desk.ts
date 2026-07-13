@@ -361,6 +361,9 @@ async function resolveCanonicalDeskGex(spot: number): Promise<CanonicalDeskGexSn
   const levels = strikeTotalsToLevels(hm.gex.strike_totals);
   const king = kingFromStrikeTotals(hm.gex.strike_totals);
   const flip = pos.flip;
+  // Regime + above_gamma_flip (below) are both derived from THIS one (spot, flip) snapshot so they
+  // can't contradict. Intended local spot-vs-flip model — no net-GEX override (see the full-payload
+  // note / FINDINGS: local regime at spot ≠ the aggregate net-GEX sign).
   const regime = gammaRegimeWithHysteresis(spot, flip, lastGoodGammaRegime);
   const walls = levels.length ? topGexWalls(levels, spot, GEX_WALL_LADDER_LIMIT) : [];
 
@@ -1346,15 +1349,24 @@ export async function buildSpxDesk(): Promise<SpxDeskPayload> {
   const gammaFlip =
     intel?.gamma_flip ?? canonicalGex.gamma_flip ?? lastGoodGammaFlip ?? null;
   const aboveFlip = gammaFlip != null ? price > gammaFlip : false;
-  const intelFlipActive =
-    engineIntelOverlayEnabled() &&
-    intel != null &&
-    intel.gamma_flip != null;
-  const gammaRegimeLabel = intelFlipActive
-    ? gammaRegimeWithHysteresis(price, gammaFlip, lastGoodGammaRegime)
-    : canonicalGex.gamma_regime !== "unknown"
-      ? canonicalGex.gamma_regime
-      : lastGoodGammaRegime;
+  // SINGLE-SNAPSHOT coherence: above_gamma_flip and gamma_regime are derived from the SAME
+  // (price, gammaFlip) pair, so the two desk surfaces can never disagree for the same flip. The bug
+  // (independent of F1's horizon mismatch that #294 fixes): aboveFlip read the live `price` while the
+  // regime — in the non-intel-overlay branch — inherited canonicalGex.gamma_regime, computed against a
+  // canonical-spot snapshot AND possibly a different flip, so the label could point opposite to
+  // aboveFlip. gammaFlip already merges intel/canonical/lastGood, so both now read the identical flip.
+  //
+  // The regime stays the INTENDED local spot-vs-flip model (gammaRegimeWithHysteresis) — it does NOT
+  // consult the aggregate net-GEX sign. An adversarial review correctly refuted an earlier attempt to
+  // make net-GEX authoritative here: spot just below the flip is LOCALLY short-gamma (amplification)
+  // even when total-book netGex is positive — they measure different things (local regime at spot vs
+  // the whole book). See docs/audit/FINDINGS.md.
+  const gammaRegimeLabel =
+    gammaFlip != null
+      ? gammaRegimeWithHysteresis(price, gammaFlip, lastGoodGammaRegime)
+      : canonicalGex.gamma_regime !== "unknown"
+        ? canonicalGex.gamma_regime
+        : lastGoodGammaRegime;
   const finalWalls = canonicalGex.gex_walls;
   const gexAgeMs = canonicalGex.gex_age_ms;
   const gexStale = canonicalGex.gex_stale;
