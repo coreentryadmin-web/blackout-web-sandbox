@@ -187,3 +187,28 @@ describe("router: universal_lookup intent", () => {
     assert.equal(bieFollowups("universal_lookup").length, 3);
   });
 });
+
+describe("router: system_diagnostic intent", () => {
+  test("'why isn't X forming' routes to system_diagnostic — BEFORE REASONING_RE (not Claude)", () => {
+    assert.equal(classifyBieIntent("why isn't NVDA GEX forming", NO_LEDGER)?.intent, "system_diagnostic");
+    assert.equal(classifyBieIntent("why aren't MSFT beads forming on the map", NO_LEDGER)?.intent, "system_diagnostic");
+    assert.equal(classifyBieIntent("why isn't SPX gex updating", NO_LEDGER)?.intent, "system_diagnostic");
+  });
+
+  test("pipeline-health questions route to system_diagnostic", () => {
+    assert.equal(classifyBieIntent("is the flow pipeline healthy", NO_LEDGER)?.intent, "system_diagnostic");
+    assert.equal(classifyBieIntent("what's failing right now", NO_LEDGER)?.intent, "system_diagnostic");
+  });
+
+  test("the diagnostic carries the ticker when named", () => {
+    assert.equal(classifyBieIntent("why isn't NVDA GEX forming", NO_LEDGER)?.ticker, "NVDA");
+  });
+
+  test("a normal Vector question is NOT stolen by the diagnostic", () => {
+    assert.equal(classifyBieIntent("which walls are building on ASTS", NO_LEDGER)?.intent, "vector_read");
+  });
+
+  test("bieFollowups has a system_diagnostic branch", () => {
+    assert.equal(bieFollowups("system_diagnostic").length, 3);
+  });
+});
