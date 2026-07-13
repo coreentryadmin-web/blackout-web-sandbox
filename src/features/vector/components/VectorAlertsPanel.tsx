@@ -11,6 +11,12 @@ type Props = {
   onAdd: (kind: AlertKind, tolerancePct?: number) => void;
   onToggle: (id: string) => void;
   onRemove: (id: string) => void;
+  /** Device OS-notification opt-in (slice 2). Undefined → the notify control is hidden entirely. */
+  notifyEnabled?: boolean;
+  /** Live browser permission, so the control can show granted / blocked / needs-prompt honestly. */
+  notifyPermission?: NotificationPermission;
+  /** Toggle OS notifications for this device (prompts for permission on enable). */
+  onToggleNotify?: () => void;
 };
 
 const KIND_LABEL: Record<AlertKind, string> = {
@@ -24,7 +30,17 @@ const KIND_LABEL: Record<AlertKind, string> = {
  * alerts surface here + as a toast + in the desk terminal. Rules persist to localStorage (handled by
  * the shell) so they survive reloads. Purely presentational — all state lives in the shell.
  */
-export function VectorAlertsPanel({ ticker, rules, recent, onAdd, onToggle, onRemove }: Props) {
+export function VectorAlertsPanel({
+  ticker,
+  rules,
+  recent,
+  onAdd,
+  onToggle,
+  onRemove,
+  notifyEnabled,
+  notifyPermission,
+  onToggleNotify,
+}: Props) {
   const [kind, setKind] = useState<AlertKind>("wall-touch");
   const [tol, setTol] = useState<string>("0.1");
 
@@ -33,11 +49,37 @@ export function VectorAlertsPanel({ ticker, rules, recent, onAdd, onToggle, onRe
     onAdd(kind, pct);
   };
 
+  // The notify control is shown only when the shell wires it (onToggleNotify present). "Blocked"
+  // is a terminal browser state the button can't fix — the member must change it in site settings —
+  // so we surface that honestly instead of a toggle that would silently do nothing.
+  const notifyBlocked = notifyPermission === "denied";
+  const notifyState: "on" | "off" | "blocked" = notifyBlocked ? "blocked" : notifyEnabled ? "on" : "off";
+  const notifyLabel =
+    notifyState === "on" ? "🔔 Notify: on" : notifyState === "blocked" ? "🔕 Blocked in browser" : "🔔 Notify me";
+  const notifyTitle =
+    notifyState === "on"
+      ? "OS notifications on for this device — you'll be pinged when a rule fires while this tab is in the background. Click to turn off."
+      : notifyState === "blocked"
+        ? "Notifications are blocked for this site in your browser — re-enable them in the browser's site settings to use OS alerts."
+        : "Get an OS notification when a rule fires while this tab is backgrounded (in-page toast + terminal always show regardless).";
+
   return (
     <section className="vector-alerts-panel" aria-label={`${ticker} alerts`}>
       <header className="vector-alerts-head">
         <span className="vector-alerts-title">Alerts</span>
         <span className="vector-alerts-sub">{ticker} · price hits wall / crosses flip</span>
+        {onToggleNotify && (
+          <button
+            type="button"
+            className={`vector-alerts-notify ${notifyState}`}
+            onClick={onToggleNotify}
+            disabled={notifyState === "blocked"}
+            aria-pressed={notifyState === "on"}
+            title={notifyTitle}
+          >
+            {notifyLabel}
+          </button>
+        )}
       </header>
 
       <div className="vector-alerts-add">

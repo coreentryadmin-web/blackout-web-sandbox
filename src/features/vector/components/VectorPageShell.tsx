@@ -16,7 +16,9 @@ import { VectorGexLadder } from "@/features/vector/components/VectorGexLadder";
 import { VectorRegimeBanner } from "@/features/vector/components/VectorRegimeBanner";
 import { VectorAlertsPanel } from "@/features/vector/components/VectorAlertsPanel";
 import type { AlertRule, AlertKind, FiredAlert } from "@/features/vector/lib/vector-alerts";
-import { loadAlertRules, saveAlertRules, buildAlertRule } from "@/features/vector/lib/vector-alerts-store";
+import { loadAlertRules, saveAlertRules, buildAlertRule, loadNotifyEnabled, saveNotifyEnabled } from "@/features/vector/lib/vector-alerts-store";
+import { notificationForFire, shouldSystemNotify } from "@/features/vector/lib/vector-notify";
+import { enableVectorNotifications, notifyPermission, presentSystemNotification } from "@/features/vector/lib/vector-notify-client";
 import { deriveVectorRegime, type VectorRegime } from "@/features/vector/lib/vector-regime";
 import { deriveWallProximity, type WallProximity } from "@/features/vector/lib/vector-wall-proximity";
 import { deriveGammaMagnet, type GammaMagnet } from "@/features/vector/lib/vector-gamma-magnet";
@@ -115,6 +117,11 @@ export function VectorPageShell({
   const [alertRules, setAlertRules] = useState<AlertRule[]>([]);
   const [recentAlerts, setRecentAlerts] = useState<FiredAlert[]>([]);
   const [toast, setToast] = useState<FiredAlert | null>(null);
+  // OS-notification opt-in for this device (delivery slice 2). `notifyEnabled` is the member's
+  // intent (persisted); `notifyPerm` mirrors the browser permission so the panel can show the real
+  // state (granted / denied / needs-prompt). Both are read after mount to stay SSR-safe.
+  const [notifyEnabled, setNotifyEnabled] = useState(false);
+  const [notifyPerm, setNotifyPerm] = useState<NotificationPermission>("default");
   const [magnet, setMagnet] = useState<GammaMagnet | null>(() =>
     deriveGammaMagnet({
       spot: initialBars.length ? initialBars[initialBars.length - 1]!.close : null,
@@ -154,6 +161,31 @@ export function VectorPageShell({
     return () => clearTimeout(id);
   }, [toast]);
 
+  // Hydrate the OS-notification opt-in + live browser permission after mount (localStorage/Notification
+  // are client-only). If the member had opted in but later revoked permission in the browser, the
+  // panel reflects that mismatch rather than silently pretending alerts will ring.
+  useEffect(() => {
+    setNotifyEnabled(loadNotifyEnabled());
+    setNotifyPerm(notifyPermission());
+  }, []);
+
+  // Toggle OS notifications for this device. Enabling prompts for permission (and opportunistically
+  // registers a web-push subscription when VAPID is configured — inert otherwise). We only persist
+  // the opt-in when permission actually lands 'granted', so a dismissed/denied prompt doesn't leave
+  // the toggle stuck "on" with no way for banners to fire.
+  const handleToggleNotify = async () => {
+    if (notifyEnabled) {
+      setNotifyEnabled(false);
+      saveNotifyEnabled(false);
+      return;
+    }
+    const perm = await enableVectorNotifications();
+    setNotifyPerm(perm);
+    const on = perm === "granted";
+    setNotifyEnabled(on);
+    saveNotifyEnabled(on);
+  };
+
   const persistRules = (next: AlertRule[]) => {
     setAlertRules(next);
     saveAlertRules(activeTicker, next);
@@ -167,6 +199,14 @@ export function VectorPageShell({
     if (!fired.length) return;
     setRecentAlerts((prev) => [...fired].reverse().concat(prev).slice(0, 20));
     setToast(fired[fired.length - 1]!);
+    // OS notification (slice 2) — only when the member opted in, granted permission, and the tab is
+    // HIDDEN. Permission is read live (not the possibly-stale `notifyPerm`) so a mid-session revoke is
+    // honoured. When the tab is visible the toast + terminal already cover it; the OS channel is for
+    // the tabbed-away case. `tag`-based dedup in the payload collapses repeated ticks at one level.
+    const hidden = typeof document !== "undefined" && document.hidden;
+    if (shouldSystemNotify({ enabled: notifyEnabled, permission: notifyPermission(), hidden })) {
+      for (const f of fired) void presentSystemNotification(notificationForFire(f));
+    }
   };
 
   const candleAgeSec =
@@ -281,6 +321,9 @@ export function VectorPageShell({
               onAdd={handleAddRule}
               onToggle={handleToggleRule}
               onRemove={handleRemoveRule}
+              notifyEnabled={notifyEnabled}
+              notifyPermission={notifyPerm}
+              onToggleNotify={handleToggleNotify}
             />
           </div>
         </div>
