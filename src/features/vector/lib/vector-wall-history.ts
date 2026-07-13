@@ -45,6 +45,28 @@ const MAX_HISTORY = 1920;
 /** Max simultaneous strike-keyed bead rows per side on the chart (reference shows ~4–6). */
 export const MAX_STRIKE_TRAILS_PER_SIDE = 8;
 
+/**
+ * How many walls PER SIDE PER BUCKET count as "dominant" and therefore earn a bead that bucket.
+ *
+ * WHY THIS EXISTS: the recorder stores the full ladder (`VECTOR_WALL_NODES_PER_SIDE` = 20 strikes
+ * per side) in every 15s sample. If a trail draws a bead in every bucket where a strike appears
+ * ANYWHERE in that 20-deep ladder, then the persistent structural strikes near spot (round numbers
+ * that never leave a 20-wide set) get a bead in every bucket → every trail runs full-width from the
+ * session open, and a wall that only became dominant intraday is invisible as a "new" wall because
+ * it was already sitting in the ladder as a minor member since the open. That is the member report
+ * ("SPX had the exact same walls all day — no new walls") and it does NOT match the reference
+ * product, where a wall's beads start at the candle it became a real wall and stop/fade when it
+ * drops out (Skylit AMD/TSLA/ARM refs: staggered births, gaps, short recent clusters, and only the
+ * genuinely persistent levels run full-width).
+ *
+ * Keeping only each bucket's top-N by |gamma| share restores that: a level that is always among the
+ * strongest stays full-width (correctly — it WAS a wall all day), while one that only spikes into
+ * the dominant set at 2pm gets a trail born at 2pm. Tracks spot naturally, since gamma concentrates
+ * near the money, so walls form where price actually is. 6 matches the reference's ~4–6 visible
+ * levels per side without starving the top-N render cap above.
+ */
+export const DOMINANT_WALLS_PER_BUCKET = 6;
+
 /** Live session: only render wall beads within this many seconds of the chart's leading edge. */
 export const LIVE_TRAIL_LOOKBACK_SEC = 45 * 60;
 
@@ -86,13 +108,22 @@ export function trailForRank(
 export function trailsByStrike(
   history: WallHistorySample[],
   side: "callWalls" | "putWalls",
-  lens: VectorWallLens = "gex"
+  lens: VectorWallLens = "gex",
+  dominantPerBucket: number = DOMINANT_WALLS_PER_BUCKET
 ): Map<number, StrikeTrailPoint[]> {
   const map = new Map<number, StrikeTrailPoint[]>();
   for (const sample of history) {
     const walls = wallsForLens(sample, lens);
     if (!walls) continue;
-    for (const level of walls[side]) {
+    // Only this bucket's DOMINANT walls earn a bead — see DOMINANT_WALLS_PER_BUCKET. Sorting by
+    // |pct| here (the recorded ladder is stored strike-ordered, not strength-ordered) and slicing
+    // to top-N is what gives each wall an HONEST birth: a strike enters its trail at the first
+    // bucket it ranks among the strongest, not at the open just because it sat in the wide ladder.
+    const dominant =
+      dominantPerBucket > 0 && walls[side].length > dominantPerBucket
+        ? [...walls[side]].sort((a, b) => Math.abs(b.pct) - Math.abs(a.pct)).slice(0, dominantPerBucket)
+        : walls[side];
+    for (const level of dominant) {
       const strike = Math.round(level.strike);
       if (!Number.isFinite(strike)) continue;
       let pts = map.get(strike);

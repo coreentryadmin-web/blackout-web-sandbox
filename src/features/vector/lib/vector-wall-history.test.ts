@@ -123,6 +123,34 @@ test("trailsByStrike: groups horizontal bead rows per strike — migration split
   assert.deepEqual(callTrails.get(6810)?.map((p) => p.time), [220]);
 });
 
+test("trailsByStrike: a strike earns beads ONLY in buckets where it is a DOMINANT wall (birth ≠ session open)", () => {
+  // The recorder stores a wide ladder (up to 20/side). 6900 sits at the BOTTOM of that ladder for
+  // the first two buckets (rank 8 → below the top-6 dominant cut), then becomes the #1 wall. Its
+  // trail must START when it became dominant (220), not at the open just because it was a minor
+  // ladder member since 100 — the "SPX had the same walls all day" fix.
+  const wide = (strikes: number[]): GexWalls => ({
+    callWalls: strikes.map((strike, i) => ({ strike, pct: 10 - i })),
+    putWalls: [],
+  });
+  const early = wide([7000, 6990, 6980, 6970, 6960, 6950, 6940, 6900]); // 6900 is rank 8 (excluded)
+  const late = wide([6900, 7000, 6990, 6970, 6960, 6950]); // 6900 now rank 1 (dominant)
+  const history: WallHistorySample[] = [
+    { time: 100, walls: early },
+    { time: 160, walls: early },
+    { time: 220, walls: late },
+  ];
+  const trails = trailsByStrike(history, "callWalls");
+  // Born at 220 (became dominant), NOT 100 — the whole point of the fix.
+  assert.deepEqual(trails.get(6900)?.map((p) => p.time), [220]);
+  // A genuinely persistent top wall still runs full-width (correct — it WAS a wall all session).
+  assert.deepEqual(trails.get(7000)?.map((p) => p.time), [100, 160, 220]);
+  // 6940 was only ever rank 7 (below the cut) then dropped out → no trail at all.
+  assert.equal(trails.has(6940), false);
+  // Lifecycle carries the honest birth through.
+  const life = new Map(strikeTrailLifecycle(history, "callWalls").map((t) => [t.strike, t]));
+  assert.equal(life.get(6900)?.bornAt, 220);
+});
+
 test("strikeTrailLifecycle: a late-appearing strike is birth-anchored, a departed one stops", () => {
   // 6800 is a wall in the first two buckets then drops out; 6810 only appears in the last two.
   const history: WallHistorySample[] = [
