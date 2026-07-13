@@ -10,11 +10,7 @@ import { roundFloats } from "@/lib/round-floats";
 import { bucketWallSampleTime, buildWallHistorySample } from "./vector-wall-sample";
 import { appendSessionWallSample } from "./vector-wall-persist";
 import { VECTOR_WALL_NODES_PER_SIDE } from "./vector-bar-timeframes";
-import { getVectorGexWallsForHorizon, getVectorGammaFlipForHorizon } from "./vector-snapshot";
-
-/** Narrowed DTE horizons recorded alongside the blended "all" rail so 0DTE/weekly/monthly show
- *  frozen point-in-time clusters after close too (not the single current-column fallback). */
-const RECORDED_HORIZONS = ["0dte", "weekly", "monthly"] as const;
+import { buildNarrowedHorizonWallSamples } from "./vector-snapshot";
 
 /**
  * Options for the universe build. `recordWallHistory` makes the build ALSO
@@ -113,31 +109,24 @@ export async function buildVectorUniverseSnapshot(
         // append is idempotent (union-by-time) and self-catching.
         if (sample) await appendSessionWallSample(sessionYmd, sample, ticker);
 
-        // Per-horizon rails: record the SAME bucket for 0DTE/weekly/monthly too, so those
-        // horizons accumulate their own point-in-time trail and show frozen clusters after close
-        // (not the single current-column). getVectorGexWallsForHorizon leads with the per-expiry
-        // Polygon chain (shared banded-chain cache across the three horizons → one fetch per
-        // ticker, not three); the flip shares that chain's memo. Best-effort per horizon: a miss
-        // never blocks the "all" rail (already durable above) or the scanner row (returned below).
+        // Per-horizon rails: record the SAME bucket for 0DTE/weekly/monthly too, via the SHARED
+        // recorder the live hub uses. Two behaviour changes vs the old inline loop (both fix the
+        // frozen/sparse SPX 0DTE rail): (1) when a horizon's per-expiry reconstruction is empty we
+        // FALL BACK to the blended near-term walls (this bucket's fresh reading) instead of dropping
+        // the bucket — the documented "null → blended near-term walls" contract; (2) an unexpected
+        // throw is surfaced (logged) rather than silently swallowed, so a chronic miss is diagnosable
+        // instead of invisible. Still best-effort: never blocks the "all" rail or the scanner row.
         if (spot && spot > 0) {
-          for (const horizon of RECORDED_HORIZONS) {
-            try {
-              const [hWalls, hFlip] = await Promise.all([
-                getVectorGexWallsForHorizon(ticker, horizon),
-                getVectorGammaFlipForHorizon(ticker, horizon),
-              ]);
-              if (hWalls && (hWalls.callWalls.length > 0 || hWalls.putWalls.length > 0)) {
-                const hSample = buildWallHistorySample({
-                  time: sampleTime,
-                  gexWalls: hWalls,
-                  gammaFlip: hFlip,
-                  vexWalls: null,
-                  vexFlip: null,
-                });
-                if (hSample) await appendSessionWallSample(sessionYmd, hSample, ticker, horizon);
-              }
-            } catch {
-              /* per-horizon recording is best-effort — never fail the build over it */
+          const narrowed = await buildNarrowedHorizonWallSamples(ticker, sampleTime, {
+            walls: gexWalls,
+            flip: hm?.gex?.flip ?? null,
+          });
+          for (const r of narrowed) {
+            if (r.sample) await appendSessionWallSample(sessionYmd, r.sample, ticker, r.horizon);
+            else if (r.source === "error") {
+              console.warn(
+                `[vector-universe] ${ticker} ${r.horizon} narrowed-wall recording threw: ${r.reason ?? "unknown"}`
+              );
             }
           }
         }
