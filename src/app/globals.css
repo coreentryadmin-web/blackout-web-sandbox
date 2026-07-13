@@ -15267,8 +15267,10 @@ body::before {
 
   /* ── HELIX Pro — professional desk chrome ─────────────────────────────── */
 
+  /* Framed page header — a clear bottom rule + breathing room separates the
+     title block from the toolbar/tape beneath it (was floating, unframed). */
   .helix-pro-header {
-    @apply flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between;
+    @apply flex flex-col gap-4 pb-4 border-b border-white/10 lg:flex-row lg:items-end lg:justify-between;
   }
 
   .helix-pro-header-copy {
@@ -15276,19 +15278,22 @@ body::before {
   }
 
   .helix-pro-kicker {
-    @apply font-mono text-[10px] uppercase tracking-[0.28em] text-cyan-400/75;
+    @apply font-mono text-[11px] font-semibold uppercase tracking-[0.3em] text-cyan-300/90;
   }
 
   .helix-pro-title-row {
-    @apply flex items-center gap-3 mt-1;
+    @apply flex items-center gap-3.5 mt-1.5;
   }
 
+  /* Prominent institutional page title — big, bold, high-contrast. */
   .helix-pro-title {
-    @apply font-mono text-2xl font-bold uppercase tracking-[0.12em] text-white;
+    @apply font-mono text-3xl font-extrabold uppercase tracking-[0.14em] text-white md:text-[2.5rem];
+    line-height: 1.05;
+    text-shadow: 0 0 28px rgba(191, 95, 255, 0.22);
   }
 
   .helix-pro-subtitle {
-    @apply font-mono text-[11px] text-sky-300/70 mt-1 max-w-xl;
+    @apply font-mono text-[12px] text-sky-300/80 mt-2 max-w-xl;
   }
 
   .helix-pro-tide {
@@ -15458,8 +15463,10 @@ body::before {
   }
 
   .helix-pro-rail .desk-panel h3 {
-    font-size: 11px;
-    letter-spacing: 0.2em;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.18em;
+    color: rgba(226, 232, 240, 0.92);
   }
 
   .helix-pro-rail .desk-panel .border-b {
@@ -15475,7 +15482,7 @@ body::before {
   }
 
   .helix-pro-rail-section-label {
-    @apply font-mono text-[9px] uppercase tracking-[0.2em] text-sky-300/55 px-0.5;
+    @apply font-mono text-[11px] font-bold uppercase tracking-[0.22em] text-sky-200/80 px-0.5;
   }
 
   .helix-pro-disclaimer {
@@ -15961,20 +15968,27 @@ body::before {
   }
 
   .helix-tape-chrome {
-    @apply flex items-start justify-between gap-4 shrink-0 px-4 py-3 border-b border-white/10;
-    background: rgba(8, 9, 15, 0.88);
+    @apply flex items-start justify-between gap-4 shrink-0 px-5 py-3.5 border-b border-white/10;
+    background: linear-gradient(180deg, rgba(10, 11, 18, 0.95) 0%, rgba(8, 9, 15, 0.88) 100%);
+  }
+
+  /* Left accent bar frames the section title so "FLOW PRINTS" reads as a
+     deliberate header, not floating text. */
+  .helix-tape-chrome-title {
+    @apply pl-3 border-l-2 border-purple/60;
   }
 
   .helix-tape-kicker {
-    @apply font-mono text-[9px] uppercase tracking-[0.28em] text-cyan-400/70;
+    @apply font-mono text-[10px] font-semibold uppercase tracking-[0.28em] text-cyan-300/85;
   }
 
   .helix-tape-heading {
-    @apply font-mono text-[15px] font-bold uppercase tracking-[0.16em] text-white mt-0.5;
+    @apply font-mono text-xl font-extrabold uppercase tracking-[0.2em] text-white mt-1;
+    line-height: 1.1;
   }
 
   .helix-tape-hint {
-    @apply font-mono text-[10px] text-sky-300/55 mt-1 hidden sm:block;
+    @apply font-mono text-[11px] text-sky-300/60 mt-1.5 hidden sm:block;
   }
 
   .helix-tape-chrome-meta {
@@ -16002,6 +16016,13 @@ body::before {
     -webkit-overflow-scrolling: touch;
   }
 
+  /* width:100% is load-bearing: the <colgroup> gives every column a fixed rem
+     width whose sum (~52rem) is far narrower than a desktop viewport. Under
+     table-layout:fixed the browser distributes the leftover width across the
+     specified columns, so the tape spans the full desk instead of collapsing to
+     its ~52rem content width and leaving a dead gutter on the right. The inline
+     minWidth on the <table> is only the horizontal-scroll floor for narrow
+     screens — it must never be mistaken for the target width. */
   .helix-tape-grid {
     width: 100%;
     border-collapse: collapse;
@@ -16035,7 +16056,7 @@ body::before {
   }
 
   .helix-tape-col-row th {
-    @apply px-2 py-2 font-mono text-[9px] font-semibold uppercase tracking-[0.16em] text-sky-300/65 whitespace-nowrap border-b border-white/10;
+    @apply px-2.5 py-2.5 font-mono text-[10px] font-semibold uppercase tracking-[0.16em] text-sky-300/75 whitespace-nowrap border-b border-white/10;
     background: rgba(8, 9, 14, 0.98);
     box-shadow: 0 2px 0 rgba(0, 0, 0, 0.35);
   }
@@ -16131,7 +16152,7 @@ body::before {
   }
 
   .helix-tape-cell {
-    @apply px-2 py-2 align-middle whitespace-nowrap;
+    @apply px-2.5 py-2.5 align-middle whitespace-nowrap;
   }
 
   .helix-tape-time {
@@ -16203,7 +16224,7 @@ body::before {
   }
 
   .helix-tape-rule {
-    @apply font-mono text-[9px] uppercase tracking-wide text-cyan-300/85;
+    @apply inline-flex items-center font-mono text-[9px] font-semibold uppercase tracking-wide text-cyan-300/90 px-1.5 py-0.5 rounded border border-sky-400/20 bg-sky-400/5;
   }
 
   .helix-tape-score {
@@ -16211,11 +16232,11 @@ body::before {
   }
 
   .helix-tape-signals {
-    @apply flex flex-nowrap gap-0.5 overflow-hidden;
+    @apply flex flex-nowrap gap-1 overflow-hidden;
   }
 
   .helix-tape-signal {
-    @apply inline-flex items-center font-mono text-[8px] font-bold uppercase tracking-wider px-1 py-px rounded border leading-none;
+    @apply inline-flex items-center font-mono text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded border leading-none;
   }
 
   .helix-tape-signal--bull {

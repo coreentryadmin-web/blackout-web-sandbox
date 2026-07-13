@@ -22,11 +22,17 @@ export function HelixPageShell() {
       contentClassName={clsx(nativeShell ? "helix-page-content-native !py-0" : undefined)}
     >
       {!nativeShell && (
-        <div className="content-rail helix-pro-header">
+        // Header shares the SAME full-bleed rail (content-rail max-w-none) as the
+        // tape below it, so the "HELIX" title's left edge aligns with the table's
+        // left edge. Previously the header was a plain .content-rail (capped at
+        // --content-max / 80rem, centered) while the tape was max-w-none full-bleed —
+        // on wide screens the title floated ~320px inset from the full-width content,
+        // reading as an un-framed, misaligned page.
+        <div className="content-rail max-w-none helix-pro-header">
           <div className="helix-pro-header-copy">
             <p className="helix-pro-kicker">Institutional flow intelligence</p>
             <div className="helix-pro-title-row">
-              <ProductMark product="helix" size={36} animated={false} />
+              <ProductMark product="helix" size={44} animated={false} />
               <h1 className="helix-pro-title">HELIX</h1>
             </div>
             <p className="helix-pro-subtitle">
@@ -39,7 +45,7 @@ export function HelixPageShell() {
       <div
         className={clsx(
           "content-rail max-w-none ios-native-content-rail",
-          nativeShell ? "helix-page-inner-native" : "mt-4 helix-page-inner"
+          nativeShell ? "helix-page-inner-native" : "mt-5 helix-page-inner"
         )}
       >
         {nativeShell && (

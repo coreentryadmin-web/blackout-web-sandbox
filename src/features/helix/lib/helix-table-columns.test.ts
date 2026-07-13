@@ -44,6 +44,40 @@ describe("tableMinWidth", () => {
     const cols = columnsForDensity("essential");
     assert.equal(tableMinWidth(cols), `${cols.reduce((s, c) => s + parseFloat(c.width), 0)}rem`);
   });
+
+  // Full-width contract: the tape uses table-layout:fixed + width:100%. For the
+  // browser to STRETCH the fixed columns across the desk (rather than leave a
+  // right-hand gutter), every column must carry a real positive width and the
+  // summed min width must stay comfortably under a desktop viewport so there is
+  // always slack to distribute. A NaN/zero width here would silently collapse
+  // the table back to content width — the exact "crammed into 40%" regression.
+  it("every column has a positive rem width at every density", () => {
+    for (const density of ["essential", "standard", "full"] as const) {
+      for (const col of columnsForDensity(density)) {
+        const w = parseFloat(col.width);
+        assert.ok(Number.isFinite(w) && w > 0, `${col.id} width invalid: ${col.width}`);
+      }
+    }
+  });
+
+  it("min width stays well under a desktop rail so width:100% always has slack", () => {
+    const full = parseFloat(tableMinWidth(columnsForDensity("full")));
+    assert.ok(full < 80, `full-density min width ${full}rem should be < 80rem desktop rail`);
+  });
+});
+
+describe("column slack distribution", () => {
+  // Under table-layout:fixed the leftover width is spread proportionally to the
+  // specified column widths, so the WIDEST column absorbs the most slack. Signals
+  // (the intel column) is intentionally the widest so the extra desk space makes
+  // the flags/notional context breathe — not the 3rem TIME/DTE columns.
+  it("signals is the widest column at every density so it absorbs the most slack", () => {
+    for (const density of ["essential", "standard", "full"] as const) {
+      const cols = columnsForDensity(density);
+      const widest = cols.reduce((a, b) => (parseFloat(b.width) > parseFloat(a.width) ? b : a));
+      assert.equal(widest.id, "signals", `widest at ${density} was ${widest.id}`);
+    }
+  });
 });
 
 describe("groupStartIds", () => {
