@@ -2,7 +2,7 @@
 
 import { clsx } from "clsx";
 import type { SpxDeskPayload } from "@/features/spx/lib/spx-desk";
-import { fmtPremium, fmtPrice } from "@/lib/api";
+import { fmtPct, fmtPremium, fmtPrice } from "@/lib/api";
 import { ProductMark } from "@/components/marks/ProductMark";
 import { SpxLiveSpotPrice, priceVsLevel, PriceLevelIndicator } from "./SpxLiveSpotPrice";
 
@@ -92,8 +92,12 @@ function DeskTopStatsRow({
       title={stalled ? METRIC_TIPS.stalled : undefined}
     >
       {/* Single numeric strip (user spec 2026-07-13): EMA · SMA · Session blocks first,
-          then the stat pills — one line at desktop, graceful two-line wrap below 1440. */}
+          then the stat pills — one line at desktop, graceful two-line wrap below 1440.
+          Live SPX spot LEADS the strip (user-directed 2026-07-14: moved here from the matrix
+          column so the Dealer Gamma Map gets the full panel height; no snapshot caption —
+          the strip's stale-dimming carries frozen-tape honesty). */}
       <div className="spx-desk-top-stats spx-desk-top-stats--compact spx-desk-top-stats--strip">
+        <StripSpot desk={desk} showValues={showValues} />
         <InlineMetricGroup
           title="EMA"
           tone="orange"
@@ -233,6 +237,30 @@ type InlineMetric = {
  * inline beneath — same silhouette as StatPill so EMA/SMA/Session sit flush with the
  * stat pills on one line. Every value keeps its tone color + PriceLevelIndicator arrow.
  */
+/** Live SPX spot as the strip's lead element — price + day % in the pill silhouette.
+ *  Deliberately caption-free ("last session snapshot" line removed, user-directed 2026-07-14);
+ *  the strip-level stale dimming already communicates a frozen tape. */
+function StripSpot({ desk, showValues }: { desk?: SpxDeskPayload; showValues: boolean }) {
+  const bull = (desk?.spx_change_pct ?? 0) >= 0;
+  return (
+    <div
+      className={clsx("spx-hero-stat-pill spx-strip-spot", bull ? "border-emerald-500/40" : "border-rose-500/40")}
+      title="Live SPX spot — index level and day change"
+      aria-label="SPX spot price"
+    >
+      <p className="spx-hero-stat-label">SPX</p>
+      <div className="spx-hero-stat-value-row">
+        <p className={clsx("spx-strip-spot-price t-num", bull ? "text-bull" : "text-bear-text")}>
+          {showValues ? fmtPrice(desk?.price ?? null, 2) : "—"}
+        </p>
+        <p className={clsx("spx-strip-spot-pct t-num", bull ? "text-bull" : "text-bear-text")}>
+          {showValues ? fmtPct(desk?.spx_change_pct ?? null) : ""}
+        </p>
+      </div>
+    </div>
+  );
+}
+
 function InlineMetricGroup({
   title,
   tone = "bull",

@@ -45,8 +45,14 @@ test("SpxDashboard mounts triple desk: Largo | matrix | embedded Vector chart (n
   assert.match(src, /spx-left-commentary/);
   assert.match(src, /SpxGexMatrixHeatmap/);
   assert.match(src, /spx-left-matrix/);
-  assert.match(src, /spx-matrix-column-spot/);
-  assert.match(src, /SpxLiveSpotPrice/);
+  // Declutter contract (user-directed 2026-07-14): the matrix column carries NO spot module
+  // (spot lives in the header strip via StripSpot) and the session time bar is unrendered —
+  // the Dealer Gamma Map owns the full column height.
+  assert.equal(src.includes("spx-matrix-column-spot"), false, "matrix column must not mount the spot module");
+  assert.equal(src.includes("<SpxSessionTimeBar"), false, "session time bar must not be rendered");
+  // Focus toggle lives in the Vector toolbar, left of Replay, via the replay lead slot.
+  assert.match(src, /toolbarReplayLeadSlot/);
+  assert.match(src, /spx-desk-focus-btn/);
   // Embedded Vector chart column — same shell as /vector, chart-only, pinned defaults 0DTE + 3min.
   assert.match(src, /VectorPageShell/);
   assert.match(src, /spx-sniper-vector-col/);

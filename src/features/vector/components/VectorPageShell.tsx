@@ -76,6 +76,9 @@ type Props = {
    *  (SPX Slayer) can align its strike ladder to the chart's live y-scale. Only meaningful
    *  for embeds; the standalone /vector page never sets it. See vector-price-scale-map.ts. */
   onPriceScaleRender?: (map: VectorPriceScaleMap) => void;
+  /** Host-desk slot rendered in the chart toolbar immediately LEFT of the Replay control
+   *  (user-directed 2026-07-14: the desk focus toggle lives there after the time bar's removal). */
+  toolbarReplayLeadSlot?: React.ReactNode;
 };
 
 function formatSessionLabel(ymd: string): string {
@@ -104,6 +107,7 @@ export function VectorPageShell({
   defaultDteHorizon,
   defaultTimeframe,
   onPriceScaleRender,
+  toolbarReplayLeadSlot,
 }: Props) {
   const chartOnly = embed === "chart-only";
   const router = useRouter();
@@ -315,6 +319,7 @@ export function VectorPageShell({
           onAlertsFired={handleAlertsFired}
           leadSlot={chartLead}
           trailSlot={chartFreshness}
+          replayLeadSlot={toolbarReplayLeadSlot}
           regimeSlot={<VectorRegimeBanner regime={regime} />}
         />
         {toast && (
