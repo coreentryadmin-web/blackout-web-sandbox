@@ -137,6 +137,11 @@ export type VerdictInputs = {
   macro: VerdictMacro | null;
   breadth: VerdictBreadth | null;
   related: string[] | null;
+  /** Night Hawk Cortex evidence citation (PR-H) — pinned commit-time record when a
+   *  0DTE play/skip exists this session, live composition otherwise. Optional +
+   *  nullable so pre-existing callers/tests are untouched; an "unavailable" citation
+   *  is routed into `unavailable` by the server half, never passed here. */
+  cortex?: import("./cortex-read").CortexCitation | null;
   /** Legs that were REQUESTED (per plan) but came back null/thin — surfaced, never omitted. */
   unavailable: BieUnavailableSource[];
 };
@@ -245,6 +250,24 @@ export function assembleVerdictEnvelope(inp: VerdictInputs): BieAnswerEnvelope {
   // Related peers.
   if (inp.related && inp.related.length > 0) {
     sections.push({ title: "Peers", body: inp.related.slice(0, 6).join(", "), provenance: { source: "Polygon related", freshness: "recent" } });
+  }
+
+  // Night Hawk Cortex evidence (PR-H) — the 0DTE evidence composer's take, cited
+  // alongside the verdict's own legs. A PINNED citation is the commit-time record
+  // (fact); a LIVE one is a fresh deterministic composition (calc — derived now,
+  // not a record). Only rendered when a citation exists — never fabricated.
+  if (inp.cortex) {
+    const src = inp.cortex.mode === "pinned" ? "Night Hawk Cortex (pinned at commit)" : "Night Hawk Cortex (live)";
+    sections.push({
+      title: "Cortex evidence (0DTE)",
+      body: [inp.cortex.headline, ...inp.cortex.lines.map((l) => `- ${l}`)].join("\n"),
+      provenance: { source: src, asOf: inp.cortex.asOf },
+    });
+    evidence.push({
+      kind: inp.cortex.mode === "pinned" ? "fact" : "calc",
+      text: inp.cortex.headline,
+      provenance: { source: src, asOf: inp.cortex.asOf },
+    });
   }
 
   // Confidence: evidence quality + coverage. High needs ≥3 substantive sections + a regime read.

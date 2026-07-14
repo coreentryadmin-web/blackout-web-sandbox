@@ -26,7 +26,8 @@ export type BieIntent =
   | "universal_lookup"
   | "verdict"
   | "compound_lookup"
-  | "system_diagnostic";
+  | "system_diagnostic"
+  | "cortex_read";
 
 export type BieRoute = {
   intent: BieIntent;
@@ -174,6 +175,26 @@ function isDiagnosticQuestion(q: string): boolean {
   return DIAGNOSTIC_RE.test(q);
 }
 
+// Cortex read (PR-H) — the deterministic "explain the 0DTE decision" path. Two shapes:
+//  1. an explicit "cortex" mention ("what does cortex say about NVDA", "cortex verdict
+//     on NVDA", terse "cortex nvda") — any cortex ask that survived the concept branch
+//     (a bare/definitional "what is cortex" resolves to the glossary FIRST, so only
+//     live/subject-bearing cortex questions reach this);
+//  2. a decision-WHY ("why did we commit NVDA", "why was TSLA skipped", "why did we
+//     exit MU", "why was the top play picked") — answered from the PINNED records
+//     (entry_context.cortex / exit, the rejection log), live composition otherwise.
+// MUST be classified before REASONING_RE (the "why" would bail to Claude) and before
+// the verdict branch ("cortex verdict on X" contains the verdict trigger word).
+const CORTEX_TERM_RE = /\bcortex\b/i;
+// The "take" verb is negative-lookahead-guarded against "take a hit / take the dive"
+// phrasings — those are market-why questions, not decision-record questions.
+const CORTEX_DECISION_RE =
+  /\bwhy\b[^?]{0,80}\b(was|were|did|didn'?t|wasn'?t)\b[^?]{0,80}\b(commit(?:ted)?|skip(?:ped)?|veto(?:ed|'d)?|blocked|passed(?: on| over)?|pass on|siz(?:e|ed)|picked|exit(?:ed)?|tak(?:e|en)(?!\s+(?:a|an|the|it)\b))\b/i;
+
+function isCortexQuestion(q: string): boolean {
+  return CORTEX_TERM_RE.test(q) || CORTEX_DECISION_RE.test(q);
+}
+
 /** Vector DTE horizon named in the question, defaulting to "all" (whole-chain view). */
 function extractHorizon(q: string): string {
   if (/\b0\s*dte\b/i.test(q)) return "0dte";
@@ -247,6 +268,14 @@ export function classifyBieIntent(question: string, ledgerTickers: Set<string>):
   // signals. MUST be before REASONING_RE (and before the vector branch, whose "forming" overlaps),
   // or "why" bails to Claude / the surface gets read as a normal Vector question.
   if (isDiagnosticQuestion(q)) return { intent: "system_diagnostic", ticker: extractKnownTicker(q) };
+
+  // "cortex <ticker>" / "what does cortex say about X" / "why did we commit/skip/exit X"
+  // → the Cortex decision read (pinned commit/skip records first, live composition
+  // otherwise). Before the SPX-why/verdict branches on purpose: "why did we skip SPX"
+  // is a DECISION question (not a desk read), and "cortex verdict on NVDA" must not be
+  // stolen by the verdict trigger word. A ticker-less decision-why ("why was the top
+  // play picked") still routes — the composer answers with the session's decisions.
+  if (isCortexQuestion(q)) return { intent: "cortex_read", ticker: extractKnownTicker(q) };
 
   // An explicitly UNSUPPORTED horizon (LEAP / multi-year / quarterly) can't be scoped by any desk.
   // Route to the Vector composer, which returns an HONEST "unsupported horizon" message rather than
@@ -339,6 +368,9 @@ export function classifyBieStagingFallback(question: string): BieRoute {
   if (isConceptQuestion(q)) return { intent: "concept_read", ticker: null };
   if (isUniversalLookup(q)) return { intent: "universal_lookup", ticker: extractKnownTicker(q) };
   if (isDiagnosticQuestion(q)) return { intent: "system_diagnostic", ticker: extractKnownTicker(q) };
+  // Same Cortex decision-read branch as the primary classifier (and same placement:
+  // before the verdict/SPX branches so "cortex verdict on X" isn't stolen).
+  if (isCortexQuestion(q)) return { intent: "cortex_read", ticker: extractKnownTicker(q) };
   if (VECTOR_RE.test(q)) {
     return { intent: "vector_read", ticker: extractKnownTicker(q) ?? "SPX", horizon: extractHorizon(q) };
   }
@@ -424,5 +456,7 @@ export function bieFollowups(intent: BieIntent): string[] {
       return ["Ask a single question for the full read", "What's the SPX setup right now?", "What is a King node?"];
     case "system_diagnostic":
       return ["Is the flow pipeline healthy?", "Why isn't SPX GEX updating?", "What's the SPX setup right now?"];
+    case "cortex_read":
+      return ["Show today's 0DTE plays", "What is a Cortex veto?", "What does Cortex say about SPY?"];
   }
 }

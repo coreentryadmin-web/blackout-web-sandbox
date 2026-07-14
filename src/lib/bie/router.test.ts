@@ -292,3 +292,93 @@ describe("router: SPX weekly/monthly horizon-scope (never present a 0DTE number 
     assert.equal(classifyBieStagingFallback("SPX gamma flip").intent, "spx_desk_read");
   });
 });
+
+describe("router: cortex_read intent (PR-H — BIE × Cortex bridge)", () => {
+  test("decision-WHY questions route to cortex_read with the ticker", () => {
+    for (const [q, ticker] of [
+      ["why did we commit NVDA today?", "NVDA"],
+      ["why was TSLA skipped?", "TSLA"],
+      ["why did we exit COIN?", "COIN"],
+      ["why was AMD vetoed?", "AMD"],
+      ["why didn't we take PLTR?", "PLTR"],
+    ] as const) {
+      const r = classifyBieIntent(q, NO_LEDGER);
+      assert.equal(r?.intent, "cortex_read", `route: ${q}`);
+      assert.equal(r?.ticker, ticker, `ticker: ${q}`);
+    }
+  });
+
+  test("explicit cortex questions route to cortex_read", () => {
+    for (const q of [
+      "what does cortex say about NVDA?",
+      "cortex verdict on NVDA", // must NOT be stolen by the verdict trigger word
+      "run the cortex on TSLA",
+      "what would the cortex say about SPY right now",
+    ]) {
+      assert.equal(classifyBieIntent(q, NO_LEDGER)?.intent, "cortex_read", q);
+    }
+  });
+
+  test("terse forms route (the #57 terse shape): 'cortex nvda'", () => {
+    for (const [q, ticker] of [
+      ["cortex nvda", "NVDA"],
+      ["cortex SPY", "SPY"],
+      ["cortex on HOOD?", "HOOD"],
+    ] as const) {
+      const r = classifyBieIntent(q, NO_LEDGER);
+      assert.equal(r?.intent, "cortex_read", q);
+      assert.equal(r?.ticker, ticker, q);
+    }
+  });
+
+  test("a ticker-less decision-WHY still routes (session overview shape)", () => {
+    const r = classifyBieIntent("why was the top play picked?", NO_LEDGER);
+    assert.equal(r?.intent, "cortex_read");
+    assert.equal(r?.ticker, null);
+  });
+
+  test("definitional cortex asks stay on the glossary path — concept_read, not a live read", () => {
+    assert.equal(classifyBieIntent("what is the cortex?", NO_LEDGER)?.intent, "concept_read");
+    assert.equal(classifyBieIntent("cortex", NO_LEDGER)?.intent, "concept_read"); // bare term
+    assert.equal(classifyBieIntent("what is a cortex veto", NO_LEDGER)?.intent, "concept_read");
+    assert.equal(classifyBieIntent("what is veto asymmetry", NO_LEDGER)?.intent, "concept_read");
+  });
+
+  test("staging fallback routes the same cortex shapes", () => {
+    assert.equal(classifyBieStagingFallback("cortex nvda").intent, "cortex_read");
+    assert.equal(classifyBieStagingFallback("why was TSLA skipped?").intent, "cortex_read");
+    assert.equal(classifyBieStagingFallback("cortex verdict on NVDA").intent, "cortex_read");
+  });
+
+  test("bieFollowups has a cortex_read branch", () => {
+    assert.equal(bieFollowups("cortex_read").length, 3);
+  });
+
+  // REGRESSION TABLE — the pre-existing intents must still route exactly as before
+  // (the cortex branch sits between diagnostic and the vector/verdict branches; this
+  // table proves nothing upstream/downstream of it got stolen).
+  test("regression: existing intents still route unchanged", () => {
+    const table: Array<[string, string]> = [
+      ["what is GEX?", "concept_read"],
+      ["pull /api/market/gex-positioning?ticker=SPY", "universal_lookup"],
+      ["why isn't NVDA GEX forming?", "system_diagnostic"],
+      ["what's the vector setup on NVDA right now", "vector_read"],
+      ["SPX weekly flip", "vector_read"],
+      ["give me the verdict on NVDA", "verdict"],
+      ["is SPX 7500 a good play today", "verdict"],
+      ["hold NVDA into earnings?", "verdict"],
+      ["compare NVDA vs AMD", "ticker_compare"],
+      ["should I buy NVDA calls into earnings?", "ticker_advice"],
+      ["any unusual flow right now?", "flow_tape"],
+      ["how are today's plays doing?", "zerodte_plays"],
+      ["where's the SPX gamma flip", "spx_structure"],
+      ["what's the SPX setup right now?", "spx_desk_read"],
+      ["what would invalidate the SPX setup?", "spx_invalidation"],
+      ["what's the market doing today?", "market_context"],
+      ["what's going on with SPY?", "ticker_ecosystem"],
+    ];
+    for (const [q, intent] of table) {
+      assert.equal(classifyBieIntent(q, NO_LEDGER)?.intent, intent, `regression: ${q}`);
+    }
+  });
+});
