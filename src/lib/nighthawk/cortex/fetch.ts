@@ -26,6 +26,11 @@
 //     read behind the Thermal heatmap route AND the SPX desk's sector_heat.
 //   - fetchMarketBreadthBundle()            (src/lib/bie/market-breadth.ts) — the
 //     arsenal's own breadth leg, for index tickers.
+//   - fetchStockMinuteBars / fetchIndexMinuteBars (src/lib/providers/polygon.ts),
+//     fetchPreviousDayBar (src/lib/providers/polygon-largo.ts) and
+//     fetchBreadthUniverseSnapshots + estimateInternalsFromBreadth (polygon.ts +
+//     src/lib/market-internals.ts — the desk's own documented TICK/ADD proxy) — the
+//     opening-harvest slice (0DTE-BREAKTHROUGH-LEDGER.md B-2).
 //
 // Discipline: fail-soft PER SOURCE (an erroring reader → that slice is null and the
 // error CLASS is recorded in input.errors so the source reports "reader failed
@@ -46,6 +51,7 @@ import type { NextEarnings } from "@/lib/providers/uw-earnings";
 import type { FlowTapeSummary } from "@/lib/platform/types";
 import type { FlowRow } from "@/lib/db";
 import { getSector } from "@/lib/sector-map";
+import { estimateInternalsFromBreadth, type BreadthSample } from "@/lib/market-internals";
 import type {
   CortexDirection,
   CortexFlowPrintKind,
@@ -53,6 +59,7 @@ import type {
   CortexGexSlice,
   CortexInputs,
   CortexNewsSlice,
+  CortexOpeningSlice,
   CortexSectorSlice,
   CortexSourceId,
   CortexVexSlice,
@@ -96,6 +103,24 @@ export const SECTOR_LABEL_TO_ETF: Record<string, string> = {
 
 export type SectorPerformanceRow = { name: string; ticker: string; change_pct: number; volume?: number };
 
+/** Polygon agg bar (the shared local shape polygon.ts/polygon-largo.ts both use —
+ *  neither exports it). `t` is epoch MILLISECONDS. */
+export type PolygonAggBar = { t?: number; o: number; h: number; l: number; c: number; v?: number };
+
+/** Index roots Polygon serves only under the `I:` namespace — the exact gap that
+ *  made SPXW 0DTE rows ungradeable (NIGHTHAWK-VS-SLAYER-0DTE.md §4 fix 1). Bars for
+ *  these roots must be fetched as index aggs on the mapped symbol. */
+export const POLYGON_INDEX_AGG_SYMBOL: Record<string, string> = {
+  SPX: "I:SPX",
+  SPXW: "I:SPX",
+  NDX: "I:NDX",
+  NDXP: "I:NDX",
+  RUT: "I:RUT",
+  RUTW: "I:RUT",
+  XSP: "I:XSP",
+  VIX: "I:VIX",
+};
+
 /** The injectable reader set — defaults to the real platform readers (loaded
  *  lazily); tests inject fakes so the assembler's fail-soft/timeout behavior is
  *  testable without module mocks or a live platform. */
@@ -108,10 +133,16 @@ export type CortexFetchDeps = {
   fetchNextEarningsDate: (ticker: string) => Promise<NextEarnings | null>;
   fetchSectorPerformance: () => Promise<SectorPerformanceRow[]>;
   fetchMarketBreadthBundle: () => Promise<MarketBreadthBundle | null>;
+  /** Minute bars for TODAY (ET) — stock aggs, or index aggs for `I:`-namespace roots. */
+  fetchMinuteBars: (symbol: string, fromYmd: string, toYmd: string) => Promise<PolygonAggBar[]>;
+  fetchPreviousDayBar: (symbol: string) => Promise<PolygonAggBar | null>;
+  fetchBreadthUniverseSnapshots: () => Promise<BreadthSample[]>;
+  /** Today's ET session date (YYYY-MM-DD) — spx-session's todayEtYmd. */
+  todayEtYmd: () => string;
 };
 
 async function loadDefaultDeps(): Promise<CortexFetchDeps> {
-  const [vectorFullState, gexPositioning, flowService, polygonNews, uwEarnings, polygon, marketBreadth] =
+  const [vectorFullState, gexPositioning, flowService, polygonNews, uwEarnings, polygon, marketBreadth, polygonLargo, spxSession] =
     await Promise.all([
       import("@/lib/bie/vector-full-state"),
       import("@/lib/providers/gex-positioning"),
@@ -120,6 +151,8 @@ async function loadDefaultDeps(): Promise<CortexFetchDeps> {
       import("@/lib/providers/uw-earnings"),
       import("@/lib/providers/polygon"),
       import("@/lib/bie/market-breadth"),
+      import("@/lib/providers/polygon-largo"),
+      import("@/lib/providers/spx-session"),
     ]);
   return {
     fetchVectorFullState: (t, h) => vectorFullState.fetchVectorFullState(t, h),
@@ -130,6 +163,11 @@ async function loadDefaultDeps(): Promise<CortexFetchDeps> {
     fetchNextEarningsDate: (t) => uwEarnings.fetchNextEarningsDate(t),
     fetchSectorPerformance: () => polygon.fetchSectorPerformance(),
     fetchMarketBreadthBundle: () => marketBreadth.fetchMarketBreadthBundle(),
+    fetchMinuteBars: (sym, from, to) =>
+      sym.startsWith("I:") ? polygon.fetchIndexMinuteBars(sym, from, to) : polygon.fetchStockMinuteBars(sym, from, to),
+    fetchPreviousDayBar: (sym) => polygonLargo.fetchPreviousDayBar(sym),
+    fetchBreadthUniverseSnapshots: () => polygon.fetchBreadthUniverseSnapshots(),
+    todayEtYmd: () => spxSession.todayEtYmd(),
   };
 }
 
@@ -298,6 +336,34 @@ export function mapSectorSlice(args: {
   };
 }
 
+/** Polygon ms-stamped agg bars → the opening slice (epoch-second bar times, matching
+ *  the rail convention). Bars without a timestamp are dropped — an unstamped bar
+ *  cannot be window-classified honestly. The 9:30–9:45 filtering itself lives in the
+ *  SOURCE (openingWindowBars) so the pure classifier is testable over raw mornings. */
+export function mapOpeningSlice(args: {
+  bars: PolygonAggBar[] | null;
+  priorClose: number | null;
+  internals: { tick: number | null; add: number | null } | null;
+  asOf: string;
+}): CortexOpeningSlice | null {
+  if (!args.bars) return null;
+  return {
+    asOf: args.asOf,
+    bars: args.bars
+      .filter((b) => b.t != null && Number.isFinite(b.t))
+      .map((b) => ({
+        time: (b.t as number) / 1000,
+        open: b.o,
+        high: b.h,
+        low: b.l,
+        close: b.c,
+      })),
+    priorClose: finiteOrNull(args.priorClose),
+    tick: args.internals?.tick ?? null,
+    add: args.internals?.add ?? null,
+  };
+}
+
 // ---------------------------------------------------------------------------
 // The assembler
 // ---------------------------------------------------------------------------
@@ -321,7 +387,13 @@ export async function fetchCortexInputs(
   const isIndex = CORTEX_INDEX_TICKERS.has(upper);
   const errors: Partial<Record<CortexSourceId, string>> = {};
 
-  const [vectorRes, positioningRes, flowRes, newsRes, earningsRes, sectorRes, breadthRes] =
+  // Opening-harvest legs share one symbol mapping: index roots live under Polygon's
+  // `I:` namespace (raw SPXW minute/prev-day aggs return empty-success — the exact
+  // ungradeable-rows bug class from NIGHTHAWK-VS-SLAYER-0DTE.md §4 fix 1).
+  const aggSymbol = POLYGON_INDEX_AGG_SYMBOL[upper] ?? upper;
+  const todayYmd = deps.todayEtYmd();
+
+  const [vectorRes, positioningRes, flowRes, newsRes, earningsRes, sectorRes, breadthRes, barsRes, prevDayRes, internalsRes] =
     await Promise.allSettled([
       withSourceTimeout(deps.fetchVectorFullState(upper, "0dte"), timeoutMs),
       withSourceTimeout(deps.getGexPositioning(upper), timeoutMs),
@@ -336,6 +408,9 @@ export async function fetchCortexInputs(
       isIndex ? Promise.resolve(null) : withSourceTimeout(deps.fetchNextEarningsDate(upper), timeoutMs),
       isIndex ? Promise.resolve(null) : withSourceTimeout(deps.fetchSectorPerformance(), timeoutMs),
       isIndex ? withSourceTimeout(deps.fetchMarketBreadthBundle(), timeoutMs) : Promise.resolve(null),
+      withSourceTimeout(deps.fetchMinuteBars(aggSymbol, todayYmd, todayYmd), timeoutMs),
+      withSourceTimeout(deps.fetchPreviousDayBar(aggSymbol), timeoutMs),
+      withSourceTimeout(deps.fetchBreadthUniverseSnapshots(), timeoutMs),
     ]);
 
   const note = (sources: CortexSourceId[], reason: unknown) => {
@@ -367,6 +442,16 @@ export async function fetchCortexInputs(
   const breadth = breadthRes.status === "fulfilled" ? breadthRes.value : null;
   if (breadthRes.status === "rejected") note(["sector-heat"], breadthRes.reason);
 
+  // Opening harvest: bars are LOAD-BEARING (no bars → slice null → source absent);
+  // prior close and internals are enrichments the source degrades without.
+  const bars = barsRes.status === "fulfilled" ? barsRes.value : null;
+  if (barsRes.status === "rejected") note(["opening-harvest"], barsRes.reason);
+  const prevDay = prevDayRes.status === "fulfilled" ? prevDayRes.value : null;
+  if (prevDayRes.status === "rejected") note(["opening-harvest"], prevDayRes.reason);
+  const internalsSamples = internalsRes.status === "fulfilled" ? internalsRes.value : null;
+  if (internalsRes.status === "rejected") note(["opening-harvest"], internalsRes.reason);
+  const internals = internalsSamples ? estimateInternalsFromBreadth(internalsSamples) : null;
+
   const nowIso = now.toISOString();
   const spot = finiteOrNull(vector?.spot) ?? finiteOrNull(positioning?.spot);
 
@@ -394,6 +479,12 @@ export async function fetchCortexInputs(
           levels: (vector.darkPoolLevels ?? []).map((l) => ({ price: l.strike, premium: l.premium })),
         }
       : null,
+    opening: mapOpeningSlice({
+      bars,
+      priorClose: prevDay?.c ?? null,
+      internals: internals ? { tick: internals.tick, add: internals.add } : null,
+      asOf: nowIso,
+    }),
     errors,
   };
 }

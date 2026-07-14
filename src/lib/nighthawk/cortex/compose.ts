@@ -29,6 +29,7 @@ import { deriveCatalystNewsEvidence, CATALYST_SUPPORT_CAP } from "./sources/cata
 import { deriveDarkPoolConfluenceEvidence, DARKPOOL_SUPPORT_CAP } from "./sources/darkpool-confluence";
 import { deriveFlowQualityEvidence, FLOW_SUPPORT_CAP } from "./sources/flow-quality";
 import { deriveGexWallsEvidence, GEX_WALLS_SUPPORT_CAP } from "./sources/gex-walls";
+import { deriveOpeningHarvestEvidence, OPENING_HARVEST_SUPPORT_CAP } from "./sources/opening-harvest";
 import { deriveSectorHeatEvidence, SECTOR_HEAT_SUPPORT_CAP } from "./sources/sector-heat";
 import { deriveVexCharmEvidence, VEX_CHARM_SUPPORT_CAP } from "./sources/vex-charm";
 import { deriveWallTrendEvidence, WALL_TREND_SUPPORT_CAP } from "./sources/wall-trend";
@@ -66,6 +67,7 @@ export const SOURCE_SUPPORT_CAPS: Record<CortexSourceId, number> = {
   "catalyst-news": CATALYST_SUPPORT_CAP,
   "vex-charm": VEX_CHARM_SUPPORT_CAP,
   "darkpool-confluence": DARKPOOL_SUPPORT_CAP,
+  "opening-harvest": OPENING_HARVEST_SUPPORT_CAP,
 };
 
 /** The source registry, in CORTEX_SOURCES order (deterministic evidence/narrative
@@ -78,6 +80,7 @@ const SOURCE_REGISTRY: Record<CortexSourceId, CortexSourceFn> = {
   "catalyst-news": deriveCatalystNewsEvidence,
   "vex-charm": deriveVexCharmEvidence,
   "darkpool-confluence": deriveDarkPoolConfluenceEvidence,
+  "opening-harvest": deriveOpeningHarvestEvidence,
 };
 
 /** Exponential half-life decay factor. Exported for the decay unit tests. */

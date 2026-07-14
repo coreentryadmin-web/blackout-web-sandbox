@@ -37,6 +37,7 @@ export type CortexStance = "supports" | "opposes" | "veto" | "absent";
  *  - catalyst-news        — BIE news/earnings/catalyst discrimination
  *  - vex-charm            — VEX direction + the documented charm heuristic
  *  - darkpool-confluence  — dark-pool level × wall confluence bonus
+ *  - opening-harvest      — 9:30–9:45 ET opening character (0DTE-BREAKTHROUGH-LEDGER B-2)
  * (The SPX Slayer desk is deliberately NOT a Cortex source: it is already G-1's
  * bias/veto input in the gate stack — design §1 "nothing new to build".)
  */
@@ -48,6 +49,7 @@ export const CORTEX_SOURCES = [
   "catalyst-news",
   "vex-charm",
   "darkpool-confluence",
+  "opening-harvest",
 ] as const;
 
 export type CortexSourceId = (typeof CORTEX_SOURCES)[number];
@@ -217,6 +219,31 @@ export type CortexDarkPoolSlice = {
   levels: Array<{ price: number; premium: number }>;
 };
 
+/** One session minute bar for the opening harvest. `time` is EPOCH SECONDS (matching
+ *  the wall-trend sample convention; fetch.ts converts Polygon's ms `t`). */
+export type CortexOpeningBar = {
+  time: number;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+};
+
+/** Opening-harvest slice (0DTE-BREAKTHROUGH-LEDGER.md B-2): today's early RTH minute
+ *  bars, the prior session close (for the overnight gap), and the current market
+ *  internals levels as the desk carries them (real I:TICK/I:ADD or the documented
+ *  breadth proxy — src/lib/market-internals.ts). */
+export type CortexOpeningSlice = {
+  asOf: string;
+  /** Today's RTH minute bars from the 9:30 ET open (the source reads only 9:30–9:45). */
+  bars: CortexOpeningBar[];
+  /** Prior session close; null when unavailable (gap classification then degrades
+   *  to the gapless opening-drive branch, never a fabricated gap). */
+  priorClose: number | null;
+  tick: number | null;
+  add: number | null;
+};
+
 /**
  * The full snapshot the composer runs over. Assembled by fetch.ts from EXISTING
  * readers only; every slice is null when its reader failed/timed out/had nothing —
@@ -241,6 +268,7 @@ export type CortexInputs = {
   news: CortexNewsSlice | null;
   vex: CortexVexSlice | null;
   darkPool: CortexDarkPoolSlice | null;
+  opening: CortexOpeningSlice | null;
   /** Fail-soft error classes recorded by fetch.ts, keyed by the source(s) a failed
    *  reader feeds — surfaced verbatim in that source's absent reason. */
   errors: Partial<Record<CortexSourceId, string>>;

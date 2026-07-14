@@ -16,6 +16,8 @@ export type {
   CortexInputs,
   CortexNewsItem,
   CortexNewsSlice,
+  CortexOpeningBar,
+  CortexOpeningSlice,
   CortexSectorSlice,
   CortexSourceFn,
   CortexSourceId,
