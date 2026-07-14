@@ -19,6 +19,14 @@ import {
   type EnrichedZeroDteSetup,
 } from "@/lib/zerodte/board";
 import { buildIntelNote } from "@/lib/zerodte/intel";
+import {
+  closedStopReason,
+  isZeroDteMarkStale,
+  pinnedLivePnlPct,
+  ZERODTE_MARK_STALE_MS,
+  type ZeroDteMarkSource,
+} from "@/lib/zerodte/marks-math";
+import { PLAN_RULES } from "@/lib/zerodte/plan";
 import { gradeZeroDteLedger, readZeroDteLedger, scanZeroDteBoard, syncLedgerLiveState } from "@/lib/zerodte/scan";
 
 export type ZeroDteBoardLedgerRow = {
@@ -35,6 +43,16 @@ export type ZeroDteBoardLedgerRow = {
   status: string | null;
   last_mark: number | null;
   live_pnl_pct: number | null;
+  /** Why a CLOSED play closed, when derivable from the latched extremes:
+   *  "stopped" pins live_pnl_pct to the −50% stop (B-9 D-1 fix — the number the
+   *  post-session grader will stamp), null = live row or a time-stop close. */
+  closed_reason: "stopped" | null;
+  /** ISO instant of the quote behind last_mark, when the live-marks lane served
+   *  it (B-9). Null = legacy sync lane (no per-quote timestamp available). */
+  mark_as_of: string | null;
+  /** Mark provenance from the live lane: "mid" = two-sided quote, "last" =
+   *  last-trade fallback (flagged), null = legacy sync lane. */
+  mark_source: ZeroDteMarkSource | null;
   move_pct: number | null;
   direction_hit: boolean | null;
   plan_outcome: string | null;
@@ -59,15 +77,28 @@ export type ZeroDteBoardPayload = {
 
 const BOARD_TTL_MS = 5_000;
 
-function livePnlPct(entry: number | null, mark: number | null): number | null {
-  if (entry == null || entry <= 0 || mark == null) return null;
-  return Math.round(((mark - entry) / entry) * 10000) / 100;
-}
+/** A live-lane mark overlay for one ledger row (see attachLiveMarkMeta below). */
+type LiveMarkMeta = { mark: number; mark_as_of: string; mark_source: ZeroDteMarkSource };
 
 function mapLedgerRow(
   r: ZeroDteSetupLogRow,
-  nighthawkEcho: Awaited<ReturnType<typeof fetchNighthawkEchoForTickers>>
+  nighthawkEcho: Awaited<ReturnType<typeof fetchNighthawkEchoForTickers>>,
+  liveMark: LiveMarkMeta | null
 ): ZeroDteBoardLedgerRow {
+  // B-9: the board's mark prefers the 1s live-marks lane when it has a FRESH quote
+  // for this contract — the same store the SSE push and the poller's ledger sync
+  // read — so every consumer of this payload shows the same number. The legacy
+  // sync value (r.last_mark) remains the fallback and carries no per-quote
+  // timestamp, which is surfaced honestly as mark_as_of: null.
+  const lastMark = liveMark?.mark ?? r.last_mark;
+  // D-1 fix: a stopped play's displayed P&L is the stop P&L (what the grader will
+  // stamp), never the frozen last_mark of whichever tick happened to cross it.
+  const closedReason = closedStopReason({
+    status: r.status,
+    entry_premium: r.entry_premium,
+    peak_premium: r.peak_premium,
+    trough_premium: r.trough_premium,
+  });
   return {
     ticker: r.ticker,
     direction: r.direction,
@@ -80,8 +111,12 @@ function mapLedgerRow(
     entry_premium: r.entry_premium,
     flow_avg_fill: r.flow_avg_fill,
     status: r.status,
-    last_mark: r.last_mark,
-    live_pnl_pct: livePnlPct(r.entry_premium, r.last_mark),
+    last_mark: lastMark,
+    live_pnl_pct:
+      closedReason === "stopped" ? PLAN_RULES.stop_pct : pinnedLivePnlPct(r.entry_premium, lastMark),
+    closed_reason: closedReason,
+    mark_as_of: liveMark?.mark_as_of ?? null,
+    mark_source: liveMark?.mark_source ?? null,
     move_pct: r.move_pct,
     direction_hit: r.direction_hit,
     plan_outcome: r.plan_outcome,
@@ -89,6 +124,39 @@ function mapLedgerRow(
     graded: r.graded_at != null,
     nighthawk_echo: nighthawkEcho.get(r.ticker.toUpperCase()) ?? null,
   };
+}
+
+/**
+ * Read the live-marks store (B-9 lane) for each non-CLOSED ledger row's contract.
+ * Lazy-imported so this module's import graph (and its tests) stay free of the
+ * lane's db/providers/ws dependencies; any failure degrades to the legacy sync
+ * marks (empty map). Only FRESH quotes (≤ZERODTE_MARK_STALE_MS) overlay — a stale
+ * store must never beat the sync's just-fetched snapshot.
+ */
+async function attachLiveMarkMeta(rows: ZeroDteSetupLogRow[]): Promise<Map<string, LiveMarkMeta>> {
+  const out = new Map<string, LiveMarkMeta>();
+  try {
+    const { getZeroDteLiveMark, ensureZeroDteMarkPoller } = await import("@/lib/zerodte/live-marks");
+    // Any board consumer keeps the 1s lane alive (idempotent; self-idles off-RTH),
+    // so Largo/BIE reads through this payload stay fresh even with no SSE viewer.
+    ensureZeroDteMarkPoller();
+    const now = Date.now();
+    for (const r of rows) {
+      if (r.status === "CLOSED") continue;
+      const occ = typeof r.plan_json?.occ === "string" ? (r.plan_json.occ as string) : null;
+      if (!occ) continue;
+      const m = getZeroDteLiveMark(occ);
+      if (!m || m.mark == null || isZeroDteMarkStale(m.asOf, now, ZERODTE_MARK_STALE_MS)) continue;
+      out.set(r.ticker.toUpperCase(), {
+        mark: m.mark,
+        mark_as_of: new Date(m.asOf).toISOString(),
+        mark_source: m.source,
+      });
+    }
+  } catch {
+    // Live lane unavailable (e.g. edge/test env) — legacy sync marks stand.
+  }
+  return out;
 }
 
 /** Uncached board assembly — the exact pipeline the member route used before extraction. */
@@ -105,7 +173,10 @@ export async function buildZeroDteBoardPayload(): Promise<ZeroDteBoardPayload> {
   ]);
 
   const ledgerRows = await syncLedgerLiveState(rawLedger).catch(() => rawLedger);
-  const nighthawkEcho = await fetchNighthawkEchoForTickers(ledgerRows.map((r) => r.ticker));
+  const [nighthawkEcho, liveMarks] = await Promise.all([
+    fetchNighthawkEchoForTickers(ledgerRows.map((r) => r.ticker)),
+    attachLiveMarkMeta(ledgerRows),
+  ]);
 
   const nextDay = nextTradingDayEt(today);
   const earningsFlags = matchEarnings(earningsSnap?.items ?? [], { today, nextDay });
@@ -124,17 +195,22 @@ export async function buildZeroDteBoardPayload(): Promise<ZeroDteBoardPayload> {
     upstream_ok,
     session: { date: today, trading_day: tradingDay, heat },
     setups,
-    ledger: ledgerRows.map((r) => mapLedgerRow(r, nighthawkEcho)),
+    ledger: ledgerRows.map((r) => mapLedgerRow(r, nighthawkEcho, liveMarks.get(r.ticker.toUpperCase()) ?? null)),
     covered_elsewhere: nighthawk_covered,
   }) as ZeroDteBoardPayload;
 
   // roundFloats() rounds entry_premium/last_mark independently; recompute PnL from the
-  // member-visible rounded premiums so live_pnl_pct always matches (mark-entry)/entry.
+  // member-visible rounded premiums so live_pnl_pct always matches (mark-entry)/entry —
+  // except a stopped play, whose result is PINNED to the stop P&L (D-1 fix; matches
+  // what gradePlanFromBars will stamp after the session).
   return {
     ...payload,
     ledger: payload.ledger.map((row) => ({
       ...row,
-      live_pnl_pct: livePnlPct(row.entry_premium, row.last_mark),
+      live_pnl_pct:
+        row.closed_reason === "stopped"
+          ? PLAN_RULES.stop_pct
+          : pinnedLivePnlPct(row.entry_premium, row.last_mark),
     })),
   };
 }

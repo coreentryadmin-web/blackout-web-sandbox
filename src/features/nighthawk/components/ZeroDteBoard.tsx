@@ -19,7 +19,10 @@ import {
 } from "@/components/ui";
 import { resolveFreshFindStatus, type EnrichedZeroDteSetup, type SessionHeat } from "@/lib/zerodte/board";
 import { buildIntelNote, type IntelAction } from "@/lib/zerodte/intel";
+import { isZeroDteMarkStale, type ZeroDteMarkSource } from "@/lib/zerodte/marks-math";
+import type { ZeroDteLiveMarkRow } from "@/lib/zerodte/live-marks";
 import { etMinutesOf } from "@/lib/zerodte/plan";
+import { useZeroDteLiveMarks } from "@/features/nighthawk/hooks/useZeroDteLiveMarks";
 import { shortMonthDay } from "@/lib/relative-time";
 
 // ── Response shape (structural mirror of /api/market/zerodte/board) ──────────────
@@ -46,6 +49,11 @@ type LedgerRow = {
   status: string | null;
   last_mark: number | null;
   live_pnl_pct: number | null;
+  /** B-9: "stopped" pins live_pnl_pct to −50 server-side (frozen-mark fix). */
+  closed_reason?: "stopped" | null;
+  /** B-9: quote timestamp/provenance when the live-marks lane served last_mark. */
+  mark_as_of?: string | null;
+  mark_source?: ZeroDteMarkSource | null;
   move_pct: number | null;
   direction_hit: boolean | null;
   plan_outcome: string | null;
@@ -147,7 +155,42 @@ type PlayRow = {
   setup: EnrichedZeroDteSetup | null;
   /** BIE ecosystem echo — see LedgerRow. Null for fresh finds not yet persisted. */
   nighthawkEcho: NighthawkEcho | null;
+  /** B-9 live-marks lane overlay (see overlayLiveMark): quote timestamp,
+   *  provenance, and the stale-honesty flag for the mark/P&L cells. */
+  mark_as_of?: string | null;
+  mark_source?: ZeroDteMarkSource | null;
+  mark_stale?: boolean;
 };
+
+/**
+ * Overlay one live-marks SSE row onto a merged play row (B-9). Applies only to
+ * live rows (OPEN/HOLD/TRIM) whose pushed mark is present; CLOSED and SKIP rows
+ * keep their frozen/board numbers. live_pnl_pct comes PUSHED (computed once,
+ * server-side, vs the pinned ledger entry) — never recomputed here. Staleness is
+ * evaluated against the ticking clock so a dead stream dims within seconds even
+ * with no new frames.
+ */
+export function overlayLiveMark(
+  row: PlayRow,
+  live: ZeroDteLiveMarkRow | undefined,
+  nowMs: number
+): PlayRow {
+  const asOfMs = row.mark_as_of ? Date.parse(row.mark_as_of) : 0;
+  const baseStale = row.mark_as_of != null ? isZeroDteMarkStale(asOfMs, nowMs) : undefined;
+  if (row.status === "CLOSED" || row.status === "SKIP") return { ...row, mark_stale: false };
+  if (!live || live.mark == null) return { ...row, mark_stale: baseStale };
+  const liveAsOfMs = live.mark_as_of ? Date.parse(live.mark_as_of) : 0;
+  // Never let an older lane overwrite a fresher board value.
+  if (asOfMs > 0 && liveAsOfMs > 0 && liveAsOfMs < asOfMs) return { ...row, mark_stale: baseStale };
+  return {
+    ...row,
+    last_mark: live.mark,
+    live_pnl_pct: live.live_pnl_pct ?? row.live_pnl_pct,
+    mark_as_of: live.mark_as_of,
+    mark_source: live.source,
+    mark_stale: isZeroDteMarkStale(liveAsOfMs, nowMs),
+  };
+}
 
 export function mergePlays(
   setups: EnrichedZeroDteSetup[],
@@ -179,6 +222,8 @@ export function mergePlays(
     spike: r.spike,
     setup: byTicker.get(r.ticker) ?? null,
     nighthawkEcho: r.nighthawk_echo,
+    mark_as_of: r.mark_as_of ?? null,
+    mark_source: r.mark_source ?? null,
   }));
   const seen = new Set(ledger.map((r) => r.ticker));
   // Fresh finds the cron hasn't persisted yet (≤2 min window) — or MOVED ones we
@@ -306,7 +351,16 @@ function StatsCell({ row }: { row: PlayRow }) {
   if (row.live_pnl_pct != null) {
     const up = row.live_pnl_pct >= 0;
     return (
-      <span className={clsx("font-mono text-[12px] font-bold tabular-nums", up ? "text-bull" : "text-bear")}>
+      <span
+        className={clsx(
+          "font-mono text-[12px] font-bold tabular-nums",
+          up ? "text-bull" : "text-bear",
+          // Stale-honesty (B-9): money numbers older than the freshness bar dim
+          // instead of impersonating a live quote.
+          row.mark_stale && "opacity-40"
+        )}
+        title={row.mark_stale ? "Quote is stale — waiting for a live tick" : undefined}
+      >
         {up ? "+" : ""}
         {row.live_pnl_pct.toFixed(1)}%
       </span>
@@ -451,11 +505,21 @@ function PlayDetail({ row }: { row: PlayRow }) {
         )}
       </div>
 
-      {/* live premium math — updates with every refresh */}
+      {/* live premium math — pushed at ~1s via the live-marks SSE lane (B-9);
+          dims when the quote goes stale instead of impersonating a live number */}
       {row.last_mark != null && row.entry_premium != null && row.status !== "CLOSED" && (
         <div>
-          <p className="font-mono text-[10px] uppercase tracking-widest text-sky-300/50">Live</p>
-          <p className="mt-1 font-mono text-[11px] tabular-nums text-sky-200/85">
+          <p className="font-mono text-[10px] uppercase tracking-widest text-sky-300/50">
+            Live
+            {row.mark_source === "last" ? " · last-trade quote (no live bid/ask)" : ""}
+            {row.mark_stale ? " · STALE — waiting for a fresh tick" : ""}
+          </p>
+          <p
+            className={clsx(
+              "mt-1 font-mono text-[11px] tabular-nums text-sky-200/85",
+              row.mark_stale && "opacity-40"
+            )}
+          >
             Mark ${row.last_mark.toFixed(2)}
             {row.live_pnl_pct != null ? (
               <span className={row.live_pnl_pct >= 0 ? " text-bull" : " text-bear"}>
@@ -557,7 +621,16 @@ function PlaysTable({ rows }: { rows: PlayRow[] }) {
                     <div className="font-mono text-[13px] font-bold text-white">{contract}</div>
                     <div className="font-mono text-[11px] tabular-nums text-sky-200/85">
                       {row.entry_premium != null ? `@ ${row.entry_premium.toFixed(2)}` : ""}
-                      {row.last_mark != null && row.status !== "CLOSED" ? ` → ${row.last_mark.toFixed(2)}` : ""}
+                      {row.last_mark != null && row.status !== "CLOSED" ? (
+                        <span
+                          className={clsx(row.mark_stale && "opacity-40")}
+                          title={row.mark_stale ? "Quote is stale — waiting for a live tick" : undefined}
+                        >
+                          {` → ${row.last_mark.toFixed(2)}`}
+                        </span>
+                      ) : (
+                        ""
+                      )}
                     </div>
                   </TD>
                   <TD>
@@ -615,6 +688,13 @@ export function ZeroDteBoard() {
     revalidateOnFocus: true,
   });
 
+  // B-9 live-marks lane: ~1s SSE push (REST poll fallback) for the OPEN plays'
+  // mark/P&L, overlaid onto the board's 10s payload below. Off after the close —
+  // every play is frozen/graded then, there is nothing live to stream.
+  const live = useZeroDteLiveMarks(
+    Boolean(data && data.available !== false && data.session?.heat?.state !== "CLOSED")
+  );
+
   if (error || data?.available === false) {
     return (
       <EmptyState
@@ -633,7 +713,9 @@ export function ZeroDteBoard() {
     );
   }
 
-  const rows = mergePlays(data.setups ?? [], data.ledger ?? [], data.session?.heat?.state);
+  const rows = mergePlays(data.setups ?? [], data.ledger ?? [], data.session?.heat?.state).map((r) =>
+    overlayLiveMark(r, live.byTicker.get(r.ticker), live.nowMs || Date.now())
+  );
   const covered = data.covered_elsewhere ?? [];
   // Only the strongest get top billing: A-tier = conviction score ≥ 55, dossier not
   // disagreeing, tradeable. Everything else (including PASSes) lives on the radar —
