@@ -8,6 +8,7 @@ import { fetchPlayOutcomeStats, type PlayOutcomeStats } from "@/features/spx/lib
 import { buildPublicTrackRecord, formatPercent } from "@/lib/track-record-public";
 import { entryRangeMid } from "@/features/nighthawk/lib/entry-range";
 import { formatEtDate, todayEt } from "@/features/nighthawk/lib/session";
+import { isCurrentGradeMethodology } from "@/features/nighthawk/lib/grade-methodology";
 import { buildZeroDteRecord, type ZeroDteRecordBucket } from "@/lib/zerodte/record";
 
 /** Shape returned by GET /api/track-record — shared with TrackRecordView. */
@@ -101,10 +102,17 @@ export function isNighthawkOutcomeScoreable(r: NighthawkPlayOutcomeRow): boolean
   // counted in the headline record, in either direction: a pulled play that would have
   // hit target must not pad the win rate, and one that would have stopped must not
   // book a loss the member was told not to take.
+  // PR-N2: a row still graded under a superseded methodology (grade_methodology ≠
+  // current — the pre-fillability "level touch" grades, incl. the gap-away phantom
+  // wins) is quarantined out of EVERY headline surface sharing this predicate (public
+  // track-record page, /api/track-record/plays, signal accuracy) until the admin
+  // legacy regrade re-verifies it under current rules and promotes it. Same anti-blend
+  // rule as getNighthawkMetrics' segments — keep the two in lockstep.
   return (
     r.outcome !== "pending" &&
     r.outcome !== "unfilled" &&
     r.pulled !== true &&
+    isCurrentGradeMethodology(r.grade_methodology) &&
     !nhStopDataUnavailable(r)
   );
 }

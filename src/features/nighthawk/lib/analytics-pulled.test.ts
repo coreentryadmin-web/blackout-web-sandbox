@@ -42,6 +42,10 @@ function row(over: Partial<NighthawkPlayOutcomeRow>): NighthawkPlayOutcomeRow {
     pulled_reason: null,
     publish_context: null,
     morning_verdict: null,
+    // PR-N2: current-methodology by default — this suite pins the PULLED exclusion,
+    // and only current-segment rows reach the headline math it asserts on.
+    grade_methodology: "v2_fillability",
+    legacy_grade: null,
     ...over,
   };
 }

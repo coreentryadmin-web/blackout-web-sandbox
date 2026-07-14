@@ -6,6 +6,9 @@ import { loadLottoRecord } from "@/features/spx/lib/spx-lotto-store";
 import { loadPowerHourRecord } from "@/features/spx/lib/spx-power-hour-store";
 import { fetchPositioningSummary } from "@/features/nighthawk/lib/positioning";
 import { fetchPlayOutcomeStatsForWindow } from "@/features/spx/lib/spx-play-outcomes";
+// PR-N2: the one headline-scoreable predicate (methodology/pulled/unfilled quarantine)
+// shared by every surface that quotes a Night Hawk win rate.
+import { isNighthawkOutcomeScoreable } from "@/lib/track-record-page";
 import {
   fetchNighthawkOutcomeAnalytics,
   fetchNighthawkScoringHistory,
@@ -1375,7 +1378,12 @@ export async function runLargoTool(name: string, input: Record<string, unknown>,
       // src/lib/nighthawk/analytics.ts's winRate() does: target = win,
       // stop = loss, everything else (open/ambiguous/unfilled) excluded from
       // the rate denominator because it isn't a decided outcome yet.
-      const nhRows = nighthawkAnalytics.rows;
+      // PR-N2: filter through the platform's shared headline-scoreable predicate
+      // first — rows still graded under the superseded pre-fillability methodology
+      // (and pulled/unfilled/stop-data-unavailable rows) must not leak into the win
+      // rate Largo quotes to members any more than into the record strip. Same
+      // anti-blend rule as getNighthawkMetrics' segments.
+      const nhRows = nighthawkAnalytics.rows.filter(isNighthawkOutcomeScoreable);
       const nighthawk_wins = nhRows.filter((r) => r.outcome === "target").length;
       const nighthawk_losses = nhRows.filter((r) => r.outcome === "stop").length;
       const nighthawk_decided = nighthawk_wins + nighthawk_losses;

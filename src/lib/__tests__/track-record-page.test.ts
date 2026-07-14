@@ -25,6 +25,9 @@ function nhRow(overrides: Partial<NighthawkPlayOutcomeRow>): NighthawkPlayOutcom
     hit_stop: false,
     outcome: "target",
     created_at: new Date().toISOString(),
+    // PR-N2: fixtures are current-methodology by default — a legacy-tagged row is
+    // quarantined out of every headline surface via isNighthawkOutcomeScoreable.
+    grade_methodology: "v2_fillability",
     ...overrides,
   };
 }
@@ -196,5 +199,21 @@ describe("track-record-page", () => {
       stats.wins + stats.losses + (stats.unresolved ?? 0),
       "total must always reconcile with wins + losses + unresolved"
     );
+  });
+
+  it("nhFromRows quarantines legacy-methodology grades out of the public record (PR-N2 anti-blend)", () => {
+    // The N-2 phantom-win shape: a legacy 'target' graded before the fillability rule.
+    // It must not enter total/wins on any headline surface until the honest regrade
+    // re-verifies it under current rules and stamps it current.
+    const legacyPhantomWin = nhRow({ id: 1, outcome: "target", grade_methodology: "v1_level_touch" });
+    const unstamped = nhRow({ id: 2, outcome: "target", grade_methodology: null });
+    const currentWin = nhRow({ id: 3, outcome: "target" });
+    const currentStop = nhRow({ id: 4, outcome: "stop" });
+
+    const stats = nhFromRows([legacyPhantomWin, unstamped, currentWin, currentStop]);
+    assert.equal(stats.total, 2, "legacy + unstamped rows must not count");
+    assert.equal(stats.wins, 1);
+    assert.equal(stats.losses, 1);
+    assert.equal(stats.winRatePct, 50, "the phantom wins must not inflate the win rate");
   });
 });
