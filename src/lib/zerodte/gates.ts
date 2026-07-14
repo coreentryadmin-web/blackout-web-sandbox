@@ -32,18 +32,21 @@ import { evaluateZeroDteGovernor, type GovernorOpenPlan, type GovernorSnapshot }
 export const MARKET_BIAS_MAX_AGE_MS = 15 * 60 * 1000;
 
 // ── G-2 · Opening-window block ──────────────────────────────────────────────────
-// Evidence (F-4): the first ~hour is the weakest window on every surface that has
-// data — 0DTE Command's own calibration runs 36.8% WR in 9:50-11:00 (n=19), signal
-// observations hour-9 36.1% (n=147) vs hour-14 60.5% (n=126), and four of 7/13's
-// five opening-window entries died at the stop. Slayer's looser 9:50 line works
-// because its regime gates carry the rest; this surface has no such backstop, so it
-// gets the full 10:30 unlock. Setups found earlier stay visible as WATCH/SKIP cards
-// carrying this unlock time — the scanner re-evaluates every ~2 minutes, so a setup
-// still alive on the tape at 10:30 commits then (nothing is lost, only the worst
-// hour of entries). The existing no-new-plays->=15:00 + hard-exit-15:30 rules are
-// unchanged and live upstream (persistZeroDteScan / PLAN_RULES).
-export const OPENING_WINDOW_UNLOCK_ET_MINUTES = 10 * 60 + 30;
-export const OPENING_WINDOW_UNLOCK_LABEL = "10:30 ET";
+// USER-DIRECTED 2026-07-13: restrict only the FIRST 15 MINUTES (9:30-9:45 ET), not
+// the decision doc's original 10:30 — most 0DTE plays happen at the open and the
+// user does not want them blocked wholesale. Chosen KNOWINGLY against the F-4 cut
+// (9:50-11:00 ran 36.8% WR n=19, and 7/13's four opening losers were flagged
+// 9:50-10:20, i.e. AFTER this boundary — under this rule G-2 would NOT have caught
+// them; G-1 tape alignment is the gate that removes them). The 9:45-10:30 band is
+// measured by the calibration loop (gate_calibration_json.committed_at_et buckets
+// every commit by ET time), so this boundary can be revisited with per-play
+// evidence rather than re-litigated on priors. Setups found 9:30-9:45 stay visible
+// as WATCH/SKIP cards carrying the unlock time — the scanner re-evaluates every
+// ~2 minutes, so a setup still alive on the tape at 9:45 commits then. The
+// existing no-new-plays->=15:00 + hard-exit-15:30 rules are unchanged and live
+// upstream (persistZeroDteScan / PLAN_RULES).
+export const OPENING_WINDOW_UNLOCK_ET_MINUTES = 9 * 60 + 45;
+export const OPENING_WINDOW_UNLOCK_LABEL = "9:45 ET";
 
 // ── G-4 · VIX regime throttle — CALIBRATION MODE (logs, never blocks) ───────────
 // Evidence (F-1): the strongest per-play split in the whole forensics dataset —
@@ -193,14 +196,15 @@ export function evaluateZeroDteGates(input: ZeroDteGateInput): ZeroDteGateVerdic
     });
   }
 
-  // G-2 — opening window. Clock-based, so the block self-expires: the card carries
-  // the unlock time and the next scan cycle at/after 10:30 re-evaluates cleanly.
+  // G-2 — opening window (first 15 minutes only — user-directed 2026-07-13, see the
+  // constant's doc). Clock-based, so the block self-expires: the card carries the
+  // unlock time and the next scan cycle at/after 9:45 re-evaluates cleanly.
   if (input.nowEtMinutes < OPENING_WINDOW_UNLOCK_ET_MINUTES) {
     blocks.push({
       code: "opening_window",
       reason:
-        `No new 0DTE commits before ${OPENING_WINDOW_UNLOCK_LABEL} — the opening hour is the weakest ` +
-        "entry window on this surface (36.8% WR 9:50-11:00 on its own 38-play calibration). " +
+        `No new 0DTE commits in the first 15 minutes (before ${OPENING_WINDOW_UNLOCK_LABEL}) — ` +
+        "ranges are still forming. " +
         `Watching; commits unlock at ${OPENING_WINDOW_UNLOCK_LABEL} if the setup is still live.`,
       threshold: OPENING_WINDOW_UNLOCK_ET_MINUTES,
       unlock_et: OPENING_WINDOW_UNLOCK_LABEL,
