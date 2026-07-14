@@ -219,6 +219,8 @@ type Props = {
   onAlertsFired?: (fired: FiredAlert[]) => void;
   /** Compact page title + ticker cluster, rendered at the far left of the chart toolbar row. */
   leadSlot?: React.ReactNode;
+  /** Rendered in the toolbar right cluster immediately before the Replay controls (host desks). */
+  replayLeadSlot?: React.ReactNode;
   /** Freshness/status chip, rendered at the far right of the toolbar row. */
   trailSlot?: React.ReactNode;
   /** Regime banner (or similar), rendered as a thin strip between the toolbar and the canvas so it
@@ -898,6 +900,7 @@ export function VectorChart({
   alertRules,
   onAlertsFired,
   leadSlot,
+  replayLeadSlot,
   trailSlot,
   regimeSlot,
   defaultDteHorizon,
@@ -2836,6 +2839,7 @@ export function VectorChart({
         onClearIndicators={clearIndicators}
         barCount={displayBarCount}
         leadSlot={leadSlot}
+        replayLeadSlot={replayLeadSlot}
         trailSlot={trailSlot}
       />
 
