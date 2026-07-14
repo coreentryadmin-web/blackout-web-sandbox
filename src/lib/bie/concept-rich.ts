@@ -99,7 +99,7 @@ export const CONCEPT_RICH: Record<string, ConceptRich> = {
   },
   "Gamma regime": {
     howItWorks:
-      "A LOCAL spot-vs-flip label: spot above the gamma flip → 'mean_revert' (long gamma), below → 'amplification' (short gamma), with a small ±buffer hysteresis so it doesn't flicker when spot hugs the flip. It's the local read at spot, distinct from the aggregate net-GEX sign of the whole book.",
+      "A LOCAL spot-vs-flip label: spot above the gamma flip → 'mean_revert' (positive/long gamma — dealer hedging suppresses volatility), below → 'amplification' (negative/short gamma — dealer hedging amplifies it), with a small ±buffer hysteresis so it doesn't flicker when spot hugs the flip. It's the local read at spot, distinct from the aggregate net-GEX sign of the whole book.",
     whyItMatters:
       "It's the one-word answer to 'fade or follow?' Mean_revert → fade extensions toward the pin; amplification → respect momentum and give trends room. Getting the regime right matters more than any single level.",
     example:

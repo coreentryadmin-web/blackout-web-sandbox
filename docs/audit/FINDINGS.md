@@ -5,6 +5,42 @@ conflict-resolution mishap. Historical entries live in git history — `git log 
 docs/audit/FINDINGS.md`. New entries append below; keep severity / root cause / file:line /
 evidence / fix / status per the CLAUDE.md policy.)
 
+## 2026-07-14 — Largo gauntlet P1s (deployed build, via POST /api/market/largo/query) — PR-L4a
+
+### P1 — "now" / "right now" collided with the ticker $NOW (ServiceNow) (FIXED, tested)
+- **Root cause:** EXTRACTION. `extractKnownTicker`/`extractCompareTickers` in
+  `src/lib/bie/router.ts` did `question.toUpperCase().match(/\$?\b[A-Z]{1,5}\b/g)` and accepted any
+  token in `KNOWN_TICKERS`. The adverb "now" uppercased to "NOW", which IS in `KNOWN_TICKERS`
+  (`question-intent.ts:67`), so bare "right now" resolved to $NOW. `classifyBieStagingFallback`'s
+  terminal `if (ticker) return { intent: "ticker_advice", ticker }` then answered with a ServiceNow
+  desk verdict. Not a routing/composer bug — the mis-extracted ticker was correct-looking garbage in.
+- **Evidence (gauntlet):** "What is our honest Night Hawk record right now, and why did the headline
+  number change recently?" → "NOW — desk verdict … spot 110.16 … peers META, CRM, NVDA, MSFT".
+  Same on "Where is the crowd wrong right now?".
+- **Fix:** case-preserving extraction + a FUNCTION-WORD stopword guard (`STOPWORD_TICKERS`): a bare
+  English stopword that is also a ticker (only `NOW` intersects the allowlist today) counts as a
+  ticker ONLY with a `$` prefix or an unambiguous context ("NOW stock", "ticker NOW"); content-noun
+  tickers (ARM, CAT) are deliberately NOT gated (no over-restriction). `src/lib/bie/router.ts`.
+- **After:** primary classifier returns null → Claude reaches `get_nighthawk_outcomes` (the honest
+  11.1% record); staging fallback returns `market_context`, never a NOW verdict. `router.test.ts`.
+- **Status:** FIXED (tsc clean, full suite green).
+
+### P1 — False spatial premise accepted (spot "above" its call wall when it was below) (FIXED, tested)
+- **Root cause:** COMPOSER. `detectPremiseCorrections` (`src/lib/bie/spx-premise.ts`) only checked
+  VWAP and gamma-flip claims; a wall / max-pain spatial claim was never validated against the live
+  number the read already fetches, so a false "pinned above its call wall" passed straight into a
+  bullish desk read.
+- **Evidence (gauntlet):** "Why is SPX pinned above its call wall right now?" — SPX spot 7,515, call
+  wall 7,550 (spot BELOW). Largo gave a bullish read and never corrected the premise.
+- **Fix:** added deterministic call-wall / put-wall / max-pain guards. Call/put wall derived from the
+  desk's own ladder (max positive / most-negative net_gex, canonical `topGexWalls` semantics); the
+  direction word is tied to the level phrase so compound sentences scope correctly; a false claim
+  emits `CORRECTION  SPX at 7,515 is actually BELOW its call wall 7,550, not above it …` prepended
+  before the read. TOL=1pt so "pinned AT the wall" isn't flagged. `src/lib/bie/spx-premise.ts`.
+- **After:** the gauntlet call-wall question now leads with the correction; a TRUE "above call wall"
+  claim emits none. `spx-premise.test.ts`.
+- **Status:** FIXED (tsc clean, full suite green).
+
 ## 2026-07-13 — Vector bead-rail / DTE-coherence audit (member-driven, RTH live)
 
 ### P0 — Bead trails ran full-width from the open; "no new walls all day" (FIXED, live-verified)
@@ -698,3 +734,83 @@ against staging: **68 pass · 0 fail · 4 skip · 3 expected-fail (keyed to #338
 - `/api/market/spx/desk` served `vwap: 0` off-hours while the desk brief still narrated a VWAP
   relation — the suite guards its VWAP-premise case on `vwap > 0` and SKIPs it off-hours;
   producer-side honesty (null, not 0) worth a look.
+
+## 2026-07-14 — Night Hawk OVERNIGHT: the Debrief — end-of-session intelligence (PR-N10, branch feat/nighthawk-debrief)
+
+### MEDIUM — No automated end-of-session intelligence existed: grades said WHAT, never WHY, so "how do we improve the system" was unanswerable without a manual forensic pass (FIXED — the Debrief)
+- **Severity:** MEDIUM (process/learning-loop gap, not a live wrong number — but it is
+  the gap that let N-2..N-8 accumulate unnoticed). After #329–#333 the overnight book
+  finally grades honestly, but a grade is only WHAT happened: AMD 2026-07-07 (the
+  record's only A+, gapped −6.55% through its stop pre-open — a loss decided before the
+  session) graded `stop` identically to an ordinary in-plan stop-out; DELL 2026-07-08
+  (band $226.82–227.27 vs a $417 stock) graded `unfilled` identically to a 30-cent
+  near-miss. "What went well / what were REAL winners / what misfired / how do we
+  improve" required re-deriving everything by hand (the decision doc's §2 forensics —
+  done once, evaporating immediately).
+- **Root cause:** no per-play post-mortem artifact existed. Failure MODES (gap-through-
+  stop vs wrong-direction vs detached-band), fill quality, MFE/MAE from the real fill,
+  and thesis-vs-tape verdicts were never computed or persisted; the publish-gate
+  rejections (#332) persisted audit rows but nothing ever graded what the blocked plays
+  would have done, so the gates could neither earn nor lose their thresholds.
+- **Fix (PR-N10):**
+  1. **Per-play debrief** — `debrief.ts` (pure): `debriefPlay(row, bars)` over the
+     graded row + the SAME persisted daily bar grading used. Fill quality (did the
+     session trade into the band; first-touch bucket open/first-hour/later — time
+     buckets only from timestamped intraday bars, honestly `intraday_time_unknown`
+     from a daily bar; `unfilled` explained with the day's actual low/high vs band).
+     Real-winner test: MFE/MAE from the ACTUAL fill price (gap-through fills transact
+     at the open, not the published edge); a win that consumed ≥75% of its stop budget
+     is `lucky_win`, an open-beyond-target "win" is `gap_win` (legacy taxonomy — v2
+     grades make it impossible). Thesis scorecard: pinned publish-context factors
+     (direction / entry band / regime / catalyst-when-flagged) each verdicted
+     confirmed | refuted | untestable — missing pins degrade to untestable, never a
+     reconstruction. One PRIMARY failure-mode tag from a fixed 11-tag taxonomy with
+     documented precedence (pulled → unfilled → wins → stops → ambiguous → open);
+     pulled plays are judged on the PULL (`pulled_correctly`/`pulled_wrongly` from the
+     counterfactual grade, ambiguous counterfactuals never indict the pull).
+  2. **Persistence + cron** — `debrief` JSONB on `nighthawk_play_outcomes` (idempotent
+     ALTER; COALESCE first-write-wins in `pinNighthawkPlayDebrief`), written by a
+     bounded pass appended to the nighthawk-outcomes cron strictly AFTER grading —
+     fail-soft by contract (grading health is computed before the pass runs; pass
+     results ride the payload/meta as their own honest ledgers). A second bounded pass
+     counterfactually grades #332's `publish_gate` rejections on the SAME daily-bar
+     path (`resolveOutcome`, underlying level-touch basis — option premium never
+     fabricated), pinned to a new `alert_audit_log.counterfactual_json` (deliberately
+     NOT the `outcome` column: that feeds BIE precedent ingestion, where a
+     counterfactual would masquerade as a real alert result).
+  3. **Aggregate + improvement queue** — `debrief-aggregate.ts` (calibration.ts's
+     shape): failure-mode counts and per-conviction records over CURRENT-methodology
+     rows only (#333 anti-blend mirrored; legacy quarantine surfaced as a count);
+     per-gate blocked value (n blocked / would-have-won rate, counterfactual
+     `unfilled` separated as trivially-right); the published MIRROR (retro-applying
+     each live gate threshold to the geometry pinned in publish_context — would-block
+     vs would-pass record, delta in pts); machine-readable improvement queue
+     `{signal, evidence:{n, delta}, suggestion, low_n}` where LOW-N evidence is
+     visible but NEVER carries a suggestion (shared `LOW_N_THRESHOLD`).
+  4. **Surfaces** — member record route: compact `debrief` summary block (additive,
+     segments-aware via analytics.ts). Admin: full report folded into
+     `/api/admin/nighthawk/analytics` as `debrief_report` (cheapest honest home — the
+     dashboard already reads the route, the auth exists, and gate counterfactuals are
+     ops evidence, not member content). Largo: `nighthawk-edition-read.ts` (additive)
+     — pick-why gains a "How it debriefed" section rendered ONLY from a real pin, and
+     ticker-less results asks ("how did the night hawk plays do?", "debrief") route to
+     a session-debrief envelope over the latest graded edition.
+- **Evidence (real history, now regression fixtures):** AMD 7/07 debriefs
+  `gap_through_stop` ("opened 515.91 already beyond the published stop 550.88 (−6.55%
+  overnight gap) — the loss was decided before the session"), thesis direction+regime
+  REFUTED, MFE 19% of target distance from the real 515.91 fill. DELL 7/08 debriefs
+  `band_detached` ("session low 414 stayed 82.16% ABOVE the band edge 227.27", gate
+  bar 2.5%); AMD 7/08 (low 498.15 vs band 495.35, 0.57%) debriefs
+  `unfilled_never_traded_back` — the two unfilled classes finally separate.
+- **Tests:** `debrief.test.ts` (35 — every taxonomy tag both directions incl. the real
+  AMD/DELL fixtures, MFE/MAE math exact, first-touch buckets from timestamped bars,
+  thesis verdicts, pulled counterfactual edges), `debrief-aggregate.test.ts` (14 —
+  anti-blend, blocked value, retro mirror, queue shape, LOW-N never suggests),
+  `debrief-persist.test.ts` (11 — first-write-wins, fail-soft both passes, same-bar-
+  path counterfactuals, ungradeable persisted with reason), + 8 Largo cases
+  (pin-only rendering, session-debrief routing/envelope). tsc clean; full npm test
+  green.
+- **Deliberately unchanged:** grading itself (`resolveOutcome`), the edition builder/
+  scorer, publish-gates.ts (its constants are imported as the single source of truth),
+  `HawkRecordStrip` (parallel agent owns the playbook UI), and gate thresholds — the
+  Debrief produces the evidence to move them; it never moves them itself.

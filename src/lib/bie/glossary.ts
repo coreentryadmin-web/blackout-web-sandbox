@@ -159,7 +159,11 @@ export const BLACKOUT_GLOSSARY: GlossaryEntry[] = [
     ],
     category: "concept",
     definition:
-      "The gamma regime is the single highest-leverage interpretation layer: spot ABOVE the gamma flip = LONG gamma (dealers hedge against moves → calm, range-bound, fade extremes); spot BELOW = SHORT gamma (dealers hedge with moves → volatile, trends run, respect breaks); within ±0.1% of the flip = TRANSITION (undecided, sharpest moves as dealers flip hedging direction).",
+      // "positive/negative gamma" is the vocabulary members actually use for the two states, so the
+      // definition answers in BOTH registers (positive/long, negative/short) — a "what does positive
+      // gamma mean" ask must get the suppress/stabilize/pin mechanics, and "negative gamma" the
+      // amplify/accelerate mechanics, not just the long/short jargon (live-battery gap, PR-L1).
+      "The gamma regime is the single highest-leverage interpretation layer. Spot ABOVE the gamma flip = POSITIVE gamma (long gamma): dealers hedge AGAINST moves — selling rallies, buying dips — which suppresses and stabilizes the market: volatility is dampened, price pins and mean-reverts, so you fade extremes. Spot BELOW = NEGATIVE gamma (short gamma): dealers hedge WITH moves, which amplifies them — volatility feeds on itself, moves accelerate, trends run, so respect breaks. Within ±0.1% of the flip = TRANSITION (undecided, sharpest moves as dealers flip hedging direction).",
   },
 
   {

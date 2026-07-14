@@ -75,6 +75,12 @@ const ADVICE_RE =
   /\b(should i|would you|can i|worth (buying|selling)|buy|sell|hold|trim|into earnings|before earnings|after earnings)\b/i;
 
 const COMPARE_RE = /\b(compare|versus|vs\.?)\b/i;
+/** Comparative cues that make a TWO-ticker question a compare even without a compare/vs keyword —
+ *  "is SPX or NVDA closer to its flip?", "which of SPY or QQQ is stronger?". Deliberately weak on
+ *  its own: the compare branch additionally requires extractCompareTickers to find two DISTINCT
+ *  known tickers, so these common words can never hijack a single-ticker or ticker-less question. */
+const COMPARATIVE_CUE_RE =
+  /\b(closer|closest|nearer|nearest|farther|further|which|more|less|higher|lower|stronger|weaker|better|worse)\b/i;
 
 // Cross-tool VERDICT synthesis (task #59) — the flagship "grade this" question. composeVerdict fans
 // out to the RELEVANT engines (dealer gamma + flow always; earnings/fundamentals for a single-name
@@ -307,26 +313,67 @@ function isSpxHorizonScopedStructureQuestion(q: string, horizon: string): boolea
 const REASONING_RE =
   /\b(why|explain|compare|versus|vs\.?|should i|would you|what if|predict|forecast|think|opinion|strategy|teach|how do(es)? .{0,20}work)\b/i;
 
-function extractKnownTicker(question: string): string | null {
-  const matches = question.toUpperCase().match(/\$?\b[A-Z]{1,5}\b/g) ?? [];
+// English function words ("stopwords") that ALSO collide with — or could collide with, if added to
+// KNOWN_TICKERS later — a real ticker symbol. The live gauntlet (PR-L4a) caught "right now" / "…now"
+// resolving to $NOW (ServiceNow): the extractor uppercased the whole question, so the adverb "now"
+// became the ticker "NOW" (which IS in KNOWN_TICKERS), and the staging fallback then answered with a
+// ServiceNow desk verdict. A bare lowercase function word in a sentence must NEVER be read as a
+// ticker — only an explicit `$` prefix or an unambiguous ticker context ("NOW stock", "ticker NOW")
+// promotes it. This is deliberately the FUNCTION-WORD set only: content-noun tickers (ARM, CAT) are
+// left alone because a capitalised "ARM"/"CAT" is far more often a genuine ticker reference, and
+// over-restricting them would drop legitimate member mentions. Today only "NOW" intersects
+// KNOWN_TICKERS, so the guard is surgical; the wider list future-proofs the allowlist.
+const STOPWORD_TICKERS = new Set([
+  "NOW", "ALL", "ARE", "OR", "BE", "GO", "SO", "AT", "ON", "IT", "IN", "OF", "TO",
+  "THE", "AN", "AS", "IS", "IF", "BY", "WE", "US", "HE", "NO", "UP", "MY", "ME",
+  "DO", "AND", "FOR", "BUT", "NOT", "YOU", "OUR", "OUT", "WHY", "HOW", "WHO", "ANY",
+]);
+
+/**
+ * Unambiguous ticker context around a stopword-collision token: a "ticker/symbol/shares of" lead-in
+ * or a "stock/shares/calls/puts/chart/equity" trailer. Case-SENSITIVE on the token (it must be the
+ * UPPERCASE symbol, e.g. `NOW`), so "right now stock is cheap" (lowercase "now") can never trip the
+ * trailer rule, while "NOW stock", "ticker NOW" and (via the `$` short-circuit) "$NOW" all promote.
+ */
+function hasTickerContext(question: string, symbol: string): boolean {
+  const T = symbol.toUpperCase();
+  const lead = new RegExp(`\\b(?:ticker|symbol|shares? of|share of)\\s+\\$?${T}\\b`).test(question);
+  const trail = new RegExp(`\\b${T}\\s+(?:stock|shares|share|equity|calls?|puts?|chart|ticker)\\b`).test(question);
+  return lead || trail;
+}
+
+/** True when a matched candidate is a real ticker reference (not a bare English stopword). Applies
+ *  the stopword-collision guard: NOW/… only count with a `$` prefix or explicit ticker context. */
+function acceptTicker(question: string, raw: string): string | null {
+  const hadDollar = raw.startsWith("$");
+  const cand = raw.replace(/^\$/, "").toUpperCase();
+  if (!hadDollar && !KNOWN_TICKERS.has(cand)) return null;
+  if (!hadDollar && STOPWORD_TICKERS.has(cand) && !hasTickerContext(question, cand)) return null;
+  return cand;
+}
+
+/** Accepted tickers in question order (case preserved so "right now" ≠ "$NOW"). */
+function acceptedTickers(question: string): string[] {
+  // Match on the ORIGINAL string (case intact) — the whole-question toUpperCase() the old extractor
+  // used is exactly what let the adverb "now" masquerade as the ticker "NOW".
+  const matches = question.match(/\$?\b[A-Za-z]{1,5}\b/g) ?? [];
+  const out: string[] = [];
   for (const m of matches) {
-    const hadDollar = m.startsWith("$");
-    const cand = m.replace(/^\$/, "");
-    if (hadDollar || KNOWN_TICKERS.has(cand)) return cand;
+    const t = acceptTicker(question, m);
+    if (t) out.push(t);
   }
-  return null;
+  return out;
+}
+
+function extractKnownTicker(question: string): string | null {
+  return acceptedTickers(question)[0] ?? null;
 }
 
 /** Up to two known tickers for compare routing. */
 export function extractCompareTickers(question: string): [string, string] | null {
-  const matches = question.toUpperCase().match(/\$?\b[A-Z]{1,5}\b/g) ?? [];
   const found: string[] = [];
-  for (const m of matches) {
-    const hadDollar = m.startsWith("$");
-    const cand = m.replace(/^\$/, "");
-    if (hadDollar || KNOWN_TICKERS.has(cand)) {
-      if (!found.includes(cand)) found.push(cand);
-    }
+  for (const t of acceptedTickers(question)) {
+    if (!found.includes(t)) found.push(t);
     if (found.length >= 2) break;
   }
   return found.length >= 2 ? [found[0]!, found[1]!] : null;
@@ -390,7 +437,14 @@ export function classifyBieIntent(question: string, ledgerTickers: Set<string>):
   // (excluded in isVerdictQuestion) still falls through to the lighter ticker_advice path.
   if (isVerdictQuestion(q)) return { intent: "verdict", ticker: extractKnownTicker(q) };
 
-  if (COMPARE_RE.test(q)) {
+  // Explicit compare keyword, OR a comparative question naming TWO known tickers ("Is SPX or NVDA
+  // closer to its gamma flip?", "which of SPY or QQQ is stronger?") — the live-battery miss (PR-L1):
+  // without a compare/versus/vs keyword the SPX structure branch stole the two-ticker question and
+  // answered for SPX alone, never naming the second name. The two-DISTINCT-known-tickers gate
+  // (extractCompareTickers) is what authorizes the route — a bare cue word ("which", "closer") with
+  // zero or one ticker never routes here, so single-ticker questions keep their existing homes
+  // (same single-word steal-risk discipline as the #334 alias rules).
+  if (COMPARE_RE.test(q) || COMPARATIVE_CUE_RE.test(q)) {
     const pair = extractCompareTickers(q);
     if (pair) return { intent: "ticker_compare", ticker: pair[0], ticker_b: pair[1] };
   }

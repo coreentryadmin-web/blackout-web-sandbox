@@ -222,6 +222,69 @@ export function readNighthawkMorningVerdict(raw: unknown): NhMorningVerdictLike 
   };
 }
 
+/** The pinned per-play debrief (PR-N10, features/nighthawk/lib/debrief.ts) as this
+ *  module reads it — STRUCTURAL, version-gated like the publish pin: a blob without
+ *  debrief_version + a failure-mode tag is "no debrief on record", never a guess.
+ *  Rendering is verbatim-from-the-pin (the tag/detail sentences were computed against
+ *  the grading-time bars); nothing here is ever re-derived. */
+export type NhDebriefLike = {
+  debriefed_at: string | null;
+  failure_mode: { tag: string; detail: string | null };
+  fill: { filled: boolean | null; first_touch: string | null; detail: string | null } | null;
+  excursion: {
+    mfe_pct: number | null;
+    mae_pct: number | null;
+    mfe_vs_target_ratio: number | null;
+    mae_vs_stop_ratio: number | null;
+  } | null;
+  thesis: Array<{ label: string; verdict: string; detail: string | null }>;
+};
+
+export function readNighthawkDebrief(raw: unknown): NhDebriefLike | null {
+  if (raw == null || typeof raw !== "object" || Array.isArray(raw)) return null;
+  const d = raw as Record<string, unknown>;
+  if (num(d.debrief_version) == null) return null;
+  const fm = (d.failure_mode && typeof d.failure_mode === "object" ? d.failure_mode : null) as
+    | Record<string, unknown>
+    | null;
+  const tag = fm ? str(fm.tag) : null;
+  if (!tag) return null; // a debrief without its primary tag is not a debrief we can present
+  const fill = (d.fill && typeof d.fill === "object" ? d.fill : null) as Record<string, unknown> | null;
+  const exc = (d.excursion && typeof d.excursion === "object" ? d.excursion : null) as
+    | Record<string, unknown>
+    | null;
+  const thesis: NhDebriefLike["thesis"] = [];
+  if (Array.isArray(d.thesis)) {
+    for (const f of d.thesis) {
+      if (f == null || typeof f !== "object") continue;
+      const rec = f as Record<string, unknown>;
+      const label = str(rec.label);
+      const verdict = str(rec.verdict);
+      if (label && verdict) thesis.push({ label, verdict: verdict.toLowerCase(), detail: str(rec.detail) });
+    }
+  }
+  return {
+    debriefed_at: str(d.debriefed_at),
+    failure_mode: { tag, detail: fm ? str(fm.detail) : null },
+    fill: fill
+      ? {
+          filled: typeof fill.filled === "boolean" ? fill.filled : null,
+          first_touch: str(fill.first_touch),
+          detail: str(fill.detail),
+        }
+      : null,
+    excursion: exc
+      ? {
+          mfe_pct: num(exc.mfe_pct),
+          mae_pct: num(exc.mae_pct),
+          mfe_vs_target_ratio: num(exc.mfe_vs_target_ratio),
+          mae_vs_stop_ratio: num(exc.mae_vs_stop_ratio),
+        }
+      : null,
+    thesis,
+  };
+}
+
 // ── Row / edition slices the builders need ─────────────────────────────────────────
 
 /** The outcome-row slice the builders read (a Pick of db.ts's NighthawkPlayOutcomeRow
@@ -248,6 +311,7 @@ export type NhOutcomeRowLike = Pick<
   | "pulled_reason"
   | "publish_context"
   | "morning_verdict"
+  | "debrief"
 > & { pulled_at?: string | null };
 
 /** The edition-row slice (a Pick of db.ts's NighthawkEditionRow). */
@@ -302,6 +366,45 @@ export function parseEditionPlays(raw: unknown[]): NhEditionPlayLike[] {
 const NH_SOURCE_PIN = "Night Hawk publish pin (publish_context)";
 const NH_SOURCE_VERDICT = "Night Hawk morning check (morning_verdict)";
 const NH_SOURCE_LEDGER = "Night Hawk outcome ledger (nighthawk_play_outcomes)";
+const NH_SOURCE_DEBRIEF = "Night Hawk session debrief (debrief pin)";
+
+/** "gap_through_stop" → "gap through stop" — presentation only, never re-labeled. */
+function debriefTagLabel(tag: string): string {
+  return tag.replace(/_/g, " ");
+}
+
+/** Member-readable lines for a pinned debrief — VERBATIM from the pin (the sentences
+ *  were computed against the grading-time bars); nothing is re-derived here. */
+export function debriefBody(d: NhDebriefLike): string {
+  const lines: string[] = [];
+  lines.push(
+    `Primary read: **${debriefTagLabel(d.failure_mode.tag)}**${d.failure_mode.detail ? ` — ${d.failure_mode.detail}` : ""}.`
+  );
+  if (d.fill?.detail) {
+    lines.push(`Fill: ${d.fill.detail}${d.fill.first_touch ? ` (first touch: ${d.fill.first_touch.replace(/_/g, " ")})` : ""}.`);
+  }
+  if (d.excursion && (d.excursion.mfe_pct != null || d.excursion.mae_pct != null)) {
+    const bits: string[] = [];
+    if (d.excursion.mfe_pct != null) bits.push(`best ${d.excursion.mfe_pct >= 0 ? "+" : ""}${fmtNum(d.excursion.mfe_pct)}%`);
+    if (d.excursion.mae_pct != null) bits.push(`worst ${fmtNum(d.excursion.mae_pct)}%`);
+    if (d.excursion.mfe_vs_target_ratio != null)
+      bits.push(`${fmtNum(d.excursion.mfe_vs_target_ratio * 100, 0)}% of the target distance reached`);
+    if (d.excursion.mae_vs_stop_ratio != null)
+      bits.push(`${fmtNum(d.excursion.mae_vs_stop_ratio * 100, 0)}% of the stop distance consumed`);
+    lines.push(`Excursion from the fill edge: ${bits.join(" · ")}.`);
+  }
+  const tested = d.thesis.filter((f) => f.verdict === "confirmed" || f.verdict === "refuted");
+  if (d.thesis.length > 0) {
+    const scoreline = d.thesis
+      .map((f) => `${f.label.replace(/_/g, " ")}: ${f.verdict.toUpperCase()}`)
+      .join(" · ");
+    lines.push(`Thesis scorecard: ${scoreline}.`);
+    for (const f of tested.filter((x) => x.verdict === "refuted")) {
+      if (f.detail) lines.push(`- ${f.label.replace(/_/g, " ")} refuted: ${f.detail}`);
+    }
+  }
+  return lines.join("\n");
+}
 
 const NH_FOLLOWUPS = [
   "What is publish context?",
@@ -629,6 +732,18 @@ export function buildNighthawkPickWhyEnvelope(
     provenance: { source: NH_SOURCE_LEDGER, asOf: null },
   });
 
+  // 5) How it debriefed (PR-N10, ADDITIVE) — rendered ONLY when a real debrief pin
+  // exists on the row. No pin → no section: the post-mortem is written by the outcomes
+  // cron against the grading-time bars and is never reconstructed at read time.
+  const debrief = readNighthawkDebrief(row.debrief ?? null);
+  if (debrief) {
+    sections.push({
+      title: "How it debriefed",
+      body: debriefBody(debrief),
+      provenance: { source: NH_SOURCE_DEBRIEF, asOf: debrief.debriefed_at },
+    });
+  }
+
   return makeEnvelope({
     headline: headlineBits.join(" · "),
     bias,
@@ -670,6 +785,128 @@ export function buildNighthawkPickNotFoundEnvelope(ticker: string, dateYmd: stri
       level: "high",
       why: "The outcome ledger was read directly — an empty record is itself the honest answer.",
     },
+    followups: ["Show tonight's playbook", ...NH_FOLLOWUPS.slice(0, 2)],
+  });
+}
+
+// ── Session debrief (PR-N10): "how did last night's plays do?" ─────────────────────
+
+/**
+ * The session-debrief envelope: one graded edition's plays, each presented from its
+ * grade + PINNED debrief (failure-mode tag, fill story, thesis scorecard). PURE —
+ * callers do the IO. Honesty: a row without a debrief pin renders its grade and says
+ * "no debrief pin on record" — the post-mortem is cron-written against grading-time
+ * bars and NEVER reconstructed at read time. Aggregate counts (wins/losses/unfilled/
+ * pulled) are raw counts of THESE rows, labeled as such — no win-rate claims here
+ * (the record route owns ratios, with its LOW-N and methodology discipline).
+ */
+export function buildNighthawkSessionDebriefEnvelope(
+  editionFor: string,
+  rows: NhOutcomeRowLike[]
+): BieAnswerEnvelope {
+  const graded = rows.filter((r) => r.outcome !== "pending");
+  const pendingN = rows.length - graded.length;
+  const wins = graded.filter((r) => r.outcome === "target" && r.pulled !== true).length;
+  const stops = graded.filter((r) => r.outcome === "stop" && r.pulled !== true).length;
+  const opens = graded.filter((r) => r.outcome === "open" && r.pulled !== true).length;
+  const unfilled = graded.filter((r) => r.outcome === "unfilled" && r.pulled !== true).length;
+  const pulled = rows.filter((r) => r.pulled === true).length;
+
+  const countBits = [
+    wins ? `${wins} target` : null,
+    stops ? `${stops} stopped` : null,
+    opens ? `${opens} open` : null,
+    unfilled ? `${unfilled} unfilled` : null,
+    pulled ? `${pulled} pulled` : null,
+    pendingN ? `${pendingN} still pending` : null,
+  ].filter(Boolean);
+
+  const sections: BieAnswerEnvelope["sections"] = [];
+  const unavailableSources: BieUnavailableSource[] = [];
+  let debriefedCount = 0;
+
+  for (const row of rows.slice(0, 6)) {
+    const debrief = readNighthawkDebrief(row.debrief ?? null);
+    const grade = gradeText(row);
+    const bodyParts: string[] = [];
+    if (row.pulled === true) {
+      bodyParts.push(
+        `PULLED pre-open — ${row.pulled_reason ?? "no reason sentence recorded"}. ${NH_PULLED_EXCLUSION_NOTE}`
+      );
+    }
+    if (grade) bodyParts.push(grade);
+    else bodyParts.push("Not graded yet — the outcome is still pending.");
+    if (debrief) {
+      debriefedCount += 1;
+      bodyParts.push(debriefBody(debrief));
+    } else if (row.outcome !== "pending") {
+      bodyParts.push(
+        "No debrief pin on record for this play yet (the post-mortem is written by the outcomes cron after grading — nothing is reconstructed at read time)."
+      );
+      unavailableSources.push({
+        source: `${NH_SOURCE_DEBRIEF} · ${row.ticker.toUpperCase()}`,
+        reason: "graded but not yet debriefed",
+      });
+    }
+    const titleBits = [
+      `${row.ticker.toUpperCase()} ${row.direction}`,
+      row.outcome !== "pending" ? row.outcome.toUpperCase() : "PENDING",
+      debrief ? debriefTagLabel(debrief.failure_mode.tag) : null,
+      row.pulled === true ? "PULLED" : null,
+    ].filter(Boolean);
+    sections.push({
+      title: titleBits.join(" · "),
+      body: bodyParts.join("\n"),
+      bias: "neutral",
+      provenance: { source: NH_SOURCE_DEBRIEF, asOf: debrief?.debriefed_at ?? null },
+    });
+  }
+
+  return makeEnvelope({
+    headline: `Night Hawk debrief — ${editionFor} session: ${countBits.length ? countBits.join(" · ") : "no plays on the ledger"}`,
+    bias: "neutral",
+    intent: "nighthawk_edition",
+    sections,
+    evidence: [],
+    confidence:
+      debriefedCount > 0
+        ? {
+            level: "high",
+            why: `Pinned debriefs on ${debriefedCount} of ${rows.length} plays — each post-mortem was computed against the same persisted session bar the grade used.`,
+          }
+        : {
+            level: "moderate",
+            why: "Grades are on the ledger but no play carries a pinned debrief yet — only the grades are presented.",
+          },
+    unavailableSources,
+    followups: [`Why was ${rows[0]?.ticker.toUpperCase() ?? "the pick"} picked?`, ...NH_FOLLOWUPS.slice(0, 2)],
+  });
+}
+
+/** Honest empty state for a debrief ask with nothing graded to debrief. */
+export function buildNighthawkNoDebriefEnvelope(dateYmd: string | null, unreadable: boolean): BieAnswerEnvelope {
+  return makeEnvelope({
+    headline: unreadable
+      ? "Night Hawk debrief unreadable this turn"
+      : dateYmd
+        ? `No graded Night Hawk plays to debrief for ${dateYmd}`
+        : "No graded Night Hawk plays to debrief yet",
+    bias: "neutral",
+    intent: "nighthawk_edition",
+    sections: [
+      {
+        title: unreadable ? "Ledger unreachable" : "Nothing graded yet",
+        body: unreadable
+          ? "The outcome ledger could not be read this turn — no debrief is being invented in its place. Try again shortly."
+          : "Debriefs exist only for graded plays (grades land after the target session closes, ~4:30 PM ET). Ask again after the outcomes cron has run, or ask for the edition itself to see the plays.",
+        provenance: { source: NH_SOURCE_LEDGER, asOf: null },
+      },
+    ],
+    evidence: [],
+    confidence: unreadable
+      ? { level: "insufficient", why: "The outcome ledger read failed — nothing to present." }
+      : { level: "high", why: "The outcome ledger was read directly — an empty graded set is itself the honest answer." },
+    unavailableSources: unreadable ? [{ source: NH_SOURCE_LEDGER, reason: "read failed" }] : [],
     followups: ["Show tonight's playbook", ...NH_FOLLOWUPS.slice(0, 2)],
   });
 }
@@ -758,6 +995,7 @@ function mapOutcomeRow(r: Record<string, unknown>): NhOutcomeRowLike {
     pulled_at: r.pulled_at != null ? new Date(String(r.pulled_at)).toISOString() : null,
     publish_context: (r.publish_context as Record<string, unknown> | null) ?? null,
     morning_verdict: (r.morning_verdict as Record<string, unknown> | null) ?? null,
+    debrief: (r.debrief as Record<string, unknown> | null) ?? null,
   };
 }
 
@@ -765,7 +1003,7 @@ const OUTCOME_COLUMNS = `edition_for, ticker, direction, conviction, score,
        entry_range_low, entry_range_high, target, stop,
        next_day_open, next_day_close, session_high, session_low,
        hit_target, hit_stop, outcome, pulled, pulled_reason, pulled_at,
-       publish_context, morning_verdict`;
+       publish_context, morning_verdict, debrief`;
 
 async function outcomeRowsForEdition(editionFor: string): Promise<NhOutcomeRowLike[]> {
   try {
@@ -811,6 +1049,62 @@ async function outcomeRowForTicker(ticker: string, dateYmd: string | null): Prom
   } catch {
     return null;
   }
+}
+
+/** The most recent edition carrying at least one GRADED play — the session "how did
+ *  last night's plays do" means by default. Null when nothing has ever graded. */
+async function latestGradedEditionFor(): Promise<{ editionFor: string | null; unreadable: boolean }> {
+  try {
+    const db = await import("../db");
+    if (!db.dbConfigured()) return { editionFor: null, unreadable: true };
+    const res = await db.dbQuery(
+      `SELECT MAX(edition_for) AS edition_for FROM nighthawk_play_outcomes WHERE outcome <> 'pending'`
+    );
+    const raw = res.rows[0]?.edition_for ?? null;
+    if (raw == null) return { editionFor: null, unreadable: false };
+    const editionFor =
+      raw instanceof Date ? raw.toISOString().slice(0, 10) : String(raw).slice(0, 10);
+    return { editionFor, unreadable: false };
+  } catch {
+    return { editionFor: null, unreadable: true };
+  }
+}
+
+/**
+ * PR-N10 — the session-debrief read: "how did last night's plays do?" Scopes to the
+ * named edition, else the most recent edition with graded plays. Envelope content is
+ * grades + PINNED debriefs only (nothing recomputed at read time). Never throws.
+ */
+export async function readNighthawkSessionDebrief(dateYmd?: string): Promise<BieComposed> {
+  let editionFor = dateYmd ?? null;
+  let unreadable = false;
+  if (!editionFor) {
+    const latest = await latestGradedEditionFor();
+    editionFor = latest.editionFor;
+    unreadable = latest.unreadable;
+  }
+  const rows = editionFor ? await outcomeRowsForEdition(editionFor) : [];
+  const graded = rows.filter((r) => r.outcome !== "pending");
+  if (!editionFor || graded.length === 0) {
+    const envelope = buildNighthawkNoDebriefEnvelope(dateYmd ?? null, unreadable);
+    return {
+      answer: envelope.markdown,
+      context: { mode: unreadable ? "unreadable" : "empty", date: dateYmd ?? null },
+      envelope,
+    };
+  }
+  const envelope = buildNighthawkSessionDebriefEnvelope(editionFor, rows);
+  return {
+    answer: envelope.markdown,
+    context: {
+      mode: "session_debrief",
+      edition_for: editionFor,
+      plays: rows.length,
+      graded: graded.length,
+      debriefed: rows.filter((r) => readNighthawkDebrief(r.debrief ?? null) != null).length,
+    },
+    envelope,
+  };
 }
 
 /**
@@ -881,13 +1175,23 @@ function dateFromQuestion(question: string): string | undefined {
   return question.match(/\b(20\d{2}-\d{2}-\d{2})\b/)?.[1];
 }
 
+/** PR-N10: a ticker-less "how did the plays DO / debrief" ask — a RESULTS question,
+ *  answered by the session debrief rather than tomorrow's playbook. Conservative on
+ *  purpose: it needs a past-performance verb ("how did … do/go/perform/turn out"), an
+ *  explicit debrief/post-mortem word, or "last night's plays" — plain edition asks
+ *  ("tonight's playbook") never match. */
+export const NH_DEBRIEF_ASK_RE =
+  /\b(debrief|post[- ]?mortems?)\b|\bhow\s+did\b[^?]*\b(do|go|grade|perform|turn\s+out|work\s+out)\b|\blast\s+night'?s?\s+(plays?|picks?|playbook|edition)\b/i;
+
 /**
  * Router glue for the `nighthawk_edition` intent: a ticker → that pick's full story;
- * no ticker → the edition read. An explicit YYYY-MM-DD in the question scopes the read.
+ * a ticker-less RESULTS ask (NH_DEBRIEF_ASK_RE) → the session debrief; otherwise the
+ * edition read. An explicit YYYY-MM-DD in the question scopes any of the three.
  */
 export async function composeNighthawkEditionRead(ticker: string | null, question: string): Promise<BieComposed> {
   const dateYmd = dateFromQuestion(question);
   if (ticker) return readNighthawkPickWhy(ticker, dateYmd);
+  if (NH_DEBRIEF_ASK_RE.test(question)) return readNighthawkSessionDebrief(dateYmd);
   return readNighthawkEdition(dateYmd);
 }
 
