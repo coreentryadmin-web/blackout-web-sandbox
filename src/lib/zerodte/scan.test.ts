@@ -53,6 +53,7 @@ mock.module("../db", {
     // from "@/lib/db" (which resolves to this same mocked file) — must exist or the
     // ESM import throws "does not provide an export named ...".
     fetchLatestNighthawkEdition: async () => null,
+    fetchOpenSpxPlay: async () => null,
     fetchRecentFlows: async () => [],
     fetchUngradedZeroDteRows: async () => state.ungradedRows,
     gradeZeroDteSetupRow: async (sessionDate: string, ticker: string, grade: Record<string, unknown>) => {
@@ -61,6 +62,15 @@ mock.module("../db", {
     insertAlertAuditLog: async () => {},
     updateZeroDtePlanOutcome: async () => {},
     upsertZeroDteSetupLog: async () => new Set<string>(),
+  },
+});
+
+// scan.ts's G-6 calibration context reads the Night Hawk echo through
+// @/lib/bie/ecosystem-context, whose real import graph reaches @/lib/db and beyond —
+// stubbed to an empty map (no takes → no conflicts), same wholesale idiom as below.
+mock.module("../bie/ecosystem-context", {
+  namedExports: {
+    fetchNighthawkEchoForTickers: async () => new Map(),
   },
 });
 

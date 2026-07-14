@@ -17,7 +17,6 @@ import {
   playMinGradeRank,
   playMinRiskReward,
   playOnlyFullEntry,
-  playOpeningRangeMinutes,
   playReentryLockSec,
   playSessionMaxEntries,
   playSessionMaxLosses,
@@ -374,12 +373,16 @@ export function evaluatePlayGates(
     blocks.push("Before 7:00 AM ET — opening volatility, no entries");
   }
 
-  const openingRangeEnd = etClock(9, 30) + playOpeningRangeMinutes();
-  if (buyIntent && etMins < openingRangeEnd) {
-    const endMinRaw = 30 + playOpeningRangeMinutes();
-    const endHour = 9 + Math.floor(endMinRaw / 60);
-    const endMinClamped = endMinRaw % 60;
-    blocks.push(`Opening range — no BUY until ${formatEtTime(endHour, endMinClamped)} (WATCH ok)`);
+  // user-directed 2026-07-13: restrict only the first 15 minutes; the 9:45–10:30
+  // band is measured by the calibration loop (entry_context.committed_at_et) so
+  // this boundary can be revisited with per-play evidence. (Was 9:30 +
+  // SPX_PLAY_OPENING_RANGE_MINUTES → 9:50. That env knob still defines the opening
+  // RANGE for technicals and watch-drift math — deliberately untouched; only the
+  // BUY unlock moved to 9:45. Same boundary as 0DTE Command's G-2 opening-window
+  // gate — "0DTE" means BOTH surfaces.)
+  const entryUnlockEtMins = etClock(9, 45);
+  if (buyIntent && etMins < entryUnlockEtMins) {
+    blocks.push(`Opening range — no BUY until ${formatEtTime(9, 45)} (WATCH ok)`);
   }
 
   if (abs < playWatchMinScore()) {

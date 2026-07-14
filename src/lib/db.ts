@@ -673,6 +673,17 @@ async function runMigrations(): Promise<void> {
   await p.query(`
     ALTER TABLE zerodte_setup_log ADD COLUMN IF NOT EXISTS entry_context JSONB;
   `);
+  // Hard-gate calibration verdicts (G-4 VIX throttle / G-6 cross-system conflict, decision doc
+  // NIGHTHAWK-0DTE-DECISION.md §2 "calibration mode") — computed and PINNED at commit time on
+  // every fresh row so 30 sessions from now the "harden or drop" call is made on per-play data
+  // that actually exists (the C-2 lesson: none of regime/VIX/score-at-entry existed per-play
+  // anywhere, which is what made the original forensics so painful). Never blocks; never
+  // re-written by later refresh ticks (COALESCE-pinned like plan_json). Sits alongside
+  // entry_context above: entry_context = what the DESK looked like, gate_calibration_json =
+  // what the GATES said about it.
+  await p.query(`
+    ALTER TABLE zerodte_setup_log ADD COLUMN IF NOT EXISTS gate_calibration_json JSONB;
+  `);
   // BLACKOUT Intelligence Engine — every answered question logged with its route
   // (deterministic router vs Claude fallback) and numeric-claim verification, so
   // router coverage, verification rate, and cost avoided are queryable from day one.
@@ -1243,6 +1254,12 @@ async function runMigrations(): Promise<void> {
       ON zerodte_scan_rejections (observed_at DESC);
     CREATE INDEX IF NOT EXISTS idx_zerodte_scan_rejections_ticker
       ON zerodte_scan_rejections (ticker, observed_at DESC);
+    -- Human-readable block sentence (hard-gate stack, decision doc NIGHTHAWK-0DTE-DECISION.md
+    -- section 2): gate_failed stays the machine-readable code; reason is the member-facing
+    -- sentence the board's SKIP cards render verbatim ("blocked, and here is exactly why" --
+    -- visible discipline, never a silent drop). NULL for the original 4 evidence gates, whose
+    -- rows predate the hard-gate stack and whose numeric columns already tell the whole story.
+    ALTER TABLE zerodte_scan_rejections ADD COLUMN IF NOT EXISTS reason TEXT;
 
     -- gex_regime_events (task #136): durable log of BlackOut Thermal's GEX
     -- regime/flip/wall-crossing events, detected by computeGexEvents() (src/lib/
@@ -2981,6 +2998,8 @@ export async function insertZeroDteScanRejection(row: {
   prints: number;
   first_seen: string | null;
   last_seen: string | null;
+  /** Human-readable block sentence (hard-gate rows only; evidence-gate rows pass null). */
+  reason?: string | null;
 }): Promise<void> {
   await ensureSchema();
   await (await getPool()).query(
@@ -2988,9 +3007,9 @@ export async function insertZeroDteScanRejection(row: {
     INSERT INTO zerodte_scan_rejections (
       session_date, ticker, gate_failed, threshold, gross_premium,
       aggression, side_dominance, otm_pct, direction, prints,
-      first_seen, last_seen
+      first_seen, last_seen, reason
     )
-    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
     `,
     [
       row.session_date,
@@ -3005,6 +3024,7 @@ export async function insertZeroDteScanRejection(row: {
       row.prints,
       row.first_seen,
       row.last_seen,
+      row.reason ?? null,
     ]
   );
 }
@@ -3025,6 +3045,7 @@ export async function fetchZeroDteScanRejections(opts?: { ticker?: string; limit
     prints: number | null;
     first_seen: string | null;
     last_seen: string | null;
+    reason: string | null;
   }>
 > {
   await ensureSchema();
@@ -3032,7 +3053,7 @@ export async function fetchZeroDteScanRejections(opts?: { ticker?: string; limit
   const ticker = opts?.ticker?.toUpperCase();
   const cols = `id, observed_at, session_date, ticker, gate_failed, threshold,
            gross_premium, aggression, side_dominance, otm_pct, direction, prints,
-           first_seen, last_seen`;
+           first_seen, last_seen, reason`;
   const res = ticker
     ? await (await getPool()).query(
         `SELECT ${cols} FROM zerodte_scan_rejections WHERE ticker = $1 ORDER BY observed_at DESC LIMIT $2`,
@@ -3057,6 +3078,7 @@ export async function fetchZeroDteScanRejections(opts?: { ticker?: string; limit
     prints: r.prints != null ? Number(r.prints) : null,
     first_seen: r.first_seen != null ? String(r.first_seen) : null,
     last_seen: r.last_seen != null ? String(r.last_seen) : null,
+    reason: r.reason != null ? String(r.reason) : null,
   }));
 }
 
@@ -4277,6 +4299,8 @@ export type ZeroDteSetupLogRow = {
   last_mark: number | null;
   peak_premium: number | null;
   trough_premium: number | null;
+  /** G-4/G-6 calibration verdict + bias/score context, pinned at commit time (never blocks). */
+  gate_calibration_json: Record<string, unknown> | null;
   /** Context-at-entry (C-2): vix_open / spy_bias / gamma_regime / score /
    *  committed_at_et as of FIRST flag — see zerodte/entry-context.ts. NULL on
    *  every row committed before the column shipped; consumers must not assume it. */
@@ -4299,6 +4323,7 @@ export type ZeroDteSetupLogUpsert = {
   entry_premium: number | null;
   flow_avg_fill: number | null;
   plan_json: Record<string, unknown> | null;
+  gate_calibration_json: Record<string, unknown> | null;
   /** Context-at-entry blob (C-2). Optional so existing callers/tests are untouched;
    *  pinned at first flag by the upsert below (never re-stamped by a refresh tick). */
   entry_context?: Record<string, unknown> | null;
@@ -4306,10 +4331,11 @@ export type ZeroDteSetupLogUpsert = {
 
 /** Upsert scanner finds — one row per (session, ticker). First sighting pins
  *  underlying_at_flag/first_flagged_at/direction/top_strike/expiry/entry_premium/
- *  flow_avg_fill/plan_json forever (that's the exact contract+price that gets
- *  graded and shown as the ledger's entry); later scans only refresh conviction/
- *  scoring signals (score, dossier_score, conviction, gross_premium, spike,
- *  underlying_latest, flags_json) and ratchet score_max.
+ *  flow_avg_fill/plan_json/gate_calibration_json forever (that's the exact
+ *  contract+price+gate-context that gets graded and shown as the ledger's entry);
+ *  later scans only refresh conviction/scoring signals (score, dossier_score,
+ *  conviction, gross_premium, spike, underlying_latest, flags_json) and ratchet
+ *  score_max.
  *
  *  Returns the tickers that were a FRESH INSERT this call (first flag of the
  *  session), detected via the `xmax = 0` Postgres idiom (xmax is unset on a
@@ -4328,8 +4354,8 @@ export async function upsertZeroDteSetupLog(rows: ZeroDteSetupLogUpsert[]): Prom
         session_date, ticker, direction, top_strike, expiry, score, score_max,
         dossier_score, conviction, gross_premium, spike, underlying_at_flag,
         underlying_latest, flags_json, entry_premium, flow_avg_fill, plan_json,
-        entry_context, first_flagged_at, last_seen_at
-      ) VALUES ($1,$2,$3,$4,$5,$6,$6,$7,$8,$9,$10,$11,$11,$12,$13,$14,$15,$16,NOW(),NOW())
+        gate_calibration_json, entry_context, first_flagged_at, last_seen_at
+      ) VALUES ($1,$2,$3,$4,$5,$6,$6,$7,$8,$9,$10,$11,$11,$12,$13,$14,$15,$16,$17,NOW(),NOW())
       ON CONFLICT (session_date, ticker) DO UPDATE SET
         score = EXCLUDED.score,
         score_max = GREATEST(zerodte_setup_log.score_max, EXCLUDED.score),
@@ -4350,6 +4376,10 @@ export async function upsertZeroDteSetupLog(rows: ZeroDteSetupLogUpsert[]): Prom
         entry_premium = COALESCE(zerodte_setup_log.entry_premium, EXCLUDED.entry_premium),
         flow_avg_fill = COALESCE(zerodte_setup_log.flow_avg_fill, EXCLUDED.flow_avg_fill),
         plan_json = COALESCE(zerodte_setup_log.plan_json, EXCLUDED.plan_json),
+        -- G-4/G-6 calibration verdict is the verdict AT COMMIT — a refresh tick must
+        -- never re-litigate it with later VIX/conflict context (same no-hindsight rule
+        -- as plan_json above).
+        gate_calibration_json = COALESCE(zerodte_setup_log.gate_calibration_json, EXCLUDED.gate_calibration_json),
         -- entry_context is PINNED with the plan fields: "what did the desk look like
         -- at commit" must never be re-stamped by a later refresh tick (C-2).
         entry_context = COALESCE(zerodte_setup_log.entry_context, EXCLUDED.entry_context),
@@ -4372,6 +4402,7 @@ export async function upsertZeroDteSetupLog(rows: ZeroDteSetupLogUpsert[]): Prom
         r.entry_premium,
         r.flow_avg_fill,
         r.plan_json,
+        r.gate_calibration_json,
         r.entry_context ?? null,
       ]
     );
@@ -4907,6 +4938,7 @@ function mapZeroDteLogRow(r: QueryResultRow): ZeroDteSetupLogRow {
     last_mark: r.last_mark != null ? Number(r.last_mark) : null,
     peak_premium: r.peak_premium != null ? Number(r.peak_premium) : null,
     trough_premium: r.trough_premium != null ? Number(r.trough_premium) : null,
+    gate_calibration_json: (r.gate_calibration_json as Record<string, unknown>) ?? null,
     entry_context: (r.entry_context as Record<string, unknown>) ?? null,
   };
 }

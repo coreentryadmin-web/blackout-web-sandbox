@@ -16,6 +16,7 @@
 import {
   dbConfigured,
   fetchLatestNighthawkEdition,
+  fetchOpenSpxPlay,
   fetchRecentFlows,
   fetchUngradedZeroDteRows,
   fetchZeroDteSetupLog,
@@ -27,6 +28,7 @@ import {
   type ZeroDteSetupLogRow,
   type ZeroDteSetupLogUpsert,
 } from "@/lib/db";
+import { fetchNighthawkEchoForTickers } from "@/lib/bie/ecosystem-context";
 import { LEVERAGED_ETP_SET } from "@/features/nighthawk/lib/constants";
 import { createDossierBuildCache, fetchTickerDossier } from "@/features/nighthawk/lib/dossier";
 import { etNowParts, todayEt } from "@/features/nighthawk/lib/session";
@@ -48,6 +50,14 @@ import {
 } from "./board";
 import { buildZeroDteEntryContext, fetchZeroDteSessionContext } from "./entry-context";
 import { persistZeroDteRejections } from "./rejections";
+import { evaluateZeroDteGates, gateRejectionFor, recentNighthawkTake } from "./gates";
+import {
+  deriveGovernorFromLedger,
+  loadRecordedGovernorStops,
+  mergeGovernorStops,
+  recordGovernorStops,
+  type GovernorSnapshot,
+} from "./governor";
 import {
   computeIntradayRead,
   intradayScoreAdjust,
@@ -55,6 +65,7 @@ import {
   marketBias,
   timeOfDayFactor,
   type IntradayRead,
+  type MarketBias,
 } from "./intraday";
 import {
   buildContractPlan,
@@ -192,7 +203,11 @@ export async function scanZeroDteBoard(flags?: {
   );
 
   await attachContractPlans(setups);
-  await attachIntradayEdge(setups);
+  const tape = await attachIntradayEdge(setups);
+  // Hard-gate verdicts LAST — G-3 judges the final post-edge-layer score, and G-1
+  // reuses the same SPY read the edge layer just fetched (one bias per scan cycle,
+  // scoring and gating can never disagree about what the tape said).
+  await attachGateVerdicts(setups, tape.bias, tape.biasAsOfMs);
 
   return { setups, nighthawk_covered: nighthawkCovered, upstream_ok: upstreamOk, rejections };
 }
@@ -217,9 +232,13 @@ async function intradayReadFor(ticker: string, today: string): Promise<IntradayR
 /** The "is it working RIGHT NOW" layer: each top play's own minute-bar read
  *  (session VWAP / opening range / 5m trend), SPY as the market tape, and the
  *  time-of-day edge window — all folded into the score, with hard intraday
- *  conflicts flagged for the A-tier gate. Best-effort: missing bars = no adjust. */
-async function attachIntradayEdge(setups: EnrichedZeroDteSetup[]): Promise<void> {
-  if (setups.length === 0) return;
+ *  conflicts flagged for the A-tier gate. Best-effort: missing bars = no adjust.
+ *  Returns the SPY bias (+ its freshness) so the hard-gate layer judges the SAME
+ *  tape read the scores were adjusted with. */
+async function attachIntradayEdge(
+  setups: EnrichedZeroDteSetup[]
+): Promise<{ bias: MarketBias | null; biasAsOfMs: number | null }> {
+  if (setups.length === 0) return { bias: null, biasAsOfMs: null };
   const today = todayEt();
   const { hour, minute } = etNowParts();
   const nowEt = hour * 60 + minute;
@@ -242,6 +261,95 @@ async function attachIntradayEdge(setups: EnrichedZeroDteSetup[]): Promise<void>
     s.tod_label = tod.label;
     s.score = Math.max(0, Math.min(100, s.score + adj.delta + align + tod.delta));
   });
+  return { bias, biasAsOfMs: spyRead?.last_bar_ms ?? null };
+}
+
+/** Hard-gate verdicts (G-1.. — ./gates.ts) for every FRESH find this cycle.
+ *  Already-committed ledger tickers are refreshes and are never re-gated (a printed
+ *  play is managed to its exit, not retro-blocked). If the committed set can't be
+ *  read, gates stay null and persistZeroDteScan fails closed on every fresh commit —
+ *  the same "unreadable input is a block, not a pass" rule the evidence gates follow. */
+async function attachGateVerdicts(
+  setups: EnrichedZeroDteSetup[],
+  bias: MarketBias | null,
+  biasAsOfMs: number | null
+): Promise<void> {
+  if (setups.length === 0) return;
+  const today = todayEt();
+  const { hour, minute } = etNowParts();
+  const nowEtMinutes = hour * 60 + minute;
+  const nowMs = Date.now();
+  const ledgerRows = dbConfigured()
+    ? await fetchZeroDteSetupLog(today).catch(() => null)
+    : ([] as ZeroDteSetupLogRow[]);
+  if (ledgerRows == null) return; // gates stay null → fresh commits fail closed downstream
+  const committed = new Set(ledgerRows.map((r) => r.ticker.toUpperCase()));
+
+  // G-5 snapshot: open/stop counts from the shared Postgres ledger (authoritative),
+  // stop timestamps from the Redis record (best-effort — see governor.ts's model).
+  const recordedStops = await loadRecordedGovernorStops(today).catch(() => []);
+  const ledgerGovernor = deriveGovernorFromLedger(ledgerRows);
+  const governor: GovernorSnapshot = {
+    open_plans: ledgerGovernor.open_plans,
+    stops: mergeGovernorStops(ledgerGovernor.stops, recordedStops),
+  };
+
+  // G-4/G-6 calibration context — all best-effort (calibration LOGS, never blocks,
+  // so a missing input degrades to an honest "unknown"/no-conflict verdict, never a
+  // stalled scan): day-open VIX cached per session, Slayer's live play briefly,
+  // Night Hawk takes in one batched echo query for just the fresh tickers.
+  const freshTickers = setups.map((s) => s.ticker.toUpperCase()).filter((t) => !committed.has(t));
+  const [vixDayOpen, slayerLive, nhEcho] = await Promise.all([
+    within(
+      withServerCache<number | null>(`zerodte:vix-open:${today}`, 10 * 60 * 1000, async () => {
+        const bars = await fetchAggBars("I:VIX", 1, "day", today, today);
+        const open = bars.length ? bars[0]!.o : null;
+        return open != null && Number.isFinite(open) ? open : null;
+      }),
+      2_500
+    ),
+    dbConfigured()
+      ? within(
+          withServerCache<{ direction: "long" | "short" } | null>(
+            `zerodte:slayer-live:${today}`,
+            30_000,
+            async () => {
+              const play = await fetchOpenSpxPlay(today).catch(() => null);
+              return play ? { direction: play.direction } : null;
+            }
+          ),
+          2_500
+        )
+      : null,
+    freshTickers.length > 0 && dbConfigured()
+      ? fetchNighthawkEchoForTickers(freshTickers).catch(
+          () => new Map<string, { direction: string; edition_for: string }>()
+        )
+      : new Map<string, { direction: string; edition_for: string }>(),
+  ]);
+
+  // Setups arrive score-ranked, so the concurrency budget goes to the best finds:
+  // committedThisCycle carries earlier accepted fresh commits within this same pass
+  // (both for the cap and the correlated-conflict check).
+  const committedThisCycle: Array<{ ticker: string; direction: "long" | "short" }> = [];
+  for (const s of setups) {
+    if (committed.has(s.ticker.toUpperCase())) continue;
+    s.gate = evaluateZeroDteGates({
+      ticker: s.ticker,
+      direction: s.direction,
+      score: s.score,
+      nowEtMinutes,
+      nowMs,
+      bias,
+      biasAsOfMs,
+      governor,
+      committedThisCycle,
+      vixDayOpen,
+      slayerLive,
+      nighthawkTake: recentNighthawkTake(nhEcho.get(s.ticker.toUpperCase()) ?? null, today),
+    });
+    if (s.gate.verdict === "COMMIT") committedThisCycle.push({ ticker: s.ticker, direction: s.direction });
+  }
 }
 
 /** One batched quote snapshot for every find's top-strike contract, then a pure
@@ -283,22 +391,58 @@ async function attachContractPlans(setups: EnrichedZeroDteSetup[]): Promise<void
 }
 
 /** Persist a scan's finds into the session ledger (no-op without a database).
+ *
+ *  Two lanes, split against the committed set:
+ *  - REFRESH (ticker already in today's ledger): always upserted — a committed play
+ *    is managed to its exit, never retro-blocked, and the upsert's COALESCE pins
+ *    keep its plan/entry immutable anyway.
+ *  - FRESH commit: must clear the hard gate stack (setup.gate, ./gates.ts). Blocked
+ *    finds are persisted to zerodte_scan_rejections (machine code + human sentence)
+ *    instead — visible SKIP, never a silent drop. A missing verdict (gate context
+ *    unreadable) fails closed, and an unreadable committed set fails the whole
+ *    persist closed (can't tell fresh from committed → nothing new may print).
+ *
  *  After the 15:00 ET cutoff only EXISTING plays are refreshed — a fresh flag in
- *  power hour never opens a new 0DTE play. */
+ *  power hour never opens a new 0DTE play (this predates and stays alongside the
+ *  gate stack's own opening-window rule). */
 export async function persistZeroDteScan(setups: EnrichedZeroDteSetup[]): Promise<number> {
   if (!dbConfigured() || setups.length === 0) return 0;
   const today = todayEt();
   const { hour, minute } = etNowParts();
-  let eligible = setups;
-  if (hour * 60 + minute >= NEW_PLAY_CUTOFF_ET_MINUTES) {
-    const existing = new Set((await fetchZeroDteSetupLog(today).catch(() => [])).map((r) => r.ticker));
-    eligible = setups.filter((s) => existing.has(s.ticker));
-    if (eligible.length === 0) return 0;
+  const pastCutoff = hour * 60 + minute >= NEW_PLAY_CUTOFF_ET_MINUTES;
+
+  const existingRows = await fetchZeroDteSetupLog(today).catch(() => null);
+  if (existingRows == null) return 0; // fail closed: fresh vs committed is unknowable
+  const existing = new Set(existingRows.map((r) => r.ticker.toUpperCase()));
+
+  const refresh = setups.filter((s) => existing.has(s.ticker.toUpperCase()));
+  const freshCandidates = pastCutoff ? [] : setups.filter((s) => !existing.has(s.ticker.toUpperCase()));
+
+  const committedFresh: EnrichedZeroDteSetup[] = [];
+  const gateRejections: import("./board").ZeroDteGateRejection[] = [];
+  for (const s of freshCandidates) {
+    if (s.gate?.verdict === "COMMIT") committedFresh.push(s);
+    else gateRejections.push(gateRejectionFor(s, s.gate));
   }
+  if (gateRejections.length > 0) {
+    // Fail-visible half of the block: best-effort durable record (same throttled
+    // write path the evidence-gate near-misses use), logged loudly on failure but
+    // never allowed to break the scan itself.
+    void persistZeroDteRejections(gateRejections).catch((err) => {
+      console.warn("[zerodte-gates] failed to persist gate rejections:", err);
+    });
+  }
+
+  const eligible = [...committedFresh, ...refresh];
+  if (eligible.length === 0) return 0;
+
   // Context-at-entry (C-2): one cached session read per scan (day-open VIX + SPY
   // bias), merged per-row with the name's own gamma regime + committed score. The
   // upsert pins it at FIRST flag, so refresh ticks sending fresh context never
   // re-stamp an existing row. Best-effort: null context never blocks a commit.
+  // MERGE NOTE (gate lanes × entry_context): this runs on the post-gate `eligible`
+  // set only — a hard-gate-BLOCKED fresh find goes to zerodte_scan_rejections and
+  // never writes a ledger row, so it never receives an entry_context either.
   const sessionCtx = await fetchZeroDteSessionContext().catch(() => null);
   const committedAtMs = Date.now();
   const rows: ZeroDteSetupLogUpsert[] = eligible.map((s) => ({
@@ -319,6 +463,10 @@ export async function persistZeroDteScan(setups: EnrichedZeroDteSetup[]): Promis
     entry_premium: resolveLedgerEntryPremium(s.plan?.entry_max, s.top_strike_avg_fill),
     flow_avg_fill: s.top_strike_avg_fill,
     plan_json: s.plan ? ({ ...s.plan } as unknown as Record<string, unknown>) : null,
+    // G-4/G-6 calibration verdict at commit (C-2 context columns). Refresh-lane
+    // setups carry gate=null and pass null here — the upsert's COALESCE pin keeps
+    // the original commit-time verdict untouched either way.
+    gate_calibration_json: s.gate ? ({ ...s.gate.calibration } as unknown as Record<string, unknown>) : null,
     entry_context: buildZeroDteEntryContext(
       { score: s.score, gamma_regime: s.gamma_regime },
       sessionCtx,
@@ -456,6 +604,11 @@ export async function syncLedgerLiveState(rows: ZeroDteSetupLogRow[]): Promise<Z
   const { hour, minute } = etNowParts();
   const nowEtMinutes = hour * 60 + minute;
 
+  // G-5 input: stop transitions observed THIS pass (a row flipping to CLOSED/
+  // stopped) get their timestamp recorded to the shared governor state — Postgres
+  // has no stop-time column, and the 20-minute re-entry lock needs one.
+  const stopEvents: Array<{ ticker: string; direction: "long" | "short"; at_ms: number }> = [];
+
   const updated = await Promise.all(
     rows.map(async (r) => {
       // CLOSED is terminal; every other row gets a state pass — rows with no plan/
@@ -473,12 +626,20 @@ export async function syncLedgerLiveState(rows: ZeroDteSetupLogRow[]): Promise<Z
         trough,
         nowEtMinutes,
       });
+      if (state.status === "CLOSED" && state.closed_reason === "stopped") {
+        stopEvents.push({ ticker: r.ticker, direction: r.direction, at_ms: Date.now() });
+      }
       if (dbConfigured()) {
         await updateZeroDteLiveState(r.session_date, r.ticker, { status: state.status, mark }).catch(() => {});
       }
       return { ...r, status: state.status, last_mark: mark ?? r.last_mark, peak_premium: peak, trough_premium: trough };
     })
   );
+  if (stopEvents.length > 0) {
+    // Best-effort (first-write-wins per ticker inside recordGovernorStops): a Redis
+    // failure only softens the timed lock — the ledger stop still counts to the halt.
+    void recordGovernorStops(todayEt(), stopEvents).catch(() => {});
+  }
   return updated;
 }
 
