@@ -20,6 +20,7 @@ import {
   recordNighthawkRejectedAuditTrail,
   recordNighthawkStageRejectedAuditTrail,
   syncNighthawkPlayOutcomes,
+  type NighthawkRejectionDetail,
 } from "./play-outcomes";
 import { extractCandidateTickers } from "./candidates";
 import { fetchAllDossiers, resetEditionCongressCache, type TickerDossier } from "./dossier";
@@ -41,6 +42,11 @@ import {
   type NighthawkPublishGateResult,
 } from "./publish-gates";
 import { partitionPlaysByGeometry } from "./play-constraints";
+import {
+  buildOvernightInputs,
+  composeOvernightEvidence,
+  type OvernightVerdict,
+} from "./cortex-overnight";
 import { nextTradingDayEt, todayEt } from "./session";
 import { notifyOpsDiscord } from "@/features/spx/lib/spx-play-notify";
 import type { NightHawkEdition, PlaybookPlay } from "./types";
@@ -873,6 +879,110 @@ export async function buildEveningEdition(opts?: {
       }
     }
 
+    // PR-N5 OVERNIGHT CORTEX LENS (docs/audit/NIGHTHAWK-OVERNIGHT-DECISION.md §3.1/§3.4):
+    // the last gate, run STRICTLY AFTER the #332 publish gates so a candidate must clear
+    // geometry (band/target/quote) AND the overnight evidence lens. Per surviving play the
+    // lens composes a deterministic verdict over the ALREADY-FETCHED ctx + dossier (no new
+    // IO). Semantics (compose.ts):
+    //   VETO → the candidate does NOT publish; it persists as a nighthawk_rejected audit
+    //          row (stage cortex_overnight_veto) — its ONLY record, counterfactually
+    //          gradeable later, same skip-grading philosophy as the #332 gates. The #1
+    //          veto class is §3.4's overnight killer: earnings/binary event in the hold.
+    //   WEAK → publishes, but FLAGGED and conviction floored to C ("zero strong plays beats
+    //          one weak one", §4.1 — a WEAK still beats silence and stays gradeable).
+    //   PASS → publishes unchanged.
+    //   ABSTAIN (total lens outage) → PASS, flagged — a blind lens never blocks the book.
+    // Every verdict (PASS/WEAK) is pinned into publish_context.cortex_overnight below as the
+    // Debrief (#337) + calibration substrate. FAIL-SOFT: a per-play compose failure logs and
+    // treats the play as PASS (un-vetted) — the lens can never take an honest edition down.
+    const cortexOvernightPins: Record<string, Record<string, unknown> | null> = {};
+    {
+      const cortexRejected: Array<{ ticker: string; play: PlaybookPlay; detail: NighthawkRejectionDetail; scored?: ScoredCandidate | null }> = [];
+      const survivors: PlaybookPlay[] = [];
+      for (const play of finalPlays) {
+        const ticker = String(play.ticker ?? "").toUpperCase();
+        let verdict: OvernightVerdict | null = null;
+        try {
+          const inputs = await buildOvernightInputs({
+            play,
+            dossier: dossiers[ticker] ?? dossiers[play.ticker] ?? null,
+            ctx: {
+              today: ctx.today,
+              tomorrow: ctx.tomorrow,
+              tomorrow_earnings: ctx.tomorrow_earnings,
+              sector_performance: ctx.sector_performance,
+              market_breadth: ctx.market_breadth,
+            },
+            now: new Date().toISOString(),
+            horizonDate: editionFor,
+          });
+          verdict = composeOvernightEvidence(inputs);
+        } catch (err) {
+          // Fail-soft: an un-vetted play is strictly safer than a dropped edition. The pin
+          // stays null so the debrief can see the lens did not run for this name.
+          console.warn(`[nighthawk/edition] cortex-overnight compose failed for ${ticker} (publishing un-vetted):`, err);
+          survivors.push(play);
+          cortexOvernightPins[ticker] = null;
+          continue;
+        }
+        // Pin the full evidence vector for PASS/WEAK (and even for VETO on the audit row).
+        cortexOvernightPins[ticker] = verdict as unknown as Record<string, unknown>;
+        if (verdict.verdict === "VETO") {
+          cortexRejected.push({
+            ticker,
+            play,
+            detail: {
+              stage: "cortex_overnight_veto",
+              score: verdict.score,
+              veto_reasons: verdict.vetoes.map((v) => v.detail),
+              verdict: verdict as unknown as Record<string, unknown>,
+            },
+            scored: dossiers[ticker]?.scored ?? null,
+          });
+          continue;
+        }
+        if (verdict.verdict === "WEAK") {
+          // Lower conviction on a weak-evidence play so the member sees the reduced
+          // confidence the lens computed (the flag + full verdict ride in the pin).
+          survivors.push({ ...play, conviction: "C" });
+        } else {
+          survivors.push(play);
+        }
+      }
+      if (cortexRejected.length) {
+        console.warn(
+          "[nighthawk/edition] cortex-overnight VETOED:",
+          cortexRejected.map((r) => `${r.ticker}: ${r.detail.stage === "cortex_overnight_veto" ? r.detail.veto_reasons.join("; ") : ""}`)
+        );
+        // Durable rejection rows FIRST — recorded regardless of whether anything publishes
+        // below (same unconditional/fire-and-forget semantics as the other rejection stages).
+        recordNighthawkStageRejectedAuditTrail(cortexRejected, editionFor);
+      }
+      finalPlays = survivors.map((p, i) => ({ ...p, rank: i + 1 }));
+      funnel.critic_passed = finalPlays.length;
+      funnel.published = finalPlays.length;
+      if (!finalPlays.length) {
+        // The lens zeroed the edition — HONEST recap-only (the doc's rule: zero honest
+        // plays beats one earnings-gap play). Mirrors the publish-gate-zeroed exit above.
+        const reason = `Overnight Cortex vetoed all plays (${cortexRejected.length} veto${cortexRejected.length === 1 ? "" : "es"} — earnings/binary or structural).`;
+        console.warn(`[nighthawk/edition] cortex-overnight zeroed — recap-only fallback: ${reason}`);
+        funnel.published = 0;
+        logFunnel(editionFor, funnel);
+        await alertRecapOnlyIfAnomalous(editionFor, funnel, reason);
+        await publishRecapOnlyEdition({ editionFor, ctx, reason, candidates: candidates.length, checkpointing, force: Boolean(opts?.force) });
+        return {
+          ok: true,
+          edition_for: editionFor,
+          plays_count: 0,
+          candidates: candidates.length,
+          recap_only: true,
+          duration_ms: Date.now() - started,
+          job_status: "published",
+          current_stage: "published",
+        };
+      }
+    }
+
     // WRITE-SIDE INVARIANT (#77): never persist a "normal" edition with zero plays. The five funnel
     // exits above already route an empty funnel to publishRecapOnlyEdition (recap_only:true in meta).
     // This last-resort guard catches any way finalPlays could arrive empty here — a stale/old
@@ -990,6 +1100,9 @@ export async function buildEveningEdition(opts?: {
         // PR-N3: pin each published play's gate verdict + PASS margins — the exact
         // objects that gated this publish, never re-evaluated.
         gateResults,
+        // PR-N5: pin each published play's composed overnight Cortex verdict (the full
+        // evidence vector) — the Debrief/calibration substrate for the lens's thresholds.
+        cortexOvernight: cortexOvernightPins,
       });
       await syncNighthawkPlayOutcomes(editionFor, finalPlays, sectorByTicker, publishContexts);
 
