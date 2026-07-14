@@ -11,6 +11,13 @@ import {
 // 0DTE record section already badges every n<5 bucket; Night Hawk cuts now carry the
 // same flag so no 2-sample bucket can read like a track record on any surface.
 import { LOW_N_THRESHOLD } from "@/lib/zerodte/record";
+// PR-N10: the compact debrief summary (failure-mode counts from the pinned per-play
+// post-mortems) served alongside the record. Computed by the shared aggregate module
+// so the record route and the full admin debrief report can never disagree on a count.
+import {
+  summarizeDebriefPins,
+  type NighthawkDebriefRecordSummary,
+} from "@/features/nighthawk/lib/debrief-aggregate";
 
 // Task #145: funnel/rejection-rate stats. Reverse-indexes REJECTION_TRIGGER_REASON (the single
 // source of truth for the 5 rejection-stage strings, play-outcomes.ts) by its TEXT value so a
@@ -153,6 +160,9 @@ export type NighthawkMetrics = {
   methodology: string;
   /** PR-N2: per-rule-set record slices, reported separately — the anti-blend contract. */
   segments: { current: NighthawkRecordSegment; legacy: NighthawkRecordSegment };
+  /** PR-N10: failure-mode counts from the pinned per-play debriefs (current-methodology
+   *  rows only, mirroring the headline's anti-blend rule; low_n-flagged). */
+  debrief: NighthawkDebriefRecordSummary;
   by_conviction: Array<{ conviction: string } & NighthawkRecordCut>;
   by_direction: Array<{ direction: "LONG" | "SHORT" } & NighthawkRecordCut>;
   by_sector: Array<{ sector: string } & NighthawkRecordCut>;
@@ -319,6 +329,7 @@ function emptyMetrics(windowDays: number): NighthawkMetrics {
       current: buildRecordSegment(GRADE_METHODOLOGY_CURRENT, []),
       legacy: buildRecordSegment(GRADE_METHODOLOGY_LEGACY, []),
     },
+    debrief: summarizeDebriefPins([]),
     funnel: buildNighthawkFunnel(windowDays, 0, []),
   };
 }
@@ -420,6 +431,9 @@ export async function getNighthawkMetrics(windowDays = 30): Promise<NighthawkMet
     pulled_count: segments.current.pulled,
     methodology: GRADE_METHODOLOGY_CURRENT,
     segments,
+    // PR-N10: all resolved rows in — summarizeDebriefPins applies the same current-
+    // methodology filter internally AND reports the legacy quarantine count honestly.
+    debrief: summarizeDebriefPins(rows),
     win_rate: scoreableTotal > 0 ? winners.length / scoreableTotal : 0,
     profitable_rate: profitableRate(scoreable),
     loss_rate: scoreableTotal > 0 ? losers.length / scoreableTotal : 0,
