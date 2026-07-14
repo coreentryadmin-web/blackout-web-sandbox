@@ -515,3 +515,62 @@ plays show "entirely wrong" pnl/%/premium values, slow to update.
   grade IS the counterfactual, tagged by `pulled` for N2's methodology-versioned
   record; DEGRADED enforcement (→ N6); Cortex compose at publish/9:15 (→ N5/N6);
   the Redis play-status blob and its UI badge (kept as-is).
+
+## 2026-07-14 — Night Hawk OVERNIGHT: publish-time sanity gates (PR-N3, branch feat/nighthawk-publish-gates)
+
+### HIGH — No band-vs-spot / achievable-target / quote-freshness check anywhere in the publish path (FIXED — gate stack)
+- **Severity:** HIGH (member-hostile picks + phantom record). Measured in
+  `docs/audit/NIGHTHAWK-OVERNIGHT-DECISION.md` §N-3: **14/24 LONG plays** published an
+  entry-band top >3% below prior close; the six thin-edition backfill plays (MAGS/CSX
+  7/06, DELL 7/08, PG 7/09, PANW/META 7/10) sat **6.4%–45.5% below the market** with
+  targets +8.6%..**+106.6%** away — DELL 2026-07-08: band $226.82–227.27, stock at
+  $417, target $469.47, mechanically stamped conviction "A". Root: the backfill anchors
+  entries at deep dossier supports (`buildDirectionalStockLevels`, support×0.998) and
+  NOTHING in `edition-builder.ts` STAGE 6 compared the published band to the live quote
+  or the target to a one-session range. These unfillable plays are simultaneously
+  member-hostile (untransactable as published) and the source of the N-2 phantom-win
+  record (gap-away "wins" the entry could never catch).
+- **Fix (PR-N3):** `src/features/nighthawk/lib/publish-gates.ts` — pure gate evaluation
+  over the SAME geometry the PR-N4 publish-context pin records (shared
+  `computeNighthawkPublishGeometry`, publish-context.ts — one computation, so the number
+  that blocks a play is byte-identical to the number pinned as evidence). Wired into
+  `edition-builder.ts` STAGE 6 strictly AFTER thin-edition backfill (the class that
+  shipped the six detached plays). Gates:
+  - **G-N1 band-vs-spot** (`band_detached`): |spot → fill edge| > **2.5%** blocks
+    (absolute — a band far above spot is equally unfillable). From the data: failing
+    class >3% (catches all 14), worst −45.5%; healthy plays within ~1.5% (normal
+    pullback entries keep publishing). Calibratable from pinned PASS margins.
+  - **G-N2 achievable target** (`target_unreachable`): |fill edge → target| >
+    **1.5×ATR14** blocks. One-session plays grade against the next day's high/low;
+    ATR14 is the average full-session range (doc suggested k=1.0 — shipped 1.5 for one
+    expansion-day of headroom). The failing class ran ≈3×–20×+ ATR; DELL = 19.4×.
+  - **G-N3 stale-quote guard** (`stale_quote_basis`): the spot quote's session
+    (`TechnicalCard.price_session`, new provenance field from the last daily bar's
+    timestamp) must be an acceptable basis for the session being published from
+    (`acceptableQuoteSessionsEt`: last completed session; during RTH also the
+    in-progress one). Undateable quote = fail-closed.
+  - **Fail-closed** (`geometry_unknown`): missing spot/band/target/ATR — or an
+    evaluator throw — BLOCKS. A pick we can't sanity-check is not a pick (opposite
+    polarity from the pin, which is fail-soft evidence).
+- **Wiring semantics:** BLOCKED plays never publish — they persist as
+  `nighthawk_rejected` audit rows (new `publish_gate` stage in `play-outcomes.ts`'s
+  rejection union, same dedup'd `insertNighthawkRejectedAuditLog` write path), carrying
+  the gate blocks verbatim so counterfactual grading/calibration can judge the gates
+  later (0DTE skip-grading philosophy). Every play's full gate result — PASSES with
+  per-gate margins — is pinned into `publish_context.gates` (context_version → 2).
+  Gates zeroing the edition publishes an honest recap-only edition (zero honest plays
+  beats one unfillable play; the real 7/14 edition was already honestly zero-play).
+- **Evidence/tests:** `publish-gates.test.ts` (28 new tests incl. publish-context
+  additions): each gate both directions at its exact boundary (2.5% / 1.5×ATR),
+  DELL fixture reproduces the doc numbers (−45.4988% band + 19.376×ATR → BLOCK with
+  both codes), the >3% class blocks while a 1.5% pullback publishes, fail-closed
+  geometry_unknown (no dossier / no ATR / unparseable band / evaluator throw),
+  rejected-row persistence (trigger_reason + per-block decision_trace + gate_blocks
+  snapshot), zero-play recap reason, verbatim gate pinning, quote-session math across
+  close/weekend/holiday. tsc clean; full `npm test` green (3273).
+- **Deliberately unchanged:** analytics/track-record/record display (PR-N2 territory —
+  the new `publish_gate` stage auto-appears in the funnel via the existing
+  `REJECTION_TRIGGER_REASON` reverse-index); the backfill's level construction itself
+  (the gate now rejects its detached output; re-anchoring backfill entries near spot is
+  a follow-up once gate rejections show what survives); morning-confirm/Cortex veto
+  (N5/N6); `src/lib/bie/**`, `src/lib/zerodte/**`.
