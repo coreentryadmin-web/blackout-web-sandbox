@@ -256,8 +256,10 @@ function decisionTraceForRejection(
  *  duplicated here; that full context is what `nighthawk_scoring_history`/
  *  `get_nighthawk_dossier` remain the source of truth for (task #129) — this is a
  *  same-row SUMMARY so a rejection's audit row is self-explaining without a second
- *  lookup, not a second copy of the archive. */
-function confluenceSnapshot(scored: ScoredCandidate | null | undefined): Record<string, unknown> | null {
+ *  lookup, not a second copy of the archive. Exported for PR-N4: publish-context.ts
+ *  pins this exact shape as `publish_context.confluence` on every published play —
+ *  one snapshot format for rejected AND published candidates, same honesty rules. */
+export function confluenceSnapshot(scored: ScoredCandidate | null | undefined): Record<string, unknown> | null {
   if (!scored) return null;
   return {
     total_score: scored.score,
@@ -446,7 +448,12 @@ function recordNighthawkAuditTrail(
 export async function syncNighthawkPlayOutcomes(
   editionFor: string,
   plays: PlaybookPlay[],
-  sectors: Record<string, string | null | undefined> = {}
+  sectors: Record<string, string | null | undefined> = {},
+  // PR-N4: ticker → publish-time decision pin (publish-context.ts), threaded to the
+  // upsert where it lands COALESCE first-write-wins. Optional + per-ticker nullable so
+  // a pinning failure (or an older caller) degrades to an un-pinned row, never a
+  // blocked sync — the pin is evidence, not a publish dependency.
+  publishContexts: Record<string, Record<string, unknown> | null> = {}
 ): Promise<void> {
   const rows = plays.map((play) => {
     const ticker = String(play.ticker ?? "").toUpperCase();
@@ -463,6 +470,7 @@ export async function syncNighthawkPlayOutcomes(
       stop: levels.stop,
       score: Number(play.score ?? 0),
       sector: sectors[ticker] ?? null,
+      publish_context: publishContexts[ticker] ?? null,
     };
   });
 

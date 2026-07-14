@@ -95,7 +95,18 @@ export function isNighthawkOutcomeScoreable(r: NighthawkPlayOutcomeRow): boolean
   // 'unfilled' (session never traded back into the entry band) has no fill to
   // win or lose — excluded like stop_data_unavailable so gap-away plays can't
   // book phantom wins/losses from an unfillable entry.
-  return r.outcome !== "pending" && r.outcome !== "unfilled" && !nhStopDataUnavailable(r);
+  // PR-N4: a PULLED play (morning confirm INVALIDATED it pre-open; one-way latch) was
+  // withdrawn from the actionable surface at 9:15 — its grade is a COUNTERFACTUAL
+  // ("what would have happened"), kept on the row for gate calibration but never
+  // counted in the headline record, in either direction: a pulled play that would have
+  // hit target must not pad the win rate, and one that would have stopped must not
+  // book a loss the member was told not to take.
+  return (
+    r.outcome !== "pending" &&
+    r.outcome !== "unfilled" &&
+    r.pulled !== true &&
+    !nhStopDataUnavailable(r)
+  );
 }
 
 function nhEntryMid(row: NighthawkPlayOutcomeRow): number | null {

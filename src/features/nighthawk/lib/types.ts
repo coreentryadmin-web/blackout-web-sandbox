@@ -22,6 +22,13 @@ export type PlaybookPlay = {
   score?: number;
   flow_streak_days?: number;
   iv_rank?: number;
+  /** PR-N4: true when the morning confirmation INVALIDATED this play and the one-way pull
+   *  latch engaged (nighthawk_play_outcomes.pulled, merged at read time by
+   *  pull-overlay.ts). A pulled play stays visible at its published rank but must be
+   *  presented as PULLED (non-actionable) with its reason — never hidden, never deleted. */
+  pulled?: boolean;
+  /** Member-facing reason the play was pulled (the verdict's evidence sentence). */
+  pulled_reason?: string;
 };
 
 export type PlayExplainRequest = {
