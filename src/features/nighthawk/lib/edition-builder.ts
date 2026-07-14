@@ -47,6 +47,10 @@ import {
   composeOvernightEvidence,
   type OvernightVerdict,
 } from "./cortex-overnight";
+// PR-N7: pre-declared invalidators + adversarial kill-test. Derived per surviving play from
+// the SAME cortex surfaces, pinned into publish_context (immutable), and the kill-test folds
+// its veto into the overnight-veto reason list at publish (best-plays-only).
+import { deriveInvalidators, killTestPlay, type Invalidator } from "./invalidators";
 import { nextTradingDayEt, todayEt } from "./session";
 import { notifyOpsDiscord } from "@/features/spx/lib/spx-play-notify";
 import type { NightHawkEdition, PlaybookPlay } from "./types";
@@ -896,14 +900,17 @@ export async function buildEveningEdition(opts?: {
     // Debrief (#337) + calibration substrate. FAIL-SOFT: a per-play compose failure logs and
     // treats the play as PASS (un-vetted) — the lens can never take an honest edition down.
     const cortexOvernightPins: Record<string, Record<string, unknown> | null> = {};
+    // PR-N7: per-ticker pre-declared invalidators, pinned for survivors into publish_context.
+    const invalidatorsByTicker: Record<string, Array<Record<string, unknown>>> = {};
     {
       const cortexRejected: Array<{ ticker: string; play: PlaybookPlay; detail: NighthawkRejectionDetail; scored?: ScoredCandidate | null }> = [];
       const survivors: PlaybookPlay[] = [];
       for (const play of finalPlays) {
         const ticker = String(play.ticker ?? "").toUpperCase();
         let verdict: OvernightVerdict | null = null;
+        let inputs: Awaited<ReturnType<typeof buildOvernightInputs>> | null = null;
         try {
-          const inputs = await buildOvernightInputs({
+          inputs = await buildOvernightInputs({
             play,
             dossier: dossiers[ticker] ?? dossiers[play.ticker] ?? null,
             ctx: {
@@ -941,6 +948,60 @@ export async function buildEveningEdition(opts?: {
           });
           continue;
         }
+
+        // PR-N7 — pre-declared invalidators + adversarial kill-test (only PASS/WEAK reach
+        // here; VETO already `continue`d). Derive falsifiers from the SAME surfaces the
+        // lens scored, then kill-test them against the publish-time snapshot: a play sitting
+        // ON its own kill line (spot already through / within 0.15% of a kill level) is not
+        // a strong play, so it does NOT publish — its veto reason folds into the existing
+        // overnight-veto reason list (best-plays-only, same recap-only philosophy as VETO).
+        let invalidators: Invalidator[] = [];
+        try {
+          invalidators = inputs ? deriveInvalidators(play, verdict, inputs) : [];
+        } catch (err) {
+          console.warn(`[nighthawk/edition] invalidator derivation failed for ${ticker} (publishing un-declared):`, err);
+          invalidators = [];
+        }
+        // Publish-time snapshot for the kill-test: spot from the SAME dossier tech card the
+        // pin reads; flip/opposing-wall from the cortex surfaces. (wall.spot is narrative-
+        // only in build-inputs, so spot comes from the tech card, not the wall slice.)
+        const dossierForKill = dossiers[ticker] ?? dossiers[play.ticker] ?? null;
+        const publishSpot = typeof dossierForKill?.tech?.price === "number" && Number.isFinite(dossierForKill.tech.price)
+          ? dossierForKill.tech.price
+          : null;
+        const opposing = inputs?.wall?.opposingWall ?? null;
+        const kt = killTestPlay({
+          play,
+          invalidators,
+          state: {
+            spot: publishSpot,
+            gammaFlip: inputs?.wall?.gammaFlip ?? null,
+            // Seed the opposing wall as the matching side so a metric-vs-metric kill that is
+            // ALREADY true at publish (wall on the wrong side of spot) is caught.
+            callWall: opposing?.kind === "call" ? opposing.strike : null,
+            putWall: opposing?.kind === "put" ? opposing.strike : null,
+            regime: inputs?.wall?.regime ?? null,
+            darkPoolBias: inputs?.darkPool?.bias ?? null,
+          },
+        });
+        if (kt.vetoed) {
+          cortexRejected.push({
+            ticker,
+            play,
+            detail: {
+              stage: "cortex_overnight_veto",
+              score: verdict.score,
+              // Fold the kill-test reasons into the overnight-veto reason list, prefixed so
+              // the audit row distinguishes an evidence veto from a kill-test veto.
+              veto_reasons: kt.reasons.map((r) => `kill-test: ${r}`),
+              verdict: verdict as unknown as Record<string, unknown>,
+            },
+            scored: dossiers[ticker]?.scored ?? null,
+          });
+          continue;
+        }
+        // Survivor — pin its invalidators (immutable via COALESCE) for the morning grade.
+        invalidatorsByTicker[ticker] = invalidators as unknown as Array<Record<string, unknown>>;
         if (verdict.verdict === "WEAK") {
           // Lower conviction on a weak-evidence play so the member sees the reduced
           // confidence the lens computed (the flag + full verdict ride in the pin).
@@ -1103,6 +1164,9 @@ export async function buildEveningEdition(opts?: {
         // PR-N5: pin each published play's composed overnight Cortex verdict (the full
         // evidence vector) — the Debrief/calibration substrate for the lens's thresholds.
         cortexOvernight: cortexOvernightPins,
+        // PR-N7: pin each published play's pre-declared invalidators (immutable via COALESCE)
+        // so the 9:15 morning grade runs only the falsifiers the desk pre-committed to.
+        invalidators: invalidatorsByTicker,
       });
       await syncNighthawkPlayOutcomes(editionFor, finalPlays, sectorByTicker, publishContexts);
 

@@ -1145,3 +1145,33 @@ against staging: **68 pass · 0 fail · 4 skip · 3 expected-fail (keyed to #338
   and `maxAbs` is unchanged; kings/ordering re-asserted on the dense set. 12 tests pass.
 - **Status:** FIXED — DRAFT PR (deploy-risk: member-visible density increase on the ladder panel);
   post-deploy `npm run validate:vector-hardcore` is the standing gate. Left UNMERGED per owner.
+
+---
+
+## PR-N67 — Night Hawk overnight: binding 9:15 thesis-drift (N6) + adversarial kill-test & pre-declared invalidators (N7)
+**Date:** 2026-07-14 · **Severity:** MEDIUM (best-plays-only / objective-grade correctness) · **Status:** SHIPPED (deterministic, unit-tested; DRAFT PR for review)
+
+### Root cause (what was missing)
+Two gaps in the overnight funnel's grade objectivity:
+- **N6:** the 9:15 morning-confirm cron re-checked a play's PRICE geometry (gap vs direction, stop/target, wall drift) but NEVER re-evaluated the overnight THESIS — the cortex-overnight evidence (`publish_context.cortex_overnight`) that actually justified publishing. A play could keep a green price badge while the exact structural premise that carried it (regime line held, dark-pool accumulating) had quietly inverted overnight. There was no second axis measuring "did the thesis survive the night."
+- **N7:** the morning grade was POST-HOC. The cron re-derived "still good?" from whatever it happened to look at, so a play could be failed/passed on a rule invented after the fact. Plays carried no PRE-DECLARED, machine-checkable falsifiers, so the morning check could not be objective. And nothing stopped a play from publishing while already sitting ON its own kill line.
+
+### Fix
+Three new PURE, deterministic, LLM-free modules + additive wiring (no existing price logic changed):
+- `src/features/nighthawk/lib/invalidators.ts` — `deriveInvalidators(play, cortexOvernight, surfaces)` emits 2–4 SERIALIZABLE, machine-checkable falsifiers per play (flip_break/kill, opposing-wall migration/kill, dark-pool reversal/degrade), derived from the SAME cortex surfaces that justified the play. Predicate `check` is DATA (`{kind:'lt',metric:'spot',level:7480}`), interpreted by a small pure interpreter — never a JS closure (round-trips through JSONB losslessly; `coerceInvalidators` drops any garbage/unknown-kind predicate). `evaluateInvalidators` runs the pinned specs against morning state (a null metric ⇒ UNKNOWN, never fires). `killTestPlay` vetoes a play whose publish spot is already through / within 0.15% (`NEAR_KILL_PCT`) of a KILL level.
+- `src/features/nighthawk/lib/thesis-drift.ts` — `detectThesisDrift(publishedContext, morningState)` compares each pinned evidence source's premise (re-checked through the SAME pinned invalidator specs — single source of truth) to the morning re-read: per-source `{source, published, morning, drift:'held'|'weakened'|'flipped', delta}`. A FLIPPED core source (largest support weight — the one that carried the publish) ⇒ thesis INVALIDATED regardless of price; a WEAKENED majority of re-readable sources ⇒ DEGRADED. `overnightAxisStatus` maps the two axes (thesis verdict + fired invalidators) to a status.
+- `worsenPlayStatus(base, axis)` in `morning-confirm-verdict.ts` — ONE-WAY combinator: returns the WORSE of the price verdict and the overnight axis, NEVER an upgrade (matches the repo's one-way-latch philosophy). UNVERIFIED preserved (no morning read to fire on).
+
+**Wiring (additive, fail-soft):**
+- `edition-builder.ts` STAGE-6 cortex loop: for each surviving PASS/WEAK play, derive invalidators + kill-test against the publish snapshot (spot from the dossier tech card; flip/opposing-wall from the cortex surfaces). A kill-test veto folds into the existing `cortex_overnight_veto` reason list (prefixed `kill-test:`) and the play does NOT publish. Survivors' invalidators are pinned into `publish_context.invalidators`.
+- `publish-context.ts` — new `invalidators` pin key (COALESCE first-write-wins ⇒ IMMUTABLE after publish, so the morning grade cannot be gamed). Omitted ⇒ `[]`.
+- `nighthawk-morning-confirm/route.ts` — Phase 2.5 loads this morning's pending outcome rows' `publish_context` (via existing `fetchPendingNighthawkOutcomes`, no db.ts edit); Phase 3 folds the two axes onto the base price verdict via `applyOvernightAxes` → `worsenPlayStatus`. New optional `PlayStatus` fields (`thesisDrift`, `thesisVerdict`, `invalidatorsFired`) carry the evidence. Morning walls used only for SPX/SPXW (no cross-instrument wall misfire); stock/dark-pool surfaces not re-fetched ⇒ honestly UNKNOWN (never fires).
+
+### Evidence
+- `npx tsc --noEmit`: clean. `npx eslint` (all changed files): clean.
+- New unit tests: `invalidators.test.ts` (22), `thesis-drift.test.ts` (11), `worsenPlayStatus` (4 in `morning-confirm-verdict.test.ts`), `publish-context.test.ts` (+2 invalidator-pin). Cover: derive per-direction, JSON round-trip, kill-test proximity/already-fired/no-veto/degrade-never-vetoes, core-flip⇒INVALIDATED, weakened-majority⇒WEAKENED, missing-data⇒HELD (one-way safety), pre-N7 graceful degrade.
+- Full suite: **3573 pass / 0 fail**. `npm run build`: green.
+
+### Blast radius
+- `play-status` route stays 200 for not-yet-run/legacy blobs (new PlayStatus fields OPTIONAL; contract test unaffected). Old cached morning blobs and pre-N5/N7 pins degrade to HELD/[] — never throw, never a fabricated downgrade.
+- No change to CONFIRMED/DEGRADED/INVALIDATED price logic (`computePlayVerdict` untouched); the overnight axes are a strictly additive second axis composed one-way. `src/lib/bie/**`, `cortex-overnight/**` READ-only.

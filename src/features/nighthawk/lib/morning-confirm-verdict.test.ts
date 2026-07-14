@@ -4,6 +4,7 @@ import {
   computePlayVerdict,
   formatCheckedAtEt,
   isMorningConfirmStale,
+  worsenPlayStatus,
   MORNING_CONFIRM_STALE_MS,
 } from "./morning-confirm-verdict";
 import type { PlaybookPlay } from "./types";
@@ -128,4 +129,29 @@ test("formatCheckedAtEt: renders an Eastern clock time", () => {
 
 test("formatCheckedAtEt: invalid input degrades honestly instead of throwing/NaN", () => {
   assert.equal(formatCheckedAtEt("garbage"), "unknown time");
+});
+
+// ── PR-N6/N7 worsenPlayStatus — the one-way overnight-axes combinator ─────────────────
+
+test("worsenPlayStatus: returns the WORSE of price vs overnight axis (one-way)", () => {
+  assert.equal(worsenPlayStatus("CONFIRMED", "DEGRADED"), "DEGRADED");
+  assert.equal(worsenPlayStatus("CONFIRMED", "INVALIDATED"), "INVALIDATED");
+  assert.equal(worsenPlayStatus("DEGRADED", "INVALIDATED"), "INVALIDATED");
+});
+
+test("worsenPlayStatus: never UPGRADES (axis cannot improve the price grade)", () => {
+  assert.equal(worsenPlayStatus("INVALIDATED", "DEGRADED"), "INVALIDATED");
+  assert.equal(worsenPlayStatus("DEGRADED", "CONFIRMED"), "DEGRADED");
+  assert.equal(worsenPlayStatus("INVALIDATED", "CONFIRMED"), "INVALIDATED");
+});
+
+test("worsenPlayStatus: null axis (nothing drifted) leaves the base untouched", () => {
+  assert.equal(worsenPlayStatus("CONFIRMED", null), "CONFIRMED");
+  assert.equal(worsenPlayStatus("DEGRADED", null), "DEGRADED");
+});
+
+test("worsenPlayStatus: UNVERIFIED (no data) is preserved — axes had no morning read to fire on", () => {
+  assert.equal(worsenPlayStatus("UNVERIFIED", "INVALIDATED"), "UNVERIFIED");
+  assert.equal(worsenPlayStatus("UNVERIFIED", "DEGRADED"), "UNVERIFIED");
+  assert.equal(worsenPlayStatus("UNVERIFIED", null), "UNVERIFIED");
 });
