@@ -7,6 +7,7 @@ import {
   statedMatchesTruth,
   reconcileStatedNumbers,
   applyCorrectionsToLevels,
+  vectorStatedNumbers,
   type StatedNumber,
 } from "@/lib/bie/rth-numeric-gate";
 import type { BieLevel } from "@/lib/bie/answer-envelope";
@@ -86,6 +87,56 @@ describe("rth-numeric-gate: reconcileStatedNumbers", () => {
   test("a metric the truth snapshot doesn't carry is skipped, not failed", () => {
     const r = reconcileStatedNumbers(stated, { flip: 7480 }, RTH); // no call_wall served
     assert.equal(r.action, "clean");
+  });
+});
+
+describe("rth-numeric-gate: vectorStatedNumbers + vector_read reconciliation (#348 → vector_read)", () => {
+  const state = {
+    gammaFlip: 7480,
+    gexWalls: { callWalls: [{ strike: 7550 }, { strike: 7575 }], putWalls: [{ strike: 7400 }] },
+    maxPain: 7500,
+  };
+
+  test("pulls flip / top call wall / top put wall / max pain from a Vector state", () => {
+    const s = vectorStatedNumbers(state);
+    assert.deepEqual(
+      s.map((x) => [x.metric, x.value]).sort(),
+      [["call_wall", 7550], ["flip", 7480], ["max_pain", 7500], ["put_wall", 7400]]
+    );
+  });
+
+  test("null/absent structure fields are skipped, never emitted as 0", () => {
+    assert.deepEqual(vectorStatedNumbers({ gammaFlip: null, gexWalls: null, maxPain: undefined }), []);
+  });
+
+  test("RTH: a stale cached flip diverging from the fresh walls API → corrected (composer recomputes live)", () => {
+    // The live bug: an ~11-min-stale full-state flip (7480) vs the fresh /api/vector/walls flip (7495).
+    const gate = reconcileStatedNumbers(
+      vectorStatedNumbers(state),
+      { flip: 7495, call_wall: 7550, put_wall: 7400, max_pain: 7500 },
+      RTH
+    );
+    assert.equal(gate.action, "corrected");
+    assert.deepEqual(gate.mismatches, [{ metric: "flip", stated: 7480, served: 7495 }]);
+  });
+
+  test("off-hours: the same divergence is stale-marked, not corrected (prior-close read is honest if labelled)", () => {
+    const gate = reconcileStatedNumbers(
+      vectorStatedNumbers(state),
+      { flip: 7495, call_wall: 7550, put_wall: 7400, max_pain: 7500 },
+      OFFHOURS
+    );
+    assert.equal(gate.action, "stale-marked");
+    assert.deepEqual(gate.corrections, {});
+  });
+
+  test("cached numbers already matching the fresh API → clean (no recompute)", () => {
+    const gate = reconcileStatedNumbers(
+      vectorStatedNumbers(state),
+      { flip: 7480, call_wall: 7550, put_wall: 7400, max_pain: 7500 },
+      RTH
+    );
+    assert.equal(gate.action, "clean");
   });
 });
 

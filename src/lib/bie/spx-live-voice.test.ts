@@ -715,6 +715,16 @@ describe("composeCatalystLine", () => {
   test("no headlines on the desk → null", () => {
     assert.equal(composeCatalystLine(bearishSnap()), null);
   });
+
+  test("HTML entities in the raw title are DECODED, never rendered verbatim (N5-2 leak)", () => {
+    const line = composeCatalystLine(
+      bearishSnap({
+        latestHeadline: { title: "Nvidia&#39;s CEO on AI &amp; the &#34;next wave&#34;", publishedAt: null },
+      })
+    );
+    assert.equal(line, `📰 Nvidia's CEO on AI & the "next wave"`);
+    assert.ok(!/&#\d+;|&amp;|&#x/.test(line!), "no leftover HTML entities");
+  });
 });
 
 // ---------------------------------------------------------------------------

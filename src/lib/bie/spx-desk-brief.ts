@@ -29,6 +29,7 @@ import {
   deriveSpxBias,
   voiceSnapshotFromDesk,
 } from "@/lib/bie/spx-live-voice";
+import { sanitizeFeedText } from "@/lib/largo/sanitize-feed-text";
 
 export type SpxDeskBriefResult = {
   headline: string;
@@ -210,7 +211,9 @@ function flowLine(desk: SpxDeskPayload): string | null {
 }
 
 function newsLine(desk: SpxDeskPayload): string | null {
-  const headline = desk.news_headlines?.[0]?.title?.trim();
+  // Decode HTML entities in the raw desk headline before rendering (N5-2 entity leak: a title like
+  // "Nvidia&#39;s" printed verbatim). sanitizeFeedText also trims, so the prior .trim() is folded in.
+  const headline = sanitizeFeedText(desk.news_headlines?.[0]?.title ?? "");
   if (headline) return headline.slice(0, 80);
 
   const macro = desk.macro_events?.[0];

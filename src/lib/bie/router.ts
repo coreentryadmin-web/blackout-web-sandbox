@@ -48,8 +48,11 @@ export type BieRoute = {
 const ZERODTE_RE =
   /\b(0\s*dte|zero\s*dte|zerodte)\b.*\b(plays?|board|scanner|finds?)\b|\b(today'?s|the)\s+plays\b|command board|how (are|did) (the|our|today'?s) plays/i;
 
+// The reverse-order (token-then-SPX) second alternative gains bare `flip` / `0dte` / `gamma` so the
+// terse "flip spx" / "0dte spx" shorthand lands deterministically on the SPX structure desk instead
+// of falling through to null → Claude (the first alt already covers the natural "spx flip" order).
 const SPX_STRUCTURE_RE =
-  /\b(spx|es|s&p)\b[^?]*\b(levels?|structure|walls?|gamma( flip)?|flip|max pain|king node|support|resistance)\b|\b(levels?|structure|walls?|gamma flip|max pain)\b[^?]*\bspx\b/i;
+  /\b(spx|es|s&p)\b[^?]*\b(levels?|structure|walls?|gamma( flip)?|flip|max pain|king node|support|resistance)\b|\b(levels?|structure|walls?|gamma flip|max pain|flip|0\s*dte|gamma)\b[^?]*\bspx\b/i;
 
 const SPX_DESK_READ_RE =
   /\b(spx|s&p|es)\b.*\b(read|setup|bias|trade|desk|update|doing|look(ing)?|now|slayer|channel|commentary|brief)\b|\bwhat'?s? (the )?(spx|s&p) (setup|read|trade|bias|desk|doing)\b|\blive desk\b.*\bspx\b|\bspx channel\b|\bcommentary on spx\b/i;
@@ -87,6 +90,16 @@ const COMPARE_RE = /\b(compare|versus|vs\.?)\b/i;
  *  known tickers, so these common words can never hijack a single-ticker or ticker-less question. */
 const COMPARATIVE_CUE_RE =
   /\b(closer|closest|nearer|nearest|farther|further|which|more|less|higher|lower|stronger|weaker|better|worse)\b/i;
+
+// SELF-vs-LEVEL (#48) — ONE ticker measured against one of ITS OWN structure levels ("SPX vs its
+// gamma flip", "NVDA against its call wall", "where's SPY relative to the flip"). This is a spot-vs-
+// level structure question, NOT a two-name compare (extractCompareTickers finds only one ticker). The
+// compound decomposer produces exactly this fragment; without a home it hit REASONING_RE ("vs") and
+// bailed to null, so an ANSWERABLE part was dropped as "unavailable". A single ticker + a "vs/against/
+// relative-to ITS <structure level>" cue routes to the ticker's structure read (SPX → the Sniper
+// structure desk, others → Vector) before REASONING_RE can bail.
+const SELF_VS_LEVEL_RE =
+  /\b(?:vs\.?|versus|against|relative to|compared? to|above or below)\b[^?]{0,28}\b(?:its|it'?s|the)\b[^?]{0,18}\b(?:gamma\s*)?(?:flip|call wall|put wall|walls?|max ?pain|magnet|vwap)\b/i;
 
 // Cross-tool VERDICT synthesis (task #59) — the flagship "grade this" question. composeVerdict fans
 // out to the RELEVANT engines (dealer gamma + flow always; earnings/fundamentals for a single-name
@@ -146,8 +159,17 @@ const VECTOR_RE = /\bvector\b/i;
 // Vector-surface concepts — walls / flip / regime / magnet, the DTE + timeframe controls, the
 // chart technicals, and the bead/VEX/dark-pool lenses. Broad on purpose: a ticker + any of these
 // is a Vector desk question, which the deterministic Vector read answers in full.
+// NOTE the BARE `flip` / `gamma` / `0dte` tokens added here (2026-07-14 RTH terse-routing fix): the
+// desk-shorthand shape a member actually types is "flip nvda" / "gamma qqq" / "0dte spy" — a bare
+// vector token + a ticker. Before this the alternation only matched the two-word "gamma flip" /
+// "gamma wall", so a bare "flip nvda" fell THROUGH every non-SPX branch and hit the SPX-desk
+// catch-all (classifyBieStagingFallback ~L711 `/…|flip)/ → force SPX`), which discarded the extracted
+// NVDA and served the SPX desk dump — members got SPX numbers for an NVDA question. "spy walls"
+// already worked because bare "walls?" was here; these three tokens make the flip/gamma/0dte
+// shorthand mirror it. This regex is consumed ONLY by the two `ticker && ticker !== "SPX"` branches
+// below, so broadening it can only re-home a NON-SPX ticker to its own vector_read (never SPX).
 const VECTOR_STRUCTURE_RE =
-  /\b(gamma\s*(flip|wall|walls|magnet|regime)|call wall|put wall|gamma[- ]?walls?|walls?|expected move|max ?pain|wall integrity|beads?|fad(?:e|ing|eness)|build(?:ing)?|forming|dissolv\w*|stacking|dealer walls?|dte walls?|dtes|expir(?:y|ies)|weekly|monthly|timeframe|technicals?|vwap|ema|rsi|macd|market structure|vex|vanna|dark[- ]?pool|magnet|(?:1|3|5|15|30)\s?m|(?:1|2|4)\s?h)\b/i;
+  /\b(gamma\s*(flip|wall|walls|magnet|regime)|gamma|flip|0\s*dte|zero\s*dte|zerodte|call wall|put wall|gamma[- ]?walls?|walls?|expected move|max ?pain|wall integrity|beads?|fad(?:e|ing|eness)|build(?:ing)?|forming|dissolv\w*|stacking|dealer walls?|dte walls?|dtes|expir(?:y|ies)|weekly|monthly|timeframe|technicals?|vwap|ema|rsi|macd|market structure|vex|vanna|dark[- ]?pool|magnet|(?:1|3|5|15|30)\s?m|(?:1|2|4)\s?h)\b/i;
 
 // Concept/definition questions — "what is GEX", "define the gamma flip", "explain a king node",
 // "what does Night Hawk do". These are answered from the deterministic glossary (composeConceptRead
@@ -166,12 +188,40 @@ const CONCEPT_LIVE_HINT_RE =
 const CONCEPT_TEACH_EXCLUDE_RE =
   /\bin general\b|\bshould i\b|\bwould you\b|\bthink\b|\bworried\b|\bopinion\b|\bpredict\b|\bforecast\b|\bhow\b[^?]{0,40}\bwork/i;
 
+// LIVE-REGIME ask (#45) — "market regime?", "what's the regime", "what regime are we in", "current
+// regime". These want the LIVE regime read (composeMarketContext surfaces the HELIX regime detector),
+// NOT the glossary DEFINITION of what a gamma regime IS. The bare "market regime" was resolving to
+// the glossary because it's a ≤4-word phrase that lookupGlossary matches. The DEFINITIONAL ask ("what
+// is [a/the] gamma regime", "define regime", "what does regime mean") is explicitly excluded so it
+// keeps its concept_read home — the discriminator is the word "gamma" before "regime" (or a
+// define/mean lead-in), which marks the CONCEPT rather than the current live state.
+const REGIME_LIVE_RE =
+  /\b(?:market\s+regime|(?:what'?s?|what\s+is)\s+(?:the\s+)?(?:current\s+|live\s+)?regime|(?:the\s+)?(?:current|live)\s+regime|regime\s+(?:right\s+now|now|today)|what\s+regime\s+are\s+we\s+in)\b/i;
+
+/** True for a LIVE-regime ask that must route to the live market read, not the glossary definition. */
+function isLiveRegimeQuestion(q: string): boolean {
+  if (/\bgamma\s+regime\b/i.test(q)) return false; // "what is gamma regime" → concept (definition)
+  if (/\bdefine\b|\bmeaning of\b|\bwhat\s+does\b[^?]{0,20}\bregime\b[^?]{0,10}\bmean\b/i.test(q)) return false;
+  return REGIME_LIVE_RE.test(q) || /^\s*regime\??\s*$/i.test(q);
+}
+
+// CLEARLY-OFF-TOPIC domains (#41) — cooking / food / weather / poetry / general chat. A "what's a
+// recipe for lasagna" carries a definitional lead-in ("what's a…") so it hit the concept catch-all
+// and got a glossary "logged it to be added" instead of the honest off_topic scope card. This
+// denylist forces the off_topic path AHEAD of the concept catch-all — but ONLY when the question ALSO
+// has zero market subject, so an unknown-but-plausibly-market term ("the flongle indicator") still
+// routes to concept_read for the honest gap-log (that boundary is asserted in router.test.ts).
+const OFF_TOPIC_DOMAIN_RE =
+  /\b(recipe|recipes|lasagna|pizza|pasta|cook|cooking|bake|baking|breakfast|lunch|dinner|sandwich|salad|dessert|weather|forecast\s+for\s+the\s+weather|rain|snow|poem|poetry|haiku|sonnet|joke|riddle|lyrics|horoscope|astrology|zodiac|dating|girlfriend|boyfriend)\b/i;
+
 /** True when a question is a plain definitional ask — no ticker, no live-status hint, not a
  *  teach/opinion question. Unknown TERMS still count (composeConceptRead answers them honestly and
  *  gap-logs); only ticker/live/teach shapes are filtered out here. ALSO catches a BARE glossary term
  *  ("GEX", "max pain", "king node") — the terse-barrage shape a compound split produces — even
  *  without a "what is" lead-in, gated to a short phrase that actually resolves to a definition. */
 function isConceptQuestion(q: string): boolean {
+  if (isLiveRegimeQuestion(q)) return false; // "market regime?" → live regime read, not the definition (#45)
+  if (OFF_TOPIC_DOMAIN_RE.test(q) && !hasMarketSubject(q)) return false; // "recipe for lasagna" → off_topic, not glossary (#41)
   if (NH_RECORD_ASK_RE.test(q)) return false; // "our track record" → the live record read, not a definition
   if (extractKnownTicker(q) != null) return false; // a named ticker → live read, not a definition
   if (CONCEPT_LIVE_HINT_RE.test(q)) return false; // "what is the market doing" → live
@@ -204,8 +254,15 @@ function isUniversalLookup(q: string): boolean {
 const DIAGNOSTIC_RE =
   /\b(why (is|isn't|are|aren't|won't|not)\b[^?]*\b(form|forming|showing|updating|building|empty|blank|missing|work(ing)?|load(ing)?|render(ing)?|populat)|why (can't|cant|do(n't| not))\b[^?]*\b(see|show|get|find)\b|is the .{0,30}(pipeline|feed|recorder|cron|flow|gex|data) (healthy|up|down|working|stale|broken)|what('| i)?s (failing|broken|wrong|stale|down)|(pipeline|recorder|feed) (health|status|down|stale|broken))\b/i;
 
+// Imperative self-test shorthand — "run a self-diagnosis", "self-diagnostic", "run diagnostics",
+// "diagnose yourself", "system check". These name the diagnostic engine directly rather than
+// describing a broken surface, so DIAGNOSTIC_RE (which keys on "why isn't X forming" / "is the
+// pipeline healthy") missed them and they bailed to the generic Largo identity response (#34).
+const DIAGNOSTIC_SELF_RE =
+  /\b(self[-\s]?diagnos(?:is|tic|e)|run\s+(?:a\s+)?(?:self[-\s]?)?diagnos(?:is|tics?)|diagnos(?:e|tic)\s+(?:yourself|the\s+system|your\s+system)|system\s+(?:self[-\s]?)?(?:diagnos\w*|health\s*check)|run\s+(?:a\s+)?system\s+check)\b/i;
+
 function isDiagnosticQuestion(q: string): boolean {
-  return DIAGNOSTIC_RE.test(q);
+  return DIAGNOSTIC_RE.test(q) || DIAGNOSTIC_SELF_RE.test(q);
 }
 
 // Cortex read (PR-H) — the deterministic "explain the 0DTE decision" path. Two shapes:
@@ -481,6 +538,11 @@ export function classifyBieIntent(question: string, ledgerTickers: Set<string>):
   const q = question.trim();
   if (q.length > 160 || q.split(/[.?!]/).filter((s) => s.trim()).length > 2) return null;
 
+  // "market regime?" / "what's the regime" → the LIVE regime read (market_context surfaces the HELIX
+  // regime detector), never the glossary definition. Before the concept branch, which would otherwise
+  // steal the bare phrase as a ≤4-word glossary lookup (#45).
+  if (isLiveRegimeQuestion(q)) return { intent: "market_context", ticker: null };
+
   // Definitional/concept question → the glossary read. Placed FIRST (even before the explicit
   // "vector" branch) so "what is Vector" / "what is GEX" / "what does Night Hawk do" resolve to a
   // DEFINITION, while a live "vector setup on NVDA" (has a ticker) still routes to vector_read below.
@@ -598,6 +660,19 @@ export function classifyBieIntent(question: string, ledgerTickers: Set<string>):
     }
   }
 
+  // "SPX vs its gamma flip" — one ticker vs its OWN structure level (#48). Route to that ticker's
+  // structure read BEFORE REASONING_RE bails on the "vs". Non-SPX with a two-word "gamma flip" is
+  // already caught above; this rescues the SPX case (and any single-ticker self-vs-level shape the
+  // compound decomposer emits) from the null → "unavailable" drop.
+  if (SELF_VS_LEVEL_RE.test(q)) {
+    const t = extractKnownTicker(q);
+    if (t && extractCompareTickers(q) == null) {
+      return t === "SPX"
+        ? { intent: "spx_structure", ticker: "SPX" }
+        : { intent: "vector_read", ticker: t, horizon: extractHorizon(q) };
+    }
+  }
+
   if (REASONING_RE.test(q)) return null;
 
   if (ZERODTE_RE.test(q)) return { intent: "zerodte_plays", ticker: null };
@@ -640,6 +715,9 @@ export function isSpxDeskFallbackQuestion(question: string): boolean {
 
 export function classifyBieStagingFallback(question: string): BieRoute {
   const q = question.trim();
+  // Same live-regime guard as the primary classifier — "market regime?" is the LIVE read, never the
+  // glossary definition (#45). Before concept so the bare phrase isn't stolen as a glossary lookup.
+  if (isLiveRegimeQuestion(q)) return { intent: "market_context", ticker: null };
   if (isConceptQuestion(q)) return { intent: "concept_read", ticker: null };
   if (isUniversalLookup(q)) return { intent: "universal_lookup", ticker: extractKnownTicker(q) };
   // Same placement as the primary classifier: governed ops read BEFORE system_diagnostic.

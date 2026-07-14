@@ -79,6 +79,18 @@ test("single-name verdict cites the arsenal: earnings countdown, squeeze-fuel SI
   assert.match(out, /holding through the print is a binary event/);
 });
 
+test("news headline in the CONTEXT line DECODES HTML entities (N5-2 leak)", async () => {
+  const out = await md(
+    ctx({ ticker: "NVDA" }, {
+      scope: "single_name",
+      news: { count: 1, newest: "2026-07-14", headlines: [`Nvidia&#39;s CEO on AI &amp; the &#34;next wave&#34;`] },
+    }),
+    "should I buy NVDA"
+  );
+  assert.match(out, /1 recent news \("Nvidia's CEO on AI & the "next wave""\)/);
+  assert.doesNotMatch(out, /&#\d+;|&amp;|&#x/);
+});
+
 test("index verdict cites macro + breadth (relevance-gated color)", async () => {
   const out = await md(
     ctx({ ticker: "SPX" }, {
