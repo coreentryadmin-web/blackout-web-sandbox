@@ -150,7 +150,40 @@ Honesty spine intact live: A+ earned-not-asserted (unlocked:false, a_graded:0, 4
 - **P2 F-2 fabricated refusal reason (honesty)**: a correctly hard-blocked find (SPXW put 7540, score 43<65 floor) was narrated by Largo at 10:15 ET as "flagged after 3:00 ET cutoff, watch-only" — false (it's 10AM; real block is score floor). Root: `zerodte/intel.ts:102-105` else-branch unconditionally blames the 15:00 cutoff, ignores `gate_blocks`, never checks nowEtMinutes; reached because BLOCKED→status:"SKIP" (`zerodte-service.ts:353`); only the Largo consumer `zeroDtePlaysForLargo` (`zerodte-service.ts:383`) is wrong (board SkipCard is block-aware/correct). Trade decision correct (refused) — false EXPLANATION only. → FIX (zerodte-intel fix agent).
 - Residual (not a defect): live OPEN-position lanes (sub-second marks on a real position, exit engine OPEN→CLOSED, commit-latch transition, tier/cortex/invalidator pins on a committed row) couldn't be exercised — quiet open, no play committed. Re-run when a position is genuinely OPEN.
 
-### Vector / Thermal — _(pending)_
+### Vector (live 13:50Z, SPX/TSLA/NVDA/SPY/ASTS/UBER) — `scratchpad/live-sweep-vector.md`
+- **P1 OR/HOD/LOD/VWAP anchor to 04:00 PREMARKET not 09:30 RTH open — every equity/ETF** (SPX cash correct,
+  no premarket). Rendered vs true OR-H: TSLA 395.60 vs 400.82(−5.2), NVDA 205.30 vs 208.34, SPY 748.99 vs
+  751.52, ASTS 68.81 vs 71.39. Root: `vector-key-levels.ts` lastSessionBars/openingRange/sessionHodLod group
+  by ET day, NO RTH gate; vwapSeries resets at ET-day boundary; equity feed includes premarket. THIS is the
+  "OR showed wrong range" bug. → multiday agent (P1-A). Add RTH-window gate to session-anchored levels.
+- **P1 "0DTE" silent next-expiry fallback**: TSLA/NVDA no same-day chain → "0DTE" renders next expiry
+  (TSLA 88 rows 400/395) unlabeled. `vector-dte-horizon.ts:~115 expiriesForHorizon`. → multiday agent (P1-B).
+- **P2 flow-lens far-OTM king**: ASTS flow ♛ strike 150 @ spot 71 — flow branch self-crowns, no canonical
+  override (#352 crown is OI-mode only). → post-multiday vector pass (extend crown to flow mode).
+- **P2 flow header/body desync** on cold on-demand names (UBER): header→flow but rows stay OI till fetch.
+- **P2 dense-ladder magnitude dominated by 1 far strike** (SPX 8000 −$772.9M) mutes near-money bars; king no
+  longer longest bar. → normalize/clamp far-strike magnitude for the bar display.
+- **P2/CHECK net::ERR_FAILED 2-3/page** = sandbox SSE-proxy abort (confirmed hypothesis), not a member bug.
+- **CORRECTION**: the earlier "flip 7643.81 vs 7535 = 108pt divergence" I read off the screenshot was WRONG —
+  7535 is the gamma MAGNET (vector-gamma-magnet.ts:101), a distinct concept; NOT incoherence. Real flip
+  divergences are the small cross-surface ones (SPX-Slayer #1 Δ40, Largo Δ3-8), still valid.
+- **PASS**: #352 coherence on all 6 (banner==kings==terminal, no deep-ITM crown); UI ladder==API exact;
+  flow signs diverge from OI; PDH/PDL/PDC + floor pivots anchored to MON 07-13 (not Friday); EMA/SMA/RSI/MACD
+  NOT seed-contaminated; GEX heatmap-behind-candles works (backfill, signs 60/60, re-scopes, advances live);
+  bead lifecycle + MID-SESSION WALL BIRTHS confirmed ("10:02:15 New call wall forming at 430"); DTE re-scope,
+  rapid-toggle race, regime, max-pain, timeframes, indicators, replay, scanner, alerts, dynamic UBER, SPX≈10×SPY.
+
+### Thermal / GEX heatmap (live 13:50Z) — core PASS, 1 P1 — `scratchpad/live-sweep-thermal.md`
+Core healthy: spot==Polygon to the cent, SPX≈10×SPY(10.03), matrix/walls/flip/max-pain/net render+coherent
+with positioning path, asof=today (no Friday/stale), no malformed floats, **NO dark-pool contamination** (the
+known Thermal regression is ABSENT). 3 automated FAILs = harness false positives (RSC $undefined streams,
+InfoTip glyph parser, sandbox SSE net::ERR_FAILED).
+- **P1 "Near" preset WRONG SIGN**: All −$580.1M vs Near +$591.5M (opposite, both "near-term total"). Client
+  calendar `isMonthlyExpiry()` (`GexHeatmap.tsx:350,2770-2778,2804-2811,2873-2878`) drops the 3rd-Friday
+  07-17 from nearExpiries though the server's `near_term_expiries` INCLUDES it; that column dominates → sign
+  flips (SPY server −$1.06B vs client-Near +$234M). Member sees net-LONG when dealers net-SHORT. Blast: Near
+  profile walls/flip/anchor + Monthly double-count + "M" badge caption wrong. → FIX: split from server's
+  `near_term_expiries` not the heuristic. (thermal fix agent, fix/thermal-near-expiry-sign)
 ### Volume-adjusted wall engine verification (rail-shot screenshots + probes, live ~14:08Z)
 Visual evidence: `scratchpad/rail-shot/rail-{SPX,TSLA,NVDA}.png`. Staggered-births signal:
 SPX 8 distinct bead origins, TSLA 8, NVDA 4 (mid-session births, not all at open).
