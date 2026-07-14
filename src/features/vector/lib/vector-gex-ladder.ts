@@ -65,6 +65,25 @@ export type BuildGexLadderOpts = {
    * by `maxRows` (farthest-from-spot NON-retained rows are evicted to stay under cap).
    */
   keepPerSide?: number;
+  /**
+   * Canonical wall strikes to CROWN as the per-side king (⚑), overriding the ladder's own
+   * max-|gex| pick. When provided (finite), the row at that strike on the matching side is crowned
+   * instead of the strongest strike in THIS ladder's data.
+   *
+   * Why this exists — cross-surface truth: the ladder renders the OI-signed per-strike net-GEX
+   * (`getHorizonStrikeTotals`), but the banner's resistance/support, the chart's wall line, and the
+   * desk terminal all cite the CANONICAL walls (`getVectorGexWallsForHorizon` → `computeGexWalls`
+   * over the VOLUME-ADJUSTED ladder for a narrowed horizon, or the warm near-term aggregate for
+   * "all"). Those two ladders diverge on index-scale names with heavy 0DTE volume: e.g. live SPX
+   * weekly, the OI ladder's biggest put |gex| is a deep-ITM 8000 strike (ABOVE spot — nonsense as
+   * "support") while the real put wall is 7475; and SPX "all" crowned 7600/7300 vs the banner's
+   * 7550/7400. The DISPLAY stays fully dense (every OI strike + its true magnitude bar) — only the
+   * ⚑ crown moves to the strike the other three surfaces already cite, so all four AGREE. When the
+   * override strike isn't present on the matching side in this ladder's rows (sign disagreement /
+   * strike absent), we fall back to the ladder's own computed king so there is always exactly one
+   * king per side. Omit (the BIE full-state + client seed do) to keep the pure self-crowned behavior.
+   */
+  kingStrikes?: { call?: number | null; put?: number | null };
 };
 
 /** Default strongest-walls-per-side kept through the band (king + 2 runners-up each side). */
@@ -87,7 +106,7 @@ export function buildGexLadder(
   opts: BuildGexLadderOpts = {}
 ): GexLadder {
   if (!strikeTotals) return { ...EMPTY, spot };
-  const { maxRows = 200, bandPct = 0.5, keepPerSide = DEFAULT_KEEP_PER_SIDE } = opts;
+  const { maxRows = 200, bandPct = 0.5, keepPerSide = DEFAULT_KEEP_PER_SIDE, kingStrikes } = opts;
 
   let entries: Array<{ strike: number; gex: number }> = [];
   for (const [key, value] of Object.entries(strikeTotals)) {
@@ -184,14 +203,35 @@ export function buildGexLadder(
     if (abs > maxAbs) maxAbs = abs;
   }
 
+  // Resolve the crowned king per side. Default is the ladder's own full-set max-|gex| strike. When
+  // the caller passes canonical wall strikes (`kingStrikes` — the SAME walls the banner / chart line
+  // / desk terminal cite), crown THOSE so all four surfaces agree — but ONLY when the override strike
+  // is actually present on the matching side in the displayed rows (finite + a row with that strike
+  // AND the correct sign). If it isn't (the canonical wall's sign disagrees with the OI ladder at
+  // that strike, or the strike isn't in the fetched chain), fall back to the self-crowned king, so
+  // there is ALWAYS exactly one king per side and the ⚑ never lands on a strike the panel doesn't
+  // render or on the wrong-signed row. The display band/magnitudes are untouched — only the ⚑ moves.
+  const overrideCall = kingStrikes?.call;
+  const overridePut = kingStrikes?.put;
+  const crownCallStrike =
+    overrideCall != null && Number.isFinite(overrideCall) && entries.some((e) => e.strike === overrideCall && e.gex > 0)
+      ? overrideCall
+      : kingCallStrike;
+  const crownPutStrike =
+    overridePut != null && Number.isFinite(overridePut) && entries.some((e) => e.strike === overridePut && e.gex < 0)
+      ? overridePut
+      : kingPutStrike;
+
   const rows: GexLadderRow[] = entries
     .map((e) => ({
       strike: e.strike,
       gex: e.gex,
       side: (e.gex > 0 ? "call" : "put") as GexLadderSide,
       magnitude: maxAbs > 0 ? Math.abs(e.gex) / maxAbs : 0,
-      // Crowned on the FULL set (side-checked so a strike shared across signs can't double-crown).
-      isKing: (e.gex > 0 && e.strike === kingCallStrike) || (e.gex < 0 && e.strike === kingPutStrike),
+      // Crowned per side (side-checked so a strike shared across signs can't double-crown). The
+      // crowned strike is the canonical wall when the caller supplied one, else the ladder's own
+      // strongest strike — see `crownCallStrike`/`crownPutStrike` above.
+      isKing: (e.gex > 0 && e.strike === crownCallStrike) || (e.gex < 0 && e.strike === crownPutStrike),
     }))
     .sort((a, b) => b.strike - a.strike);
 

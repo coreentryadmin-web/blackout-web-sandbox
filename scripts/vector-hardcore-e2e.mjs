@@ -205,7 +205,19 @@ async function validateTicker(page, ticker, errs) {
     await page.keyboard.press("Escape"); await page.waitForTimeout(200);
   }
   rec(`${ticker}: timeframe redraws the chart (canvas differs across TFs)`, new Set(Object.values(hashByTf).filter(Boolean)).size > 1, JSON.stringify(Object.keys(hashByTf)));
-  rec(`${ticker}: timeframe re-aggregates bars (SMA note 1m≠1H)`, noteByTf["1 min"] !== noteByTf["1H"], `1m="${noteByTf["1 min"]}" 1H="${noteByTf["1H"]}"`);
+  // MA-availability recomputes per timeframe. The SMA note reflects how many bars the current TF
+  // leaves: "full" (all periods computable) / "N n/a" (partial) / "needs ≥N bars" (none). Coarser
+  // timeframes carry FEWER bars, so availability must be MONOTONIC non-increasing as the TF widens
+  // (1m ≥ 15m ≥ 1H) and never a hard error ("?"). This is a day-agnostic invariant on the per-TF
+  // recompute. (Previously this asserted 1m≠1H, but that's data-fragile: a liquid name with ≥ the
+  // SMA period of 1H history shows "full" at BOTH TFs — a correct state, not a re-aggregation
+  // failure — so the strict inequality false-failed SPY/NVDA while SPX passed only because its 1H
+  // series is short. The actual re-aggregation proof is the canvas-redraw check directly above.)
+  const noteRank = (n) => (n === "?" ? -1 : /needs/.test(n) ? 0 : /n\/a/.test(n) ? 1 : 2);
+  const rFine = noteRank(noteByTf["1 min"]), rMid = noteRank(noteByTf["15 min"]), rCoarse = noteRank(noteByTf["1H"]);
+  rec(`${ticker}: MA availability recomputes + is monotonic across TFs (fine ≥ coarse)`,
+    rFine >= 0 && rMid >= 0 && rCoarse >= 0 && rFine >= rMid && rMid >= rCoarse,
+    `1m="${noteByTf["1 min"]}" 15m="${noteByTf["15 min"]}" 1H="${noteByTf["1H"]}"`);
 
   // ---- G. indicator matrix: family toggles draw + badge tracks enabled count ----
   await page.locator("#vector-tf-select").selectOption({ label: "1 min" }).catch(() => {}); await page.waitForTimeout(1000);
@@ -230,24 +242,37 @@ async function validateTicker(page, ticker, errs) {
   const emaOff = shotOff ? await countColor(shotOff, { r: 251, g: 146, b: 60 }, 18) : 0;
   rec(`${ticker}: EMA pixels really paint on enable and vanish on disable`, emaOn > 120 && emaOff < emaOn * 0.25, `on=${emaOn}px off=${emaOff}px`);
 
+  // Cross-surface + UI-vs-API checks compare the SAME horizon the member is actually viewing. The
+  // DTE toggle has NO "All" option (removed — bb4ddeb), so the panel/banner/terminal always show a
+  // NARROWED horizon; the bare-"all" `rows` from block B is a different scope and (now that the
+  // ladder is DENSE — #347) a different strike SET, so it can't be compared row-for-row against the
+  // UI. Pin the UI to WEEKLY (the member default, always present) and refetch the ladder at weekly,
+  // so the UI ladder, banner, terminal, and API ladder are ALL the same scope. (Pre-#347 the
+  // 40-row near-money cap made every horizon's nearest-40 strike set identical, so the mismatch was
+  // masked; the dense ladder exposes it. This is a same-scope alignment, not a loosened assertion.)
+  const XH = "weekly";
+  if (dteUiPresent) { await clickDte(page, "WEEKLY"); await page.waitForTimeout(2800); }
+  const ladX = await api(page, `/api/market/vector/gex-ladder?ticker=${ticker}&dte=${XH}`);
+  const xrows = ladX?.ladder?.rows || rows;
+
   // H2. Ladder UI text vs API: the strikes members READ in the panel are exactly the API's rows, in
   // order, and each row's printed $ sign matches its side (call "+$", put "-$").
   const uiRows = await page.evaluate(() =>
     [...document.querySelectorAll(".vector-gex-ladder-row")].map((r) => (r.textContent || "").replace(/\s+/g, " ").trim())
   );
   const uiStrikes = uiRows.map((t) => { const m = t.match(/^([\d,]+(?:\.\d+)?)/); return m ? Number(m[1].replace(/,/g, "")) : NaN; });
-  const strikesMatch = uiStrikes.length === rows.length && uiStrikes.every((s, i) => near(s, rows[i].strike, 0.001));
-  const signsMatch = uiRows.every((t, i) => (rows[i]?.side === "call" ? t.includes("+$") : t.includes("-$")));
+  const strikesMatch = uiStrikes.length === xrows.length && uiStrikes.every((s, i) => near(s, xrows[i].strike, 0.001));
+  const signsMatch = uiRows.every((t, i) => (xrows[i]?.side === "call" ? t.includes("+$") : t.includes("-$")));
   const fmtOk = uiRows.every((t) => /[+-]\$[\d,.]+[BMK]?/.test(t));
-  rec(`${ticker}: ladder UI strikes match API exactly (order + values)`, strikesMatch, `${uiStrikes.length} UI vs ${rows.length} API`);
+  rec(`${ticker}: ladder UI strikes match API exactly (order + values)`, strikesMatch, `${uiStrikes.length} UI vs ${xrows.length} API (${XH})`);
   rec(`${ticker}: ladder UI $-signs match side + formatted (+$/-$ B/M/K)`, signsMatch && fmtOk);
 
-  // H3/H4. Cross-SURFACE consistency on "all": the banner's resistance/support, the ladder's kings,
-  // and the terminal's callouts are three separate member-visible surfaces reading the same
-  // near-term structure — they must cite the SAME strikes. (The horizon walls route is checked on
-  // narrowed DTEs above; on "all" the UI intentionally shows the stream/ladder aggregate.)
-  const callKingL = rows.find((r) => r.isKing && r.side === "call")?.strike;
-  const putKingL = rows.find((r) => r.isKing && r.side === "put")?.strike;
+  // H3/H4. Cross-SURFACE consistency: the banner's resistance/support, the ladder's kings, and the
+  // desk terminal's callouts are three separate member-visible surfaces reading the same horizon
+  // structure — they must cite the SAME strikes. The ladder king is crowned to the canonical walls
+  // (getVectorGexWallsForHorizon — the exact source the banner + terminal cite), so all three agree.
+  const callKingL = xrows.find((r) => r.isKing && r.side === "call")?.strike;
+  const putKingL = xrows.find((r) => r.isKing && r.side === "put")?.strike;
   if (callKingL != null && putKingL != null) {
     const ui = await domSnap(page);
     const bRes = ui.regime.match(/resistance ([\d,.]+)/), bSup = ui.regime.match(/support ([\d,.]+)/);

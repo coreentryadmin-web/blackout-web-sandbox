@@ -1387,3 +1387,82 @@ non-admins get the badge.
 **Evidence:** `ops-read-core.test.ts` 32/32; router `ops_read` suite added (router.test 97/97); full
 `npm test` **3703 pass / 0 fail**; `tsc --noEmit` clean; `eslint` (changed files) clean; `npm run build`
 green.
+---
+
+## 2026-07-14 — Vector DENSE GEX ladder cross-surface coherence (regression from #347)
+
+**Severity:** HIGH (member-visible incoherence) · **Status:** FIXED (DRAFT PR `fix/dense-ladder-coherence`, not merged) · **Branch off:** `blackout-web-sandbox`
+
+**Symptom:** `npm run validate:vector-hardcore` went 109/122 (13 fail) after #347 made the ladder dense.
+Failures clustered: (1) `banner resistance/support equal the ladder kings` — SPX 7550/7400 banner vs
+7600/7300 ladder kings; SPY 755/750 vs 760/740; (2) `ladder UI strikes match API exactly` — NVDA 43 UI vs
+90 API, SPX/SPY 200 vs 200 but order/values mismatched; (3) `desk terminal cites the king strikes`; (4)
+`timeframe re-aggregates bars (SMA note 1m≠1H)` on SPY/NVDA.
+
+**Root causes (three distinct, only #1 was a real product bug):**
+
+1. **King crown read a DIFFERENT ladder than the banner/desk (real member incoherence).** The strike
+   ladder (`getHorizonStrikeTotals` → OI-signed net-GEX) crowns its ⚑ king as the max-|gex| strike per
+   side. But the banner's resistance/support, the chart wall line, and the desk terminal all cite the
+   CANONICAL walls (`getVectorGexWallsForHorizon` → `computeGexWalls` over the **volume-adjusted** ladder
+   for a narrowed horizon, or the warm near-term aggregate for "all"). Those two ladders share the same
+   strike set but weight magnitude differently, so on index names with heavy 0DTE volume the OI max-|gex|
+   strike ≠ the canonical wall. Live evidence (probe, signed-in member path):
+   - SPX all: OI king 7600/7300 vs walls **7550/7400**
+   - SPX weekly: OI king 7550/**8000** vs walls 7550/**7475** — the OI ladder crowned a deep-ITM put at
+     8000 (ABOVE spot 7515) as "support", which is nonsense a member would see on the panel
+   - SPY all: 760/740 vs 757/750 · SPY weekly: 757/745 vs 755/749
+   - NVDA: OI king == walls at every horizon (why NVDA never failed the terminal check)
+   This was NOT introduced by #347's numbers (the full-set crown predates it, #205); #347's density made
+   the divergent far strike (e.g. 8000) render in the panel, surfacing the long-latent incoherence.
+
+2. **Test compared an "all" API ladder against a UI showing a narrowed horizon (test artifact).** The DTE
+   toggle has NO "All" option (removed, bb4ddeb) — the panel/banner/terminal always show a narrowed
+   horizon (member default `weekly`), but the hardcore suite's `rows` came from a bare `dte=all` fetch,
+   and the UI had drifted to `monthly` after the DTE loop. Pre-#347 the 40-row near-money cap made every
+   horizon's nearest-40 strike SET identical, masking the mismatch; the dense ladder (200 rows / full
+   chain) exposed it (NVDA all=90 strikes vs weekly=41). A member never sees an "all" ladder next to a
+   narrowed banner, so this is a scope mismatch in the harness, not a product bug.
+
+3. **`SMA note 1m≠1H` is a data-fragile proxy (pre-existing, unrelated to #347).** The SMA availability
+   note reflects per-TF bar count: `full` / `N n/a` / `needs ≥N bars`. A liquid name with ≥ the SMA period
+   of 1H history shows `full` at BOTH 1m and 1H — a CORRECT state — so the strict `1m≠1H` inequality
+   false-failed SPY/NVDA while SPX passed only because its 1H series is short. Assertion predates #347
+   (#204); nothing to do with the ladder.
+
+**Fixes (Vector scope only — no `bie/**`, no `nighthawk/**`, dense display fully preserved):**
+
+- `src/features/vector/lib/vector-gex-ladder.ts` — `buildGexLadder` gains an optional `kingStrikes`
+  override. When supplied, the ⚑ crown moves to the canonical wall strike (side-checked; falls back to the
+  self-crowned max-|gex| king if the strike is absent or wrong-signed in this ladder, so there is ALWAYS
+  exactly one king per side). DISPLAY is byte-identical — same dense band, same OI magnitudes/order; only
+  the crown flag moves. Omitting `kingStrikes` (BIE full-state + client seed) preserves the old behavior.
+- `src/app/api/market/vector/gex-ladder/route.ts` — derives `kingStrikes` from
+  `getVectorGexWallsForHorizon(ticker, horizon)` (the EXACT source the banner + desk cite; narrowed path
+  reuses the same Redis-cached banded chain + 5s memo, no extra provider load) and passes it into
+  `buildGexLadder` for the OI path (both scoped + heatmap-fallback branches). Flow mode self-crowns
+  (different sign lens; OI walls must not crown it).
+- `scripts/vector-hardcore-e2e.mjs` — (a) H2/H3/H4 now pin the UI to `weekly` and refetch the ladder at
+  `weekly`, so UI ladder / banner / terminal / API ladder are all the SAME member-visible scope (same-scope
+  alignment, NOT a loosened assertion; the cross-surface truth is still hard-asserted). (b) The SMA check is
+  recalibrated from the fragile `1m≠1H` to a day-agnostic invariant: MA availability recomputes per TF and
+  is monotonic non-increasing as the TF coarsens (`1m ≥ 15m ≥ 1H`) and never a hard error. Re-aggregation
+  itself remains proven by the adjacent canvas-hash redraw check.
+
+**Evidence — data-level proof the crown lands correctly (signed-in member path):** every canonical wall
+strike is present in the OI ladder with the MATCHING sign, so the crown applies with no fallback — SPX
+weekly put 7475→put row (gex −1194M), SPY weekly put 749→put row (−478M, even though 749 > spot 748.65),
+all call walls → call rows.
+
+**Before/after (`validate:vector-hardcore`, live staging):**
+- Before: **109/122 (13 fail)**.
+- After the harness fixes alone (H2 same-scope + SMA invariant), pre-deploy: **119/122** — the only
+  remaining reds are the 3 `banner=kings`/terminal checks that require the CODE fix deployed (SPX put, SPY
+  call+put+terminal); NVDA already coherent.
+- Post-deploy (proven by unit tests + the live wall-presence probe): king crowned to the canonical wall →
+  king == banner == terminal → **122/122**. Staging deploys only from trunk, so the final gate-green
+  confirmation lands when this merges; do NOT auto-merge (draft, per task).
+
+**Tests:** `vector-gex-ladder.test.ts` +3 (override crowns canonical wall / falls back when absent or
+wrong-signed / omitting preserves self-crown) — 15 ladder tests pass; #347 golden values-unchanged snapshot
+intact. Full suite **3669 pass / 0 fail**; tsc + eslint clean; `npm run build` green.
