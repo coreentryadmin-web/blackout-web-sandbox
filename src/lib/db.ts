@@ -1,5 +1,12 @@
 import { Pool, type PoolClient, type QueryResultRow } from "pg";
 import { isTransientPgError } from "@/lib/db-transient";
+// PR-N2: grading-methodology version tags (dependency-free leaf — safe to import here).
+// db.ts stamps every grade write with the CURRENT tag and boot-backfills unstamped
+// resolved rows with the LEGACY tag; analytics/display segment on the same constants.
+import {
+  GRADE_METHODOLOGY_CURRENT,
+  GRADE_METHODOLOGY_LEGACY,
+} from "@/features/nighthawk/lib/grade-methodology";
 
 // Deliberately NOT importing rateLimiterEnvNumber from provider-rate-limiter-shared.ts here: that
 // module's dynamic `import("@/lib/redis-pubsub")` drags `ioredis` (and `node:diagnostics_channel`)
@@ -583,6 +590,34 @@ async function runMigrations(): Promise<void> {
   `);
   await p.query(`
     ALTER TABLE nighthawk_play_outcomes ADD COLUMN IF NOT EXISTS pulled_at TIMESTAMPTZ;
+  `);
+  // PR-N2 (decision doc §2.1/N-2, methodology blend): which resolveOutcome rule set graded
+  // this row. Every grade write through updateNighthawkPlayOutcome stamps the CURRENT tag;
+  // the legacy regrade path (regradeLegacyNighthawkOutcome below) promotes old rows after
+  // re-verifying them under current rules. Analytics segments on this column and NEVER
+  // aggregates the two segments into one win rate.
+  await p.query(`
+    ALTER TABLE nighthawk_play_outcomes ADD COLUMN IF NOT EXISTS grade_methodology TEXT;
+  `);
+  // PR-N2: the pre-regrade grade, preserved verbatim when a legacy row is re-graded under
+  // current rules — history is quarantined, never destroyed (§3.5: both must stay visible).
+  // COALESCE first-write-wins in the regrade UPDATE, same pinning discipline as
+  // publish_context/morning_verdict above.
+  await p.query(`
+    ALTER TABLE nighthawk_play_outcomes ADD COLUMN IF NOT EXISTS legacy_grade JSONB;
+  `);
+  // PR-N2 boot backfill: a resolved row with no methodology stamp was, by construction,
+  // graded before stamping existed (every post-PR-N2 grade write stamps at write time), so
+  // its provenance is unprovable from the row — tag it LEGACY. Deliberately conservative:
+  // the 12 rows the PR-N1 stuck-outcome repair graded under current rules land here too,
+  // because "probably current" is not a record-keeping standard; the admin legacy regrade
+  // re-runs them under current rules (idempotent — same persisted bars in, same grade out)
+  // and promotes them with the old grade pinned in legacy_grade. Idempotent per boot: only
+  // NULL-stamp resolved rows match, and after one pass none remain NULL.
+  await p.query(`
+    UPDATE nighthawk_play_outcomes
+    SET grade_methodology = '${GRADE_METHODOLOGY_LEGACY}'
+    WHERE outcome <> 'pending' AND grade_methodology IS NULL;
   `);
   await p.query(`
     CREATE TABLE IF NOT EXISTS nighthawk_jobs (
@@ -5895,6 +5930,14 @@ export type NighthawkPlayOutcomeRow = {
   publish_context?: Record<string, unknown> | null;
   /** Persisted 9:15 morning-confirm verdict blob (first-write-wins). */
   morning_verdict?: Record<string, unknown> | null;
+  // PR-N2 additive fields — same optionality convention as the PR-N4 block above.
+  /** Which resolveOutcome rule set graded this row (grade-methodology.ts tags). NULL only
+   *  on 'pending' rows — the boot backfill stamps every resolved row, and every grade
+   *  write stamps at write time. Analytics treats anything ≠ CURRENT as legacy. */
+  grade_methodology?: string | null;
+  /** The superseded grade a legacy regrade preserved (outcome/hit flags/old tag),
+   *  COALESCE-pinned first-write-wins — never overwritten, never deleted. */
+  legacy_grade?: Record<string, unknown> | null;
 };
 
 function mapNighthawkPlayOutcomeRow(r: QueryResultRow): NighthawkPlayOutcomeRow {
@@ -5922,6 +5965,8 @@ function mapNighthawkPlayOutcomeRow(r: QueryResultRow): NighthawkPlayOutcomeRow 
     pulled_reason: r.pulled_reason != null ? String(r.pulled_reason) : null,
     publish_context: (r.publish_context as Record<string, unknown>) ?? null,
     morning_verdict: (r.morning_verdict as Record<string, unknown>) ?? null,
+    grade_methodology: r.grade_methodology != null ? String(r.grade_methodology) : null,
+    legacy_grade: (r.legacy_grade as Record<string, unknown>) ?? null,
   };
 }
 
@@ -6044,7 +6089,8 @@ export async function fetchPendingNighthawkOutcomes(lookbackDays = 7): Promise<N
            entry_range_low, entry_range_high, target, stop, score, sector,
            next_day_open, next_day_close, session_high, session_low,
            hit_target, hit_stop, outcome, created_at,
-           pulled, pulled_reason, publish_context, morning_verdict
+           pulled, pulled_reason, publish_context, morning_verdict,
+           grade_methodology, legacy_grade
     FROM nighthawk_play_outcomes
     WHERE outcome = 'pending'
       AND edition_for >= ((NOW() AT TIME ZONE 'America/New_York')::date - ($1::int || ' days')::interval)
@@ -6078,6 +6124,12 @@ export async function updateNighthawkPlayOutcome(
         hit_target = $6,
         hit_stop = $7,
         outcome = $8,
+        -- PR-N2: every grade written through this path (outcomes cron + PR-N1 stuck-row
+        -- repair) comes from the CURRENT resolveOutcome — stamp it so the record can
+        -- segment by rule set instead of silently blending methodologies. Grading a row
+        -- back to 'pending' (no verdict yet) does not stamp: an ungraded row has no
+        -- methodology to claim.
+        grade_methodology = CASE WHEN $8 = 'pending' THEN grade_methodology ELSE '${GRADE_METHODOLOGY_CURRENT}' END,
         updated_at = NOW()
     WHERE id = $1 AND outcome = 'pending'
     `,
@@ -6092,6 +6144,84 @@ export async function updateNighthawkPlayOutcome(
       patch.outcome,
     ]
   );
+}
+
+/** PR-N2: resolved rows still carrying a non-current grade methodology — the honest-
+ *  regrade work queue. Selector matches analytics' segmentation rule exactly
+ *  (isCurrentGradeMethodology): anything not explicitly stamped CURRENT is legacy,
+ *  including NULL (defensive — the boot backfill stamps those, but a row inserted
+ *  between backfill and read must still quarantine as legacy, never as current). */
+export async function fetchLegacyGradedNighthawkOutcomes(
+  windowDays = 90
+): Promise<NighthawkPlayOutcomeRow[]> {
+  await ensureSchema();
+  const safeWindowDays = Number.isFinite(windowDays) && windowDays > 0 ? Math.trunc(windowDays) : 90;
+  const res = await (await getPool()).query(
+    `
+    SELECT id, edition_for, ticker, direction, conviction,
+           entry_range_low, entry_range_high, target, stop, score, sector,
+           next_day_open, next_day_close, session_high, session_low,
+           hit_target, hit_stop, outcome, created_at,
+           pulled, pulled_reason, publish_context, morning_verdict,
+           grade_methodology, legacy_grade
+    FROM nighthawk_play_outcomes
+    WHERE outcome <> 'pending'
+      AND (grade_methodology IS NULL OR grade_methodology <> '${GRADE_METHODOLOGY_CURRENT}')
+      AND edition_for >= ((NOW() AT TIME ZONE 'America/New_York')::date - ($1::int || ' days')::interval)
+    ORDER BY edition_for ASC, ticker ASC
+    `,
+    [safeWindowDays]
+  );
+  return res.rows.map(mapNighthawkPlayOutcomeRow);
+}
+
+/** PR-N2: re-grade one LEGACY-resolved row under current rules, preserving the old grade.
+ *
+ *  Three invariants, all enforced in the SQL itself (not caller discipline):
+ *  - `legacy_grade` is COALESCE first-write-wins and captures the row's PRE-UPDATE
+ *    outcome/hit flags/tag (jsonb_build_object over the old column values evaluates
+ *    against the pre-UPDATE tuple) — the superseded grade stays visible forever (§3.5:
+ *    honest re-grade means BOTH grades remain inspectable, never history destruction).
+ *  - Guarded to non-current-methodology resolved rows only: once a row is stamped
+ *    CURRENT it can never match again — the regrade is idempotent by construction, the
+ *    same discipline as updateNighthawkPlayOutcome's WHERE outcome='pending'.
+ *  - Bars are NOT touched: the re-grade re-runs resolveOutcome over the bars already
+ *    persisted on the row (same inputs ⇒ deterministic re-verdict); rewriting bar data
+ *    here could silently change what the re-grade claims to have re-graded.
+ *
+ *  Returns true when the row was promoted this call (rowCount 1), false when it no
+ *  longer matched (already current — the idempotent second run). */
+export async function regradeLegacyNighthawkOutcome(
+  id: number,
+  verdict: {
+    hit_target: boolean;
+    hit_stop: boolean;
+    outcome: "target" | "stop" | "open" | "ambiguous" | "unfilled";
+  }
+): Promise<boolean> {
+  await ensureSchema();
+  const res = await (await getPool()).query(
+    `
+    UPDATE nighthawk_play_outcomes
+    SET legacy_grade = COALESCE(legacy_grade, jsonb_build_object(
+          'outcome', outcome,
+          'hit_target', hit_target,
+          'hit_stop', hit_stop,
+          'grade_methodology', COALESCE(grade_methodology, '${GRADE_METHODOLOGY_LEGACY}'),
+          'preserved_at', NOW()
+        )),
+        hit_target = $2,
+        hit_stop = $3,
+        outcome = $4,
+        grade_methodology = '${GRADE_METHODOLOGY_CURRENT}',
+        updated_at = NOW()
+    WHERE id = $1
+      AND outcome <> 'pending'
+      AND (grade_methodology IS NULL OR grade_methodology <> '${GRADE_METHODOLOGY_CURRENT}')
+    `,
+    [id, verdict.hit_target, verdict.hit_stop, verdict.outcome]
+  );
+  return (res.rowCount ?? 0) > 0;
 }
 
 /** PR-N4: persist one morning-confirm verdict onto its play's outcome row.
@@ -6187,7 +6317,8 @@ export async function fetchNighthawkOutcomeAnalytics(windowDays = 30): Promise<{
              o.entry_range_low, o.entry_range_high, o.target, o.stop, o.score, o.sector,
              o.next_day_open, o.next_day_close, o.session_high, o.session_low,
              o.hit_target, o.hit_stop, o.outcome, o.created_at,
-             o.pulled, o.pulled_reason, o.publish_context, o.morning_verdict
+             o.pulled, o.pulled_reason, o.publish_context, o.morning_verdict,
+             o.grade_methodology, o.legacy_grade
       FROM nighthawk_play_outcomes o
       INNER JOIN nighthawk_editions e ON e.edition_for = o.edition_for
       WHERE o.outcome <> 'pending'

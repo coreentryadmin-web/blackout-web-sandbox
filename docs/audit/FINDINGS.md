@@ -515,3 +515,71 @@ plays show "entirely wrong" pnl/%/premium values, slow to update.
   grade IS the counterfactual, tagged by `pulled` for N2's methodology-versioned
   record; DEGRADED enforcement (→ N6); Cortex compose at publish/9:15 (→ N5/N6);
   the Redis play-status blob and its UI badge (kept as-is).
+
+## 2026-07-14 — Night Hawk OVERNIGHT: methodology blend + phantom-win record (PR-N2, branch fix/nighthawk-honest-record)
+
+### HIGH — Advertised 42.9% WR blended two grading methodologies; every historical "win" was a gap-away the entry could never catch (FIXED — methodology-versioned record)
+- **Severity:** HIGH (member-facing record integrity). The public overnight record
+  (`/api/market/nighthawk/record`, `HawkRecordStrip`, `/api/track-record`, signal
+  accuracy, Largo's comparison tool) aggregated rows graded under two different rule
+  sets into one win rate, and the winning tail was entirely pre-fillability grades.
+- **Root cause:** `resolveOutcome()` gained the fillability rule ("the session must
+  trade back into the published entry band or the play is `unfilled`") AFTER 14 of the
+  26 all-time plays had already been graded under the old level-touch rules (target/stop
+  from session high/low alone, no fill check). Nothing recorded WHICH rules graded a
+  row, so `getNighthawkMetrics()` (analytics.ts) had no way not to blend: the 14
+  legacy-graded rows aggregated with the 12 current-rules grades from the PR-N1 stuck
+  repair. Not caught earlier because the blend is invisible in the schema — both rule
+  sets write the same `outcome` column.
+- **Evidence** (`docs/audit/NIGHTHAWK-OVERNIGHT-DECISION.md` §2.1/§2.2 N-2, from the
+  26-play `nh-overnight/derived.json` forensics vs Polygon bars):
+  - App-graded (what members saw): 14 resolved, 6T/5S/3O → **42.9% WR**.
+  - Same 14 under the product's own current rules: 1T/5S/3O/5U → **11.1%** (1/9).
+  - Open-beyond-band plays: **6T/1S, +5.11% avg — all six advertised wins**; genuinely
+    fillable-at-band plays: **0T/4S, −1.39% avg**. The record's wins were unfillable
+    gap-aways; its fillable plays all failed.
+- **Fix (PR-N2):**
+  1. **Methodology versioning** — `grade_methodology` TEXT on
+     `nighthawk_play_outcomes` (idempotent ALTER). Tags name the RULE, not a date
+     (`grade-methodology.ts` leaf): `v1_level_touch` (pre-fix) / `v2_fillability`
+     (current). Every grade write through `updateNighthawkPlayOutcome` (cron + stuck
+     repair) stamps `v2_fillability` in the same UPDATE; boot backfill stamps
+     unstamped resolved rows `v1_level_touch` (conservative: unprovable provenance
+     never reads as current — the 12 PR-N1 rows land legacy until re-verified).
+  2. **Honest re-grade** — `regrade-legacy.ts` +
+     `POST /api/admin/nighthawk/regrade-stuck-outcomes` `{"mode":"legacy_methodology"}`
+     (bounded/idempotent/dry-run/audit-logged, regrade-stuck pattern): re-runs current
+     `resolveOutcome` over each legacy row's OWN persisted bars (no new inputs), pins
+     the superseded grade in `legacy_grade` JSONB (COALESCE first-write-wins — history
+     quarantined, never destroyed), promotes the row to `v2_fillability`. Idempotence
+     is in the SQL guard (`grade_methodology <> current`), not caller discipline.
+  3. **Anti-blend record** — `getNighthawkMetrics` partitions by methodology FIRST;
+     headline WR + every cut (conviction/direction/sector/score/edition) computed from
+     current-segment scoreable rows only; `segments.current`/`segments.legacy` reported
+     side by side, each with its own label, counts (unfilled/pulled/stop-data-
+     unavailable), nullable win_rate, and `low_n` (shared `LOW_N_THRESHOLD`=5 from
+     zerodte/record.ts). `HawkRecordStrip` shows the honest split (scoreable-gated
+     ripeness, unfilled/pulled/legacy-graded counts, methodology tag, amber n<5 chip —
+     the 0DTE record grammar). Blast radius closed at the shared predicate:
+     `isNighthawkOutcomeScoreable` (track-record page, `/api/track-record/plays`,
+     signal accuracy) now requires the current tag, and Largo's
+     `get_spx_vs_nighthawk_comparison` filters through it.
+- **Honest post-regrade record** (30d window; the strip keeps showing the building
+  state): current-methodology scoreable n≈9 → **1T/5S/3O, 11.1% WR**, ~17 unfilled
+  surfaced, 0 blended-legacy rows remaining. There is no methodology under which the
+  overnight book has a fillable positive-expectancy record yet — the strip now says so
+  instead of advertising 42.9%.
+- **Tests:** `regrade-legacy.test.ts` (phantom-win → unfilled with old grade preserved,
+  restamp-without-change, idempotence + first-write-wins, dry-run, bounds, unresolvable
+  skip, error isolation), `analytics-methodology.test.ts` (blend-impossible: flipping
+  every legacy row to a win cannot move the headline; NULL/unknown tags quarantine;
+  unfilled surfaced not counted; LOW-N on every cut; null-not-fake-0% segments),
+  `record-honesty-contract.test.ts` (SQL idempotent ALTERs, backfill scope, write-path
+  stamping, COALESCE preservation + regrade guard, route serves segments, strip renders
+  the split, shared predicate checks methodology), plus legacy-quarantine cases added to
+  track-record-page/run-tool suites. tsc clean, full `npm test` green (3276).
+- **Deliberately unchanged:** `resolveOutcome` itself (rules unchanged — this PR only
+  records WHICH rules graded a row and re-applies the current ones to old rows); the
+  edition builder/scorer and `src/lib/bie/**` (parallel agents); H-3 option-premium
+  vs underlying-level grading (a third methodology version when tackled — the tag
+  machinery is ready for `v3_*`); the resolver's 7-day lookback (PR-N1's ledger).
