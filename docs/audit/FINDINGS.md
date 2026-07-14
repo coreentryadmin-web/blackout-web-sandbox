@@ -1175,3 +1175,66 @@ Three new PURE, deterministic, LLM-free modules + additive wiring (no existing p
 ### Blast radius
 - `play-status` route stays 200 for not-yet-run/legacy blobs (new PlayStatus fields OPTIONAL; contract test unaffected). Old cached morning blobs and pre-N5/N7 pins degrade to HELD/[] — never throw, never a fabricated downgrade.
 - No change to CONFIRMED/DEGRADED/INVALIDATED price logic (`computePlayVerdict` untouched); the overnight axes are a strictly additive second axis composed one-way. `src/lib/bie/**`, `cortex-overnight/**` READ-only.
+## 2026-07-14 — Largo/BIE "power program": verdict case-law + RTH numeric gate (task #83) — PR feat/largo-power-83
+
+### P2 — verdicts were a synthesis with no explicit falsifiers and no recall record (BUILT, tested)
+- **Severity:** P2 (rigor/accountability — verdicts were not falsifiable or recallable).
+- **Root cause / motivation:** `assembleVerdictEnvelope` (verdict-core.ts) emitted a headline + bias +
+  a single prose `invalidation` line, but never named the SPECIFIC, machine-checkable conditions that
+  would flip the verdict, and nothing pinned the rendered verdict — so "why did you say 7500 was good
+  this morning / does it still hold?" could only be answered by RE-GRADING from scratch (a fresh read
+  dressed as a memory), the exact fabrication the desk forbids.
+- **Fix (this PR):**
+  - **Falsifiers** — new `verdict-falsifiers.ts`: `deriveFalsifiers(evidence, bias)` derives
+    SERIALIZABLE `{id, effect, metric, op, refLevel, text}` specs (never closures) from the SAME live
+    levels the verdict cites — a flip-loss/reclaim INVALIDATOR grounded in the cited flip, wall-migration
+    and max-pain-migration WEAKENERS — emitted only when the level is live (no boilerplate). A pure
+    interpreter `evaluateFalsifier`/`reevaluateCase` re-checks them against a fresh snapshot. Added to
+    the stable envelope contract as `BieFalsifier[]` (additive; rendered in the markdown).
+  - **Case-law** — new `verdict-caselaw.ts`: pins each rendered verdict (question + evidence snapshot +
+    falsifiers + timestamp) via `sharedCacheSet` (Redis + in-memory fallback) keyed per ticker; a recall
+    (`isVerdictRecallQuestion` in router.ts → verdict intent) reads the record and re-evaluates its exact
+    falsifiers against a fresh `getGexPositioning` read, or returns the honest no-record envelope
+    (#327/#331 posture) — never re-fabricated.
+  - **RTH numeric gate** — new `rth-numeric-gate.ts`: at composition time, every price the verdict STATES
+    (flip/walls/max-pain in its level table) is reconciled against the freshly-served authoritative
+    snapshot at display precision (the same `citesValue` half-ULP + 0.01 slack the hardcore suite uses).
+    During RTH a divergence beyond tolerance is CORRECTED to the served value (a stale/mis-derived number
+    never ships intraday); off-hours it degrades to a staleness-marked answer (reuse `staleness.ts`),
+    since the snapshot is a legitimate prior-close read as long as it is LABELLED. Wired into `verdict.ts`.
+- **Evidence (tests):** `verdict-falsifiers.test.ts` (8), `rth-numeric-gate.test.ts` (9),
+  `verdict-caselaw.test.ts` (7), extended `verdict-core.test.ts` (falsifiers present + not fabricated
+  without positioning) and `router.test.ts` (recall routes to verdict; excludes play-state + NH/Cortex
+  "pulled/picked/skipped"). Full suite 3598 pass / 0 fail; tsc + eslint clean. Hardcore e2e extended
+  with a `runVerdictCaseLaw` category (falsifier presence + grounding, RTH spot==ladder gate, recall
+  from record) — run post-deploy against staging.
+- **Blast radius:** envelope contract gained an additive optional `falsifiers` field (UI-safe, version
+  unchanged); `verdict.ts` now imports the pure `isVerdictRecallQuestion` from router.ts (no cycle —
+  router never imports verdict). Verdict cache key already question-hashed (platform-cache.ts), so the
+  recall phrasing keys distinctly from the fresh-verdict phrasing.
+- **Status:** BUILT + tested. DRAFT PR (not merged — headline build, reported for review).
+
+### P1 — scenario `parseShift` dropped an explicit % when the question mentioned a level word (FIXED, tested)
+- **Severity:** P1 (the user's canonical scenario question returned a wrong, misleading answer on prod).
+- **Root cause:** `parseShift` (scenario-read.ts) checked the STRUCTURAL-LEVEL branch FIRST. The
+  canonical ask "If SPX drops 1% at tomorrow's open … does the regime flip, and which walls become
+  live?" incidentally contains "regime **flip**" + "**walls**" and the relation phrase "**to the**"
+  (from "happens to the dealer positioning"). `levelRef` matched "flip" and `hasRelationVerb` matched
+  "to the", so the whole question was parsed as `{kind:"level", level:"flip", relation:"to"}` and
+  `resolveShiftTarget` SNAPPED the target to the flip (7,512.68), silently dropping the −1% magnitude.
+  Deployed answer: "7,515.34 → 7,512.68 (−3 pts, −0.04%)" — a ~3pt move labeled as the 1% drop, hiding
+  the real −75pt move to ~7,440 and the flip CROSS (the whole point of the question).
+- **Evidence:** live deployed-build capture (above); reproduced in a unit test on the full question.
+- **Fix:** reordered `parseShift` so explicit NUMERIC magnitudes (percent → absolute → points) are parsed
+  BEFORE the structural-level fallback. An explicit "1%" is the member's real shift and must win; the
+  level branch is the fallback only when no magnitude was stated ("below the flip"). One-line-class fix,
+  covers points/absolute co-occurring with incidental level words too.
+- **Evidence (tests):** `scenario-read.test.ts` — the full canonical question now parses `pct:-1`, and
+  end-to-end through `buildScenarioEnvelope` lands at spot×0.99 (7,484.4), reports the flip CROSS, and is
+  NOT snapped to the flip; all 31 existing scenario tests stay green.
+- **Status:** FIXED (tsc + eslint clean, full suite green). Folded into PR feat/largo-power-83.
+
+### Deferred — Ops read tools (#58, stretch)
+- The governed read-only ops-awareness tools (cron_runs / provider-health / cache-probe) were the
+  explicit STRETCH item, gated behind 1+2 landing solid. Left OUT of this PR to keep it cohesive and
+  single-purpose (verdict rigor); no half-built surface shipped. Tracked for a follow-up.

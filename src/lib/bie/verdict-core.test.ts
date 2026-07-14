@@ -94,6 +94,27 @@ describe("verdict-core: assembleVerdictEnvelope structure", () => {
     assert.match(env.markdown, /Confidence:/);
   });
 
+  test("carries FALSIFIERS derived from the live evidence (task #83)", () => {
+    // NVDA fixture: spot 142 > flip 138 (long side) → a flip-LOSS invalidator; call wall 150 above
+    // spot → a migration weakener. Both are grounded in the levels the verdict cites (no boilerplate).
+    const env = assembleVerdictEnvelope(fullInputs({ regime: "long" }));
+    const f = env.falsifiers ?? [];
+    assert.ok(f.length > 0, "falsifiers populated");
+    const flip = f.find((x) => x.id === "flip_loss");
+    assert.ok(flip, "has a flip-loss invalidator");
+    assert.equal(flip!.effect, "invalidate");
+    assert.equal(flip!.refLevel, 138);
+    assert.ok(f.some((x) => x.effect === "weaken"), "has at least one weakener");
+    // Rendered into the member-facing markdown.
+    assert.match(env.markdown, /Falsifiers \(what would flip this read\)/);
+    assert.match(env.markdown, /INVALIDATED/);
+  });
+
+  test("no positioning → no falsifiers fabricated", () => {
+    const env = assembleVerdictEnvelope(fullInputs({ positioning: null, regime: "unknown" }));
+    assert.deepEqual(env.falsifiers ?? [], []);
+  });
+
   test("confidence scales with surface coverage — 4+ live surfaces → high", () => {
     const env = assembleVerdictEnvelope(
       fullInputs({

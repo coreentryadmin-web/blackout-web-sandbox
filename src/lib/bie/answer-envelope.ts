@@ -84,6 +84,42 @@ export type BieSection = {
 /** A source that was requested but unavailable — surfaced, never silently omitted (§4). */
 export type BieUnavailableSource = { source: string; reason: string };
 
+// ── Falsifiers (verdict case-law, task #83) ──────────────────────────────────
+//
+// A verdict is only rigorous if it is FALSIFIABLE: it must name the specific, machine-checkable
+// conditions that would flip it. These types are the SERIALIZABLE spec (never a closure) so a pinned
+// verdict record can be re-evaluated later by a pure interpreter (verdict-falsifiers.ts) against a
+// fresh live snapshot — answering "does that verdict still hold?" from the record, never re-fabricated.
+
+/** The live metric a falsifier watches. */
+export type BieFalsifierMetric = "spot" | "flip" | "call_wall" | "put_wall" | "max_pain";
+/** How the watched metric is compared. Absolute ops compare to `refLevel`; relative ops
+ *  ("crosses_*", "*_of_spot") compare the metric to another live metric (`refMetric`, default spot). */
+export type BieFalsifierOp =
+  | "below" // metric < refLevel
+  | "above" // metric > refLevel
+  | "crosses_below" // metric was ≥ refLevel at verdict time, now < it (a fresh cross)
+  | "crosses_above" // metric was ≤ refLevel at verdict time, now > it
+  | "migrates_below_spot" // watched wall/level moves from above spot to at-or-below it
+  | "migrates_above_spot"; // watched wall/level moves from below spot to at-or-above it
+
+/**
+ * One serializable, machine-checkable falsifier. `effect` says whether tripping it INVALIDATES the
+ * verdict outright or merely WEAKENS it. `text` is the member-facing condition. The remaining fields
+ * are the predicate the interpreter evaluates — no logic, only data, so it round-trips through JSON
+ * into a pinned case-law record.
+ */
+export type BieFalsifier = {
+  id: string;
+  effect: "invalidate" | "weaken";
+  metric: BieFalsifierMetric;
+  op: BieFalsifierOp;
+  /** Absolute reference price for `below`/`above`/`crosses_*` (the level captured at verdict time). */
+  refLevel?: number | null;
+  /** Member-facing condition, e.g. "INVALIDATED if spot closes below the 7,480 gamma flip". */
+  text: string;
+};
+
 /**
  * The complete structured answer the UI renders. Only `version`, `headline`, `bias`, `sections`,
  * `evidence`, `confidence`, `asOf`, and `markdown` are required; everything else is optional and
@@ -104,6 +140,9 @@ export type BieAnswerEnvelope = {
   invalidation?: string | null;
   scenarios?: BieScenario[];
   levels?: BieLevel[];
+  /** Explicit, machine-checkable conditions that would flip this verdict (task #83). Populated by the
+   *  verdict synthesis; pinned into the case-law record so a later recall can re-evaluate them. */
+  falsifiers?: BieFalsifier[];
   followups?: string[];
   /** Sources requested but unavailable this turn — always surfaced. */
   unavailableSources?: BieUnavailableSource[];
@@ -179,6 +218,12 @@ function renderScenarios(scen: BieScenario[] | undefined): string[] {
   return ["**Scenarios:**", ...cards];
 }
 
+function renderFalsifiers(falsifiers: BieFalsifier[] | undefined): string[] {
+  if (!falsifiers || falsifiers.length === 0) return [];
+  const rows = falsifiers.map((f) => `- [${f.effect === "invalidate" ? "INVALIDATED" : "WEAKENED"}] ${f.text}`);
+  return ["**Falsifiers (what would flip this read):**", ...rows];
+}
+
 /**
  * Render an envelope to member-facing markdown — the backward-compatible string the existing Largo
  * path consumes. Reads only the STRUCTURED fields (ignores any pre-set `markdown`), so a builder can
@@ -212,6 +257,9 @@ export function renderEnvelopeMarkdown(
 
   const scen = renderScenarios(env.scenarios);
   if (scen.length) out.push("", ...scen);
+
+  const fals = renderFalsifiers(env.falsifiers);
+  if (fals.length) out.push("", ...fals);
 
   out.push("", `**Confidence:** ${env.confidence.level} — ${env.confidence.why}`);
   if (env.invalidation) out.push(`**Invalidation:** ${env.invalidation}`);

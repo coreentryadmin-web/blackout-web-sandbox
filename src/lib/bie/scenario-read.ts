@@ -92,29 +92,26 @@ function levelRelation(text: string): "to" | "below" | "above" | "break" {
 
 /**
  * Parse a hypothetical move out of free text, or null when there is none to scope. Priority:
- *   1. a structural LEVEL reference ("below the flip", "breaks the call wall") — word-based, no number;
- *   2. a PERCENT move ("drops 1%", "-1%", "rips 2%") — needs a % and a direction;
- *   3. an ABSOLUTE target ("to 7450", "at 745", "breaks 745", "7450 scenario") — 3–5 digit price;
- *   4. a POINTS move ("down 40 points") — needs a direction.
+ *   1. a PERCENT move ("drops 1%", "-1%", "rips 2%") — needs a % and a direction;
+ *   2. an ABSOLUTE target ("to 7450", "at 745", "breaks 745", "7450 scenario") — 3–5 digit price;
+ *   3. a POINTS move ("down 40 points") — needs a direction;
+ *   4. a structural LEVEL reference ("below the flip", "breaks the call wall") — word-based, no number.
+ *
+ * EXPLICIT NUMERIC MAGNITUDE WINS OVER A SNAPPED LEVEL (bugfix, task #83 fold-in): an explicit "1%"
+ * (or points / absolute) is the member's real shift, so it must be parsed BEFORE the structural-level
+ * fallback. Otherwise a larger question that merely MENTIONS a level word incidentally — e.g. the
+ * canonical "if SPX drops 1% at tomorrow's open … does the regime flip, and which walls become live?"
+ * (contains "flip"/"walls" + the relation phrase "to the") — was matched as a level reference and
+ * snapped the target to the flip, silently dropping the −1% magnitude and hiding the flip cross. The
+ * structural branch is the fallback for when NO explicit magnitude was stated ("below the flip").
  * Percent is checked before absolute so the "1" in "1%" can never be misread as a price (and the
  * ≥3-digit absolute guard means a bare "1"/"40" never masquerades as a strike either).
  */
 export function parseShift(text: string): ShiftSpec | null {
   const q = text.trim();
 
-  // 1. Structural level reference (no number required) — but only when a relation VERB is present,
-  //    so a plain "where's the flip" (a static structure ask) is NOT read as a scenario.
-  const lvl = levelRef(q);
-  if (lvl) {
-    const rel = levelRelation(q);
-    const hasRelationVerb =
-      /\b(break|breaks|breaking|broke|pierce|pierces|through|thru|below|under|beneath|lose|loses|losing|above|over|reclaim|reclaims|clear|clears|back to|hits?|reach(?:es)?|to the|at the|toward|towards)\b/i.test(
-        q
-      );
-    if (hasRelationVerb) return { kind: "level", level: lvl, relation: rel, raw: q };
-  }
-
-  // 2. Percent move — explicit ± sign OR a direction word.
+  // 1. Percent move — explicit ± sign OR a direction word. FIRST: an explicit stated magnitude is the
+  //    real shift and must not be shadowed by an incidental level word elsewhere in the question.
   const pctM = q.match(/([+-])?\s*(\d+(?:\.\d+)?)\s*%/);
   if (pctM) {
     const sign = directionSign(q, pctM[1]);
@@ -124,7 +121,7 @@ export function parseShift(text: string): ShiftSpec | null {
     }
   }
 
-  // 3. Absolute target price (3–5 digits so "1%"/"40 pts" can't be grabbed).
+  // 2. Absolute target price (3–5 digits so "1%"/"40 pts" can't be grabbed).
   const toM = q.match(/\b(?:to|at|hits?|reach(?:es)?|toward|towards)\s+\$?(\d{3,5}(?:\.\d+)?)\b/i);
   if (toM) return { kind: "absolute", price: Number(toM[1]), raw: q };
   const scenM = q.match(/\$?(\d{3,5}(?:\.\d+)?)\s+scenario\b/i);
@@ -132,7 +129,7 @@ export function parseShift(text: string): ShiftSpec | null {
   const breakM = q.match(/\b(?:break|breaks|breaking|broke|pierce|pierces|through|thru)\s+\$?(\d{3,5}(?:\.\d+)?)\b/i);
   if (breakM) return { kind: "absolute", price: Number(breakM[1]), raw: q };
 
-  // 4. Points move — a direction word + N points/pts/handles.
+  // 3. Points move — a direction word + N points/pts/handles.
   const ptsM = q.match(/([+-])?\s*(\d+(?:\.\d+)?)\s*(?:points?|pts?|handles?)\b/i);
   if (ptsM) {
     const sign = directionSign(q, ptsM[1]);
@@ -140,6 +137,19 @@ export function parseShift(text: string): ShiftSpec | null {
       const mag = Number(ptsM[2]);
       if (Number.isFinite(mag) && mag > 0) return { kind: "points", points: sign * mag, raw: q };
     }
+  }
+
+  // 4. Structural level reference (no number required) — the FALLBACK when no explicit magnitude was
+  //    stated. Only when a relation VERB is present, so a plain "where's the flip" (a static structure
+  //    ask) is NOT read as a scenario.
+  const lvl = levelRef(q);
+  if (lvl) {
+    const rel = levelRelation(q);
+    const hasRelationVerb =
+      /\b(break|breaks|breaking|broke|pierce|pierces|through|thru|below|under|beneath|lose|loses|losing|above|over|reclaim|reclaims|clear|clears|back to|hits?|reach(?:es)?|to the|at the|toward|towards)\b/i.test(
+        q
+      );
+    if (hasRelationVerb) return { kind: "level", level: lvl, relation: rel, raw: q };
   }
 
   return null;

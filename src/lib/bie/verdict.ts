@@ -24,7 +24,23 @@ import {
   type VerdictInputs,
   type VerdictLegPlan,
 } from "@/lib/bie/verdict-core";
-import type { BieUnavailableSource } from "@/lib/bie/answer-envelope";
+import { isVerdictRecallQuestion } from "@/lib/bie/router";
+import {
+  buildCaseRecord,
+  buildNoCaseRecordEnvelope,
+  buildRecallEnvelope,
+  pinVerdictCase,
+  recallVerdictCase,
+} from "@/lib/bie/verdict-caselaw";
+import type { FalsifierSnapshot } from "@/lib/bie/verdict-falsifiers";
+import {
+  reconcileStatedNumbers,
+  extractStatedNumbers,
+  applyCorrectionsToLevels,
+  type NumericTruth,
+} from "@/lib/bie/rth-numeric-gate";
+import { stalenessMarker } from "@/lib/bie/staleness";
+import { renderEnvelopeMarkdown, type BieUnavailableSource } from "@/lib/bie/answer-envelope";
 import type { BieComposed } from "@/lib/bie/composers-shared";
 
 async function safe<T>(fn: () => Promise<T>): Promise<T | null> {
@@ -35,9 +51,30 @@ async function safe<T>(fn: () => Promise<T>): Promise<T | null> {
   }
 }
 
+/** Verdict RECALL (task #83): answer "why did you say X was good this morning / does it still hold?"
+ *  from the pinned case-law record, re-checking its falsifiers against a FRESH read. Never re-graded;
+ *  no record → honest no-record envelope. */
+async function composeVerdictRecall(T: string): Promise<BieComposed> {
+  const record = await recallVerdictCase(T);
+  if (!record) {
+    const env = buildNoCaseRecordEnvelope(T);
+    return { answer: env.markdown, context: { verdict_recall: "no_record", ticker: T }, envelope: env };
+  }
+  const pos = await safe(() => getGexPositioning(T));
+  const current: FalsifierSnapshot | null = pos
+    ? { spot: pos.spot, flip: pos.flip, call_wall: pos.call_wall, put_wall: pos.put_wall, max_pain: pos.max_pain }
+    : null;
+  const env = buildRecallEnvelope(record, current);
+  return { answer: env.markdown, context: { verdict_recall: "pinned", ticker: T, record, current }, envelope: env };
+}
+
 /** Synthesize a cross-tool verdict → a populated BieAnswerEnvelope (+ its markdown for the string path). */
 export async function composeVerdict(ticker: string, question: string): Promise<BieComposed | null> {
   const T = normalizeVectorTicker(ticker || "SPX");
+
+  // Recall of a PAST verdict → the pinned case-law record, not a fresh synthesis.
+  if (isVerdictRecallQuestion(question)) return composeVerdictRecall(T);
+
   const plan: VerdictLegPlan = planVerdictLegs(question, T);
   const unavailable: BieUnavailableSource[] = [];
 
@@ -138,6 +175,39 @@ export async function composeVerdict(ticker: string, question: string): Promise<
     unavailable,
   };
 
-  const envelope = assembleVerdictEnvelope(inputs);
-  return { answer: envelope.markdown, context: { verdict: inputs, envelope }, envelope };
+  let envelope = assembleVerdictEnvelope(inputs);
+
+  // ── RTH NUMERIC GATE (task #83) ──────────────────────────────────────────────
+  // Reconcile every number the verdict STATES (flip / walls / max-pain / spot in its level table)
+  // against the freshly-read authoritative snapshot — the SAME getGexPositioning read that is the
+  // platform's source of truth for these levels. During RTH a stated number that disagrees with the
+  // served number beyond display tolerance is CORRECTED to the served value (a stale/mis-derived
+  // number never ships intraday); off-hours the snapshot reflects the prior close, so we mark
+  // staleness rather than "correct" toward a close value. This enforces, at COMPOSITION time, the
+  // "number Largo says == the number the API serves" invariant the hardcore suite checks post-hoc.
+  let numericGate: ReturnType<typeof reconcileStatedNumbers> | null = null;
+  if (pos) {
+    const truth: NumericTruth = { spot, flip, call_wall: pos.call_wall, put_wall: pos.put_wall, max_pain: pos.max_pain };
+    numericGate = reconcileStatedNumbers(extractStatedNumbers(envelope), truth);
+    if (numericGate.action === "corrected") {
+      const correctedLevels = applyCorrectionsToLevels(envelope.levels, numericGate.corrections);
+      const rebuilt = { ...envelope, levels: correctedLevels };
+      envelope = { ...rebuilt, markdown: renderEnvelopeMarkdown(rebuilt) };
+    } else if (numericGate.action === "stale-marked") {
+      // Off-hours divergence: the served snapshot is a prior-close read. Label it rather than swap
+      // numbers, reusing the shared staleness marker (the marker instant is this composition time,
+      // whose ET wall clock is off-hours → renders "· as of HH:MM ET, prior close").
+      const marker = stalenessMarker(envelope.asOf);
+      if (marker) envelope = { ...envelope, markdown: `${envelope.markdown}\n\n${marker}` };
+    }
+  }
+
+  // Pin this rendered verdict as CASE-LAW so a later "why did you say this / does it still hold?"
+  // is answered from the record (re-checking these exact falsifiers), never re-fabricated.
+  if (pos) {
+    const snapshot: FalsifierSnapshot = { spot, flip, call_wall: pos.call_wall, put_wall: pos.put_wall, max_pain: pos.max_pain };
+    void pinVerdictCase(buildCaseRecord(T, question, envelope, snapshot, regime));
+  }
+
+  return { answer: envelope.markdown, context: { verdict: inputs, envelope, numericGate }, envelope };
 }
