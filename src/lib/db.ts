@@ -5053,7 +5053,12 @@ export async function gradeZeroDteSetupRow(
 }
 
 /** Latch a play's live state: peak/trough only ever widen (GREATEST/LEAST), so a
- *  stop stays a stop even if the premium bounces; status is the derived lifecycle. */
+ *  stop stays a stop even if the premium bounces; status is the derived lifecycle.
+ *  CLOSED is TERMINAL at the SQL level: exit-engine closes (ratchet floor / thesis
+ *  break / flat timeout — see zerodte/exit-engine.ts) are NOT re-derivable from the
+ *  peak/trough latches the way plan stops are, so a concurrent writer working from
+ *  a ≤10s-stale active set (the live-marks lane) could otherwise flip an
+ *  engine-closed row back to HOLD and reopen a play the engine just protected. */
 export async function updateZeroDteLiveState(
   sessionDate: string,
   ticker: string,
@@ -5062,7 +5067,7 @@ export async function updateZeroDteLiveState(
   await ensureSchema();
   await (await getPool()).query(
     `UPDATE zerodte_setup_log SET
-       status = $3,
+       status = CASE WHEN status = 'CLOSED' THEN status ELSE $3 END,
        last_mark = COALESCE($4, last_mark),
        peak_premium = CASE
          WHEN $4 IS NOT NULL THEN GREATEST(COALESCE(peak_premium, $4), $4)
@@ -5074,6 +5079,29 @@ export async function updateZeroDteLiveState(
        END
      WHERE session_date = $1::date AND ticker = $2`,
     [sessionDate, ticker.toUpperCase(), s.status, s.mark]
+  );
+}
+
+/**
+ * Stamp the exit-engine's counterfactual record onto a row as entry_context.exit
+ * (zerodte/exit-engine.ts's ZeroDteExitContext: reason/detail/mark/pnl_pct/
+ * peak_pnl_pct/at). Deliberately a JSONB merge into the EXISTING entry_context
+ * column — no migration, and the entry blob + exit blob travel together for the
+ * calibration/record consumers. FIRST-WRITE-WINS: the `exit` key is the decision
+ * that actually closed the play; a later tick (or a racing replica) re-deciding
+ * against fresher marks must never rewrite history, so the WHERE guards re-stamps.
+ */
+export async function stampZeroDteExitContext(
+  sessionDate: string,
+  ticker: string,
+  exit: Record<string, unknown>
+): Promise<void> {
+  await ensureSchema();
+  await (await getPool()).query(
+    `UPDATE zerodte_setup_log
+     SET entry_context = COALESCE(entry_context, '{}'::jsonb) || jsonb_build_object('exit', $3::jsonb)
+     WHERE session_date = $1::date AND ticker = $2 AND (entry_context -> 'exit') IS NULL`,
+    [sessionDate, ticker.toUpperCase(), JSON.stringify(exit)]
   );
 }
 
