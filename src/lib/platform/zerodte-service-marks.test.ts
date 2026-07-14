@@ -107,10 +107,12 @@ test("board ledger: stopped play pins live_pnl_pct to −50; live row carries la
   });
 
   // ALL imports up front (see TIMING DISCIPLINE above): pay the full tsx compile
-  // cost of both graphs BEFORE any clock-sensitive seeding. The lane is imported
-  // via the exact specifier the service's lazy import uses, guaranteeing the seeds
-  // land in the module instance the service reads.
-  const lane = await import("@/lib/zerodte/live-marks");
+  // cost of both graphs BEFORE any clock-sensitive seeding. RELATIVE specifier, not
+  // the "@/" alias: CI's tsx ESM loader does not resolve tsconfig path aliases inside
+  // dynamic import() from test files (ERR_MODULE_NOT_FOUND on ".../platform/@/lib/...")
+  // while the local CJS transformer does. Both specifiers resolve to the same absolute
+  // file → the same module instance the service's lazy import reads.
+  const lane = await import("../zerodte/live-marks");
   const { buildZeroDteBoardPayload } = await import("./zerodte-service");
 
   const laneMark = (asOf: number) => ({
