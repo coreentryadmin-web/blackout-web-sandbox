@@ -606,6 +606,15 @@ async function runMigrations(): Promise<void> {
   await p.query(`
     ALTER TABLE nighthawk_play_outcomes ADD COLUMN IF NOT EXISTS legacy_grade JSONB;
   `);
+  // PR-N10 (the Debrief): the automated end-of-session post-mortem pinned per play by
+  // the outcomes cron AFTER grading (features/nighthawk/lib/debrief.ts — fill quality,
+  // MFE/MAE from the fill edge, thesis scorecard, one failure-mode tag). COALESCE
+  // first-write-wins in pinNighthawkPlayDebrief below, same pinning discipline as
+  // publish_context/morning_verdict: the debrief written against the grading-time bars
+  // is the datum; a later pass never rewrites it. Idempotent ALTER.
+  await p.query(`
+    ALTER TABLE nighthawk_play_outcomes ADD COLUMN IF NOT EXISTS debrief JSONB;
+  `);
   // PR-N2 boot backfill: a resolved row with no methodology stamp was, by construction,
   // graded before stamping existed (every post-PR-N2 grade write stamps at write time), so
   // its provenance is unprovable from the row — tag it LEGACY. Deliberately conservative:
@@ -1054,6 +1063,17 @@ async function runMigrations(): Promise<void> {
     CREATE UNIQUE INDEX IF NOT EXISTS idx_alert_audit_log_nighthawk_rejected_dedup
       ON alert_audit_log (alert_type, ticker, (source_key->>'edition_for'))
       WHERE alert_type = 'nighthawk_rejected';
+
+    -- PR-N10 (the Debrief): counterfactual grade for a REJECTED play, pinned onto its
+    -- audit row by the debrief pass (features/nighthawk/lib/debrief-persist.ts) — what a
+    -- publish-gate-blocked play WOULD have done, graded on the same next-session daily
+    -- bar the real grader uses. Deliberately NOT written into the existing outcome
+    -- column: fetchResolvedAlertAuditRows feeds BIE precedent ingestion from outcome
+    -- without excluding 'nighthawk_rejected', so a counterfactual there would masquerade
+    -- as a real published-alert result. A dedicated JSONB keeps counterfactuals
+    -- machine-readable and invisible to every real-record consumer by construction
+    -- (same isolation idiom as zerodte_scan_rejections.counterfactual_json).
+    ALTER TABLE alert_audit_log ADD COLUMN IF NOT EXISTS counterfactual_json JSONB;
 
     -- SPX Slayer SHADOW-MODE factor observations (docs/audit/FINDINGS.md, "SPX Slayer
     -- shadow signal framework"). Logs what a candidate factor WOULD have contributed
@@ -5938,6 +5958,11 @@ export type NighthawkPlayOutcomeRow = {
   /** The superseded grade a legacy regrade preserved (outcome/hit flags/old tag),
    *  COALESCE-pinned first-write-wins — never overwritten, never deleted. */
   legacy_grade?: Record<string, unknown> | null;
+  // PR-N10 additive field — same optionality convention as the PR-N4/N2 blocks above.
+  /** The pinned end-of-session debrief (debrief.ts PlayDebrief + debriefed_at), written
+   *  first-write-wins by the outcomes cron after grading. NULL until the debrief pass
+   *  visits the graded row. */
+  debrief?: Record<string, unknown> | null;
 };
 
 function mapNighthawkPlayOutcomeRow(r: QueryResultRow): NighthawkPlayOutcomeRow {
@@ -5967,6 +5992,7 @@ function mapNighthawkPlayOutcomeRow(r: QueryResultRow): NighthawkPlayOutcomeRow 
     morning_verdict: (r.morning_verdict as Record<string, unknown>) ?? null,
     grade_methodology: r.grade_methodology != null ? String(r.grade_methodology) : null,
     legacy_grade: (r.legacy_grade as Record<string, unknown>) ?? null,
+    debrief: (r.debrief as Record<string, unknown>) ?? null,
   };
 }
 
@@ -6090,7 +6116,7 @@ export async function fetchPendingNighthawkOutcomes(lookbackDays = 7): Promise<N
            next_day_open, next_day_close, session_high, session_low,
            hit_target, hit_stop, outcome, created_at,
            pulled, pulled_reason, publish_context, morning_verdict,
-           grade_methodology, legacy_grade
+           grade_methodology, legacy_grade, debrief
     FROM nighthawk_play_outcomes
     WHERE outcome = 'pending'
       AND edition_for >= ((NOW() AT TIME ZONE 'America/New_York')::date - ($1::int || ' days')::interval)
@@ -6163,7 +6189,7 @@ export async function fetchLegacyGradedNighthawkOutcomes(
            next_day_open, next_day_close, session_high, session_low,
            hit_target, hit_stop, outcome, created_at,
            pulled, pulled_reason, publish_context, morning_verdict,
-           grade_methodology, legacy_grade
+           grade_methodology, legacy_grade, debrief
     FROM nighthawk_play_outcomes
     WHERE outcome <> 'pending'
       AND (grade_methodology IS NULL OR grade_methodology <> '${GRADE_METHODOLOGY_CURRENT}')
@@ -6299,6 +6325,138 @@ export async function fetchNighthawkPulledPlays(editionFor: string): Promise<Nig
   }));
 }
 
+/** PR-N10: graded rows still missing a debrief pin — the debrief pass's work queue.
+ *  Bounded (window + limit) and idempotent by construction: once pinned, a row can
+ *  never match again. Ordered oldest-first so a backlog drains deterministically. */
+export async function fetchNighthawkDebriefPendingOutcomes(
+  lookbackDays = 60,
+  limit = 200
+): Promise<NighthawkPlayOutcomeRow[]> {
+  await ensureSchema();
+  const safeLookbackDays =
+    Number.isFinite(lookbackDays) && lookbackDays > 0 ? Math.trunc(lookbackDays) : 60;
+  const safeLimit = Math.min(500, Math.max(1, Number.isFinite(limit) ? Math.trunc(limit) : 200));
+  const res = await (await getPool()).query(
+    `
+    SELECT id, edition_for, ticker, direction, conviction,
+           entry_range_low, entry_range_high, target, stop, score, sector,
+           next_day_open, next_day_close, session_high, session_low,
+           hit_target, hit_stop, outcome, created_at,
+           pulled, pulled_reason, publish_context, morning_verdict,
+           grade_methodology, legacy_grade, debrief
+    FROM nighthawk_play_outcomes
+    WHERE outcome <> 'pending'
+      AND debrief IS NULL
+      AND edition_for >= ((NOW() AT TIME ZONE 'America/New_York')::date - ($1::int || ' days')::interval)
+    ORDER BY edition_for ASC, ticker ASC
+    LIMIT $2
+    `,
+    [safeLookbackDays, safeLimit]
+  );
+  return res.rows.map(mapNighthawkPlayOutcomeRow);
+}
+
+/** PR-N10: pin one play's debrief — COALESCE first-write-wins (the debrief computed
+ *  against the grading-time row is the datum; a re-run never rewrites it) and graded
+ *  rows only (a pending row has no post-mortem to pin). Returns per-row facts so the
+ *  cron pass can count honestly: matched=false ⇒ no such graded row; written=false ⇒
+ *  a pin already existed (first-write-wins left it untouched). */
+export async function pinNighthawkPlayDebrief(
+  id: number,
+  debrief: Record<string, unknown>
+): Promise<{ matched: boolean; written: boolean }> {
+  await ensureSchema();
+  const res = await (await getPool()).query<{ wrote: boolean }>(
+    `
+    WITH before AS (
+      SELECT id, (debrief IS NULL) AS was_empty
+      FROM nighthawk_play_outcomes
+      WHERE id = $1 AND outcome <> 'pending'
+    )
+    UPDATE nighthawk_play_outcomes o
+    SET debrief = COALESCE(o.debrief, $2::jsonb),
+        updated_at = NOW()
+    FROM before
+    WHERE o.id = before.id
+    RETURNING before.was_empty AS wrote
+    `,
+    [id, JSON.stringify(debrief)]
+  );
+  const r = res.rows[0];
+  if (!r) return { matched: false, written: false };
+  return { matched: true, written: Boolean(r.wrote) };
+}
+
+export type NighthawkPublishGateRejectionRow = {
+  id: number;
+  ticker: string;
+  /** From source_key->>'edition_for' — the session the blocked play would have graded on. */
+  edition_for: string;
+  direction: "LONG" | "SHORT";
+  fired_at: string;
+  /** The rejection's decision-time snapshot (levels + gate_blocks), read structurally
+   *  by the caller — this fetch never parses it. */
+  input_snapshot: Record<string, unknown> | null;
+  /** The pinned counterfactual grade (PR-N10), null until the debrief pass grades it. */
+  counterfactual_json: Record<string, unknown> | null;
+};
+
+/** PR-N10: the publish-gate-blocked plays (PR-N3's `publish_gate` nighthawk_rejected
+ *  audit rows) for counterfactual gate validation. Identified structurally by the
+ *  gate_blocks key the publish_gate stage alone writes into input_snapshot — never by
+ *  matching the human-readable trigger_reason sentence (which lives in the feature
+ *  layer and would be a cycle to import here). */
+export async function fetchNighthawkPublishGateRejections(
+  windowDays = 30,
+  opts: { ungradedOnly?: boolean; limit?: number } = {}
+): Promise<NighthawkPublishGateRejectionRow[]> {
+  await ensureSchema();
+  const safeWindowDays =
+    Number.isFinite(windowDays) && windowDays > 0 ? Math.trunc(windowDays) : 30;
+  const safeLimit = Math.min(1000, Math.max(1, Math.trunc(opts.limit ?? 500)));
+  const res = await (await getPool()).query(
+    `
+    SELECT id, ticker, direction, fired_at, input_snapshot, counterfactual_json,
+           source_key->>'edition_for' AS edition_for
+    FROM alert_audit_log
+    WHERE alert_type = 'nighthawk_rejected'
+      AND input_snapshot ? 'gate_blocks'
+      AND (source_key->>'edition_for')::date >= ((NOW() AT TIME ZONE 'America/New_York')::date - ($1::int || ' days')::interval)
+      ${opts.ungradedOnly ? "AND counterfactual_json IS NULL" : ""}
+    ORDER BY (source_key->>'edition_for') ASC, ticker ASC
+    LIMIT $2
+    `,
+    [safeWindowDays, safeLimit]
+  );
+  return res.rows.map((r) => ({
+    id: Number(r.id),
+    ticker: String(r.ticker).toUpperCase(),
+    edition_for: String(r.edition_for ?? "").slice(0, 10),
+    direction: String(r.direction) === "SHORT" ? "SHORT" : "LONG",
+    fired_at: new Date(String(r.fired_at)).toISOString(),
+    input_snapshot: (r.input_snapshot as Record<string, unknown>) ?? null,
+    counterfactual_json: (r.counterfactual_json as Record<string, unknown>) ?? null,
+  }));
+}
+
+/** PR-N10: pin a rejection's counterfactual grade — COALESCE first-write-wins, same
+ *  discipline as every other pin in this file. Returns whether THIS call wrote it. */
+export async function setNighthawkRejectionCounterfactual(
+  id: number,
+  counterfactual: Record<string, unknown>
+): Promise<boolean> {
+  await ensureSchema();
+  const res = await (await getPool()).query(
+    `
+    UPDATE alert_audit_log
+    SET counterfactual_json = COALESCE(counterfactual_json, $2::jsonb)
+    WHERE id = $1 AND alert_type = 'nighthawk_rejected' AND counterfactual_json IS NULL
+    `,
+    [id, JSON.stringify(counterfactual)]
+  );
+  return (res.rowCount ?? 0) > 0;
+}
+
 export async function fetchNighthawkOutcomeAnalytics(windowDays = 30): Promise<{
   rows: NighthawkPlayOutcomeRow[];
   pending_count: number;
@@ -6318,7 +6476,7 @@ export async function fetchNighthawkOutcomeAnalytics(windowDays = 30): Promise<{
              o.next_day_open, o.next_day_close, o.session_high, o.session_low,
              o.hit_target, o.hit_stop, o.outcome, o.created_at,
              o.pulled, o.pulled_reason, o.publish_context, o.morning_verdict,
-             o.grade_methodology, o.legacy_grade
+             o.grade_methodology, o.legacy_grade, o.debrief
       FROM nighthawk_play_outcomes o
       INNER JOIN nighthawk_editions e ON e.edition_for = o.edition_for
       WHERE o.outcome <> 'pending'

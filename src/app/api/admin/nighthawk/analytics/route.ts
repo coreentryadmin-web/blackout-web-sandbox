@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireAdminApi } from "@/lib/admin-access";
 import { recordAdminRouteError } from "@/lib/admin-route-errors";
 import { getNighthawkMetrics } from "@/features/nighthawk/lib/analytics";
+import { buildNighthawkDebriefReport } from "@/features/nighthawk/lib/debrief-aggregate";
 
 export const dynamic = "force-dynamic";
 
@@ -18,8 +19,17 @@ export async function GET(request: NextRequest) {
   const windowDays = parseWindow(request.nextUrl.searchParams.get("window"));
 
   try {
-    const metrics = await getNighthawkMetrics(windowDays);
-    return NextResponse.json(metrics, {
+    // PR-N10: the full debrief report rides on this route (not a new one) — the admin
+    // dashboard already reads it, the auth surface already exists, and the improvement
+    // queue / gate counterfactuals are ops evidence about thresholds (admin material;
+    // the member record route carries only the compact summary). Fetched in parallel;
+    // buildNighthawkDebriefReport is fail-soft (an outage degrades to available:false,
+    // never a 502 for the metrics half).
+    const [metrics, debriefReport] = await Promise.all([
+      getNighthawkMetrics(windowDays),
+      buildNighthawkDebriefReport({ days: windowDays, nowMs: Date.now() }),
+    ]);
+    return NextResponse.json({ ...metrics, debrief_report: debriefReport }, {
       headers: { "Cache-Control": "no-store" },
     });
   } catch (error) {

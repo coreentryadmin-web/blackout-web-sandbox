@@ -69,6 +69,14 @@ export async function GET(req: NextRequest) {
         current: segmentWire(metrics.segments.current),
         legacy: segmentWire(metrics.segments.legacy),
       },
+      // PR-N10 (additive): compact end-of-session debrief summary — failure-mode
+      // counts from the pinned per-play post-mortems. Segments-aware by construction:
+      // analytics.ts computes it over CURRENT-methodology rows only (the #333
+      // anti-blend rule, mirrored), with the legacy quarantine surfaced as a count and
+      // the shared low_n flag. The FULL debrief report (gate counterfactuals +
+      // improvement queue) is served admin-only on /api/admin/nighthawk/analytics —
+      // ops evidence about thresholds, not member record content.
+      debrief: metrics.debrief,
       by_conviction: metrics.by_conviction
         .filter((c) => c.n > 0)
         .map((c) => ({

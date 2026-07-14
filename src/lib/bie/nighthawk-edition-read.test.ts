@@ -574,3 +574,165 @@ test("renderNighthawkEditionCitation: the markdown block composers append", () =
   assert.match(md, /^\*\*Night Hawk edition \(overnight, pinned\):\*\* CSX LONG/);
   assert.match(md, /\n- Pinned at publish: spot 34\.12\./);
 });
+
+// ── PR-N10: the Debrief — pick-why section + session-debrief read ───────────────────
+
+/** A real debrief pin as debrief-persist.ts writes it (debrief.ts PlayDebrief +
+ *  debriefed_at). */
+const DEBRIEF = {
+  debrief_version: 1,
+  debriefed_at: "2026-07-15T20:35:00.000Z",
+  ticker: "CSX",
+  edition_for: "2026-07-14",
+  direction: "LONG",
+  conviction: "B",
+  outcome: "stop",
+  grade_methodology: "v2_fillability",
+  pulled: false,
+  fill: {
+    filled: true,
+    fill_edge: 34.1,
+    first_touch: "open",
+    detail: "opened 33.90 inside/through the band edge 34.1 — filled at the open",
+  },
+  excursion: {
+    entry: 34.1,
+    mfe_pct: 1.17,
+    mae_pct: -2.93,
+    target_distance_pct: 3.81,
+    stop_distance_pct: -2.64,
+    mfe_vs_target_ratio: 0.31,
+    mae_vs_stop_ratio: 1.11,
+    detail: "from the fill edge 34.1: best +1.17% / worst -2.93%",
+  },
+  thesis: [
+    { label: "direction", verdict: "refuted", detail: "closed -2.1% against the pinned reference" },
+    { label: "entry_band", verdict: "confirmed", detail: "the tape traded into the published band" },
+    { label: "regime", verdict: "untestable", detail: "pinned regime is not directional" },
+  ],
+  failure_mode: {
+    tag: "gap_through_stop",
+    detail: "opened 33.00 already beyond the published stop 33.2 — the loss was decided before the session",
+  },
+};
+
+test("readNighthawkDebrief: a real pin round-trips; unversioned/tag-less blobs are NO debrief — never a guess", () => {
+  const d = mod.readNighthawkDebrief(DEBRIEF)!;
+  assert.equal(d.failure_mode.tag, "gap_through_stop");
+  assert.equal(d.fill!.first_touch, "open");
+  assert.equal(d.excursion!.mae_vs_stop_ratio, 1.11);
+  assert.equal(d.thesis.length, 3);
+  assert.equal(d.debriefed_at, "2026-07-15T20:35:00.000Z");
+  assert.equal(mod.readNighthawkDebrief(null), null);
+  assert.equal(mod.readNighthawkDebrief({ failure_mode: { tag: "clean_win" } }), null); // no version
+  assert.equal(mod.readNighthawkDebrief({ debrief_version: 1 }), null); // no primary tag
+  assert.equal(mod.readNighthawkDebrief([DEBRIEF]), null);
+});
+
+test("buildNighthawkPickWhyEnvelope: 'How it debriefed' renders ONLY from a real pin — verbatim, never recomputed", () => {
+  const withPin = mod.buildNighthawkPickWhyEnvelope(
+    outcomeRow({ outcome: "stop", next_day_close: 33.0, debrief: DEBRIEF }) as never,
+    null
+  );
+  const titles = withPin.sections.map((s) => s.title);
+  assert.ok(titles.includes("How it debriefed"));
+  const md = withPin.markdown;
+  assert.match(md, /gap through stop/); // the tag, presentation-cased
+  assert.match(md, /the loss was decided before the session/); // the pin's own sentence
+  assert.match(md, /filled at the open/);
+  assert.match(md, /111% of the stop distance consumed/);
+  assert.match(md, /direction: REFUTED/);
+  assert.match(md, /entry band: CONFIRMED/);
+  assert.match(md, /direction refuted: closed -2\.1% against/);
+
+  // No pin (graded or not) → NO section, nothing reconstructed.
+  const withoutPin = mod.buildNighthawkPickWhyEnvelope(
+    outcomeRow({ outcome: "stop", next_day_close: 33.0 }) as never,
+    null
+  );
+  assert.ok(!withoutPin.sections.some((s) => s.title === "How it debriefed"));
+  // A malformed blob is treated as absent, not partially rendered.
+  const malformed = mod.buildNighthawkPickWhyEnvelope(
+    outcomeRow({ outcome: "stop", next_day_close: 33.0, debrief: { debrief_version: 1 } }) as never,
+    null
+  );
+  assert.ok(!malformed.sections.some((s) => s.title === "How it debriefed"));
+});
+
+test("buildNighthawkSessionDebriefEnvelope: honest per-play sections — pinned debriefs verbatim, unpinned graded rows say so", () => {
+  const rows = [
+    outcomeRow({ ticker: "CSX", outcome: "stop", next_day_close: 33.0, debrief: DEBRIEF }),
+    outcomeRow({ ticker: "AMD", outcome: "target", next_day_open: 101, next_day_close: 110.5, session_high: 111, session_low: 100.5, entry_range_low: 100, entry_range_high: 102, target: 110, stop: 95 }),
+    outcomeRow({ ticker: "PG", outcome: "unfilled", next_day_close: 160 }),
+    outcomeRow({ ticker: "META", pulled: true, pulled_reason: "Pulled pre-open: regime mismatch", outcome: "target", next_day_close: 40 }),
+    outcomeRow({ ticker: "ZZZ" }), // pending
+  ];
+  const env = mod.buildNighthawkSessionDebriefEnvelope("2026-07-14", rows as never);
+  assert.match(env.headline, /Night Hawk debrief — 2026-07-14 session/);
+  assert.match(env.headline, /1 target/); // AMD only — the pulled META grade is counterfactual
+  assert.match(env.headline, /1 stopped/);
+  assert.match(env.headline, /1 unfilled/);
+  assert.match(env.headline, /1 pulled/);
+  assert.match(env.headline, /1 still pending/);
+  const md = env.markdown;
+  // The pinned play renders its tag + the pin's own sentences.
+  assert.match(md, /gap through stop/);
+  assert.match(md, /the loss was decided before the session/);
+  // Graded-but-unpinned plays are labeled honestly — nothing reconstructed at read time.
+  assert.match(md, /No debrief pin on record for this play yet/);
+  // The pulled play carries the both-directions exclusion note.
+  assert.match(md, /counterfactual-only and excluded from the headline record in BOTH directions/);
+  assert.ok(env.unavailableSources!.length >= 1);
+});
+
+test("headline counts: pulled grades never count as wins in the session-debrief tallies", () => {
+  const rows = [
+    outcomeRow({ ticker: "A", outcome: "target", next_day_close: 35, pulled: true, pulled_reason: "x" }),
+    outcomeRow({ ticker: "B", outcome: "stop", next_day_close: 33 }),
+  ];
+  const env = mod.buildNighthawkSessionDebriefEnvelope("2026-07-14", rows as never);
+  assert.doesNotMatch(env.headline, /1 target/);
+  assert.match(env.headline, /1 stopped · 1 pulled/);
+});
+
+test("NH_DEBRIEF_ASK_RE: results asks match; playbook asks never do", () => {
+  for (const q of [
+    "how did the night hawk plays do?",
+    "how did last night's plays turn out",
+    "debrief the edition",
+    "post-mortem on the plays",
+    "last night's plays",
+  ]) {
+    assert.ok(mod.NH_DEBRIEF_ASK_RE.test(q), `should match: ${q}`);
+  }
+  for (const q of [
+    "tonight's playbook",
+    "what are tomorrow's plays?",
+    "what's in the edition?",
+    "why was CSX picked tonight?",
+  ]) {
+    assert.ok(!mod.NH_DEBRIEF_ASK_RE.test(q), `should NOT match: ${q}`);
+  }
+});
+
+test("composeNighthawkEditionRead: a ticker-less results ask routes to the session debrief", async () => {
+  queryRows = [outcomeRow({ outcome: "stop", next_day_close: 33.0, debrief: DEBRIEF })];
+  const composed = await mod.composeNighthawkEditionRead(null, "how did the night hawk plays do?");
+  const ctx = composed.context as { mode: string; edition_for: string; debriefed: number };
+  assert.equal(ctx.mode, "session_debrief");
+  assert.equal(ctx.edition_for, "2026-07-14");
+  assert.equal(ctx.debriefed, 1);
+  assert.match(composed.answer, /Night Hawk debrief — 2026-07-14 session/);
+});
+
+test("readNighthawkSessionDebrief: nothing graded → honest empty; ledger outage → honest unreadable", async () => {
+  queryRows = [];
+  const empty = await mod.readNighthawkSessionDebrief();
+  assert.equal((empty.context as { mode: string }).mode, "empty");
+  assert.match(empty.answer, /No graded Night Hawk plays to debrief yet/);
+
+  queryError = new Error("down");
+  const outage = await mod.readNighthawkSessionDebrief();
+  assert.equal((outage.context as { mode: string }).mode, "unreadable");
+  assert.match(outage.answer, /unreadable/i);
+});
