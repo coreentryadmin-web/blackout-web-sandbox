@@ -382,3 +382,139 @@ describe("router: cortex_read intent (PR-H — BIE × Cortex bridge)", () => {
     }
   });
 });
+
+describe("router: nighthawk_edition intent (PR-N9 — BIE × Night Hawk edition bridge)", () => {
+  test("edition asks route to nighthawk_edition (ticker-less)", () => {
+    for (const q of [
+      "what are tomorrow's plays?",
+      "tonight's playbook",
+      "show tonight's playbook",
+      "tomorrow's picks",
+      "what's in the edition?",
+      "what's in the playbook",
+      "what is tonight's Night Hawk edition", // previously fell through to Claude
+      "how did the night hawk plays do?",
+    ]) {
+      const r = classifyBieIntent(q, NO_LEDGER);
+      assert.equal(r?.intent, "nighthawk_edition", `route: ${q}`);
+      assert.equal(r?.ticker ?? null, null, `ticker-less: ${q}`);
+    }
+  });
+
+  test("pick-WHY routes with the ticker — including edition names OUTSIDE the known-ticker set (CSX)", () => {
+    for (const [q, ticker] of [
+      ["why was CSX picked tonight?", "CSX"],
+      ["why was CSX picked?", "CSX"],
+      ["why was DELL chosen for the edition?", "DELL"],
+      ["why was NVDA pulled?", "NVDA"],
+      ["why was AMD pulled this morning?", "AMD"],
+    ] as const) {
+      const r = classifyBieIntent(q, NO_LEDGER);
+      assert.equal(r?.intent, "nighthawk_edition", `route: ${q}`);
+      assert.equal(r?.ticker, ticker, `ticker: ${q}`);
+    }
+  });
+
+  test("ticker-less pulled asks still route (the composer answers from the edition)", () => {
+    const r = classifyBieIntent("why was the pick pulled?", NO_LEDGER);
+    assert.equal(r?.intent, "nighthawk_edition");
+    assert.equal(r?.ticker, null);
+    assert.equal(classifyBieIntent("was the play pulled?", NO_LEDGER)?.intent, "nighthawk_edition");
+  });
+
+  test("terse forms route: 'nh <ticker>' / 'playbook' / 'nh'", () => {
+    for (const [q, ticker] of [
+      ["nh csx", "CSX"],
+      ["nh SPY", "SPY"],
+      ["night hawk asts?", "ASTS"],
+    ] as const) {
+      const r = classifyBieIntent(q, NO_LEDGER);
+      assert.equal(r?.intent, "nighthawk_edition", q);
+      assert.equal(r?.ticker, ticker, q);
+    }
+    assert.equal(classifyBieIntent("playbook", NO_LEDGER)?.intent, "nighthawk_edition");
+    assert.equal(classifyBieIntent("nh", NO_LEDGER)?.intent, "nighthawk_edition");
+  });
+
+  test("morning-check asks route to nighthawk_edition", () => {
+    assert.equal(classifyBieIntent("what did the morning check see?", NO_LEDGER)?.intent, "nighthawk_edition");
+    assert.equal(classifyBieIntent("did the morning confirmation flag anything on NVDA?", NO_LEDGER)?.ticker, "NVDA");
+  });
+
+  test("BOUNDARY: the 0DTE cortex decision shapes are NOT stolen", () => {
+    // Ticker-less "top play picked" stays the cortex session overview (tested above).
+    assert.equal(classifyBieIntent("why was the top play picked?", NO_LEDGER)?.intent, "cortex_read");
+    // The cortex verbs (commit/skip/exit/veto) stay cortex.
+    assert.equal(classifyBieIntent("why did we commit NVDA today?", NO_LEDGER)?.intent, "cortex_read");
+    assert.equal(classifyBieIntent("why was TSLA skipped?", NO_LEDGER)?.intent, "cortex_read");
+    assert.equal(classifyBieIntent("cortex verdict on NVDA", NO_LEDGER)?.intent, "cortex_read");
+  });
+
+  test("BOUNDARY: definitional Night Hawk / pin / pull asks stay concept_read (glossary)", () => {
+    assert.equal(classifyBieIntent("what does Night Hawk do", NO_LEDGER)?.intent, "concept_read");
+    assert.equal(classifyBieIntent("what is publish context?", NO_LEDGER)?.intent, "concept_read");
+    assert.equal(classifyBieIntent("what is a pulled play", NO_LEDGER)?.intent, "concept_read");
+    assert.equal(classifyBieIntent("what is the morning confirmation?", NO_LEDGER)?.intent, "concept_read");
+    assert.equal(classifyBieIntent("what is the Night Audit?", NO_LEDGER)?.intent, "concept_read");
+  });
+
+  test("BOUNDARY: 'pulled back / pulled lower' price talk is NOT the pull latch", () => {
+    // "pulled back" is tape talk — the SPX why branch keeps it, never the edition read.
+    assert.equal(classifyBieIntent("why did SPX get pulled back below VWAP?", NO_LEDGER)?.intent, "spx_desk_read");
+    assert.notEqual(classifyBieIntent("why was SPY pulled lower today?", NO_LEDGER)?.intent, "nighthawk_edition");
+  });
+
+  test("BOUNDARY: today's-plays 0DTE shapes stay zerodte_plays", () => {
+    assert.equal(classifyBieIntent("how are today's plays doing?", NO_LEDGER)?.intent, "zerodte_plays");
+    assert.equal(classifyBieIntent("show me the plays", NO_LEDGER)?.intent, "zerodte_plays");
+  });
+
+  test("staging fallback routes the same edition shapes", () => {
+    assert.equal(classifyBieStagingFallback("tonight's playbook").intent, "nighthawk_edition");
+    assert.equal(classifyBieStagingFallback("why was CSX picked tonight?").intent, "nighthawk_edition");
+    assert.equal(classifyBieStagingFallback("why was CSX picked tonight?").ticker, "CSX");
+    assert.equal(classifyBieStagingFallback("nh csx").intent, "nighthawk_edition");
+    assert.equal(classifyBieStagingFallback("why was the pick pulled?").intent, "nighthawk_edition");
+    // The cortex shapes keep their staging routes too.
+    assert.equal(classifyBieStagingFallback("why was TSLA skipped?").intent, "cortex_read");
+  });
+
+  test("bieFollowups has a nighthawk_edition branch", () => {
+    assert.equal(bieFollowups("nighthawk_edition").length, 3);
+  });
+
+  // REGRESSION TABLE — every pre-existing intent must still route exactly as before
+  // (the nighthawk_edition branch sits between diagnostic and cortex; this table —
+  // #327's 17 rows plus the cortex rows that landed with it — proves nothing
+  // upstream/downstream of the new branch got stolen).
+  test("regression: existing intents still route unchanged with the nighthawk branch in place", () => {
+    const table: Array<[string, string]> = [
+      // The cortex routes that landed with #327 — the new branch sits directly above them.
+      ["why did we commit NVDA today?", "cortex_read"],
+      ["why was TSLA skipped?", "cortex_read"],
+      ["cortex nvda", "cortex_read"],
+      ["cortex verdict on NVDA", "cortex_read"],
+      ["why was the top play picked?", "cortex_read"],
+      ["what is GEX?", "concept_read"],
+      ["pull /api/market/gex-positioning?ticker=SPY", "universal_lookup"],
+      ["why isn't NVDA GEX forming?", "system_diagnostic"],
+      ["what's the vector setup on NVDA right now", "vector_read"],
+      ["SPX weekly flip", "vector_read"],
+      ["give me the verdict on NVDA", "verdict"],
+      ["is SPX 7500 a good play today", "verdict"],
+      ["hold NVDA into earnings?", "verdict"],
+      ["compare NVDA vs AMD", "ticker_compare"],
+      ["should I buy NVDA calls into earnings?", "ticker_advice"],
+      ["any unusual flow right now?", "flow_tape"],
+      ["how are today's plays doing?", "zerodte_plays"],
+      ["where's the SPX gamma flip", "spx_structure"],
+      ["what's the SPX setup right now?", "spx_desk_read"],
+      ["what would invalidate the SPX setup?", "spx_invalidation"],
+      ["what's the market doing today?", "market_context"],
+      ["what's going on with SPY?", "ticker_ecosystem"],
+    ];
+    for (const [q, intent] of table) {
+      assert.equal(classifyBieIntent(q, NO_LEDGER)?.intent, intent, `regression: ${q}`);
+    }
+  });
+});

@@ -120,9 +120,26 @@ async function composeTickerPlayState(ticker: string): Promise<BieComposed | nul
   const board = (await zeroDtePlaysForLargo()) as { plays?: LargoPlay[] };
   const play = (board.plays ?? []).find((p) => p.ticker === ticker.toUpperCase());
   if (!play) return null;
+  let answer = `**${play.ticker} play — ${play.status}**\n\n${playLine(play)}\n\n_Live state from the 0DTE Command board; statuses re-derive automatically every scan._`;
+  // PR-N9: when the same ticker is ALSO in the current Night Hawk edition, cite the
+  // pinned overnight take (publish pin + pulled/verdict state) — pinned-only and one
+  // ledger read, so the hot path stays cheap. Fail-soft: no record → no block.
+  let nighthawkEdition: unknown = null;
+  try {
+    const { nighthawkEditionCitationFor, renderNighthawkEditionCitation } = await import(
+      "@/lib/bie/nighthawk-edition-read"
+    );
+    const citation = await nighthawkEditionCitationFor(ticker);
+    if (citation) {
+      nighthawkEdition = citation;
+      answer = `${answer}\n\n${renderNighthawkEditionCitation(citation)}`;
+    }
+  } catch {
+    /* play state renders without the edition block */
+  }
   return {
-    answer: `**${play.ticker} play — ${play.status}**\n\n${playLine(play)}\n\n_Live state from the 0DTE Command board; statuses re-derive automatically every scan._`,
-    context: play,
+    answer,
+    context: { play, nighthawk_edition: nighthawkEdition },
   };
 }
 
@@ -541,12 +558,24 @@ async function composeTickerAdvice(ticker: string, question: string): Promise<Bi
   // read — PINNED commit-time evidence when a play exists this session, the LIVE
   // composition otherwise. Fetched in parallel (both cache-first) and fail-soft: a
   // Cortex outage yields an honest "unavailable" line, never a stalled/failed answer.
-  const [ctx, cortex] = await Promise.all([
+  // PR-N9: advice on a ticker that is ALSO in the current Night Hawk edition cites the
+  // pinned overnight take (publish pin + pulled/verdict state) — pinned-only and ONE
+  // ledger read (no live composition), so the hot path stays cheap. Fetched in
+  // parallel with the other reads; fail-soft: no record → no block.
+  const [ctx, cortex, nighthawkEdition] = await Promise.all([
     fetchEcosystemContext(ticker),
     (async () => {
       try {
         const { cortexCitationFor, directionFromQuestion } = await import("@/lib/bie/cortex-read");
         return await cortexCitationFor(ticker, { direction: directionFromQuestion(question), allowLive: true });
+      } catch {
+        return null;
+      }
+    })(),
+    (async () => {
+      try {
+        const { nighthawkEditionCitationFor } = await import("@/lib/bie/nighthawk-edition-read");
+        return await nighthawkEditionCitationFor(ticker);
       } catch {
         return null;
       }
@@ -558,9 +587,13 @@ async function composeTickerAdvice(ticker: string, question: string): Promise<Bi
     const { renderCortexCitation } = await import("@/lib/bie/cortex-read");
     answer = `${answer}\n\n${renderCortexCitation(cortex)}`;
   }
+  if (nighthawkEdition) {
+    const { renderNighthawkEditionCitation } = await import("@/lib/bie/nighthawk-edition-read");
+    answer = `${answer}\n\n${renderNighthawkEditionCitation(nighthawkEdition)}`;
+  }
   return {
     answer,
-    context: { ecosystem: ctx, verdict, cortex },
+    context: { ecosystem: ctx, verdict, cortex, nighthawk_edition: nighthawkEdition },
   };
 }
 
@@ -702,6 +735,7 @@ function headlineForRoute(route: BieRoute): string {
     zerodte_plays: "0DTE plays",
     ticker_play_state: `${t}play`,
     cortex_read: `${t}Cortex read`,
+    nighthawk_edition: `${t}Night Hawk edition`,
   };
   return map[route.intent] ?? "BIE read";
 }
@@ -761,6 +795,14 @@ async function composeBieAnswerUncached(route: BieRoute, opts?: ComposeBieOpts):
         // envelopes on outage), so the shim leaves it untouched.
         const { composeCortexRead } = await import("@/lib/bie/cortex-read");
         return await composeCortexRead(route.ticker, opts?.question ?? "");
+      }
+      case "nighthawk_edition": {
+        // BIE × Night Hawk edition bridge (PR-N9) — "tomorrow's plays" / "why was X
+        // picked/pulled" / "what did the morning check see", answered from the #331
+        // pinned records (publish_context, morning_verdict, the pulled latch). Returns
+        // a fully-populated envelope directly (honest empty/miss envelopes included).
+        const { composeNighthawkEditionRead } = await import("@/lib/bie/nighthawk-edition-read");
+        return await composeNighthawkEditionRead(route.ticker, opts?.question ?? "");
       }
       default:
         return null;
