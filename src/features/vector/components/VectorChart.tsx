@@ -162,7 +162,9 @@ const LIVE_FOLLOW_THRESHOLD_BARS = 2;
 /** Opacity multiplier for a strike row that has LEFT the current wall set (its last bead predates
  *  this side's latest bucket). A closed/faded wall dims to this fraction so a member reads it as
  *  receding history, not a live rail — the birth→fade lifecycle Skylit shows (BUG 3). */
-const STALE_TRAIL_FADE = 0.4;
+// Inactive walls dim to this opacity. At 0.4 (40%), they're still faintly visible; consider 0.15 for
+// more aggressive fade (similar to modeled beads) if member feedback suggests stale walls read as "live".
+const STALE_TRAIL_FADE = 0.15;
 /** Extra opacity added to a wall's BIRTH bead (its first observed candle) so the moment/price a
  *  new wall forms visibly pops out of its trail rather than looking identical to every other bead. */
 const BIRTH_BEAD_ALPHA_BOOST = 0.35;
