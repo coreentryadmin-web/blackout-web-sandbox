@@ -12,6 +12,7 @@
 
 import type { ZeroDteSetupLogRow } from "@/lib/db";
 import { etMinutesOf } from "./plan";
+import { tierFromEntryContext, type ZeroDteTier } from "./tiers";
 
 /** Methodology label served with every payload built here — the honest-record rule. */
 export const ZERODTE_RECORD_METHODOLOGY =
@@ -43,6 +44,14 @@ export type ZeroDteRecordPlay = {
   move_pct: number | null;
   /** Context-at-entry blob once present (C-2) — null on rows older than the column. */
   entry_context: Record<string, unknown> | null;
+  /** Merit tier (PR-F), derived RETROACTIVELY from the pinned entry_context via
+   *  tierFromEntryContext — never re-derived from live data, so the tier a member
+   *  sees on a past play is the tier its commit-time evidence earns. Null on
+   *  pre-context rows (zero pinned evidence is "untiered", not "C"). Note: "A+"
+   *  cannot appear here by type — it is a DISPLAY promotion earned from the A
+   *  bucket's measured record (calibration.ts analyzeTierRecord + tiers.ts
+   *  displayTierFor), never stamped on a play. */
+  tier: ZeroDteTier | null;
 };
 
 export type ZeroDteRecordBucket = {
@@ -195,6 +204,7 @@ function toPlay(r: ZeroDteSetupLogRow): ZeroDteRecordPlay {
     direction_hit: r.direction_hit,
     move_pct: r.move_pct != null ? round2(r.move_pct) : null,
     entry_context: r.entry_context,
+    tier: tierFromEntryContext(r.entry_context)?.tier ?? null,
   };
 }
 

@@ -25,6 +25,7 @@
 import type { ZeroDteSetupLogRow } from "@/lib/db";
 import { LOW_N_THRESHOLD, isGradedZeroDteRow, isZeroDteWin, scoreForBanding } from "./record";
 import { ZERODTE_SCORE_FLOOR } from "./gates";
+import { TIER_APLUS_UNLOCK, tierFromEntryContext, type ZeroDteTier } from "./tiers";
 import type { SkipCounterfactual } from "./skip-grading";
 
 /** Methodology label served with every report — the honest-record rule (record.ts):
@@ -132,8 +133,150 @@ export type CalibrationReport = {
   /** What the hard gates blocked, graded counterfactually — a gate that blocks
    *  winners shows up here (LOW-N discipline identical to the buckets above). */
   blocked_value: BlockedValueLine[];
+  /** Measured record of the merit tiers (PR-F) — where A+ is earned or withheld
+   *  and where a mis-weighted tier function gets caught (tier_inversion). */
+  tier_record: TierRecordAnalysis;
   available: boolean;
 };
+
+// ── Merit-tier record analysis (PR-F) ─────────────────────────────────────────────
+// The tier function (./tiers.ts) was seeded from the SAME forensic priors that
+// produced the score-band inversion finding (F-5) — so it gets the SAME treatment
+// the scorers got: its buckets are continuously measured against graded outcomes,
+// and if a lower tier outperforms a higher one the report says so in a machine-
+// readable flag instead of letting the mis-weighting hide. This is also the ONLY
+// place "A+" can come from: the display promotion is computed here from the A
+// bucket's measured record against TIER_APLUS_UNLOCK, never at entry time.
+
+/** A lower tier's win rate must beat a higher tier's by MORE than this many
+ *  percentage points to flag an inversion. 10 pts = one flipped play at the n=10
+ *  minimum — anything under that is bucket noise, not a broken weight function. */
+export const TIER_INVERSION_DELTA_PTS = 10;
+/** Both buckets need at least this many graded plays before an inversion can be
+ *  called. Same bar as ENFORCE_MIN_BLOCK_N and TIER_APLUS_UNLOCK.minGraded: the
+ *  F-5 inversion cuts were themselves LOW-N and we refused to act on any single
+ *  one — a claim that the tier weights are provably wrong needs the same order of
+ *  evidence as a claim that they are provably right. */
+export const TIER_INVERSION_MIN_N = 10;
+
+/** Assignable-tier bucket order, best → worst — F never appears here (skips never
+ *  reach the graded ledger) and A+ is a display promotion, not a bucket. */
+const TIER_ORDER: readonly ZeroDteTier[] = ["A", "B", "C"];
+
+export type TierRecordBucket = CalibrationBucket & { tier: ZeroDteTier };
+
+export type TierInversion = {
+  /** The tier that SHOULD have won (ranked higher by the entry function). */
+  higher: ZeroDteTier;
+  /** The tier that actually beat it on the record. */
+  lower: ZeroDteTier;
+  /** lower's win rate minus higher's, percentage points (rounded for display;
+   *  the flag itself is computed on unrounded rates). */
+  delta_pts: number;
+};
+
+export type TierRecordAnalysis = {
+  /** All three assignable tiers, always present (n=0 buckets included) — stable
+   *  machine-readable shape, same rule as score_bands. */
+  tiers: TierRecordBucket[];
+  /** Graded rows with no pinned entry_context (pre-C-2) — tierFromEntryContext
+   *  refuses to tier zero evidence, so they are counted here, never dumped into
+   *  the C bucket where they would read as a measurement of the tier function. */
+  untiered_n: number;
+  /** TRUE when any lower tier's WR beats a higher tier's by >TIER_INVERSION_DELTA_PTS
+   *  at n>=TIER_INVERSION_MIN_N each — the tier weights are then provably wrong,
+   *  the same class of finding as the F-5 score-band inversion that seeded them. */
+  tier_inversion: boolean;
+  inversions: TierInversion[];
+  /** The A+ unlock — the product's honesty spine. UIs display A+ ONLY when this
+   *  says so (tiers.ts displayTierFor); the entry-time function cannot mint it. */
+  aplus: {
+    unlocked: boolean;
+    min_graded: number;
+    min_win_rate_pct: number;
+    a_graded: number;
+    a_win_rate_pct: number | null;
+    note: string;
+  };
+};
+
+/** Rows that also carry entry_context — what retroactive tiering reads. */
+export type TierPlayRow = Pick<
+  ZeroDteSetupLogRow,
+  "plan_outcome" | "plan_pnl_pct" | "entry_context"
+>;
+
+/**
+ * Per-tier measured record over GRADED plays, tiered retroactively from each row's
+ * pinned entry_context (tierFromEntryContext — no backfill needed). Pure and
+ * deterministic; LOW-N discipline identical to every other bucket in this module.
+ */
+export function analyzeTierRecord(rows: TierPlayRow[]): TierRecordAnalysis {
+  const graded = rows.filter(isGradedZeroDteRow);
+  const byTier = new Map<ZeroDteTier, TierPlayRow[]>(TIER_ORDER.map((t) => [t, []]));
+  let untiered = 0;
+  for (const r of graded) {
+    const assigned = tierFromEntryContext(r.entry_context);
+    if (assigned == null) untiered += 1;
+    else byTier.get(assigned.tier)!.push(r);
+  }
+  const buckets: TierRecordBucket[] = TIER_ORDER.map((t) => ({
+    tier: t,
+    ...bucketOf(`tier ${t}`, byTier.get(t)!),
+  }));
+
+  // Monotonicity: every (higher, lower) pair, on UNROUNDED rates (same rationale
+  // as the graduation delta). Strictly MORE than 10 pts — an exact-10 delta is the
+  // one-flipped-play noise bound, and IEEE754 can render a true 10.0 as
+  // 10.000000000000007 (e.g. 60% - 50% from n=10 buckets), so the epsilon forgives
+  // float dust in the OTHER direction here: it keeps exact-10 from falsely firing.
+  const inversions: TierInversion[] = [];
+  for (let hi = 0; hi < TIER_ORDER.length; hi += 1) {
+    for (let lo = hi + 1; lo < TIER_ORDER.length; lo += 1) {
+      const higher = byTier.get(TIER_ORDER[hi]!)!;
+      const lower = byTier.get(TIER_ORDER[lo]!)!;
+      if (higher.length < TIER_INVERSION_MIN_N || lower.length < TIER_INVERSION_MIN_N) continue;
+      const hiWr = rawWinRatePct(higher);
+      const loWr = rawWinRatePct(lower);
+      if (hiWr == null || loWr == null) continue;
+      const delta = loWr - hiWr;
+      if (delta > TIER_INVERSION_DELTA_PTS + DELTA_EPSILON) {
+        inversions.push({ higher: TIER_ORDER[hi]!, lower: TIER_ORDER[lo]!, delta_pts: round1(delta) });
+      }
+    }
+  }
+
+  // A+ unlock: measured record of the A bucket vs TIER_APLUS_UNLOCK, on the
+  // unrounded rate (a rounded 80.0 hiding a true 79.96 must not unlock). The
+  // epsilon only forgives float dust on a mathematically-exact 80 (e.g. 8/10),
+  // never a genuinely lower rate.
+  const aRows = byTier.get("A")!;
+  const aWr = rawWinRatePct(aRows);
+  const unlocked =
+    aRows.length >= TIER_APLUS_UNLOCK.minGraded &&
+    aWr != null &&
+    aWr >= TIER_APLUS_UNLOCK.minWinRatePct - DELTA_EPSILON;
+
+  return {
+    tiers: buckets,
+    untiered_n: untiered,
+    tier_inversion: inversions.length > 0,
+    inversions,
+    aplus: {
+      unlocked,
+      min_graded: TIER_APLUS_UNLOCK.minGraded,
+      min_win_rate_pct: TIER_APLUS_UNLOCK.minWinRatePct,
+      a_graded: aRows.length,
+      a_win_rate_pct: aWr != null ? round1(aWr) : null,
+      note: unlocked
+        ? `A+ EARNED: the A bucket ran ${round1(aWr!)}% WR over ${aRows.length} graded plays ` +
+          `(bar: ${TIER_APLUS_UNLOCK.minWinRatePct}% at n>=${TIER_APLUS_UNLOCK.minGraded}). Display may promote tier-A plays to A+.`
+        : `A+ withheld: the A bucket has ${aRows.length} graded plays at ` +
+          `${aWr != null ? `${round1(aWr)}%` : "n/a"} WR — the bar is ${TIER_APLUS_UNLOCK.minWinRatePct}% at ` +
+          `n>=${TIER_APLUS_UNLOCK.minGraded}. A+ is earned from the record, never asserted at entry.`,
+    },
+  };
+}
 
 // ── Pure core ────────────────────────────────────────────────────────────────────
 
@@ -152,7 +295,11 @@ export function gateVerdictOf(row: CalibrationPlayRow, gate: CalibrationGateKey)
   return typeof rec.would_block === "boolean" ? rec.would_block : null;
 }
 
-function bucketOf(label: string, rows: CalibrationPlayRow[]): CalibrationBucket {
+/** The fields bucket math actually reads — lets the tier analysis reuse the exact
+ *  same bucket/rate helpers on its narrower row shape (no casts). */
+type GradablePlayRow = Pick<ZeroDteSetupLogRow, "plan_pnl_pct">;
+
+function bucketOf(label: string, rows: GradablePlayRow[]): CalibrationBucket {
   const wins = rows.filter(isZeroDteWin).length;
   const pnls = rows.map((r) => r.plan_pnl_pct).filter((p): p is number => p != null);
   return {
@@ -168,7 +315,7 @@ function bucketOf(label: string, rows: CalibrationPlayRow[]): CalibrationBucket 
 
 /** Unrounded win rate for the graduation delta — the rounded display rate loses up
  *  to 0.05 pts per bucket, enough to flip a boundary case at the 15-pt line. */
-function rawWinRatePct(rows: CalibrationPlayRow[]): number | null {
+function rawWinRatePct(rows: GradablePlayRow[]): number | null {
   if (rows.length === 0) return null;
   return (rows.filter(isZeroDteWin).length / rows.length) * 100;
 }
@@ -318,6 +465,9 @@ export function analyzeGateCalibration(input: {
         "split 75-84 vs 85+ so the F-5 top-band inversion is visible if it persists.",
     },
     blocked_value: blockedValueLines(input.gradedSkips ?? []),
+    // Retro-tiered off each row's pinned entry_context — measurable from day one,
+    // no tier column or backfill required (PR-F; stamping is the follow-up PR).
+    tier_record: analyzeTierRecord(graded),
     available: graded.length > 0,
   };
 }
