@@ -32,6 +32,7 @@ export const CRON_SERVICE_NAMES = {
   "vector-dark-pool-warm": "Vector-Dark-Pool-Warm",
   "bie-full-state-snapshot": "BIE-Full-State-Snapshot",
   "coaching-alerts": "Coaching-Alerts",
+  "platform-warm": "Platform-Warm",
 };
 
 /** All cron job keys that have a railway.<key>.toml in the repo. */
