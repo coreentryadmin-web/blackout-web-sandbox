@@ -246,6 +246,26 @@ describe("router: verdict intent (cross-tool synthesis, task #59)", () => {
     assert.equal(classifyBieIntent("compare NVDA vs AMD", NO_LEDGER)?.intent, "ticker_compare");
   });
 
+  // PR-L1: comparative phrasing WITHOUT a compare/versus/vs keyword. The live battery proved
+  // "Is SPX or NVDA closer to its gamma flip?" was stolen by the SPX structure branch and answered
+  // for SPX alone — a two-ticker comparative question must reach the compare composer.
+  test("REGRESSION (PR-L1): 'is X or Y closer to its gamma flip' routes to ticker_compare with both tickers", () => {
+    const r = classifyBieIntent("Is SPX or NVDA closer to its gamma flip?", NO_LEDGER);
+    assert.equal(r?.intent, "ticker_compare");
+    assert.equal(r?.ticker, "SPX");
+    assert.equal(r?.ticker_b, "NVDA");
+    assert.equal(classifyBieIntent("which of SPY or QQQ is stronger right now", NO_LEDGER)?.intent, "ticker_compare");
+  });
+
+  test("BOUNDARY (PR-L1): a comparative cue with only ONE ticker is NOT stolen by compare", () => {
+    // Single-ticker "closer" questions keep their existing homes — the cue alone never routes;
+    // two DISTINCT known tickers are required (the #334 single-word steal-risk discipline).
+    const single = classifyBieIntent("Is SPX closer to its gamma flip?", NO_LEDGER);
+    assert.notEqual(single?.intent, "ticker_compare");
+    // Ticker-less comparative questions are untouched too.
+    assert.notEqual(classifyBieIntent("which way is the market leaning?", NO_LEDGER)?.intent, "ticker_compare");
+  });
+
   test("staging fallback also routes verdict questions to verdict", () => {
     assert.equal(classifyBieStagingFallback("is SPX 7500 0DTE good today").intent, "verdict");
     assert.equal(classifyBieStagingFallback("hold NVDA into earnings").intent, "verdict");

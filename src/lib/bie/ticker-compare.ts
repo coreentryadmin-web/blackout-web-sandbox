@@ -1,7 +1,9 @@
 // Side-by-side ticker comparison — deterministic, no LLM.
 
-import type { EcosystemContext } from "@/lib/bie/ecosystem-context";
-import { fetchEcosystemContext } from "@/lib/bie/ecosystem-context";
+// Relative specifier (not "@/lib/bie/…") so ticker-compare.test.ts can intercept it with
+// mock.module — the same mockability convention cortex-read.ts documents for its own seams.
+import type { EcosystemContext } from "./ecosystem-context";
+import { fetchEcosystemContext } from "./ecosystem-context";
 
 const fmt = (n: number | null | undefined, d = 0): string =>
   typeof n === "number" && Number.isFinite(n)
@@ -34,6 +36,39 @@ function zerodteLine(ctx: EcosystemContext): string {
   return `0DTE ${z.direction} score ${fmt(z.score)}`;
 }
 
+/** |spot − flip| as a % of spot, from the same gex_positioning the Thermal row cites.
+ *  Null when either number is missing — never a fabricated distance. */
+function flipProximity(ctx: EcosystemContext): { spot: number; flip: number; pct: number } | null {
+  const g = ctx.gex_positioning;
+  if (!g || g.flip == null || !(typeof g.spot === "number" && g.spot > 0)) return null;
+  return { spot: g.spot, flip: g.flip, pct: (Math.abs(g.spot - g.flip) / g.spot) * 100 };
+}
+
+/**
+ * Explicit closer-to-flip verdict — the compare answer must NAME BOTH tickers with their flip
+ * distances and DECLARE the winner, not leave the member to eyeball two flip strikes on different
+ * price scales out of the table (an SPX flip 80 points away can be nearer in % terms than an NVDA
+ * flip 8 points away). Live-battery defect (PR-L1): "Is SPX or NVDA closer to its gamma flip?"
+ * produced an answer naming only one side. Ties (equal %) go to the first-named ticker. Honest on
+ * missing data: one/both flips unknown → says so instead of inventing a winner.
+ */
+function flipProximityLine(a: EcosystemContext, b: EcosystemContext): string {
+  const pa = flipProximity(a);
+  const pb = flipProximity(b);
+  const leg = (t: string, p: { spot: number; flip: number; pct: number }) =>
+    `${t} is ${p.pct.toFixed(2)}% from its flip (spot ${fmt(p.spot, 2)} vs flip ${fmt(p.flip, 2)})`;
+  if (pa && pb) {
+    const winner = pa.pct <= pb.pct ? a.ticker : b.ticker;
+    return `**Closer to its gamma flip: ${winner}** — ${leg(a.ticker, pa)}; ${leg(b.ticker, pb)}.`;
+  }
+  if (pa || pb) {
+    const known = pa ? a.ticker : b.ticker;
+    const missing = pa ? b.ticker : a.ticker;
+    return `Flip proximity: ${leg(known, (pa ?? pb)!)}; ${missing} has no flip on record right now, so no closer-to-flip call.`;
+  }
+  return `Flip proximity: no gamma-flip data on record for ${a.ticker} or ${b.ticker} right now.`;
+}
+
 export async function composeTickerCompare(tickerA: string, tickerB: string): Promise<{
   answer: string;
   context: { a: EcosystemContext; b: EcosystemContext };
@@ -53,6 +88,8 @@ export async function composeTickerCompare(tickerA: string, tickerB: string): Pr
     `| HELIX (6h) | ${flowLine(a)} | ${flowLine(b)} |`,
     `| Thermal GEX | ${gexLine(a)} | ${gexLine(b)} |`,
     `| Anomalies | ${a.recent_anomalies.length ? a.recent_anomalies[0]!.anomaly_type : "—"} | ${b.recent_anomalies.length ? b.recent_anomalies[0]!.anomaly_type : "—"} |`,
+    "",
+    flipProximityLine(a, b),
     "",
     "_Same readers Largo tools use — ask for a single-name verdict or SPX desk read for deeper synthesis._",
   ];

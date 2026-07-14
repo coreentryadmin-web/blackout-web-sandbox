@@ -75,6 +75,12 @@ const ADVICE_RE =
   /\b(should i|would you|can i|worth (buying|selling)|buy|sell|hold|trim|into earnings|before earnings|after earnings)\b/i;
 
 const COMPARE_RE = /\b(compare|versus|vs\.?)\b/i;
+/** Comparative cues that make a TWO-ticker question a compare even without a compare/vs keyword —
+ *  "is SPX or NVDA closer to its flip?", "which of SPY or QQQ is stronger?". Deliberately weak on
+ *  its own: the compare branch additionally requires extractCompareTickers to find two DISTINCT
+ *  known tickers, so these common words can never hijack a single-ticker or ticker-less question. */
+const COMPARATIVE_CUE_RE =
+  /\b(closer|closest|nearer|nearest|farther|further|which|more|less|higher|lower|stronger|weaker|better|worse)\b/i;
 
 // Cross-tool VERDICT synthesis (task #59) — the flagship "grade this" question. composeVerdict fans
 // out to the RELEVANT engines (dealer gamma + flow always; earnings/fundamentals for a single-name
@@ -390,7 +396,14 @@ export function classifyBieIntent(question: string, ledgerTickers: Set<string>):
   // (excluded in isVerdictQuestion) still falls through to the lighter ticker_advice path.
   if (isVerdictQuestion(q)) return { intent: "verdict", ticker: extractKnownTicker(q) };
 
-  if (COMPARE_RE.test(q)) {
+  // Explicit compare keyword, OR a comparative question naming TWO known tickers ("Is SPX or NVDA
+  // closer to its gamma flip?", "which of SPY or QQQ is stronger?") — the live-battery miss (PR-L1):
+  // without a compare/versus/vs keyword the SPX structure branch stole the two-ticker question and
+  // answered for SPX alone, never naming the second name. The two-DISTINCT-known-tickers gate
+  // (extractCompareTickers) is what authorizes the route — a bare cue word ("which", "closer") with
+  // zero or one ticker never routes here, so single-ticker questions keep their existing homes
+  // (same single-word steal-risk discipline as the #334 alias rules).
+  if (COMPARE_RE.test(q) || COMPARATIVE_CUE_RE.test(q)) {
     const pair = extractCompareTickers(q);
     if (pair) return { intent: "ticker_compare", ticker: pair[0], ticker_b: pair[1] };
   }
