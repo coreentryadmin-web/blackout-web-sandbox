@@ -5,6 +5,42 @@ conflict-resolution mishap. Historical entries live in git history — `git log 
 docs/audit/FINDINGS.md`. New entries append below; keep severity / root cause / file:line /
 evidence / fix / status per the CLAUDE.md policy.)
 
+## 2026-07-14 — Largo gauntlet P1s (deployed build, via POST /api/market/largo/query) — PR-L4a
+
+### P1 — "now" / "right now" collided with the ticker $NOW (ServiceNow) (FIXED, tested)
+- **Root cause:** EXTRACTION. `extractKnownTicker`/`extractCompareTickers` in
+  `src/lib/bie/router.ts` did `question.toUpperCase().match(/\$?\b[A-Z]{1,5}\b/g)` and accepted any
+  token in `KNOWN_TICKERS`. The adverb "now" uppercased to "NOW", which IS in `KNOWN_TICKERS`
+  (`question-intent.ts:67`), so bare "right now" resolved to $NOW. `classifyBieStagingFallback`'s
+  terminal `if (ticker) return { intent: "ticker_advice", ticker }` then answered with a ServiceNow
+  desk verdict. Not a routing/composer bug — the mis-extracted ticker was correct-looking garbage in.
+- **Evidence (gauntlet):** "What is our honest Night Hawk record right now, and why did the headline
+  number change recently?" → "NOW — desk verdict … spot 110.16 … peers META, CRM, NVDA, MSFT".
+  Same on "Where is the crowd wrong right now?".
+- **Fix:** case-preserving extraction + a FUNCTION-WORD stopword guard (`STOPWORD_TICKERS`): a bare
+  English stopword that is also a ticker (only `NOW` intersects the allowlist today) counts as a
+  ticker ONLY with a `$` prefix or an unambiguous context ("NOW stock", "ticker NOW"); content-noun
+  tickers (ARM, CAT) are deliberately NOT gated (no over-restriction). `src/lib/bie/router.ts`.
+- **After:** primary classifier returns null → Claude reaches `get_nighthawk_outcomes` (the honest
+  11.1% record); staging fallback returns `market_context`, never a NOW verdict. `router.test.ts`.
+- **Status:** FIXED (tsc clean, full suite green).
+
+### P1 — False spatial premise accepted (spot "above" its call wall when it was below) (FIXED, tested)
+- **Root cause:** COMPOSER. `detectPremiseCorrections` (`src/lib/bie/spx-premise.ts`) only checked
+  VWAP and gamma-flip claims; a wall / max-pain spatial claim was never validated against the live
+  number the read already fetches, so a false "pinned above its call wall" passed straight into a
+  bullish desk read.
+- **Evidence (gauntlet):** "Why is SPX pinned above its call wall right now?" — SPX spot 7,515, call
+  wall 7,550 (spot BELOW). Largo gave a bullish read and never corrected the premise.
+- **Fix:** added deterministic call-wall / put-wall / max-pain guards. Call/put wall derived from the
+  desk's own ladder (max positive / most-negative net_gex, canonical `topGexWalls` semantics); the
+  direction word is tied to the level phrase so compound sentences scope correctly; a false claim
+  emits `CORRECTION  SPX at 7,515 is actually BELOW its call wall 7,550, not above it …` prepended
+  before the read. TOL=1pt so "pinned AT the wall" isn't flagged. `src/lib/bie/spx-premise.ts`.
+- **After:** the gauntlet call-wall question now leads with the correction; a TRUE "above call wall"
+  claim emits none. `spx-premise.test.ts`.
+- **Status:** FIXED (tsc clean, full suite green).
+
 ## 2026-07-13 — Vector bead-rail / DTE-coherence audit (member-driven, RTH live)
 
 ### P0 — Bead trails ran full-width from the open; "no new walls all day" (FIXED, live-verified)

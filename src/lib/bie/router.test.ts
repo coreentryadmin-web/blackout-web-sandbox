@@ -538,3 +538,72 @@ describe("router: nighthawk_edition intent (PR-N9 — BIE × Night Hawk edition 
     }
   });
 });
+
+// ── PR-L4a (live gauntlet P1): "now" / "right now" must NOT resolve to the ticker $NOW (ServiceNow).
+// The old extractor uppercased the whole question so the adverb "now" became the ticker "NOW", and
+// the staging fallback then answered with a ServiceNow desk verdict. Bare stopword-tickers only count
+// with a `$` prefix or an unambiguous ticker context.
+describe("router: NOW / stopword-ticker extraction collision (PR-L4a)", () => {
+  const TICKER_ROUTES = new Set(["ticker_advice", "ticker_ecosystem", "verdict", "ticker_play_state", "ticker_compare"]);
+
+  test("gauntlet Q1 — 'honest Night Hawk record right now' does NOT become a NOW ticker verdict", () => {
+    const q = "What is our honest Night Hawk record right now, and why did the headline number change recently?";
+    // Primary classifier falls through to Claude (null) → reaches get_nighthawk_outcomes (the honest
+    // 11.1% record). It must NOT be a ticker-scoped route for $NOW.
+    const r = classifyBieIntent(q, NO_LEDGER);
+    if (r) assert.notEqual(r.ticker, "NOW", `must not extract $NOW: got ${JSON.stringify(r)}`);
+    // Staging fallback (never null) previously returned ticker_advice for NOW — now must not.
+    const f = classifyBieStagingFallback(q);
+    assert.notEqual(f.ticker, "NOW", `staging fallback still extracts $NOW: ${JSON.stringify(f)}`);
+    assert.ok(!TICKER_ROUTES.has(f.intent) || f.ticker !== "NOW", `staging fallback ServiceNow verdict: ${JSON.stringify(f)}`);
+  });
+
+  test("gauntlet Q2 — 'Where is the crowd wrong right now?' does NOT become a NOW ticker verdict", () => {
+    const q = "Where is the crowd wrong right now?";
+    const f = classifyBieStagingFallback(q);
+    assert.notEqual(f.ticker, "NOW", `staging fallback extracts $NOW: ${JSON.stringify(f)}`);
+  });
+
+  test("bare 'now' / 'right now' in a sentence never extracts $NOW", () => {
+    const qs = [
+      "what's the SPX setup right now",
+      "is the market risk-on now",
+      "how are today's plays doing now",
+      "now what should I watch",
+    ];
+    for (const q of qs) {
+      const f = classifyBieStagingFallback(q);
+      assert.notEqual(f.ticker, "NOW", `"${q}" wrongly extracted $NOW: ${JSON.stringify(f)}`);
+    }
+  });
+
+  test("explicit ticker contexts DO resolve $NOW", () => {
+    // $-prefix, "NOW stock", "ticker NOW" are unambiguous ServiceNow references.
+    assert.equal(classifyBieStagingFallback("what's the read on $NOW").ticker, "NOW");
+    assert.equal(classifyBieStagingFallback("give me the verdict on NOW stock").ticker, "NOW");
+    assert.equal(classifyBieStagingFallback("pull the flow on ticker NOW").ticker, "NOW");
+  });
+
+  test("battery of English stopwords that are (or could be) tickers never extract from a sentence", () => {
+    // Sentences that contain the bare word but mean the ENGLISH word, not the symbol.
+    const sentences = [
+      "are we still in the SPX play",
+      "should I hold or fold this",
+      "let it ride into the close",
+      "go flat before the print",
+      "so what's the plan",
+      "look at the tape now",
+    ];
+    const banned = new Set(["NOW", "ARE", "OR", "IT", "GO", "SO", "ALL", "ON", "AT", "BE", "IN", "OF", "TO"]);
+    for (const q of sentences) {
+      const f = classifyBieStagingFallback(q);
+      if (f.ticker) assert.ok(!banned.has(f.ticker), `"${q}" extracted stopword ticker ${f.ticker}`);
+    }
+  });
+
+  test("real content-noun tickers are NOT over-restricted (ARM/CAT still resolve)", () => {
+    // Surgical guard: only function-words are gated; a capitalised content-noun ticker still routes.
+    assert.equal(classifyBieStagingFallback("what's going on with ARM").ticker, "ARM");
+    assert.equal(classifyBieStagingFallback("what's happening with NVDA").ticker, "NVDA");
+  });
+});
