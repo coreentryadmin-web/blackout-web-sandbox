@@ -202,3 +202,36 @@ test("buildGexLadder: equal-|gex| ties crown the strike nearest spot (no far-OTM
   assert.equal(kings.find((r) => r.side === "call")!.strike, 100, "call tie → nearest spot");
   assert.equal(kings.find((r) => r.side === "put")!.strike, 99, "put tie → nearest spot (99 vs 101 → lower distance ties keep first-beaten winner)");
 });
+
+test("buildGexLadder: kingStrikes override crowns the CANONICAL wall, not the ladder's max-|gex|", () => {
+  // Mirrors the live SPX/SPY divergence: the OI ladder's biggest |gex| per side (105 call, 90 put)
+  // is NOT the wall the banner/chart/desk cite (100 call, 95 put — from the volume-adjusted / warm
+  // aggregate walls). Passing those canonical strikes must move the ⚑ to them so all surfaces agree.
+  const totals = { "105": 9_000, "100": 6_000, "95": -6_000, "90": -9_000 };
+  const l = buildGexLadder(totals, 100, { bandPct: 0.5, kingStrikes: { call: 100, put: 95 } });
+  const kings = l.rows.filter((r) => r.isKing);
+  assert.equal(kings.length, 2, "still exactly one king per side");
+  assert.equal(kings.find((r) => r.side === "call")!.strike, 100, "call ⚑ crowned to the canonical wall (100), not max-|gex| (105)");
+  assert.equal(kings.find((r) => r.side === "put")!.strike, 95, "put ⚑ crowned to the canonical wall (95), not max-|gex| (90)");
+  // DISPLAY is untouched: 105 still renders with the tallest bar (magnitude 1) — only the crown moved.
+  assert.equal(l.rows.find((r) => r.strike === 105)!.magnitude, 1);
+  assert.equal(l.rows.find((r) => r.strike === 105)!.isKing, false);
+});
+
+test("buildGexLadder: kingStrikes override falls back to self-crown when the strike is absent or wrong-signed", () => {
+  const totals = { "105": 9_000, "100": 6_000, "95": -6_000, "90": -9_000 };
+  // call override 200 isn't in the chain; put override 100 exists but is a CALL (wrong sign) — both
+  // fall back to the ladder's own max-|gex| king (105 call, 90 put) so there is always one per side.
+  const l = buildGexLadder(totals, 100, { bandPct: 0.5, kingStrikes: { call: 200, put: 100 } });
+  const kings = l.rows.filter((r) => r.isKing);
+  assert.equal(kings.length, 2);
+  assert.equal(kings.find((r) => r.side === "call")!.strike, 105, "absent override → self-crowned call king");
+  assert.equal(kings.find((r) => r.side === "put")!.strike, 90, "wrong-signed override → self-crowned put king");
+});
+
+test("buildGexLadder: omitting kingStrikes preserves the pure self-crowned behavior (BIE/seed path)", () => {
+  const totals = { "105": 9_000, "100": 6_000, "95": -6_000, "90": -9_000 };
+  const l = buildGexLadder(totals, 100, { bandPct: 0.5 });
+  assert.equal(l.rows.find((r) => r.strike === 105)!.isKing, true, "call king = max-|gex| (105)");
+  assert.equal(l.rows.find((r) => r.strike === 90)!.isKing, true, "put king = max-|gex| (90)");
+});

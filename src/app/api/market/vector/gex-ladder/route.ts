@@ -5,6 +5,7 @@ import { normalizeVectorTicker, isVectorTickerAllowed } from "@/features/vector/
 import { fetchGexHeatmap } from "@/lib/providers/polygon-options-gex";
 import { buildGexLadder } from "@/features/vector/lib/vector-gex-ladder";
 import { getHorizonStrikeTotals } from "@/features/vector/lib/vector-dte-walls-server";
+import { getVectorGexWallsForHorizon } from "@/features/vector/lib/vector-snapshot";
 import { getFlowStrikeTotals } from "@/features/vector/lib/vector-flow-gex-server";
 import { normalizeDteHorizon } from "@/features/vector/lib/vector-dte-horizon";
 import { roundFloats } from "@/lib/round-floats";
@@ -66,9 +67,19 @@ export async function GET(req: NextRequest) {
   // NARROWER than its own weekly/monthly views. When the scoped fetch yields nothing (thin chain,
   // off-hours, non-optionable) we fall back to the near-term heatmap aggregate so the panel is never
   // blanked. See docs/audit/FINDINGS.md — GEX-vs-Skylit forensic.
+  // Crown the ladder king (⚑) to the CANONICAL horizon walls — the SAME source the regime banner's
+  // resistance/support, the chart's wall line, and the desk terminal all cite
+  // (getVectorGexWallsForHorizon → computeGexWalls over the volume-adjusted ladder for a narrowed
+  // horizon, or the warm near-term aggregate for "all"). The ladder RENDERS the OI-signed net-GEX
+  // (dense, all strikes), but its dominant-wall crown must MATCH the other three surfaces, not the
+  // OI ladder's own max-|gex| pick — those diverge on index names with heavy 0DTE volume (live SPX
+  // weekly: OI put king was a deep-ITM 8000 strike ABOVE spot, "support" nonsense, vs the real put
+  // wall 7475). Best-effort: a null walls read leaves buildGexLadder to self-crown (never blanks).
+  const kingStrikes = await deriveKingStrikes(ticker, horizon);
+
   const scoped = await getHorizonStrikeTotals(ticker, horizon).catch(() => null);
   if (scoped) {
-    const ladder = buildGexLadder(scoped.strikeTotals, scoped.spot);
+    const ladder = buildGexLadder(scoped.strikeTotals, scoped.spot, { kingStrikes });
     return NextResponse.json(
       roundFloats({ ticker, spot: scoped.spot, asOf: null, horizon, mode, ladder })
     );
@@ -76,9 +87,28 @@ export async function GET(req: NextRequest) {
 
   const hm = await fetchGexHeatmap(ticker).catch(() => null);
   const spot = hm?.spot ?? null;
-  const ladder = buildGexLadder(hm?.gex?.strike_totals ?? null, spot);
+  const ladder = buildGexLadder(hm?.gex?.strike_totals ?? null, spot, { kingStrikes });
 
   return NextResponse.json(
     roundFloats({ ticker, spot, asOf: hm?.asof ?? null, horizon, mode, ladder })
   );
+}
+
+/**
+ * Top call/put wall strikes for the horizon — the canonical walls the banner/chart/desk cite —
+ * used to crown the ladder king (see the call site). Best-effort: any gap returns `undefined` so
+ * buildGexLadder self-crowns rather than the panel blanking. Reuses getVectorGexWallsForHorizon,
+ * whose narrowed path shares the SAME Redis-cached banded chain (+5s memo) getHorizonStrikeTotals
+ * already fetched, so this adds no extra provider load.
+ */
+async function deriveKingStrikes(
+  ticker: string,
+  horizon: ReturnType<typeof normalizeDteHorizon>
+): Promise<{ call: number | null; put: number | null } | undefined> {
+  const walls = await getVectorGexWallsForHorizon(ticker, horizon).catch(() => null);
+  if (!walls) return undefined;
+  return {
+    call: walls.callWalls[0]?.strike ?? null,
+    put: walls.putWalls[0]?.strike ?? null,
+  };
 }
