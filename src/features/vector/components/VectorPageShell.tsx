@@ -144,6 +144,11 @@ export function VectorPageShell({
     call: WallIntegrity | null;
     put: WallIntegrity | null;
   }>(() => scoreTopWalls(initialWalls, initialWallHistory));
+  // Live spot price from chart's SSE stream — passed to GEX ladder so it updates every second
+  // instead of polling every 15s. Null until the first candle arrives.
+  const [liveSpot, setLiveSpot] = useState<number | null>(
+    initialBars.length ? initialBars[initialBars.length - 1]!.close : null
+  );
 
   useEffect(() => {
     if (!liveSession) return;
@@ -265,6 +270,7 @@ export function VectorPageShell({
               ticker={activeTicker}
               liveSession={liveSession}
               initialSpot={initialBars.length ? initialBars[initialBars.length - 1]!.close : null}
+              liveSpot={liveSpot}
               dteHorizon={dteHorizon}
             />
           </div>
@@ -288,6 +294,7 @@ export function VectorPageShell({
               sessionYmd={sessionYmd}
               liveSession={liveSession}
               onFreshness={liveSession ? setStreamUpdatedAt : undefined}
+              onSpotChange={liveSession ? setLiveSpot : undefined}
               onWallEventsChange={setWallEvents}
               onLensChange={setLens}
               onRegimeChange={setRegime}

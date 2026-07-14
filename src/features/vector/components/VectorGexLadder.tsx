@@ -26,6 +26,8 @@ type Props = {
   liveSession: boolean;
   /** SSR-seeded spot so the header + empty state aren't blank before the first fetch. */
   initialSpot?: number | null;
+  /** Live spot price from the chart's SSE stream (updates every second during live session). */
+  liveSpot?: number | null;
   /** DTE horizon from the chart's toggle — the ladder re-scopes to the SAME expiries so it matches
    *  the walls on the chart. "all" = near-term aggregate (default). */
   dteHorizon?: VectorDteHorizon;
@@ -42,7 +44,13 @@ type LadderResponse = { spot: number | null; asOf: string | null; ladder: GexLad
  * a documented follow-up — this first slice shows the near-term ("all") aggregate the chart
  * defaults to.
  */
-export function VectorGexLadder({ ticker, liveSession, initialSpot = null, dteHorizon = "all" }: Props) {
+export function VectorGexLadder({
+  ticker,
+  liveSession,
+  initialSpot = null,
+  liveSpot = null,
+  dteHorizon = "all",
+}: Props) {
   const [ladder, setLadder] = useState<GexLadder>(() => buildGexLadder(null, initialSpot));
   const [spot, setSpot] = useState<number | null>(initialSpot);
   const [asOf, setAsOf] = useState<string | null>(null);
@@ -50,6 +58,15 @@ export function VectorGexLadder({ ticker, liveSession, initialSpot = null, dteHo
   // Guard against a slow response for a PREVIOUS ticker landing after a switch and overwriting the
   // new ticker's ladder (same staleness class the chart's fetches guard with a ref check).
   const tickerRef = useRef(ticker);
+  // Track last successful ladder fetch to avoid re-fetching on every spot tick.
+  const lastFetchTimeRef = useRef<number>(0);
+
+  // Live spot from chart SSE updates the display without re-fetching the ladder.
+  useEffect(() => {
+    if (liveSpot != null) {
+      setSpot(liveSpot);
+    }
+  }, [liveSpot]);
 
   useEffect(() => {
     tickerRef.current = ticker;
@@ -68,22 +85,30 @@ export function VectorGexLadder({ ticker, liveSession, initialSpot = null, dteHo
         const data = (await res.json()) as LadderResponse;
         if (cancelled || tickerRef.current !== ticker) return;
         setLadder(data.ladder ?? buildGexLadder(null, data.spot ?? null));
-        setSpot(data.spot ?? null);
+        // Only update spot from fetch if liveSpot is not available (off-hours or initial load).
+        if (!liveSpot) {
+          setSpot(data.spot ?? null);
+        }
         setAsOf(data.asOf ?? null);
         setState("ready");
+        lastFetchTimeRef.current = Date.now();
       } catch {
         if (!cancelled && tickerRef.current === ticker) setState("error");
       }
     };
 
     void load();
-    // Live: refresh with the walls cadence (15s). Off-hours: one fetch — the ladder is static.
-    const id = liveSession ? setInterval(load, 15_000) : null;
+    // Live: refresh ladder structure every 60s (instead of 15s). Spot updates come from chart SSE every tick.
+    // Off-hours: one fetch — the ladder is static. Pre-warm on ticker/horizon change for faster navigation.
+    const id =
+      liveSession && (Date.now() - lastFetchTimeRef.current > 55_000)
+        ? setInterval(load, 60_000)
+        : null;
     return () => {
       cancelled = true;
       if (id) clearInterval(id);
     };
-  }, [ticker, liveSession, dteHorizon]);
+  }, [ticker, liveSession, dteHorizon, liveSpot]);
 
   const rows = ladder.rows;
   // Index of the first row at/below spot — the spot marker slots ABOVE it (rows are strike-desc, so

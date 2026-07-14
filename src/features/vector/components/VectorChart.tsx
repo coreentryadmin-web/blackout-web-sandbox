@@ -190,6 +190,8 @@ type Props = {
   sessionYmd: string;
   liveSession: boolean;
   onFreshness?: (updatedAt: number) => void;
+  /** Live spot price from each candle tick — fed to GEX ladder for real-time updates. */
+  onSpotChange?: (spot: number) => void;
   onWallEventsChange?: (events: VectorWallEvent[]) => void;
   onLensChange?: (lens: VectorWallLens) => void;
   onRegimeChange?: (regime: VectorRegime) => void;
@@ -861,6 +863,7 @@ export function VectorChart({
   sessionYmd,
   liveSession,
   onFreshness,
+  onSpotChange,
   onWallEventsChange,
   onRegimeChange,
   onProximityChange,
@@ -2148,6 +2151,7 @@ export function VectorChart({
           }
         }
         spotRef.current = curSpot;
+        onSpotChange?.(curSpot);
         minuteBarsRef.current = upsertBar(minuteBarsRef.current, snap.candle as VectorBar);
         setSessionBars(minuteBarsRef.current);
         if (!inReplay) {
