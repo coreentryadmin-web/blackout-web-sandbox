@@ -207,3 +207,45 @@ evidence / fix / status per the CLAUDE.md policy.)
   were real losers. 141 zerodte-suite tests green; Slayer gate tests updated for the 9:45 boundary.
 - **Schema/Redis**: `zerodte_scan_rejections.reason` (TEXT), `zerodte_setup_log.
   gate_calibration_json` (JSONB, COALESCE-pinned), Redis `zerodte:governor:stops:{date}` (24h TTL).
+
+## 2026-07-14 — 0DTE open-trade data path (B-9 P0, branch fix/zerodte-live-marks)
+
+Full trace + defect table: `docs/audit/ZERODTE-DATA-PATH-AUDIT.md`. User report: open 0DTE
+plays show "entirely wrong" pnl/%/premium values, slow to update.
+
+### P0 — stopped plays displayed a frozen, arbitrary P&L until NEXT-DAY grading (FIXED)
+- Root cause: `syncLedgerLiveState` skips CLOSED rows (scan.ts:463) so `last_mark` freezes at
+  whichever tick crossed the stop (−38%, −55%, anything); `mapLedgerRow`
+  (zerodte-service.ts) recomputed `live_pnl_pct` from that frozen mark, discarding
+  `derivePlayStatus`'s correct −50; the plan grader that would stamp −50 only runs on sessions
+  `< today` (db.ts fetchUngradedZeroDteRows). intel.ts's `livePnlPct <= -50` branch also
+  misread the frozen value → wrong closed-play narrative all afternoon.
+- Fix: `closedStopReason()`/`ledgerDisplayPnlPct()` (new `src/lib/zerodte/marks-math.ts`) pin a
+  stopped row's displayed P&L to `PLAN_RULES.stop_pct` (matches the eventual grade; TRIM-sticky
+  ordering preserved). Applied in mapLedgerRow + the post-roundFloats recompute; additive
+  `closed_reason` field on the board row. Tests: live-marks.test.ts, zerodte-service-marks.test.ts.
+
+### P0 — marks with erased provenance/age presented as live (FIXED — structural)
+- Root cause: the unified-snapshot mark ladder (mid → last trade → prior session close,
+  options-snapshot.ts:153-166) collapses to a bare number; a 30-min-old last (illiquid 0DTE
+  contract) or prior close rendered as "Mark $X (+Y%)" under a "live" chip (board `as_of` is
+  BUILD time, ZeroDteBoard freshness only checks build age).
+- Fix: live-marks lane types carry `{bid, ask, mid, last, mark, source, asOf}`; mid is the mark,
+  last-trade fallback is FLAGGED (`source:"last"`), prior-session close is never a live mark;
+  board rows gained `mark_as_of`/`mark_source`; client dims money numbers >5s (stale-honesty).
+
+### P1 — open-trade numbers 10–25s old typical, ~2 min worst case, invisible to members (FIXED)
+- Root cause: REST snapshot → `zerodte:board:v1` 5s SWR cache (serves the PREVIOUS build) →
+  10s client SWR; plus the 2.5s `within` deadline on the snapshot fetch silently falling back
+  to the last cron-written mark AND skipping that tick's 15:30 hard-close pass.
+- Fix (B-9 build): bounded live-marks lane — open ledger plays only (cap 16), WS-first
+  (existing options-socket engine + Redis write-through) with a 1s single-batched REST poller
+  as the guarantee lane; ~1s SSE push (`/api/market/zerodte/marks/stream`, REST fallback
+  route) of pushed marks + P&L computed ONCE server-side vs the PINNED ledger entry
+  (`pinnedLivePnlPct` — zerodte-service's private copy deleted); the poller ALSO syncs ledger
+  status/peak/trough from the same store every second (status flips persist immediately), so
+  display and grading inputs share one quote lane. Board/chain snapshot cadence unchanged.
+- Deferred (documented in the audit doc): explicit "entry basis: flow fill" label (D-4);
+  unifying scan.ts's `zeroDtePlaysFeed` onto the store (scan.ts owned by sibling branch
+  fix/zerodte-hard-gates this cycle — both writers share the same DB latch, so no divergence
+  in persisted state meanwhile).
