@@ -209,6 +209,7 @@ let polygonSocketInitialized = false;
 let indicesReconnectTimer: ReturnType<typeof setTimeout> | null = null;
 let indicesConsecutiveFailures = 0;
 let indicesShuttingDown = false;
+let indicesConnectionStartedAt = 0; // timestamp when WS connection was initiated; 0 if no pending connection
 
 function polygonErrorMessage(err: unknown): string {
   if (err instanceof Error) return err.message;
@@ -270,9 +271,34 @@ function inIndicesMarketHours(now = new Date()): boolean {
 
 function startIndicesWatchdog() {
   if (indicesWatchdog) return;
+  const INDICES_CONNECTION_TIMEOUT_MS = 10_000; // connection must open within 10s or we reconnect
   indicesWatchdog = setInterval(() => {
     if (indicesShuttingDown) return;
     if (!inIndicesMarketHours()) return; // off-hours silence is expected, not a stall
+
+    // Detect connection timeout: if a connection is stuck in CONNECTING state for >10s, close it and reconnect.
+    // This catches hang scenarios (network stall, firewall drop, DNS timeout) that would otherwise leave the
+    // connection frozen indefinitely, causing the desk to show stale SPX prices forever.
+    if (
+      indicesWs?.readyState === WebSocket.CONNECTING &&
+      indicesConnectionStartedAt > 0 &&
+      Date.now() - indicesConnectionStartedAt > INDICES_CONNECTION_TIMEOUT_MS
+    ) {
+      console.warn(
+        `[polygon-socket] indices connection TIMEOUT — stuck in CONNECTING for ${Math.round(
+          (Date.now() - indicesConnectionStartedAt) / 1000
+        )}s, forcing reconnect`
+      );
+      indicesConnectionStartedAt = 0;
+      try {
+        indicesWs.close(1000, "connection timeout");
+      } catch {
+        /* ignore — onclose will still fire */
+      }
+      return;
+    }
+
+    // Detect stalled feed: if connected but no messages in >25s, reconnect.
     if (
       indicesWs?.readyState === WebSocket.OPEN &&
       lastIndicesMessageAt > 0 &&
@@ -320,9 +346,11 @@ async function connectIndices() {
   }
 
   try {
+    indicesConnectionStartedAt = Date.now();
     indicesWs = new WebSocket(POLYGON_WS_INDICES);
 
     indicesWs.onopen = () => {
+      indicesConnectionStartedAt = 0; // connection opened, no longer pending
       console.log("[polygon-socket] indices connected");
       indicesAuthenticated = false;
     };
@@ -453,12 +481,14 @@ async function connectIndices() {
 
     indicesWs.onclose = (event) => {
       indicesWs = null;
+      indicesConnectionStartedAt = 0;
       indicesAuthenticated = false;
       console.warn("[polygon-socket] indices disconnected — bar gap will occur until reconnection completes");
       scheduleIndicesReconnect(`code=${event.code}`);
     };
   } catch (err) {
     indicesWs = null;
+    indicesConnectionStartedAt = 0;
     console.error("[polygon-socket] failed to connect indices:", polygonErrorMessage(err));
     scheduleIndicesReconnect("connect-threw");
   }
@@ -481,6 +511,7 @@ export function initPolygonSocket() {
  */
 export function shutdownPolygonSocket(): void {
   indicesShuttingDown = true;
+  indicesConnectionStartedAt = 0;
   if (indicesReconnectTimer) {
     clearTimeout(indicesReconnectTimer);
     indicesReconnectTimer = null;
