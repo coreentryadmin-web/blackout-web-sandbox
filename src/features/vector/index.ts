@@ -26,6 +26,9 @@ export {
   dteHorizonLabel,
   normalizeDteHorizon,
   expiriesForHorizon,
+  resolveHorizonExpiries,
+  horizonScopeShortLabel,
+  formatExpiryShort,
 } from "./lib/vector-dte-horizon";
 export {
   loadVectorUniverseSnapshot,
@@ -44,7 +47,11 @@ export {
   type WallHistorySample,
 } from "./lib/vector-wall-history";
 export type { VectorTimeframeMinutes } from "./lib/vector-bar-timeframes";
-export { loadSessionWallHistory } from "./lib/vector-wall-persist";
+export {
+  loadSessionWallHistory,
+  loadMultiSessionWallHistory,
+  loadRecentWallHistory,
+} from "./lib/vector-wall-persist";
 export { loadVectorSeedProps, type VectorSeedProps } from "./lib/vector-seed-props";
 export { reconstructSessionRail, reconstructSessionHeatmap } from "./lib/vector-gex-reconstruct-server";
 export type { GexHeatmapGrid } from "./lib/vector-gex-reconstruct";

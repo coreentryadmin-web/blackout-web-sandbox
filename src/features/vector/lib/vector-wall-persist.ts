@@ -1,6 +1,17 @@
 import { sharedCacheGet, sharedCacheSet } from "@/lib/shared-cache";
-import { mergeWallHistory, type WallHistorySample } from "./vector-wall-history";
+import {
+  decimateWallHistory,
+  markHistorical,
+  mergeWallHistory,
+  PRIOR_SESSION_DECIMATION_STEP_SEC,
+  type WallHistorySample,
+} from "./vector-wall-history";
 import type { VectorDteHorizon } from "./vector-dte-horizon";
+
+/** Prior-session ladders are slimmed to their strongest N/side on load — the bead layer only draws
+ *  each bucket's top-3 (DOMINANT_WALLS_PER_BUCKET) and the legend/banner read the top few, so a
+ *  deep 20/side ladder on a prior day is pure payload. 6 keeps a comfortable margin over 3. */
+const PRIOR_SESSION_MAX_LEVELS_PER_SIDE = 6;
 
 const KEY_PREFIX = "vector:wall-history";
 /** Keep through the next session for off-hours review + replay groundwork. */
@@ -58,6 +69,103 @@ export async function loadSessionWallHistory(
     console.warn(`[vector-wall-persist] db fallback failed ${st}:${sessionYmd}:`, err);
   }
   return hit ?? [];
+}
+
+/**
+ * Load the durable rails for MANY sessions and concatenate them in time order — the multi-day
+ * continuity seed (GAP A: "if a stock was open yesterday, today's chart should show yesterday's
+ * (and older) beads/walls").
+ *
+ * Read strategy per session: Redis hot-cache first (covers the ~72h-recent sessions), then ONE
+ * batched Postgres read (`loadSessionsWallHistoryFromDb`) for every session Redis missed — an
+ * N-session cold read is N parallel Redis GETs + a single DB round-trip, not N sequential PG
+ * queries. DB-recovered sessions re-warm Redis best-effort, same as the single-session path.
+ *
+ * Ordering: sessions are sorted ascending by ymd, each session's samples are already ascending by
+ * bucket, and sessions never overlap in epoch time — so plain concatenation yields a globally
+ * time-ascending rail. No MAX_HISTORY cap here (the caller decimates prior sessions for payload and
+ * merge functions cap defensively). Never throws; a failed session degrades to that session simply
+ * being absent from the rail (honest gap — never fabricated).
+ */
+export async function loadMultiSessionWallHistory(
+  ticker: string,
+  horizon: VectorDteHorizon,
+  sessionYmds: string[]
+): Promise<WallHistorySample[]> {
+  const sessions = [...new Set(sessionYmds.filter(Boolean))].sort();
+  if (!sessions.length) return [];
+  const st = wallRailStorageId(ticker, horizon);
+
+  const fromRedis = await Promise.all(
+    sessions.map((ymd) => sharedCacheGet<WallHistorySample[]>(redisKey(st, ymd)).catch(() => null))
+  );
+
+  const bySession = new Map<string, WallHistorySample[]>();
+  const misses: string[] = [];
+  sessions.forEach((ymd, i) => {
+    const hit = fromRedis[i];
+    if (hit && hit.length) bySession.set(ymd, hit);
+    else misses.push(ymd);
+  });
+
+  if (misses.length) {
+    try {
+      // Lazy dynamic import for the same reason as loadSessionWallHistory: the server-only DB
+      // module must never leak into a client bundle that transitively reaches this file.
+      const { loadSessionsWallHistoryFromDb } = await import("./vector-wall-db");
+      const durable = await loadSessionsWallHistoryFromDb(misses, st);
+      for (const [ymd, samples] of durable) {
+        if (!samples.length) continue;
+        bySession.set(ymd, samples);
+        // Re-warm the hot cache so the next multi-day read skips Postgres. Best-effort.
+        void sharedCacheSet(redisKey(st, ymd), samples, TTL_SEC).catch(() => {});
+      }
+    } catch (err) {
+      console.warn(`[vector-wall-persist] multi-session db fallback failed ${st}:`, err);
+    }
+  }
+
+  const out: WallHistorySample[] = [];
+  for (const ymd of sessions) {
+    const samples = bySession.get(ymd);
+    if (samples) out.push(...samples);
+  }
+  return out;
+}
+
+/**
+ * The full display rail for a (ticker, horizon): the LATEST displayed session at native 15s
+ * resolution PLUS every PRIOR displayed session decimated (~2-min step, ladders slimmed to the
+ * strongest 6/side) and tagged `historical` so the marker layer dims prior-day clusters. `sessionYmds`
+ * is the exact set of sessions the chart is displaying (from fetchVectorSeedBars) so beads only ever
+ * land on sessions that actually have candles — never on empty chart space, and rails stay absent
+ * (honest gap) for days the recorder never observed.
+ *
+ * Used by the wall-history read route for the NARROWED horizons (0dte/weekly/monthly); the "all"
+ * rail composes the same pieces itself in seed-props (it additionally merges the in-memory hub buffer
+ * + reconstruction prefix, which only apply to the latest session).
+ */
+export async function loadRecentWallHistory(
+  ticker: string,
+  horizon: VectorDteHorizon,
+  sessionYmds: string[]
+): Promise<WallHistorySample[]> {
+  const sessions = [...new Set(sessionYmds.filter(Boolean))].sort();
+  if (!sessions.length) return [];
+  const latest = sessions[sessions.length - 1]!;
+  const prior = sessions.slice(0, -1);
+  const [latestRail, priorRailRaw] = await Promise.all([
+    loadSessionWallHistory(latest, ticker, horizon),
+    prior.length ? loadMultiSessionWallHistory(ticker, horizon, prior) : Promise.resolve([]),
+  ]);
+  const priorRail = markHistorical(
+    decimateWallHistory(priorRailRaw, PRIOR_SESSION_DECIMATION_STEP_SEC, {
+      maxLevelsPerSide: PRIOR_SESSION_MAX_LEVELS_PER_SIDE,
+    })
+  );
+  // Prior sessions never overlap the latest session in epoch time, so mergeWallHistory just orders
+  // them ahead of the latest rail (globally ascending) and defensively caps to MAX_HISTORY.
+  return mergeWallHistory(priorRail, latestRail);
 }
 
 /**

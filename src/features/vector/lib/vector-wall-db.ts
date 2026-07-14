@@ -86,3 +86,41 @@ export async function loadSessionWallHistoryFromDb(
     return [];
   }
 }
+
+/**
+ * BATCH-load the durable rails for MANY sessions in ONE query (GAP A multi-session seed).
+ * The per-session loader above costs one round-trip per session; an N-session cold read (Redis
+ * only hot-caches ~72h, so most prior sessions always miss) would be N sequential round-trips on
+ * the SSR path. `session_ymd = ANY($2)` collapses that to one. Returns a map keyed by session_ymd
+ * with each session's samples ascending by bucket; missing sessions are simply absent. Never throws
+ * — empty map on any guard miss or DB error, mirroring the single-session loader's degrade contract.
+ */
+export async function loadSessionsWallHistoryFromDb(
+  sessionYmds: string[],
+  ticker = "SPX"
+): Promise<Map<string, WallHistorySample[]>> {
+  const out = new Map<string, WallHistorySample[]>();
+  const sessions = sessionYmds.filter(Boolean);
+  if (!sessions.length || !dbConfigured()) return out;
+  try {
+    const res = await dbQuery<WallRow & { session_ymd: string }>(
+      `
+      SELECT session_ymd, bucket_time, walls, gamma_flip, vex_walls, vex_flip
+      FROM vector_wall_history
+      WHERE ticker = $1 AND session_ymd = ANY($2)
+      ORDER BY session_ymd ASC, bucket_time ASC
+      `,
+      [ticker, sessions]
+    );
+    for (const row of res.rows) {
+      const list = out.get(row.session_ymd);
+      const sample = rowToWallSample(row);
+      if (list) list.push(sample);
+      else out.set(row.session_ymd, [sample]);
+    }
+    return out;
+  } catch (err) {
+    console.warn(`[vector-wall-db] batch load failed ${ticker} (${sessions.length} sessions):`, err);
+    return out;
+  }
+}

@@ -8,6 +8,7 @@ import { ProductMark } from "@/components/marks/ProductMark";
 import type { VectorBar } from "@/features/vector/components/VectorChart";
 import type { VectorDarkPoolLevel, VectorWalls } from "@/lib/api";
 import type { WallHistorySample, VectorWallLens } from "@/features/vector/lib/vector-wall-history";
+import { latestSessionSlice } from "@/features/vector/lib/vector-wall-history";
 import type { VectorDteHorizon } from "@/features/vector/lib/vector-dte-horizon";
 import type { VectorPriceScaleMap } from "@/features/vector/lib/vector-price-scale-map";
 import type { VectorTimeframeMinutes } from "@/features/vector/lib/vector-bar-timeframes";
@@ -57,6 +58,9 @@ type Props = {
   initialVexFlip: number | null;
   initialDarkPoolLevels: VectorDarkPoolLevel[];
   sessionYmd: string;
+  /** Every session included in `initialBars`, ascending (last = displayed). Threaded to VectorChart
+   *  for the multi-session narrowed-horizon wall-history fetch (GAP A). */
+  initialSessionYmds?: string[];
   liveSession: boolean;
   /**
    * Embed seam (2026-07-13, member-directed desk consolidation): "chart-only" renders JUST the
@@ -103,6 +107,7 @@ export function VectorPageShell({
   initialVexFlip,
   initialDarkPoolLevels,
   sessionYmd,
+  initialSessionYmds,
   liveSession,
   embed,
   defaultDteHorizon,
@@ -140,7 +145,10 @@ export function VectorPageShell({
         spot: initialSpot,
         gammaFlip: initialGammaFlip,
         walls: initialWalls,
-        wallHistory: initialWallHistory,
+        // initialWallHistory is now a MULTI-DAY rail (GAP A). Wall-integrity's "held N% of session"
+        // must score against the LATEST session only, or a wall that held all of today would read
+        // "held 7% of session" because prior seeded days dilute the denominator.
+        wallHistory: latestSessionSlice(initialWallHistory),
       }),
     [initialSpot, initialGammaFlip, initialWalls, initialWallHistory]
   );
@@ -303,6 +311,7 @@ export function VectorPageShell({
           initialVexFlip={initialVexFlip}
           initialDarkPoolLevels={initialDarkPoolLevels}
           sessionYmd={sessionYmd}
+          initialSessionYmds={initialSessionYmds}
           liveSession={liveSession}
           defaultDteHorizon={defaultDteHorizon}
           defaultTimeframe={defaultTimeframe}
@@ -364,6 +373,7 @@ export function VectorPageShell({
               initialVexFlip={initialVexFlip}
               initialDarkPoolLevels={initialDarkPoolLevels}
               sessionYmd={sessionYmd}
+              initialSessionYmds={initialSessionYmds}
               liveSession={liveSession}
               defaultDteHorizon={defaultDteHorizon}
               defaultTimeframe={defaultTimeframe}

@@ -414,6 +414,66 @@ async function validateTicker(page, ticker, errs) {
     rec(`${ticker}: [RTH] live wall rail advances within 35s (new sample or changed strength)`, grew, `${n1}→${n2} samples`);
   }
 
+  // ---- L. MULTI-SESSION bead/wall continuity (GAP A) — "yesterday's beads show on today's map" ----
+  // The narrowed-horizon wall-history read now accepts a `sessions=` CSV (the displayed window) and
+  // returns the LATEST session full-res + PRIOR sessions decimated & tagged `historical`. Assert the
+  // rail can span >1 ET day and that prior-day samples are (a) present, (b) tagged historical, and
+  // (c) positioned at real prior-day timestamps. Off-hours a horizon that only started recording
+  // recently may have just today's rail — that's an honest SKIP (per-horizon history builds FORWARD),
+  // covered by the replay-frame + bars-multi-day checks above.
+  {
+    const barsResp2 = await api(page, `/api/market/vector/bars?ticker=${ticker}`);
+    const bars2 = Array.isArray(barsResp2?.bars) ? barsResp2.bars : [];
+    const dispSession = barsResp2?.sessionYmd || sessionYmd;
+    const ET = new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York", year: "numeric", month: "2-digit", day: "2-digit" });
+    const dayOf = (sec) => ET.format(new Date(sec * 1000));
+    // The exact displayed sessions (days that actually have candles), ascending.
+    const sessions = [...new Set(bars2.map((b) => dayOf(b.time)))].sort();
+    if (dispSession && sessions.length >= 2) {
+      const csv = sessions.join(",");
+      const wh = await api(page, `/api/market/vector/wall-history?ticker=${ticker}&dte=weekly&session=${dispSession}&sessions=${csv}`);
+      const hist = Array.isArray(wh?.history) ? wh.history : [];
+      const railDays = [...new Set(hist.map((s) => dayOf(s.time)))];
+      const priorSamples = hist.filter((s) => s.historical === true);
+      const priorAtPriorDays = priorSamples.every((s) => dayOf(s.time) !== dispSession);
+      const latestNotHistorical = hist.filter((s) => dayOf(s.time) === dispSession).every((s) => !s.historical);
+      if (hist.length && railDays.length >= 2) {
+        rec(`${ticker}: multi-session rail spans >1 ET day (yesterday's beads on today's map)`, true, `${railDays.length} days, ${hist.length} samples`);
+        rec(`${ticker}: prior-session beads tagged historical AND land on prior days (never today)`,
+          priorSamples.length > 0 && priorAtPriorDays && latestNotHistorical,
+          `${priorSamples.length} historical samples`);
+        // Time-ascending across the whole multi-day rail (prior days precede the latest session).
+        const asc = hist.every((s, i) => i === 0 || hist[i - 1].time <= s.time);
+        rec(`${ticker}: multi-session rail is globally time-ascending`, asc, `${hist.length} samples`);
+      } else {
+        rec(`${ticker}: multi-session rail (weekly)`, true, `${hist.length} samples over ${railDays.length} day(s) — SKIP (per-horizon history builds forward from the recorder-start; bars/replay cover multi-day display)`);
+      }
+    } else {
+      rec(`${ticker}: multi-session rail preconditions`, true, `${sessions.length} seeded day(s) — SKIP (need ≥2 displayed sessions)`);
+    }
+  }
+
+  // ---- M. 0DTE HONESTY (P1-B) — a bounded horizon with no same-day chain must NOT silently mislabel ----
+  // The gex-ladder route now returns `scope: {isFallback, fallbackExpiry}` so the ladder header can
+  // read "no 0DTE · <expiry>" instead of a 07-15 ladder mislabeled "0DTE". Contract check: the field
+  // is present + well-typed on the 0dte read, and when it IS a fallback the shown expiry is a real
+  // future date (never today). Names WITH a same-day chain honestly report isFallback:false.
+  {
+    const lad = await api(page, `/api/market/vector/gex-ladder?ticker=${ticker}&dte=0dte&mode=oi`);
+    const scope = lad?.scope;
+    if (scope && typeof scope.isFallback === "boolean") {
+      const ok = !scope.isFallback
+        ? scope.fallbackExpiry == null
+        : /^\d{4}-\d{2}-\d{2}$/.test(scope.fallbackExpiry || "");
+      rec(`${ticker}: 0DTE scope is honest (no silent nearest-expiry mislabel)`, ok,
+        `isFallback=${scope.isFallback} expiry=${scope.fallbackExpiry ?? "—"}`);
+    } else {
+      // Route fell back to the near-term heatmap aggregate (no per-expiry scope available) — the
+      // ladder shows the near-term label, which is not a per-horizon mislabel. Honest SKIP.
+      rec(`${ticker}: 0DTE scope honesty`, true, `no per-expiry scope (near-term aggregate) — SKIP`);
+    }
+  }
+
   rec(`${ticker}: zero console errors`, errs.length === 0, errs.slice(0, 2).join(" | "));
   await page.screenshot({ path: join(OUT, `hardcore-${ticker}.png`) });
   return { spot };

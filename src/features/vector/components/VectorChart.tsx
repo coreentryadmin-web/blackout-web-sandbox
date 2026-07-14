@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   createChart,
   createSeriesMarkers,
@@ -62,13 +62,15 @@ import {
   bucketWallHistoryForInterval,
   composeHorizonTrail,
   hasVexInHistory,
+  isRebirthGap,
+  latestSessionSlice,
   liveTrailAnchorSec,
   mergeWallHistory,
   narrowedHorizonTrail,
   pickActiveStrikes,
   pickReplayTrailSource,
   strikeTrailLifecycle,
-  trimHistoryForLiveTrails,
+  trailHistoryForLiveDisplay,
   type StrikeTrail,
   type VectorWallLens,
   type WallHistorySample,
@@ -172,6 +174,13 @@ const STALE_TRAIL_FADE = 0.4;
 /** Extra opacity added to a wall's BIRTH bead (its first observed candle) so the moment/price a
  *  new wall forms visibly pops out of its trail rather than looking identical to every other bead. */
 const BIRTH_BEAD_ALPHA_BOOST = 0.35;
+/** Opacity/size multiplier for a PRIOR-session (historical) bead in the MULTI-DAY rail (GAP A). A
+ *  frozen prior-day cluster reads as quieter recorded context than today's live/forming column, but
+ *  stays clearly visible (0.55 — far brighter than a modeled ghost's 0.15, since these ARE real
+ *  observed samples, just from an earlier session). Size dims a touch (0.85) so today's beads read
+ *  as the foreground the eye lands on. */
+const HISTORICAL_ALPHA_SCALE = 0.55;
+const HISTORICAL_SIZE_SCALE = 0.85;
 
 function chartIsFollowingLive(chart: IChartApi): boolean {
   const pos = chart.timeScale().scrollPosition();
@@ -194,6 +203,10 @@ type Props = {
   initialVexFlip: number | null;
   initialDarkPoolLevels: VectorDarkPoolLevel[];
   sessionYmd: string;
+  /** Every session in `initialBars`, ascending (last = displayed session). Drives the multi-session
+   *  narrowed-horizon wall-history fetch so 0DTE/weekly/monthly show prior-day clusters too (GAP A).
+   *  Absent → single-session fetch (backward compatible). */
+  initialSessionYmds?: string[];
   liveSession: boolean;
   onFreshness?: (updatedAt: number) => void;
   onWallEventsChange?: (events: VectorWallEvent[]) => void;
@@ -772,8 +785,15 @@ function buildWallBeadMarkers(
       // — and a full-width reconstruction reads as a quiet underlay, not axis-to-axis walls.
       // Observed beads (modeled falsy) are unchanged.
       const modeled = p.modeled === true;
-      const alphaScale = (modeled ? MODELED_ALPHA_SCALE : 1) * staleFade;
-      const size = markerSizeForPctRel(p.pct, maxPct) * (modeled ? 0.6 : 1);
+      // Prior-session (historical) beads in the multi-day rail dim to HISTORICAL_ALPHA_SCALE so
+      // today's live/forming column reads as the foreground (GAP A). Modeled ghosting wins when both
+      // apply (a reconstructed prior sample is quieter still). Observed current-session beads (both
+      // flags falsy) are unchanged — canonical rendering preserved.
+      const historical = p.historical === true && !modeled;
+      const provenanceAlpha = modeled ? MODELED_ALPHA_SCALE : historical ? HISTORICAL_ALPHA_SCALE : 1;
+      const provenanceSize = modeled ? 0.6 : historical ? HISTORICAL_SIZE_SCALE : 1;
+      const alphaScale = provenanceAlpha * staleFade;
+      const size = markerSizeForPctRel(p.pct, maxPct) * provenanceSize;
       const coreAlpha = alphaForPctRel(p.pct, maxPct) * alphaScale;
       const glowAlpha = glowAlphaForPctRel(p.pct, maxPct) * alphaScale;
       // Halo + core — Skylit-style glow on dominant walls (per-bead size + opacity).
@@ -800,9 +820,12 @@ function buildWallBeadMarkers(
       // REBIRTH: a wall that dropped out of the dominant set and re-formed later resumes after a
       // GAP in its bead row (trailsByStrike only emits buckets where the strike was dominant, so a
       // dead stretch is simply missing points). Boost the resume bead exactly like a birth — the
-      // member sees the candle where the wall came BACK, not a silent continuation. Gap threshold
-      // is 2 candle intervals so honest single-bucket jitter doesn't spray fake rebirth cues.
-      const reborn = i > 0 && p.time - points[i - 1]!.time > intervalSec * 2;
+      // member sees the candle where the wall came BACK, not a silent continuation. isRebirthGap
+      // bounds the gap to an INTRADAY one (> 2 candle intervals but < a session break): in the
+      // multi-day rail (GAP A) the overnight gap between two sessions is market closure, not a wall
+      // dying and re-forming, so a naked `> intervalSec*2` would spray one fake rebirth cue per
+      // strike on the first bucket of every new day.
+      const reborn = i > 0 && isRebirthGap(p.time - points[i - 1]!.time, intervalSec);
       // Suppress the birth boost when the trail starts at the EARLIEST drawn bucket — that "birth"
       // is unknowable (live-window trim edge or session open): the wall may have existed before the
       // window we're drawing. Only a birth strictly INSIDE the drawn window is a real formation cue.
@@ -885,6 +908,7 @@ export function VectorChart({
   initialVexFlip,
   initialDarkPoolLevels,
   sessionYmd,
+  initialSessionYmds,
   liveSession,
   onFreshness,
   onWallEventsChange,
@@ -1122,6 +1146,16 @@ export function VectorChart({
   // the count is unchanged, so this re-renders at most once per new bar / timeframe switch.
   const [displayBarCount, setDisplayBarCount] = useState<number>(initialBars.length);
 
+  // Multi-session window (GAP A) for the narrowed-horizon wall-history fetch: the exact displayed
+  // sessions as a stable CSV, so the fetch effect's dep is value-stable (not a fresh array identity
+  // each render) and 0dte/weekly/monthly show prior-day clusters at their real timestamps too. Only
+  // set when there's genuinely more than one session to show; otherwise the single-session fetch
+  // (session=) path is used unchanged.
+  const sessionsParam = useMemo(
+    () => (initialSessionYmds && initialSessionYmds.length > 1 ? initialSessionYmds.join(",") : ""),
+    [initialSessionYmds]
+  );
+
   useEffect(() => {
     // Replay honesty for the structure feed: while scrubbed to 9:35 the ticker
     // must not display events that happened at 11:00 — filter to the cursor.
@@ -1198,7 +1232,12 @@ export function VectorChart({
     const history: WallHistorySample[] =
       composeHorizonTrail(recordedTrail, currentColumn) ??
       (liveSessionRef.current && !replayModeRef.current
-        ? trimHistoryForLiveTrails(
+        ? // MULTI-DAY rail (GAP A): only the LATEST session is trimmed to the live lookback window
+          // (so migrated strikes don't leave stale full-width rows across today) — PRIOR sessions
+          // always draw in full as frozen historical clusters ("today's chart shows yesterday's
+          // beads"). trailHistoryForLiveDisplay owns that split; a single-session rail degrades to
+          // the old plain live trim, so nothing changes for a name with no prior-day history.
+          trailHistoryForLiveDisplay(
             wallHistoryRef.current,
             undefined,
             liveTrailAnchorSec(wallHistoryRef.current, minuteBarsRef.current.map((b) => b.time))
@@ -1778,7 +1817,11 @@ export function VectorChart({
   // strike the rail did track still gets full persistence credit. Deduped by tier+score.
   const emitWallIntegrity = useCallback(() => {
     if (!onWallIntegrityChange) return;
-    const integ = scoreTopWalls(liveGexWalls(), wallHistoryRef.current);
+    // latestSessionSlice: wallHistoryRef is now a MULTI-DAY rail (GAP A). Integrity's "held N% of
+    // session" persistence must score against the LATEST session only — scoring the whole multi-day
+    // buffer would read a wall that held ALL of today as "held 7% of session" because prior seeded
+    // days dilute the denominator.
+    const integ = scoreTopWalls(liveGexWalls(), latestSessionSlice(wallHistoryRef.current));
     const key = `${integ.call?.strike ?? "-"}:${integ.call?.tier ?? "-"}:${integ.call?.score ?? "-"}|${integ.put?.strike ?? "-"}:${integ.put?.tier ?? "-"}:${integ.put?.score ?? "-"}`;
     if (key === lastWallIntegrityRef.current) return;
     lastWallIntegrityRef.current = key;
@@ -1976,9 +2019,13 @@ export function VectorChart({
     // repaint. Guarded on the still-active horizon + not cancelled, same as fetchScoped.
     const fetchHistory = async () => {
       try {
+        // MULTI-SESSION (GAP A): pass the whole displayed window so the narrowed-horizon rail shows
+        // yesterday's (and older) clusters too — latest session at full res + prior sessions
+        // decimated/tagged historical by the route. `session=` stays for the single-session fallback.
         const res = await fetch(
           `/api/market/vector/wall-history?ticker=${encodeURIComponent(ticker)}&dte=${dteHorizon}` +
-            `&session=${encodeURIComponent(sessionYmd)}`
+            `&session=${encodeURIComponent(sessionYmd)}` +
+            (sessionsParam ? `&sessions=${encodeURIComponent(sessionsParam)}` : "")
         );
         if (cancelled || dteHorizonRef.current !== dteHorizon || !res.ok) return;
         const data = (await res.json()) as { history?: WallHistorySample[] };
@@ -2034,6 +2081,7 @@ export function VectorChart({
     dteHorizon,
     ticker,
     sessionYmd,
+    sessionsParam,
     liveSession,
     // chartReady: at mount this effect runs BEFORE the chart-creation effect builds the series, so
     // repaintLive() bails on !seriesRef.current and the terminal stays blank until the first SSE

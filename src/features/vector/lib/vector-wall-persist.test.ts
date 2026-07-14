@@ -3,6 +3,8 @@ import assert from "node:assert/strict";
 import {
   appendSessionWallSample,
   loadSessionWallHistory,
+  loadMultiSessionWallHistory,
+  loadRecentWallHistory,
   persistWallSampleDebounced,
   _resetWallPersistDebounceForTest,
 } from "./vector-wall-persist";
@@ -84,4 +86,42 @@ test("wallRailStorageId: 'all' is the bare ticker; narrowed horizons get a compo
   assert.equal(wallRailStorageId("NVDA"), "NVDA");
   assert.equal(wallRailStorageId("NVDA", "weekly"), "NVDA::weekly");
   assert.equal(wallRailStorageId("SPX", "0dte"), "SPX::0dte");
+});
+
+// ---- MULTI-SESSION continuity (GAP A) — reads span >1 session, prior days decimated + tagged ----
+
+test("loadMultiSessionWallHistory: concatenates multiple sessions in ascending time order", async () => {
+  const T = "MULTISESS";
+  await appendSessionWallSample("2099-03-05", { time: 1000, walls: walls(100, 90) }, T, "weekly");
+  await appendSessionWallSample("2099-03-05", { time: 1060, walls: walls(101, 90) }, T, "weekly");
+  await appendSessionWallSample("2099-03-06", { time: 90000, walls: walls(110, 95) }, T, "weekly");
+  // Sessions passed out of order — the loader sorts + concatenates them time-ascending.
+  const rail = await loadMultiSessionWallHistory(T, "weekly", ["2099-03-06", "2099-03-05"]);
+  assert.deepEqual(rail.map((s) => s.time), [1000, 1060, 90000]);
+  // A horizon with nothing recorded stays an honest empty gap (never fabricated).
+  assert.deepEqual(await loadMultiSessionWallHistory(T, "monthly", ["2099-03-05"]), []);
+  assert.deepEqual(await loadMultiSessionWallHistory(T, "weekly", []), []);
+});
+
+test("loadRecentWallHistory: latest session full-res + PRIOR sessions decimated & tagged historical", async () => {
+  const T = "RECENTSESS";
+  // Prior session: six 15s samples all inside ONE 2-min bucket → decimated to the bucket's LAST.
+  for (let i = 0; i < 6; i++) {
+    await appendSessionWallSample("2099-04-01", { time: 1000 + i * 15, walls: walls(100 + i, 90) }, T, "0dte");
+  }
+  // Latest session: kept at full resolution, NOT tagged historical.
+  await appendSessionWallSample("2099-04-02", { time: 200000, walls: walls(110, 95) }, T, "0dte");
+  await appendSessionWallSample("2099-04-02", { time: 200060, walls: walls(111, 95) }, T, "0dte");
+
+  const rail = await loadRecentWallHistory(T, "0dte", ["2099-04-01", "2099-04-02"]);
+  const prior = rail.filter((s) => s.historical);
+  const latest = rail.filter((s) => !s.historical);
+  assert.equal(prior.length, 1, "6 prior samples in one 120s bucket decimate to 1");
+  assert.equal(prior[0].walls.callWalls[0].strike, 105, "decimation keeps the bucket's LAST sample");
+  assert.equal(latest.length, 2, "latest session kept full-res");
+  // Globally time-ascending (prior day precedes the latest session).
+  assert.ok(rail.every((s, i) => i === 0 || rail[i - 1].time <= s.time));
+  // Single-session window: no prior rail, nothing tagged historical.
+  const single = await loadRecentWallHistory(T, "0dte", ["2099-04-02"]);
+  assert.ok(single.length >= 2 && single.every((s) => !s.historical));
 });

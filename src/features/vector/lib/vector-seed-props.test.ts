@@ -27,6 +27,8 @@ test("both Vector surfaces load their seed via the shared loadVectorSeedProps he
     "reconstructSessionRail",
     "seedWallHistoryForDisplay",
     "loadSessionWallHistory",
+    // GAP A multi-session bead/wall continuity: the prior-session rail load is a seed internal too.
+    "loadMultiSessionWallHistory",
   ];
   for (const token of pipelineInternals) {
     assert.equal(

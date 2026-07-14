@@ -19,8 +19,15 @@ import {
   trailForGammaFlip,
   trailForRank,
   trimHistoryForLiveTrails,
+  trailHistoryForLiveDisplay,
   LIVE_TRAIL_LOOKBACK_SEC,
   hasVexInHistory,
+  isRebirthGap,
+  latestSessionSlice,
+  decimateWallHistory,
+  markHistorical,
+  SESSION_GAP_SEC,
+  PRIOR_SESSION_DECIMATION_STEP_SEC,
   type WallHistorySample,
 } from "./vector-wall-history";
 import type { GexWalls } from "@/lib/providers/gex-wall-levels";
@@ -46,14 +53,17 @@ test("recordWallSample: replaces the last entry when the bar is still forming (s
   assert.equal(h2[0].walls.callWalls[0].strike, 6805);
 });
 
-test("recordWallSample: trims from the front once the history exceeds the cap", () => {
+test("recordWallSample: trims from the front once the history exceeds the multi-day cap (4800)", () => {
+  // MAX_HISTORY = 4800 (multi-day rail budget: latest session full-res + ~14 prior sessions
+  // decimated). Feed 5000 buckets → front-trimmed to the newest 4800, oldest days fall off first.
   let history: WallHistorySample[] = [];
-  for (let i = 0; i < 2000; i++) {
+  const N = 5000;
+  for (let i = 0; i < N; i++) {
     history = recordWallSample(history, { time: i * 15, walls: walls([6800], [6700]) });
   }
-  assert.equal(history.length, 1920);
-  assert.equal(history[0].time, 80 * 15);
-  assert.equal(history[history.length - 1].time, 1999 * 15);
+  assert.equal(history.length, 4800);
+  assert.equal(history[0].time, (N - 4800) * 15);
+  assert.equal(history[history.length - 1].time, (N - 1) * 15);
 });
 
 test("trailForRank: projects one rank's strike/pct across the history, in order", () => {
@@ -341,15 +351,17 @@ test("mergeModeledUnderlay: result is sorted by time regardless of input orderin
 });
 
 test("mergeModeledUnderlay: caps to MAX_HISTORY by keeping the newest tail", () => {
-  // 2100 modeled buckets (> the 1920 cap) → tail-sliced to the most recent 1920.
-  const modeled: WallHistorySample[] = Array.from({ length: 2100 }, (_, i) => ({
+  // 5000 modeled buckets (> the 4800 multi-day cap) → tail-sliced to the most recent 4800.
+  const N = 5000;
+  const CAP = 4800;
+  const modeled: WallHistorySample[] = Array.from({ length: N }, (_, i) => ({
     time: i * 15,
     walls: walls([6800], [6700]),
   }));
   const merged = mergeModeledUnderlay([], modeled);
-  assert.equal(merged.length, 1920);
-  assert.equal(merged[0].time, (2100 - 1920) * 15);
-  assert.equal(merged[merged.length - 1].time, 2099 * 15);
+  assert.equal(merged.length, CAP);
+  assert.equal(merged[0].time, (N - CAP) * 15);
+  assert.equal(merged[merged.length - 1].time, (N - 1) * 15);
 });
 
 test("trailsByStrike: threads the sample's modeled flag onto each emitted trail point", () => {
@@ -528,4 +540,136 @@ test("composeHorizonTrail: recorded per-horizon trail preferred, current column 
   // Neither → null so the caller draws the blended "All" rail (beads never blank on a toggle).
   assert.equal(composeHorizonTrail([], []), null);
   assert.equal(composeHorizonTrail(null, null), null);
+});
+
+// ============================================================================
+// MULTI-SESSION bead/wall continuity (GAP A — "if a stock was open yesterday,
+// today's chart should show yesterday's (and older) beads/walls on the map").
+// ============================================================================
+
+const DAY = 24 * 60 * 60;
+
+test("isRebirthGap: true for an intraday gap, false for a session break or a tiny jitter", () => {
+  const interval = 60; // 1m candles
+  assert.equal(isRebirthGap(interval * 3, interval), true); // 3 candles missing → reborn
+  assert.equal(isRebirthGap(interval, interval), false); // 1-candle jitter → not a death
+  // An overnight session gap is market closure, NOT a wall dying and re-forming.
+  assert.equal(isRebirthGap(SESSION_GAP_SEC + 1000, interval), false);
+  assert.equal(isRebirthGap(DAY, interval), false);
+});
+
+test("latestSessionSlice: returns only the newest session after the last session gap", () => {
+  const base = 1_700_000_000;
+  const day1: WallHistorySample[] = [
+    { time: base, walls: walls([100], [90]) },
+    { time: base + 60, walls: walls([101], [90]) },
+  ];
+  const day2Start = base + DAY; // > SESSION_GAP_SEC after day1's tail
+  const day2: WallHistorySample[] = [
+    { time: day2Start, walls: walls([110], [95]) },
+    { time: day2Start + 60, walls: walls([111], [95]) },
+  ];
+  const rail = [...day1, ...day2];
+  const latest = latestSessionSlice(rail);
+  assert.deepEqual(latest.map((s) => s.time), day2.map((s) => s.time));
+  // A single-session rail (no gap) is returned unchanged.
+  assert.deepEqual(latestSessionSlice(day1), day1);
+  assert.deepEqual(latestSessionSlice([]), []);
+});
+
+test("decimateWallHistory: keeps the LAST sample per bucket and slims ladders", () => {
+  const base = 1_699_999_920; // 120-aligned so the 8 samples land in one 120s bucket
+  // Eight 15s samples inside ONE 120s bucket; the LAST must survive (a wall that DIED mid-bucket
+  // stays absent from the kept sample).
+  const samples: WallHistorySample[] = [];
+  for (let i = 0; i < 8; i++) samples.push({ time: base + i * 15, walls: walls([100 + i], [90]) });
+  const out = decimateWallHistory(samples, 120);
+  assert.equal(out.length, 1);
+  assert.equal(out[0]!.time, base + 7 * 15); // the LAST sample's time
+  assert.equal(out[0]!.walls.callWalls[0]!.strike, 107);
+
+  // Slimming keeps only the strongest N per side (by |pct|), preserving strike order.
+  const deep: WallHistorySample = {
+    time: base,
+    walls: {
+      callWalls: [
+        { strike: 100, pct: 1 },
+        { strike: 105, pct: 9 },
+        { strike: 110, pct: 3 },
+        { strike: 115, pct: 7 },
+      ],
+      putWalls: [{ strike: 90, pct: 8 }],
+    },
+  };
+  const slim = decimateWallHistory([deep], 0, { maxLevelsPerSide: 2 });
+  assert.deepEqual(slim[0]!.walls.callWalls.map((l) => l.strike), [105, 115]); // top-2 by |pct|, strike order
+});
+
+test("markHistorical: tags every sample historical without mutating input", () => {
+  const src: WallHistorySample[] = [{ time: 1, walls: walls([100], [90]) }];
+  const out = markHistorical(src);
+  assert.equal(out[0]!.historical, true);
+  assert.equal(src[0]!.historical, undefined); // pure — input untouched
+});
+
+test("trailsByStrike carries the historical flag onto emitted points", () => {
+  const base = 1_700_000_000;
+  const rail: WallHistorySample[] = [
+    { time: base, walls: walls([100], [90]), historical: true },
+    { time: base + DAY, walls: walls([100], [90]) },
+  ];
+  const map = trailsByStrike(rail, "callWalls", "gex");
+  const pts = map.get(100)!;
+  assert.equal(pts[0]!.historical, true); // prior-session point stays historical
+  assert.equal(pts[1]!.historical, undefined); // latest-session point is current
+});
+
+test("trailHistoryForLiveDisplay: prior sessions kept in full, only the latest session is trimmed", () => {
+  const base = 1_700_000_000;
+  const prior: WallHistorySample[] = [
+    { time: base, walls: walls([100], [90]), historical: true },
+    { time: base + 60, walls: walls([101], [90]), historical: true },
+  ];
+  const latestStart = base + DAY;
+  const latest: WallHistorySample[] = [
+    { time: latestStart, walls: walls([110], [95]) }, // old within the latest session
+    { time: latestStart + 40 * 60, walls: walls([111], [95]) }, // recent
+  ];
+  const rail = [...prior, ...latest];
+  // 10-min lookback anchored at the latest tail: the latest session's early sample is trimmed away,
+  // but BOTH prior-session samples survive (frozen historical clusters always draw).
+  const shown = trailHistoryForLiveDisplay(rail, 10 * 60, latestStart + 40 * 60);
+  const times = shown.map((s) => s.time);
+  assert.ok(times.includes(base) && times.includes(base + 60), "prior session retained in full");
+  assert.ok(!times.includes(latestStart), "latest session's early sample trimmed by live window");
+  assert.ok(times.includes(latestStart + 40 * 60), "latest session's recent sample kept");
+  // Single-session rail degrades to the plain live trim (no prior sessions to preserve).
+  const single = trailHistoryForLiveDisplay(latest, 10 * 60, latestStart + 40 * 60);
+  assert.deepEqual(single, trimHistoryForLiveTrails(latest, 10 * 60, latestStart + 40 * 60));
+});
+
+test("backfillRailPrefix: measures the latest-session gap, not combined[0] (multi-day rail)", () => {
+  const base = 1_700_000_000;
+  const latestStart = base + DAY;
+  // Observed rail LEADS with a prior-day sample; the latest session's first observed sample is 30m
+  // after its open (a real morning gap). The modeled prefix must fill that gap and NOT be disabled
+  // by the far-earlier prior-day sample.
+  const observed: WallHistorySample[] = [
+    { time: base, walls: walls([100], [90]), historical: true }, // prior day
+    { time: latestStart + 30 * 60, walls: walls([110], [95]) }, // latest session, 30m late
+  ];
+  const modeled: WallHistorySample[] = [
+    { time: latestStart, walls: walls([109], [95]) },
+    { time: latestStart + 10 * 60, walls: walls([109], [95]) },
+  ];
+  const out = backfillRailPrefix(observed, modeled, latestStart, 20 * 60);
+  const times = out.map((s) => s.time);
+  assert.ok(times.includes(latestStart), "modeled prefix inserted to fill the latest morning gap");
+  assert.equal(out.find((s) => s.time === latestStart)!.modeled, true); // ghost, honestly labeled
+  assert.ok(times.includes(base), "prior-day observed sample untouched");
+  assert.equal(out.find((s) => s.time === base)!.modeled, false); // observed stays observed
+});
+
+test("PRIOR_SESSION_DECIMATION_STEP_SEC is a sane 2-minute step", () => {
+  assert.equal(PRIOR_SESSION_DECIMATION_STEP_SEC, 120);
 });

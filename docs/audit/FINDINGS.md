@@ -1466,3 +1466,107 @@ all call walls → call rows.
 **Tests:** `vector-gex-ladder.test.ts` +3 (override crowns canonical wall / falls back when absent or
 wrong-signed / omitting preserves self-crown) — 15 ladder tests pass; #347 golden values-unchanged snapshot
 intact. Full suite **3669 pass / 0 fail**; tsc + eslint clean; `npm run build` green.
+
+## 2026-07-14 — Vector MULTI-SESSION bead/wall continuity + 2 P1 correctness fixes — PR feat/vector-multiday-continuity (DRAFT)
+
+User-directed: "if a stock was open yesterday, today's chart should show yesterday's (and older)
+beads/walls on the map." Re-implemented CLEAN on current trunk (`cecb49f`), preserving the dense
+ladder (#347), Flow lens (#349) and cross-surface coherence (#352) — golden ladder test +
+vector-hardcore stay green, canonical values unchanged. Design intent read from the stale reference
+`origin/fix/vector-multiday-replay` (58 commits behind); NOT rebased.
+
+### GAP A — paint prior sessions on the chart (the DISPLAY half) — BUILT, tested
+- **Symptom:** today's chart drew only the CURRENT session's rail (+ the SSR "all" rail). A name that
+  traded yesterday showed none of yesterday's/older beads even though the candle seed already spans
+  ~22 sessions (#343) — the multi-day chart had a single-day bead rail.
+- **Root cause:** the whole pipeline was single-session. `MAX_HISTORY = 1920` (~one RTH session)
+  silently truncated any multi-session seed back to ~1 day; `loadVectorSeedProps` loaded only
+  `loadSessionWallHistory(sessionYmd)`; and `refreshTrails` trimmed the WHOLE rail to the 45-min live
+  lookback during RTH, which would have hidden prior sessions even if they were seeded.
+- **Fix:**
+  - `vector-wall-history.ts`: `MAX_HISTORY` 1920→**4800** (latest session full-res + ~14 prior
+    decimated); new `SESSION_GAP_SEC` (8h), `latestSessionSlice`, `isRebirthGap`, `decimateWallHistory`
+    (last-per-bucket + ladder-slim), `markHistorical`, `trailHistoryForLiveDisplay` (splits the rail:
+    prior sessions ALWAYS draw in full as frozen clusters, only the LATEST session is trimmed to the
+    live window). New `historical` flag on `WallHistorySample`/`StrikeTrailPoint`, threaded through
+    `trailsByStrike`.
+  - `vector-wall-db.ts`: `loadSessionsWallHistoryFromDb` — ONE batched `session_ymd = ANY($2)` read
+    for many sessions (not N round-trips).
+  - `vector-wall-persist.ts`: `loadMultiSessionWallHistory` (Redis-first per session → one batched PG
+    read for misses, re-warms Redis) and `loadRecentWallHistory` (latest full-res + prior decimated &
+    tagged historical) — the reusable multi-session reader.
+  - `vector-seed-props.ts`: seeds the "all" rail across every displayed session (prior decimated,
+    tagged historical, merged disjoint-in-time under the latest session + hub buffer + reconstruction
+    prefix). Reconstruction-gap check + `backfillRailPrefix` now measure the first observed sample
+    **at/after the latest session start** (combined[0] can be a prior day in a multi-day rail).
+    Threads `initialSessionYmds`.
+  - `VectorChart.tsx`: consumes `initialSessionYmds`; `refreshTrails` uses `trailHistoryForLiveDisplay`;
+    the marker layer dims prior-session beads (HISTORICAL_ALPHA_SCALE 0.55 / size 0.85) distinct from
+    the live/forming column; rebirth cue uses `isRebirthGap` (no fake "wall re-formed" at the overnight
+    boundary); wall-integrity scores `latestSessionSlice` only. Narrowed-horizon fetch passes
+    `sessions=` so 0DTE/weekly/monthly show prior-day clusters too.
+  - `wall-history` route: accepts a validated/capped `sessions` CSV → `loadRecentWallHistory`.
+  - `VectorPageShell.tsx`: threads `initialSessionYmds`; surface-seed integrity scores
+    `latestSessionSlice(initialWallHistory)`.
+  - Replay: `buildReplayTimeline` already unions history+bar times, so with the multi-session seed the
+    replay scrubber spans days — honest multi-day replay, no change needed.
+- **Payload discipline:** prior sessions decimated to ~1 sample/2min (`PRIOR_SESSION_DECIMATION_STEP_SEC`)
+  with ladders slimmed to 6/side — render-lossless (bead dominance draws top-3/side; legend/banner read
+  top few). Budget bounded by the 4800 cap (oldest days fall off first, never today's tail).
+
+### GAP B — recording/retention DEPTH (the DATA half) — ROOT-CAUSED, forward-fixed
+- **Live evidence:** SPX weekly wall-history `07-14=25, 07-13(Mon)=568, 07-10(Fri)=0`; UBER
+  `07-14=5, 07-13=3, 07-10=0` — per-horizon recorded history reached only ~1 trading day back.
+- **Root cause (from the recorder + retention + read code):** NOT retention (30d `#342`, prunes by
+  `updated_at`; a 07-10 row would be well inside the window) and NOT session-keying. It is that
+  per-horizon composite rails (`SPX::weekly`, PR #186) + the live 15s per-horizon recorder
+  (`persistWallSampleDebounced(…, r.horizon)` in `vector-snapshot.ts:511`) started recording only
+  recently (~Monday), so older sessions simply have no per-horizon rows — AND there was no
+  MULTI-SESSION READ wiring the accumulated sessions into the display. The recording pipeline is
+  sound and accumulates forward; the missing half was the read.
+- **Fix:** the GAP A read path (`loadMultiSessionWallHistory` / `loadRecentWallHistory` + the
+  `sessions=` route param + multi-session seed) now retains + reads N sessions correctly. History
+  **builds forward** from this fix — we do NOT fabricate past sessions that were never recorded
+  (prior days with no rows stay an honest gap; the chart still shows their candles). Retention already
+  holds 30d (prod 90d), so once recording accrues, the multi-day rail deepens automatically.
+
+### P1-A — session technicals anchored to the 04:00 PREMARKET open, not 09:30 RTH (every equity/ETF) — FIXED, tested
+- **Severity:** P1 (wrong data members see). **Live:** OR-H TSLA 395.60 vs true-RTH 400.82 (−5.2pt),
+  NVDA 205.30 vs 208.34, SPY 748.99 vs 751.52, ASTS 68.81 vs 71.39. SPX (cash index, no premarket)
+  was correct by accident.
+- **Root cause:** `vector-key-levels.ts` `lastSessionBars`/`openingRange`/`sessionHodLod` grouped by ET
+  CALENDAR DAY with NO RTH gate, and `vector-indicators.ts` `vwapSeries` reset only at the ET-day
+  boundary — the equity/ETF minute feed includes premarket (from 04:00 ET), so "the session" began at
+  04:00.
+- **Fix:** new `vector-rth-window.ts` (`isRthBarSec`, `etMinutesOfDaySec`, pure). `sessionHodLod` +
+  `openingRange` (and thus `fib`) scope via new `rthSessionBars` (last ET day filtered to [09:30,16:00)
+  ET); `vwapSeries` only accumulates RTH bars (premarket → null, after-hours carries the frozen close,
+  next ET day resets). Multi-session-safe: still anchors to the CURRENT RTH session. SPX unchanged
+  (all its bars are RTH). Bars WITHOUT a time keep legacy behaviour (old callers/tests).
+- **Evidence (tests):** `vector-key-levels.test.ts` +4 (premarket 999/1 never leak into HOD/LOD/OR/fib;
+  premarket-only → null); `vector-indicators.test.ts` +2 (VWAP null in premarket, anchors at 09:30,
+  RTH-only accumulation; after-hours frozen + next-day reset). Existing fixtures re-anchored to real
+  RTH timestamps (assertions unchanged). `vector-technicals`/`bie`/`spx` VWAP consumers unaffected
+  (they don't import the vector `vwapSeries`; SPX data is RTH-only anyway).
+
+### P1-B — "0DTE" silently shows the NEXT expiry for names with no same-day chain — FIXED, tested
+- **Severity:** P1 (wrong data). TSLA/NVDA have no 0DTE on a Tuesday (nearest 07-15) yet "0DTE"
+  rendered a full ladder/walls with NO signal.
+- **Root cause:** `vector-dte-horizon.ts` `expiriesForHorizon`'s honest fallback returned the single
+  NEAREST expiry unlabeled, so the nearest-expiry ladder rendered mislabeled as "0DTE".
+- **Fix:** new pure `resolveHorizonExpiries` returns `{ expiries, isFallback, fallbackExpiry }`
+  (`expiriesForHorizon` delegates — every existing caller byte-unchanged). `getHorizonStrikeTotals`
+  reports the `scope`; the `gex-ladder` route returns it; `VectorGexLadder` renders an honest amber
+  header ("no 0DTE · Jul 15", via new `horizonScopeShortLabel` + `formatExpiryShort`) instead of
+  "0DTE". Matches the bb4ddeb honest-gap intent (label, don't blank — walls never vanish).
+- **Evidence (tests):** `vector-dte-horizon.test.ts` +5 (in-window ≠ fallback; 0DTE no-same-day →
+  nearest + flagged; "all"/empty never fallback; label formatting; UTC-safe expiry format).
+
+### Validation
+- `npx tsc --noEmit` clean; **full `npm test` 3727 pass / 0 fail**; `npm run build` green; `eslint`
+  clean on changed files (one PRE-EXISTING `paintOverlays` exhaustive-deps warning, not introduced here).
+- `scripts/vector-hardcore-e2e.mjs` extended: **block L** (multi-session rail spans >1 ET day; prior
+  beads tagged historical + at prior-day timestamps; globally ascending; honest SKIP when a horizon's
+  history only built forward) and **block M** (0DTE scope honesty contract). Live-validate on the
+  deployed build is the coordinator's job post-merge (DRAFT PR, do not merge).
+- Live multi-session probe evidence (wall-history reads for 07-13 + 07-14) recorded in the PR body.
