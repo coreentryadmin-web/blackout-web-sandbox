@@ -5,6 +5,14 @@ import { useEffect, useRef, useState } from "react";
 import { buildGexLadder, type GexLadder, type GexLadderRow } from "@/features/vector/lib/vector-gex-ladder";
 import { dteHorizonLabel, type VectorDteHorizon } from "@/features/vector/lib/vector-dte-horizon";
 
+/**
+ * GEX signing lens. `oi` (DEFAULT) = our canonical view: static call+/put− weighted by OPEN
+ * INTEREST — "what's positioned". `flow` = the FLOW-GEX lens: each strike signed by TODAY'S
+ * directional traded flow (dealer short what customers bought at the ask, long what they sold at the
+ * bid) — "which way today's trading pushed dealers", the same lens tools like Skylit show.
+ */
+export type GexLensMode = "oi" | "flow";
+
 // Match the chart's bead colours exactly (VectorChart CALL_WALL_COLOR / PUT_WALL_COLOR) so the
 // ladder and the beads read as the same object: gold = call/resistance, purple = put/support.
 const CALL_COLOR = "#ffd60a";
@@ -31,7 +39,7 @@ type Props = {
   dteHorizon?: VectorDteHorizon;
 };
 
-type LadderResponse = { spot: number | null; asOf: string | null; ladder: GexLadder };
+type LadderResponse = { spot: number | null; asOf: string | null; ladder: GexLadder; mode?: GexLensMode };
 
 /**
  * Strike-ladder side panel — the dense per-strike net-GEX column a member scans alongside the
@@ -47,6 +55,11 @@ export function VectorGexLadder({ ticker, liveSession, initialSpot = null, dteHo
   const [spot, setSpot] = useState<number | null>(initialSpot);
   const [asOf, setAsOf] = useState<string | null>(null);
   const [state, setState] = useState<"loading" | "ready" | "error">("loading");
+  // GEX signing lens — OI (canonical, default) vs Flow (today's directional flow, Skylit parity).
+  // Switching refetches with `?mode=flow` and re-renders the SAME dense ladder off the flow-signed
+  // map. Kept local (not URL) so it's a per-panel view choice that doesn't perturb the chart.
+  const [mode, setMode] = useState<GexLensMode>("oi");
+  const [infoOpen, setInfoOpen] = useState(false);
   // Guard against a slow response for a PREVIOUS ticker landing after a switch and overwriting the
   // new ticker's ladder (same staleness class the chart's fetches guard with a ref check).
   const tickerRef = useRef(ticker);
@@ -58,7 +71,7 @@ export function VectorGexLadder({ ticker, liveSession, initialSpot = null, dteHo
     const load = async () => {
       try {
         const res = await fetch(
-          `/api/market/vector/gex-ladder?ticker=${encodeURIComponent(ticker)}&dte=${encodeURIComponent(dteHorizon)}`
+          `/api/market/vector/gex-ladder?ticker=${encodeURIComponent(ticker)}&dte=${encodeURIComponent(dteHorizon)}&mode=${mode}`
         );
         if (cancelled || tickerRef.current !== ticker) return;
         if (!res.ok) {
@@ -83,7 +96,7 @@ export function VectorGexLadder({ ticker, liveSession, initialSpot = null, dteHo
       cancelled = true;
       if (id) clearInterval(id);
     };
-  }, [ticker, liveSession, dteHorizon]);
+  }, [ticker, liveSession, dteHorizon, mode]);
 
   const rows = ladder.rows;
   // Index of the first row at/below spot — the spot marker slots ABOVE it (rows are strike-desc, so
@@ -100,7 +113,7 @@ export function VectorGexLadder({ ticker, liveSession, initialSpot = null, dteHo
   const centeredTickerRef = useRef<string | null>(null);
   // Re-centre on ticker OR horizon change — a narrowed DTE shifts the strike set, so the panel must
   // re-anchor on spot instead of holding the previous horizon's scroll position.
-  const centerKey = `${ticker}:${dteHorizon}`;
+  const centerKey = `${ticker}:${dteHorizon}:${mode}`;
   useEffect(() => {
     if (state !== "ready" || spot == null || rows.length === 0) return;
     if (centeredTickerRef.current === centerKey) return;
@@ -122,9 +135,69 @@ export function VectorGexLadder({ ticker, liveSession, initialSpot = null, dteHo
         <span className="vector-gex-ladder-title">GEX Ladder</span>
         <span className="vector-gex-ladder-sub">
           {spot != null ? `spot ${spot.toLocaleString("en-US", { maximumFractionDigits: 2 })}` : "—"}
-          <span className="vector-gex-ladder-scope"> · {dteHorizon === "all" ? "near-term" : dteHorizonLabel(dteHorizon)}</span>
+          <span className="vector-gex-ladder-scope">
+            {" · "}
+            {mode === "flow" ? "flow · all exp" : dteHorizon === "all" ? "near-term" : dteHorizonLabel(dteHorizon)}
+          </span>
         </span>
       </header>
+
+      {/* Lens toggle: canonical OI positioning (default) vs today's flow-signed dealer gamma
+          (Skylit parity). The ⓘ opens a plain-English explainer of the two lenses. */}
+      <div className="vector-gex-ladder-lens">
+        <div className="vector-gex-ladder-lens-toggle" role="group" aria-label="GEX signing lens">
+          <button
+            type="button"
+            className={clsx("vector-gex-ladder-lens-btn", mode === "oi" && "is-active")}
+            aria-pressed={mode === "oi"}
+            onClick={() => setMode("oi")}
+            title="Positioning — static call+/put− weighted by open interest (canonical)"
+          >
+            Positioning (OI)
+          </button>
+          <button
+            type="button"
+            className={clsx("vector-gex-ladder-lens-btn", mode === "flow" && "is-active")}
+            aria-pressed={mode === "flow"}
+            onClick={() => setMode("flow")}
+            title="Flow — each strike signed by today's directional trading (Skylit-style)"
+          >
+            Flow (today)
+          </button>
+        </div>
+        <button
+          type="button"
+          className="vector-gex-ladder-lens-info"
+          aria-label="What do these lenses mean?"
+          aria-expanded={infoOpen}
+          onClick={() => setInfoOpen((v) => !v)}
+        >
+          ⓘ
+        </button>
+        {infoOpen ? (
+          <div className="vector-gex-ladder-lens-pop" role="dialog" aria-label="GEX lens explainer">
+            <p>
+              <strong>Positioning (OI)</strong> — the standard published dealer-gamma view: calls add
+              positive gamma, puts negative, weighted by <em>open interest</em> (the contracts held).
+              It shows <em>what&rsquo;s positioned</em>. This is our canonical number and matches every
+              other BlackOut surface.
+            </p>
+            <p>
+              <strong>Flow (today)</strong> — signs each strike by <em>today&rsquo;s directional
+              trading</em> instead: heavy <em>buying</em> at a strike implies dealers are short it, so
+              that strike flips <em>negative</em> even when its open interest is call-heavy. It shows
+              <em> which way today&rsquo;s trading pushed dealers</em> — the same lens tools like Skylit
+              use.
+            </p>
+            <p className="vector-gex-ladder-lens-eg">
+              Example — a call-heavy strike (lots of call open interest) shows <strong>+</strong> under
+              Positioning; if it also saw heavy call <em>buying</em> today, Flow shows it deeply{" "}
+              <strong>−</strong>. Same strike, two questions: &ldquo;what&rsquo;s held&rdquo; vs
+              &ldquo;what just traded.&rdquo;
+            </p>
+          </div>
+        ) : null}
+      </div>
 
       {state === "error" ? (
         <div className="vector-gex-ladder-empty">GEX ladder unavailable</div>
