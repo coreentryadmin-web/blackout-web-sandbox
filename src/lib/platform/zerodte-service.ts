@@ -136,7 +136,12 @@ function mapLedgerRow(
 async function attachLiveMarkMeta(rows: ZeroDteSetupLogRow[]): Promise<Map<string, LiveMarkMeta>> {
   const out = new Map<string, LiveMarkMeta>();
   try {
-    const { getZeroDteLiveMark, ensureZeroDteMarkPoller } = await import("@/lib/zerodte/live-marks");
+    // RELATIVE specifier, not the "@/" alias: the tsx ESM loader (CI test runs) cannot
+    // resolve tsconfig path aliases in dynamic import() — the alias form threw
+    // ERR_MODULE_NOT_FOUND into this function's fail-soft catch, silently serving NO
+    // live marks in tests while Next's bundler (prod) resolved it fine. Relative works
+    // under both, and keeps the test's seeded store the SAME module instance.
+    const { getZeroDteLiveMark, ensureZeroDteMarkPoller } = await import("../zerodte/live-marks");
     // Any board consumer keeps the 1s lane alive (idempotent; self-idles off-RTH),
     // so Largo/BIE reads through this payload stay fresh even with no SSE viewer.
     ensureZeroDteMarkPoller();
