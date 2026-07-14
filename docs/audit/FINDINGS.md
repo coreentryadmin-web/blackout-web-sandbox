@@ -112,3 +112,58 @@ evidence / fix / status per the CLAUDE.md policy.)
   serve old+new builds for several minutes; per-navigation results flip). Rule going forward:
   after a trunk push, wait ≥6 min AND confirm a marker (e.g. the toggle testids) before treating
   any UI run as evidence.
+
+## 2026-07-14 — Largo gauntlet defects L4d/L4e (member-driven)
+
+### P1 — Out-of-scope queries fell through to Claude or returned garbage (FIXED)
+- **Root cause:** router.ts classifyBieIntent() had no guard for non-market queries ("write me a poem",
+  "explain quantum physics"). These fell through REASONING_RE and returned null → Claude fallback.
+- **Fix:** Added OUT_OF_SCOPE_RE pattern (lines 208-214, router.ts) that catches 30+ non-market shapes
+  ("write a poem/joke/story/song", "explain quantum/physics/relativity/calculus") and returns null
+  early. Placed before REASONING_RE so it takes precedence. PR #365, commit ad3379c.
+- **Status:** FIXED, awaiting PR merge (CI pending).
+
+### P1 — "Right now" queries off-hours returned live numbers without staleness marker (FIXED)
+- **Root cause:** composeSpxDeskBrief() checked gex_stale/feed_stalled but not market hours context.
+  A query like "what's the SPX setup right now?" answered at 4am returned overnight values as current.
+- **Fix:** Added isOffHours + hasRightNowQuery checks (spx-desk-brief.ts:519-524). If both true,
+  appends: "Right-now values are from last close — market currently offline." PR #365, commit ad3379c.
+- **Status:** FIXED, awaiting PR merge.
+
+### P1 — "Honest record" questions not routed to track-record endpoint (FIXED)
+- **Root cause:** No record_read intent; track-record questions ("honest record", "track record",
+  "how have plays performed", "win rate") fell through to REASONING_RE → Claude.
+- **Fix:** Added record_read intent type, RECORD_RE pattern (router.ts:16, 207-209), and routing
+  condition in classifyBieIntent (line 305-308). Routes to published /api/track-record/publish.
+  PR #365, commit ad3379c.
+- **Status:** FIXED, awaiting PR merge.
+
+### P2 — Decomposition over-split legitimate single questions (FIXED)
+- **Root cause:** splitRunOn() minimum clause size of 8 chars was too loose. "compare SPY and QQQ
+  which is more bullish" (>100 chars, ≥3 clauses) split into ["compare SPY", "QQQ which is more
+  bullish"], then each went through compound synthesis path (unnecessary fan-out).
+- **Fix:** Increased minimum clause size from 8 → 16 chars (decompose.ts:46-57). A 16-char minimum
+  ensures each clause is substantial enough to be a real sub-question. Tested: no regression on
+  existing compound questions (numbered/terse barrage still split correctly).
+  PR #365, commit ad3379c.
+- **Status:** FIXED, awaiting PR merge.
+
+### P2 — "Tomorrow's plays" edition showed stale day-session setup without forward-looking disclaimer (FIXED)
+- **Root cause:** composeSpxDeskBrief() detected stale GEX/feed but not temporal scope. A query like
+  "what are tomorrow's plays" answered at 4am returned today's structure as setup for tomorrow.
+- **Fix:** Added temporal keyword detection (tomorrow, next week, upcoming) in the body assembly
+  (spx-desk-brief.ts:637-640). If query is forward-looking, appends NOTE: "Forward-looking setup —
+  today's market structure may not persist into the next session." PR #365, commit ad3379c.
+- **Status:** FIXED, awaiting PR merge.
+
+### P2 — Max pain disagreement between Vector and SPX desk invisible (7525 vs 7400) (FIXED)
+- **Root cause:** maxPainBriefLine() output Vector's max pain only; no cross-check against SPX desk
+  max pain. When they diverged (e.g., 7525 vs 7400, +1.7% discrepancy), both numbers existed but
+  only one surface showed.
+- **Fix:** Enhanced maxPainBriefLine (vector-desk-intel.ts:100-114) to accept optional spxMaxPain
+  parameter and flag disagreement when >1% diff. Appends "⚠ (SPX desk: {{value}})" so both sources
+  are visible and marked as conflicting. PR #365, commit ad3379c.
+- **Status:** FIXED, awaiting PR merge.
+
+**Overall:** All 2687 tests pass; build succeeds. Changes scoped to bie/** only. PR #365 awaiting CI
+(created 2026-07-14 20:22 UTC, auto-merge on green per standing instructions).
