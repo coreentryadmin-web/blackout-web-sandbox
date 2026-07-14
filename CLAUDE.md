@@ -70,10 +70,39 @@ that asserts the wall rail advances within 35s (real forming/growing/fading). Ru
 value/mapping/surface ships. Off-hours the narrowed-horizon rail can be empty (recorder idle); that's
 a SKIP not a fail, and the replay frame count covers the temporal aspect.
 
+## Largo HARDCORE suite (adversarial limits + numeric truth + zero-fallback — the BIE analog)
+The intelligence-layer analog of vector-hardcore: `scripts/largo-hardcore-e2e.mjs`
+(`npm run validate:largo-hardcore`) permanently tests Largo/BIE's limits against every deployed
+build, asking through the REAL member path (`POST /api/market/largo/query` with the signed-in
+session cookies — the endpoint the terminal UI drives; temp Cognito admin+premium user, always
+deleted). ~75 checks across 8 categories, all **day-agnostic** (expectations derived at runtime
+from the same build's clean JSON APIs — no frozen dates/prices): **concept truth** (the 13 desk
+concepts + the "Thermal must not contain dark-pool text" real-bug regression); **numeric truth**
+(flip/walls/max-pain/spot per ticker×horizon: the number Largo SAYS must equal the number the API
+SERVES at the answer's displayed precision, GT refetched once on a live-drift miss); **compound
+decomposition** (numbered/run-on/terse multi-part asks must render every labeled part); **adversarial
+honesty** (wrong-premise questions BUILT from live state so the premise is genuinely false any day —
+flip/VWAP/tape/wall-side — must be corrected not agreed with; predictions refused; out-of-scope
+graceful; injections not complied with); **terse routing** ("cortex nvda", "nh", "flip spx" → real
+envelopes); **decision explainability** (why committed/skipped/exited/picked → pinned records or the
+honest #327/#331 no-record strings, never fabricated evidence; the edition ticker is pulled live);
+**freshness honesty** (off-hours "right now" answers must carry as-of/staleness markers; RTH runs
+SKIP those); and **whole-suite aggregates** (ZERO `claude_fallback` sources, zero `{{marker}}` leaks,
+zero malformed floats, no empty answers, latency p50/p95 table with a p95 budget — default 15s,
+`LARGO_HC_P95_MS`). Statuses: PASS / FAIL (gates, exit 1) / SKIP (honest, with reason) /
+**EXPECTED-FAIL** (known gap keyed to an open fix PR, non-gating so the suite stays
+green-with-knowns; the fixing PR flips `STRICT_KNOWNS=1` to make them hard asserts). Baseline
+2026-07-14: **68 pass · 0 fail · 4 skip · 3 EXPECTED-FAIL** (out-of-scope honest-scope + off-hours
+freshness markers, keyed to #338). The 13 desk concepts + terse-concept + compare (fixed #336) and
+SPX cross-horizon full-state contamination (fixed) are now **hard-asserted** so a re-break gates.
+Run with `env -u AWS_ACCESS_KEY_ID -u AWS_SECRET_ACCESS_KEY`. KEEP GROWING IT — add a case whenever
+a new intent/composer/envelope surface ships, and retire EXPECTED-FAIL tags the moment their fix PR merges.
+
 ## Audit toolkit (committed)
 - `scripts/audit/data-validator.mjs` — cross-provider validator (Polygon+UW ground truth vs the numbers members see: prices/indices, GEX/greeks, track-record math, malformed-number scan). Secrets from env only; one temp Clerk user per run, always deleted. Exits non-zero on any FAIL.
 - `scripts/vector-staging-e2e.mjs` — the Vector per-push E2E gate (see the section above).
 - `scripts/vector-hardcore-e2e.mjs` — the deep value/dynamism/wall-dynamics suite (see the section above).
+- `scripts/largo-hardcore-e2e.mjs` — the Largo/BIE adversarial + numeric-truth battery (see the section above).
 - `docs/audit/MARKET-OPEN-VALIDATION.md` — runbook + the daily market-open **Claude scheduled-trigger** prompt + secrets checklist (13:32 UTC weekdays).
 - `docs/audit/BASELINE-2026-07-01.md` — pre-open baseline to diff the live run against.
 - `docs/audit/FINDINGS.md` — living issue log (keep updating).
