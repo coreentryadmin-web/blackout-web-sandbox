@@ -556,6 +556,66 @@ async function runTerse(page) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
+// Category 5b — MISROUTE guards (2026-07-14 RTH sweep fixes: terse-ticker, regime-live, off-topic)
+// ═══════════════════════════════════════════════════════════════════════════════
+// These HARD-ASSERT the routing FIX, not just "a real envelope came back". The earlier terse cases
+// used a loose hasAny that a wrong-ticker SPX dump could satisfy (it mentions "gamma"); here a
+// non-SPX terse ask must be about the NAMED ticker and must NOT be an SPX desk dump.
+const TERSE_TICKER = [
+  { q: "flip nvda", ticker: "nvda" },
+  { q: "flip tsla", ticker: "tsla" },
+  { q: "gamma qqq", ticker: "qqq" },
+  { q: "0dte spy", ticker: "spy" },
+];
+async function runMisroute(page) {
+  console.log("\n───── 5b. MISROUTE guards (terse-ticker / regime-live / off-topic) ─────");
+
+  // P1 — a bare vector token + a NON-SPX ticker must serve THAT ticker, never the SPX desk dump.
+  for (const t of TERSE_TICKER) {
+    const r = await ask(page, "misroute", t.q);
+    const a = lc(r.answer);
+    const namesTicker = a.includes(t.ticker);
+    // A correct non-SPX Vector read never talks about SPX/S&P; the misroute served the SPX desk.
+    const spxDump = /\bspx\b|\bs&p\b/i.test(r.answer);
+    const ok = !r.httpError && r.answer.length > 40 && namesTicker && !spxDump;
+    rec("misroute", `misroute: "${t.q}" → the ${t.ticker.toUpperCase()} read, not the SPX dump`, ok,
+      ok ? `${r.answer.length} chars, ${r.ms}ms` : `namesTicker=${namesTicker} spxDump=${spxDump} · "${(r.httpError || r.answer).slice(0, 120).replace(/\n/g, " ")}"`);
+  }
+
+  // #45 — "market regime?" is the LIVE regime read (market_context: HELIX regime detector + live
+  // breadth/VIX/tide), NOT the glossary DEFINITION of what a gamma regime is.
+  for (const q of ["market regime?", "what's the regime right now"]) {
+    const r = await ask(page, "misroute", q);
+    const live = hasAny(r.answer, ["market context", "helix regime detector", "breadth", "vix", "tide", "risk tone"]);
+    // The glossary definition's signature phrase — must be ABSENT (that would be the wrong route).
+    const isDefinition = /highest-leverage interpretation layer|dealers hedge (against|with) moves/i.test(r.answer);
+    const ok = !r.httpError && live && !isDefinition;
+    rec("misroute", `misroute: "${q}" → live regime read, not the glossary definition (#45)`, ok,
+      ok ? `${r.ms}ms` : `live=${live} isDefinition=${isDefinition} · "${(r.httpError || r.answer).slice(0, 120).replace(/\n/g, " ")}"`);
+  }
+
+  // #41 — a clearly off-topic ask gets the honest off_topic scope card, NOT the concept-glossary
+  // "I've logged it so it can be added" gap-log line.
+  {
+    const r = await ask(page, "misroute", "what's a good recipe for lasagna?");
+    const scoped = hasAny(r.answer, ["can't", "cannot", "outside", "out of scope", "built for", "built to", "focus", "market questions", "trading questions", "desk questions", "help with"]);
+    const gapLogged = /logged it so it can be added|in my glossary yet/i.test(r.answer);
+    const ok = !r.httpError && scoped && !gapLogged;
+    rec("misroute", `misroute: off-topic "recipe for lasagna" → scope card, not a glossary gap-log (#41)`, ok,
+      ok ? `${r.ms}ms` : `scoped=${scoped} gapLogged=${gapLogged} · "${(r.httpError || r.answer).slice(0, 120).replace(/\n/g, " ")}"`);
+  }
+
+  // #34 — "run a self-diagnosis" reaches the diagnostic engine, not the generic identity card.
+  {
+    const r = await ask(page, "misroute", "run a self-diagnosis");
+    const diag = hasAny(r.answer, ["diagnos", "pipeline", "cron", "recorder", "feed", "healthy", "stale", "check", "gex", "forming"]);
+    const ok = !r.httpError && r.answer.length > 40 && diag;
+    rec("misroute", `misroute: "run a self-diagnosis" → system_diagnostic, not the identity card (#34)`, ok,
+      ok ? `${r.ms}ms` : `diag=${diag} · "${(r.httpError || r.answer).slice(0, 120).replace(/\n/g, " ")}"`);
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
 // Category 6 — DECISION explainability (pinned records or the honest no-record voice)
 // ═══════════════════════════════════════════════════════════════════════════════
 // The #327/#331/#334 spine: a decision-WHY is answered from PINNED records when they exist and
@@ -759,6 +819,7 @@ async function main() {
     await runCompound(page);
     await runAdversarial(page);
     await runTerse(page);
+    await runMisroute(page);
     await runDecisions(page);
     await runFreshness(page);
     await runOpsTools(page);

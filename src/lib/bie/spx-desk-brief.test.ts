@@ -57,6 +57,18 @@ describe("composeSpxDeskBrief", () => {
     assert.ok(["bullish", "bearish", "neutral"].includes(result.bias));
   });
 
+  test("NEWS line DECODES HTML entities in the raw headline title (N5-2 leak)", () => {
+    const desk = fakeDesk();
+    (desk as unknown as { news_headlines: Array<{ title: string }> }).news_headlines = [
+      { title: "S&amp;P 500 rips as Nvidia&#39;s guidance &#34;stuns&#34;" },
+    ];
+    const confluence = computeSpxConfluence(desk);
+    assert.ok(confluence);
+    const result = composeSpxDeskBrief(desk, confluence!, [], "mid-morning");
+    assert.ok(result.body.includes(`S&P 500 rips as Nvidia's guidance "stuns"`), result.body);
+    assert.ok(!/&#\d+;|&amp;|&#x/.test(result.body), "no leftover HTML entities in the brief body");
+  });
+
   test("grade C/D maps to NO-EDGE verb", () => {
     const desk = fakeDesk();
     desk.price = 5900;

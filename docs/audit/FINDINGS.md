@@ -5,6 +5,76 @@ conflict-resolution mishap. Historical entries live in git history — `git log 
 docs/audit/FINDINGS.md`. New entries append below; keep severity / root cause / file:line /
 evidence / fix / status per the CLAUDE.md policy.)
 
+## 2026-07-14 — Largo/BIE RTH live-sweep defects — PR fix/largo-routing-entity-gate
+
+Six defects found in the 2026-07-14 open RTH sweep of `POST /api/market/largo/query`. All fixes
+are in `src/lib/bie/**` (+ the news-title lines of the three BIE news composers); deterministic +
+unit-tested; hardcore e2e extended with hard-asserting misroute cases.
+
+### P1 — Terse "flip nvda" / "gamma qqq" / "0dte spy" served the SPX desk, discarding the ticker (FIXED, tested)
+- **Root cause:** `router.ts` `VECTOR_STRUCTURE_RE` matched the two-word "gamma flip"/"gamma wall"
+  but NOT a BARE `flip`/`gamma`/`0dte`. So "flip nvda" fell through every non-SPX branch and hit the
+  `classifyBieStagingFallback` catch-all `/\b(spx|…|flip)\b/ → { spx_desk_read, "SPX" }` (router.ts
+  ~L763), which FORCED SPX and threw away the extracted NVDA — members got SPX numbers for an NVDA
+  question. "flip spx" only "worked" because the forced-SPX ticker happened to be right; "spy walls"
+  already worked because bare `walls?` was in the regex.
+- **Fix:** added bare `flip|gamma|0\s*dte|zero\s*dte|zerodte` to `VECTOR_STRUCTURE_RE` (consumed ONLY
+  by the two `ticker && ticker !== "SPX"` branches, so it can only re-home a NON-SPX ticker to its own
+  `vector_read`, never SPX). Added the reverse-order (`flip|0dte|gamma` … `spx`) alt to
+  `SPX_STRUCTURE_RE` so terse "flip spx" lands deterministically on the SPX structure desk instead of
+  null→Claude. Ticker-less bare tokens still default to SPX (unchanged).
+- **Blast radius:** both classifiers (`classifyBieIntent` + `classifyBieStagingFallback`) share the
+  regex, so the fix covers the primary path (compound sub-questions) and the staging BIE-only path.
+- **Evidence/tests:** `router.test.ts` — `flip nvda`→NVDA, `flip tsla`→TSLA, `gamma qqq`→QQQ,
+  `0dte spy`→SPY/0dte in BOTH classifiers; SPX case unchanged. `largo-hardcore-e2e.mjs` cat 5b
+  hard-asserts the answer names the ticker AND is not an SPX dump (the old cat-5 hasAny couldn't).
+
+### P1-B — vector_read shipped an ~11-min-stale flip that disagreed with /api/vector/walls (FIXED, tested)
+- **Root cause:** `composeVectorRead` serves the CRON-warmed full-state cache; when that cron stalls,
+  the cached flip/walls drift from the fresh horizon-scoped walls reads (`getVector*ForHorizon` — the
+  SAME reads `/api/vector/walls` serves). The #348 RTH numeric gate was wired only into `verdict.ts`.
+- **Fix:** wired a fresh-walls reconciliation into `composeVectorRead` (composers.ts) — refetch fresh
+  flip/walls/max-pain, reconcile via the shared `reconcileStatedNumbers` gate; RTH divergence →
+  recompute the state LIVE (cache-bypassing `computeVectorFullState`) so the WHOLE brief ships fresh +
+  internally consistent; off-hours → the existing `appendStalenessMarker` labels the prior-close read
+  (never "corrects" toward another close value). New pure helper `vectorStatedNumbers` in
+  `rth-numeric-gate.ts`.
+- **Tests:** `rth-numeric-gate.test.ts` — `vectorStatedNumbers` extraction + RTH-corrected /
+  off-hours-stale-marked / clean reconciliation for the vector shape.
+
+### P2-A — N5-2 HTML-entity leak in BIE news lines ("Nvidia&#39;s") (FIXED, tested)
+- **Root cause:** the three BIE news composers rendered raw feed titles verbatim; `sanitizeFeedText`
+  (the entity decoder) was wired only into `src/lib/largo/*`.
+- **Fix:** wired `sanitizeFeedText` into `ticker-verdict.ts` (CONTEXT news line), `spx-live-voice.ts`
+  (`composeCatalystLine`) and `spx-desk-brief.ts` (`newsLine`) — decode-then-slice so the char cap
+  applies to clean text. News-title lines ONLY (no other logic in those slayer-owned files touched).
+- **Tests:** each composer's `*.test.ts` gets a fixture title with `&#39;`/`&amp;`/`&#34;` → decoded,
+  zero leftover entities.
+
+### P2 — misc routing (all FIXED, tested)
+- **(a) #45 "market regime?" returned the glossary DEFINITION not the live regime.** Root: a ≤4-word
+  "market regime" resolved via the bare-glossary-term branch. Fix: `isLiveRegimeQuestion` routes a
+  live-regime ask to `market_context` (HELIX regime detector) BEFORE concept; a definitional "what is
+  gamma regime" (the word "gamma" before "regime", or a define/mean lead-in) stays `concept_read`.
+- **(b) #41 off-topic "recipe for lasagna" got the concept gap-log card.** Root: the definitional
+  lead-in ("what's a…") hit the concept catch-all. Fix: an `OFF_TOPIC_DOMAIN_RE` (cooking/weather/
+  poetry/…) + no market subject forces `isConceptQuestion→false` (→ off_topic in staging). Gated on
+  BOTH so an unknown-but-plausibly-market term ("the flongle indicator") still gap-logs as concept
+  (boundary asserted).
+- **(c) #48 compound dropped an answerable "SPX vs its gamma flip" part as unavailable.** Root:
+  `classifyBieIntent` (used by the compound orchestrator) hit `REASONING_RE`'s "vs" and bailed to null.
+  Fix: `SELF_VS_LEVEL_RE` routes a single-ticker "vs/against its <structure level>" to that ticker's
+  structure read (SPX→`spx_structure`, others→`vector_read`) before REASONING can bail; genuine
+  two-ticker compares unaffected.
+- **(d) #34 "run a self-diagnosis" returned the identity card.** Root: `DIAGNOSTIC_RE` keyed on
+  "why isn't X forming" and missed the imperative shorthand. Fix: `DIAGNOSTIC_SELF_RE` catches
+  "run a self-diagnosis"/"self-diagnostic"/"diagnose yourself"/"run diagnostics" → `system_diagnostic`.
+
+**Verification:** `npx tsc --noEmit` clean · full `npm test` **3741 pass / 0 fail** · `npm run build`
+green · `npx eslint` (changed files) clean. Router unit tests hard-gate every routing fix; the live
+`validate:largo-hardcore` cat 5b gates the terse-ticker / regime-live / off-topic / self-diagnosis
+fixes on the deployed build (user live-validates before merge — PR opened as DRAFT).
+
 ## 2026-07-14 — Night Hawk overnight edition: Cortex overnight lens + catalyst veto — PR-N5
 
 ### P1 — no publish-time evidence gate on overnight picks (best-plays-only) (BUILT, tested)

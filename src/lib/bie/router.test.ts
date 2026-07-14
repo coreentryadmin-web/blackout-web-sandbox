@@ -62,6 +62,92 @@ describe("router: vector_read intent", () => {
   });
 });
 
+describe("router: TERSE bare-token + ticker routes to the NAMED ticker's vector_read (2026-07-14 P1)", () => {
+  // The live RTH misroute: a bare vector token + a ticker ("flip nvda", "gamma qqq", "0dte spy")
+  // discarded the ticker and served the SPX desk dump. These now route to the NAMED ticker's Vector
+  // read in BOTH classifiers, and default to SPX ONLY when no ticker is present.
+  const cases: Array<[string, string]> = [
+    ["flip nvda", "NVDA"],
+    ["flip tsla", "TSLA"],
+    ["gamma qqq", "QQQ"],
+    ["0dte spy", "SPY"],
+    ["walls amd", "AMD"],
+  ];
+  for (const [q, ticker] of cases) {
+    test(`primary: "${q}" → vector_read ${ticker} (not the SPX desk)`, () => {
+      const r = classifyBieIntent(q, NO_LEDGER);
+      assert.equal(r?.intent, "vector_read", `intent for "${q}"`);
+      assert.equal(r?.ticker, ticker, `ticker for "${q}"`);
+      assert.notEqual(r?.ticker, "SPX");
+    });
+    test(`staging: "${q}" → vector_read ${ticker} (not the SPX default)`, () => {
+      const r = classifyBieStagingFallback(q);
+      assert.equal(r.intent, "vector_read", `intent for "${q}"`);
+      assert.equal(r.ticker, ticker, `ticker for "${q}"`);
+    });
+  }
+
+  test('0dte carries the 0dte horizon: "0dte spy" → SPY/0dte', () => {
+    assert.equal(classifyBieIntent("0dte spy", NO_LEDGER)?.horizon, "0dte");
+  });
+
+  test("when the ticker IS SPX the SPX desk still wins (not a non-SPX vector misfire)", () => {
+    // "flip spx" → the SPX structure desk (SPX keeps its richer Sniper routing); the fix only re-homes
+    // NON-SPX tickers, so the SPX case is unchanged.
+    assert.equal(classifyBieIntent("flip spx", NO_LEDGER)?.ticker, "SPX");
+    assert.equal(classifyBieIntent("flip spx", NO_LEDGER)?.intent, "spx_structure");
+  });
+});
+
+describe("router: LIVE-regime ask routes to the live read, not the glossary (#45)", () => {
+  for (const q of ["market regime?", "what's the regime", "what is the regime", "what regime are we in", "current regime"]) {
+    test(`"${q}" → market_context (live), not concept_read`, () => {
+      assert.equal(classifyBieIntent(q, NO_LEDGER)?.intent, "market_context", `primary "${q}"`);
+      assert.equal(classifyBieStagingFallback(q).intent, "market_context", `staging "${q}"`);
+    });
+  }
+  test("the DEFINITIONAL 'what is gamma regime' stays concept_read", () => {
+    assert.equal(classifyBieIntent("what is gamma regime", NO_LEDGER)?.intent, "concept_read");
+    assert.equal(classifyBieIntent("what's the gamma regime", NO_LEDGER)?.intent, "concept_read");
+  });
+});
+
+describe("router: clearly-off-topic beats the concept catch-all (#41)", () => {
+  test('"what\'s a good recipe for lasagna" → NOT concept_read (→ off_topic in staging)', () => {
+    assert.notEqual(classifyBieIntent("what's a good recipe for lasagna", NO_LEDGER)?.intent, "concept_read");
+    assert.equal(classifyBieStagingFallback("what's a good recipe for lasagna").intent, "off_topic");
+  });
+  test("BOUNDARY: an unknown-but-plausibly-market term still routes to concept_read for the honest gap-log", () => {
+    // "the flongle indicator" has no off-topic-domain word → still a concept (gap-logged), not off_topic.
+    assert.equal(classifyBieIntent("what is the flongle indicator", NO_LEDGER)?.intent, "concept_read");
+  });
+});
+
+describe("router: single-ticker self-vs-level is answerable, not dropped (#48)", () => {
+  test('"SPX vs its gamma flip" → spx_structure (not null → the compound "unavailable" drop)', () => {
+    const r = classifyBieIntent("SPX vs its gamma flip", NO_LEDGER);
+    assert.equal(r?.intent, "spx_structure");
+    assert.equal(r?.ticker, "SPX");
+  });
+  test('"NVDA against its call wall" → NVDA vector_read', () => {
+    const r = classifyBieIntent("NVDA against its call wall", NO_LEDGER);
+    assert.equal(r?.intent, "vector_read");
+    assert.equal(r?.ticker, "NVDA");
+  });
+  test("BOUNDARY: a genuine two-ticker compare is unaffected", () => {
+    assert.equal(classifyBieIntent("compare SPX vs NVDA", NO_LEDGER)?.intent, "ticker_compare");
+  });
+});
+
+describe("router: imperative self-diagnosis routes to system_diagnostic (#34)", () => {
+  for (const q of ["run a self-diagnosis", "self-diagnostic", "run diagnostics", "diagnose yourself"]) {
+    test(`"${q}" → system_diagnostic (not the identity/off_topic default)`, () => {
+      assert.equal(classifyBieIntent(q, NO_LEDGER)?.intent, "system_diagnostic", `primary "${q}"`);
+      assert.equal(classifyBieStagingFallback(q).intent, "system_diagnostic", `staging "${q}"`);
+    });
+  }
+});
+
 describe("router: scenario intent (PR-L4c)", () => {
   test("the live gauntlet question routes to scenario for SPX", () => {
     const r = classifyBieIntent(

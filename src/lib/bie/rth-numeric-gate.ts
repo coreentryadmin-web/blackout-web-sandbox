@@ -79,6 +79,29 @@ export function statedMatchesTruth(stated: StatedNumber, truth: number | null | 
   return Math.abs(stated.value - Number(truth)) <= tol;
 }
 
+/**
+ * Stated numbers a VECTOR desk brief commits to — the gamma flip, the top call/put wall strikes, and
+ * max pain — pulled from a Vector-state-shaped object, tagged with the precision they were rounded to.
+ * The Vector desk brief prints these directly from the (cron-warmed, possibly stale) full state; this
+ * lets composeVectorRead reconcile them against a FRESH horizon-scoped walls read (the same reads
+ * /api/vector/walls serves) so vector_read never ships a flip/wall the live API contradicts intraday.
+ */
+export function vectorStatedNumbers(state: {
+  gammaFlip?: number | null;
+  gexWalls?: { callWalls?: Array<{ strike: number }> | null; putWalls?: Array<{ strike: number }> | null } | null;
+  maxPain?: number | null;
+}): StatedNumber[] {
+  const out: StatedNumber[] = [];
+  const push = (metric: NumericMetric, v: number | null | undefined) => {
+    if (typeof v === "number" && Number.isFinite(v)) out.push({ metric, value: v, decimals: decimalsOf(v) });
+  };
+  push("flip", state.gammaFlip ?? null);
+  push("call_wall", state.gexWalls?.callWalls?.[0]?.strike ?? null);
+  push("put_wall", state.gexWalls?.putWalls?.[0]?.strike ?? null);
+  push("max_pain", state.maxPain ?? null);
+  return out;
+}
+
 export type NumericMismatch = { metric: NumericMetric; stated: number; served: number };
 
 export type NumericGateResult = {

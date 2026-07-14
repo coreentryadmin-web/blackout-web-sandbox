@@ -26,6 +26,11 @@ import {
 import { withServerCache } from "@/lib/server-cache";
 import { stripGroundingTokens } from "@/lib/bie/grounding-markers";
 import { appendStalenessMarker } from "@/lib/bie/staleness";
+import {
+  reconcileStatedNumbers,
+  vectorStatedNumbers,
+  type NumericTruth,
+} from "@/lib/bie/rth-numeric-gate";
 import { classifyBieIntent, type BieRoute } from "./router";
 import {
   splitCompoundQuestion,
@@ -257,6 +262,11 @@ function timeframeMinFromQuestion(q?: string): number | undefined {
  * SPX default). The returned context carries the state + knownVectorNumbers so Layer-4
  * verifyClaims can ground every cited figure.
  */
+/** Finite-number coercion for the fresh-walls reconciliation truth snapshot. */
+function numOrNull(v: number | null | undefined): number | null {
+  return typeof v === "number" && Number.isFinite(v) ? v : null;
+}
+
 async function composeVectorRead(
   ticker: string,
   horizon: string,
@@ -286,9 +296,10 @@ async function composeVectorRead(
     };
   }
 
-  const state = await fetchVectorFullState(
+  const normHorizon = normalizeDteHorizon(horizon);
+  let state = await fetchVectorFullState(
     ticker.toUpperCase(),
-    normalizeDteHorizon(horizon),
+    normHorizon,
     timeframeMinFromQuestion(question)
   );
   // No live state (markets closed, cold matrix, off-universe ticker) — fetchVectorFullState
@@ -301,6 +312,47 @@ async function composeVectorRead(
       answer: noLiveVectorStateMessage(ticker),
       context: { ticker: ticker.toUpperCase(), reason: "no_live_state" },
     };
+  }
+
+  // ── RTH FRESH-WALLS RECONCILIATION (#348 wired into vector_read) ──────────────
+  // fetchVectorFullState serves the CRON-WARMED full-state cache for speed. When that cron stalls, the
+  // cached flip/walls/max-pain drift from the fresh horizon-scoped walls API (getVector*ForHorizon —
+  // the SAME reads /api/vector/walls serves): a member could pull the walls endpoint and see a
+  // different flip than Largo just stated (live audit: an ~11-min-stale full-state flip diverged from
+  // /api/vector/walls). We refetch those fresh numbers and reconcile via the shared RTH numeric gate.
+  // During RTH a beyond-tolerance divergence → recompute the state LIVE (computeVectorFullState
+  // bypasses the stale cache) so the WHOLE brief — flip, walls, and every regime/magnet/proximity
+  // deriver keyed off them — ships internally consistent AND matching the fresh API. Off-hours the
+  // snapshot is an honest prior-close read, so we leave the number and let appendStalenessMarker below
+  // label it (never "correct" a stale number toward another stale close value). Fail-open: a fresh read
+  // that errors just skips its metric (reconcile only checks metrics it actually has truth for).
+  let vectorGate: ReturnType<typeof reconcileStatedNumbers> | null = null;
+  {
+    const [{ getVectorGexWallsForHorizon, getVectorGammaFlipForHorizon }, { getVectorMaxPainForHorizon }] =
+      await Promise.all([
+        import("@/features/vector/lib/vector-snapshot"),
+        import("@/features/vector/lib/vector-max-pain-server"),
+      ]);
+    const T = ticker.toUpperCase();
+    const [freshWalls, freshFlip, freshMaxPain] = await Promise.all([
+      getVectorGexWallsForHorizon(T, normHorizon).catch(() => null),
+      getVectorGammaFlipForHorizon(T, normHorizon).catch(() => null),
+      getVectorMaxPainForHorizon(T, normHorizon).catch(() => null),
+    ]);
+    const truth: NumericTruth = {
+      flip: typeof freshFlip === "number" && Number.isFinite(freshFlip) ? freshFlip : null,
+      call_wall: numOrNull(freshWalls?.callWalls?.[0]?.strike),
+      put_wall: numOrNull(freshWalls?.putWalls?.[0]?.strike),
+      max_pain: numOrNull(freshMaxPain?.maxPain),
+    };
+    vectorGate = reconcileStatedNumbers(vectorStatedNumbers(state), truth);
+    if (vectorGate.action === "corrected") {
+      // Intraday divergence — the cache is stale. Recompute live (cache-bypassing) so every number,
+      // not just the flagged scalars, comes from the same fresh read the walls API serves.
+      const { computeVectorFullState } = await import("@/lib/bie/vector-full-state");
+      const fresh = await computeVectorFullState(T, normHorizon, timeframeMinFromQuestion(question)).catch(() => null);
+      if (fresh) state = fresh;
+    }
   }
 
   const brief = composeVectorDeskBrief(state, question);
@@ -316,7 +368,7 @@ async function composeVectorRead(
   // PR-L4d-2: live "right now" Vector read — mark it as-of when the assembled state is stale
   // (off-hours the underlying GEX/spot reflect the prior close). Sourced from state.asOf.
   answer = appendStalenessMarker(answer, state.asOf);
-  return { answer, context: { state, known: knownVectorNumbers(state) } };
+  return { answer, context: { state, known: knownVectorNumbers(state), vectorGate } };
 }
 
 /**

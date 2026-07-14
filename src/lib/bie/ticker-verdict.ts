@@ -2,6 +2,7 @@
 
 import type { EcosystemContext } from "@/lib/bie/ecosystem-context";
 import { findSimilarPrecedents } from "@/lib/bie/precedent-search";
+import { sanitizeFeedText } from "@/lib/largo/sanitize-feed-text";
 
 const fmt = (n: number | null | undefined, d = 0): string =>
   typeof n === "number" && Number.isFinite(n)
@@ -121,7 +122,10 @@ export async function synthesizeTickerVerdict(
   if (ars.news && ars.news.count > 0) {
     // "news" is a mass noun (never "newss"); only "catalyst" pluralizes.
     const noun = ars.scope === "index" ? `catalyst${ars.news.count === 1 ? "" : "s"}` : "news";
-    context.push(`${ars.news.count} recent ${noun}${ars.news.headlines[0] ? ` ("${ars.news.headlines[0]}")` : ""}`);
+    // Decode HTML entities in the raw news title before rendering — Benzinga/UW headlines arrive
+    // entity-encoded ("Nvidia&#39;s"), and this line prints the title verbatim (N5-2 entity leak).
+    const headline0 = ars.news.headlines[0] ? sanitizeFeedText(ars.news.headlines[0]) : "";
+    context.push(`${ars.news.count} recent ${noun}${headline0 ? ` ("${headline0}")` : ""}`);
   }
   if (ars.related && ars.related.length) context.push(`peers ${ars.related.slice(0, 4).join(", ")}`);
   if (context.length) lines.push(`CONTEXT  ${context.join(" · ")}.`);

@@ -19,6 +19,7 @@
 // feed (or a documented arithmetic derivation of it) — grounded by construction.
 
 import type { SpxDeskPayload } from "@/features/spx/lib/spx-desk";
+import { sanitizeFeedText } from "@/lib/largo/sanitize-feed-text";
 
 // ---------------------------------------------------------------------------
 // Snapshot — the normalized slice of the desk the voice reasons over.
@@ -780,7 +781,9 @@ export function composeCatalystLine(s: SpxVoiceSnapshot): string | null {
   const h = s.latestHeadline;
   if (!h?.title) return null;
   const time = h.publishedAt != null ? ` · ${fmtEtTime(h.publishedAt)}` : "";
-  return `📰 ${h.title.slice(0, 110)}${time}`;
+  // Decode HTML entities in the raw headline before slicing (N5-2 entity leak: titles like
+  // "Nvidia&#39;s" rendered verbatim). Decode-then-slice so the 110-char cap applies to the clean text.
+  return `📰 ${sanitizeFeedText(h.title).slice(0, 110)}${time}`;
 }
 
 // ---------------------------------------------------------------------------
