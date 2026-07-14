@@ -736,3 +736,77 @@ test("readNighthawkSessionDebrief: nothing graded → honest empty; ledger outag
   assert.equal((outage.context as { mode: string }).mode, "unreadable");
   assert.match(outage.answer, /unreadable/i);
 });
+
+// ── PR-L4e-3: edition FRESHNESS (select the latest published edition, not a stale playable one) ──
+test("pickLatestEdition: newer any-edition wins; same-date prefers the playable one; nulls handled", () => {
+  const older = editionRow({ edition_for: "2026-07-10" });
+  const newer = editionRow({ edition_for: "2026-07-14" });
+  // A strictly newer edition of any kind must beat an older playable one (the L4e-3 stale bug).
+  assert.equal(mod.pickLatestEdition(older, newer)!.edition_for, "2026-07-14");
+  // Same date → keep the playable (plays-carrying) row.
+  assert.equal(mod.pickLatestEdition(editionRow({ edition_for: "2026-07-14" }), newer)!.edition_for, "2026-07-14");
+  // Playable newer than latest-any (shouldn't happen, but be safe) → playable.
+  assert.equal(mod.pickLatestEdition(newer, older)!.edition_for, "2026-07-14");
+  assert.equal(mod.pickLatestEdition(null, newer)!.edition_for, "2026-07-14");
+  assert.equal(mod.pickLatestEdition(older, null)!.edition_for, "2026-07-10");
+  assert.equal(mod.pickLatestEdition(null, null), null);
+});
+
+test("readNighthawkEdition: 'tomorrow's plays' serves the LATEST edition, not a stale playable one", async () => {
+  // The deployed bug: latest playable is 2026-07-10, but a NEWER 2026-07-14 edition exists — the read
+  // used to serve the 4-day-old playbook. It must now serve 2026-07-14.
+  latestPlayable = editionRow({ edition_for: "2026-07-10" });
+  latestAny = editionRow({ edition_for: "2026-07-14" });
+  queryRows = [outcomeRow({ edition_for: "2026-07-14" })];
+  const composed = await mod.readNighthawkEdition();
+  assert.match(composed.answer, /Night Hawk edition for 2026-07-14/);
+  assert.doesNotMatch(composed.answer, /2026-07-10/);
+  assert.equal((composed.context as { edition_for: string }).edition_for, "2026-07-14");
+  // The outcome SELECT is scoped to the FRESH edition.
+  assert.deepEqual(queryCalls[queryCalls.length - 1]!.params, ["2026-07-14"]);
+});
+
+// ── PR-L4e-1: the OVERALL accountability record ─────────────────────────────────────
+test("aggregateOverallRecord: honest win rate; pulled + unfilled EXCLUDED both directions", async () => {
+  // 1 target (win) + 8 stops (loss) = 9 scoreable → 11.1%. A pulled target and an unfilled play are
+  // both excluded from the denominator (a pulled win adds no win; an unfilled play never traded).
+  queryRows = [
+    outcomeRow({ ticker: "AAA", edition_for: "2026-07-11", outcome: "target", conviction: "A" }),
+    ...Array.from({ length: 8 }, (_, i) =>
+      outcomeRow({ ticker: `S${i}`, edition_for: i < 4 ? "2026-07-11" : "2026-07-12", outcome: "stop", conviction: "B" })
+    ),
+    outcomeRow({ ticker: "PUL", edition_for: "2026-07-12", outcome: "target", pulled: true }),
+    outcomeRow({ ticker: "UNF", edition_for: "2026-07-12", outcome: "unfilled" }),
+  ];
+  const composed = await mod.readNighthawkOverallRecord();
+  assert.equal((composed.context as { mode: string }).mode, "overall_record");
+  const ctx = composed.context as { scoreable: number; wins: number; losses: number; win_rate_pct: number; editions: number };
+  assert.equal(ctx.scoreable, 9);
+  assert.equal(ctx.wins, 1);
+  assert.equal(ctx.losses, 8);
+  assert.equal(ctx.win_rate_pct, 11.1);
+  assert.equal(ctx.editions, 2);
+  assert.match(composed.answer, /11\.1%/);
+  assert.match(composed.answer, /1–8 over 9 scoreable/);
+  assert.match(composed.answer, /1 pulled and 1 unfilled/);
+  assert.match(composed.answer, /EXCLUDED/);
+});
+
+test("readNighthawkOverallRecord: no graded plays → honest empty; store outage → honest unreadable", async () => {
+  queryRows = [];
+  const empty = await mod.readNighthawkOverallRecord();
+  assert.match(empty.answer, /no scoreable plays/i);
+  dbIsConfigured = false;
+  const down = await mod.readNighthawkOverallRecord();
+  assert.match(down.answer, /unreadable this turn/);
+  assert.match(down.answer, /no record is being invented/i);
+});
+
+test("composeNighthawkEditionRead: a record ask dispatches to the overall record (not edition/debrief)", async () => {
+  queryRows = [outcomeRow({ outcome: "target" })];
+  const rec = await mod.composeNighthawkEditionRead(null, "what's our track record");
+  assert.equal((rec.context as { mode: string }).mode, "overall_record");
+  // A ticker still routes to the pick-why, not the record.
+  const pick = await mod.composeNighthawkEditionRead("CSX", "why was CSX picked");
+  assert.equal((pick.context as { mode: string }).mode, "pick_why");
+});
