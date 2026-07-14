@@ -9,7 +9,7 @@
 // Auth: premium tier (same gate as the edition route).
 //
 // Returns:
-//   { available: false }  — no morning-confirm run has fired yet for this date (404)
+//   { available: false }  — no morning-confirm run has fired yet for this date (200; expected state)
 //   MorningConfirmResult  — the full status blob including per-play CONFIRMED/DEGRADED/INVALIDATED
 
 import type { NextRequest } from "next/server";
@@ -54,9 +54,15 @@ export async function GET(req: NextRequest) {
     const raw = await redis.get(REDIS_KEY(date));
 
     if (!raw) {
+      // 200, not 404: "not yet run" is the EXPECTED state for every request before the 9:15am ET
+      // cron fires (and all evening/overnight once the date param rolls to the next ET day), so a
+      // 404 here printed a red console error on every Night Hawk pane load ~15 hours a day. The
+      // body already carried the honest `available:false` + reason; the only caller
+      // (fetchNightHawkPlayStatus) mapped !ok to a reason-less `{available:false}`, so returning
+      // 200 hands it strictly more information. True error states below keep error codes.
       return NextResponse.json(
         { available: false, date, reason: "Morning confirmation not yet run for this date" },
-        { status: 404, headers: NO_STORE_HEADERS }
+        { status: 200, headers: NO_STORE_HEADERS }
       );
     }
 

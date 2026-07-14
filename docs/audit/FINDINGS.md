@@ -330,3 +330,21 @@ plays show "entirely wrong" pnl/%/premium values, slow to update.
   lines from the passed prior OHLC + source guard that VectorChart sends `anchor=sessionYmd`.
   `spx-session.test.ts` +1 — displayed-session anchor returns the session strictly BEFORE the anchor
   (and documents the wall-clock-Saturday failure it replaces). tsc clean, full `npm test` + build green.
+
+## 2026-07-14 — Night Hawk pane console noise (found by the post-#322 pane validation gate)
+
+### LOW — /api/nighthawk/play-status returned 404 for its EXPECTED pre-cron state (FIXED — fix/play-status-404-noise)
+- **Found**: post-#321/#322 deployed-build pane validation (`pane-validate.mjs`, 8/9 PASS) failed its
+  zero-console-error check; a response-listener probe pinned the one error to
+  `GET /api/nighthawk/play-status?date=2026-07-14 → 404`.
+- **Root cause**: `src/app/api/nighthawk/play-status/route.ts` responded **404** when the 9:15am ET
+  morning-confirm cron hadn't written the date's Redis blob — but that is the EXPECTED state for
+  every pane load before 9:15am ET and all evening once the date param rolls to the next ET day
+  (~15 h/day). Browsers print every 4xx to the console regardless of JS handling, so members (and
+  our zero-console-error E2E gates) saw a red error on a healthy pane. The only caller
+  (`fetchNightHawkPlayStatus`) mapped `!res.ok` → reason-less `{available:false}`.
+- **Fix**: not-yet-run branch now responds **200** with the same honest
+  `{available:false, date, reason}` body (the caller now receives the reason instead of
+  synthesizing a blank one). True failure states (Redis unconfigured/unreachable) keep 503.
+- **Tests**: `play-status-contract.test.ts` — not-yet-run must be 200 with available:false, never
+  404; 503 must remain for Redis failure states. tsc clean.
