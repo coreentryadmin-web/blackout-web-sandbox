@@ -49,6 +49,26 @@ Per-horizon ladder kings (dense rows all 200/103/91, status 200):
   OI-crossing near 420, the flip-source unification (one flip for all surfaces) is still needed —
   ties into the held `fix/vector-surface-sync` branch.
 
+### Cross-session bead/wall continuity (user-flagged 2026-07-14, LIVE-PROBED)
+Dynamic-universe MECHANISM is sound (TTL 45d > retention 14d; cap 100; recorder unions
+`listDynamicUniverseTickers()`). Live probes:
+- **Dynamic recording w/o viewer — PASS**: UBER (35 ladder rows @73.83) + SNAP (9 rows @4.64) both
+  have recorder wall-history trails today (4-5 samples from ~13:30→13:45, wall strengths GROWING) with
+  NO viewer — `scratchpad/uber-continuity.mjs`.
+- **Persistence — yesterday exists**: SPX weekly wall-history **07-14 (Tue) 25 · 07-13 (Mon) 568** ·
+  **07-10 (Fri) 0** · UBER 07-14 5 · 07-13 3 · 07-10 0. (`scratchpad/prior-session.mjs`)
+- **GAP A (display, = held `fix/vector-multiday-replay`)**: today's chart paints only the CURRENT
+  session's rail (+ SSR "all" rail). Prior-session beads/walls are NOT drawn on today's map. This is
+  the multi-day rail feature. DECISION: re-implement CLEAN on current trunk (held branch is 58 behind
+  all of tonight's dense-ladder/flow/coherence work — do NOT force-rebase stale code): read+paint N
+  prior sessions of walls+beads; validate live RTH. Sequence AFTER the Vector deep-sweep reports.
+- **GAP B (recording/retention DEPTH)**: Friday 07-10 (a real market day, confirmed) has 0 weekly
+  wall-history samples though retention (#342) is 30d — per-horizon trail history reaches only ~1
+  trading day back. Root-cause: did per-horizon recording start ~Mon, or does retention/session-keying
+  drop older sessions? Fix so a real multi-day history accumulates (a multi-day rail is only as deep as
+  the recorded history behind it). Files: the wall-history recorder + `wall-history-retention.ts` +
+  `loadSessionWallHistory`.
+
 ### Known checklist items to confirm/fix live (docs/checklist/*-july14.md)
 - **N5-2 (P2)** Largo NEWS line leaks raw HTML entity `&#34;` — decode entities in the news composer.
 - **N5-3 (P2)** Largo offline "SESSION WRAPPED" headline clips at 1920/1440 — CSS.
