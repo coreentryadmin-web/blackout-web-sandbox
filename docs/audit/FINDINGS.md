@@ -115,14 +115,17 @@ evidence / fix / status per the CLAUDE.md policy.)
 
 ## 2026-07-14 — Vector data refresh rate optimization (member-reported, real-time responsiveness)
 
-### P2 — Slow Vector data updates (spot every 3s, GEX ladder every 60s) (FIXED, pending deploy verify)
-- **Root cause:** SWR refresh intervals set conservatively for minimal server load; member reported Vector felt "static" and laggy, not responsive to market moves.
-  - SPX playbook terminal: `refreshInterval: 3_000` (VectorDeskTerminal.tsx:61)
-  - GEX ladder (matrix): `setInterval(load, 60_000)` (VectorGexLadder.tsx:105)
-- **Requirement:** Spot prices should update every ~1 second; grid/matrix data every ~15 seconds (SSE stream provides spot, polling provides structure).
-- **Fix:** 
-  - VectorDeskTerminal.tsx:61: Changed `refreshInterval: liveSession ? 3_000 : 0` → `1_000`
-  - VectorGexLadder.tsx:105: Changed `setInterval(load, 60_000)` → `15_000` + adjusted guard from 55s → 10s
-  - Commit `a3aced5`, branch `claude/three-repos-review-36t217`
-- **Evidence expected:** Post-deploy, spot updates every tick from SSE + every 1s from playbook fetch; ladder structure refreshes every 15s (2-3 updates per 40s window).
-- **Status:** Fixed, awaiting staging deployment verification. Full UI validation requires Cognito authentication (staging endpoint: https://staging.blackouttrades.com/vector)
+### P2 — Slow Vector data updates (spot every 3s, GEX ladder every 60s, flow/history every 30-60s) (FIXED, pending deploy verify)
+- **Root cause:** SWR refresh intervals set conservatively for minimal server load; member reported Vector felt "static" and laggy, not responsive to market moves. Multiple Vector surfaces refreshing at different rates (3s/30s/60s).
+- **Requirement:** All Vector data (GEX, VEX, DEX, charm) should update with uniform 15-second cadence across all stocks (universe + non-universe), timeframes, and DTEs. Spot prices 1 second from playbook.
+- **Fix:** Standardized all Vector refresh intervals to 15 seconds default:
+  - **Commit a3aced5:**
+    - VectorDeskTerminal.tsx:61: SPX playbook refresh `3_000` → `1_000` (every 1s)
+    - VectorGexLadder.tsx:105: GEX matrix refresh `60_000` → `15_000` (every 15s)
+  - **Commit 78cdf74:**
+    - VectorChart.tsx:1514: Flow data fetch `30_000` → `15_000` (every 15s)
+    - VectorChart.tsx:1982: Wall history fetch `60_000` → `15_000` (every 15s)
+    - VectorScanner.tsx:45: Universe scanner refresh `30_000` → `15_000` (every 15s)
+- **Impact:** All Vector surfaces now refresh on same 15s cadence; spot prices update every 1s from playbook/SSE stream; gamma Greeks (GEX/VEX/DEX/charm) refresh 4x per minute instead of every 1-2 minutes.
+- **Evidence expected:** Post-deploy, GEX/flow/history all update 4 times per minute; consistent refresh across all tickers and horizons; member experience no longer "static".
+- **Status:** Fixed (commit 78cdf74), staged on `claude/three-repos-review-36t217`, awaiting staging deployment verification. Full UI validation requires Cognito authentication (https://staging.blackouttrades.com/vector)
