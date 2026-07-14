@@ -62,7 +62,7 @@ within SLA). Degraded feeds = no new commits + an honest amber light, never sile
 
 ## Wave 3 (2026-07-14 — user-driven: exits + data integrity)
 
-### B-8 · Profit ratchet — "a meaningfully green trade never finishes red" (BUILDING, exit engine spec)
+### B-8 · Profit ratchet — "a meaningfully green trade never finishes red" (SHIPPED — exit engine)
 User rule, debated to its honest form: a literal never-red lock at +1% would scratch winners into
 0DTE noise (contracts oscillate ±15% doing nothing). Design: ACTIVATION THRESHOLD ratchet —
 at +25–30% premium the floor locks at breakeven+fees; +50% → floor +20%; the +100% trim banks
@@ -70,6 +70,12 @@ half and the runner's floor never drops below +50%. Thesis-break exits are UNCON
 independent of P&L (alignment flip / opposing wall building / opposing sweep cluster → exit at
 market with the evidence line attached). Thresholds are v1 constants; the counterfactual exit
 grader (B-1) measures scratched-winner cost vs saved-losses and tunes them with data.
+**Shipped as `src/lib/zerodte/exit-engine.ts`** (pure, no-LLM core: ratchet floors derived from the
+latched peak so they are monotonic by construction; thesis-break off Cortex evidence — one veto or
+an opposing cluster past the entry's committed score margin; 45-min ±10% flat-timeout for theta
+bleed; plan stop/target authority; documented precedence) **+ `exit-sync.ts`** (freshest-mark wiring
+into `syncLedgerLiveState` — live-marks lane preferred when fresh; 30s-cached fail-soft Cortex
+evidence; `entry_context.exit` counterfactual stamp = the B-1 grader's raw material).
 
 ### B-9 · P0 — live marks lane: sub-second trade data + the wrong-P&L defect (BUILDING)
 User report (P0): 0DTE plays open and then "the entire data is wrong — pnl, %, premium values";
