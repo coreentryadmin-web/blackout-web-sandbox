@@ -842,6 +842,7 @@ test("rejections: a mixed batch only logs the ticker that actually failed a gate
 // ── intel notes ──────────────────────────────────────────────────────────────────
 
 import { buildIntelNote } from "./intel";
+import { evaluateZeroDteGates } from "./gates";
 
 test("intel: OPEN play says ADD with entry/stop numbers from the plan", () => {
   const s = enrichSetup(baseSetup(), fakeDossier());
@@ -877,6 +878,72 @@ test("intel: illiquid market is a PASS with the spread named", () => {
   });
   assert.equal(note.action, "PASS");
   assert.match(note.reason, /spread is 50%/);
+});
+
+test("intel: a score-floor-blocked SKIP at 10 AM narrates the SCORE FLOOR, never a 3 PM cutoff (live 2026-07-14 honesty bug)", () => {
+  // Reproduces the live-caught fabrication exactly: a fresh SPXW put, post-edge score
+  // 43, correctly hard-blocked by G-3 (43 < 65 floor) at ~10:15 ET, was narrated by the
+  // Largo consumer (zeroDtePlaysForLargo) as "Flagged after the 3:00 ET cutoff …
+  // Watch-only." — false on both counts (it was 10 AM; the block was the score floor).
+  // buildIntelNote must state the ACTUAL gate reason and NEVER invent a time cutoff
+  // mid-session. Uses a REAL evaluateZeroDteGates verdict (not a hand-mocked block) so
+  // the copy asserted is the same sentence the gate stack — and the board — produce.
+  const s = enrichSetup(baseSetup(), fakeDossier());
+  s.direction = "short";
+  const nowMs = Date.parse("2026-07-14T14:00:00Z"); // 10:00 ET on a weekday
+  s.gate = evaluateZeroDteGates({
+    ticker: "SPXW",
+    direction: "short",
+    score: 43,
+    nowEtMinutes: 10 * 60,
+    nowMs,
+    bias: "down", // aligned (short on a down tape) so ONLY the score floor blocks
+    biasAsOfMs: nowMs - 60_000,
+    governor: { open_plans: [], stops: [] },
+  });
+  assert.equal(s.gate.verdict, "BLOCKED");
+  assert.ok(s.gate.blocks.some((b) => b.code === "score_floor"), "fixture must actually score-floor block");
+  const note = buildIntelNote({
+    status: "SKIP", setup: s, plan: s.plan,
+    entryPremium: 3, livePnlPct: null, planOutcome: null, planPnlPct: null,
+    nowEtMinutes: 10 * 60,
+  });
+  assert.equal(note.action, "PASS");
+  assert.match(note.reason, /below the 65 commit floor/i);
+  assert.match(note.reason, /43/); // the actual score, cited
+  assert.doesNotMatch(note.reason, /cutoff/i); // NEVER a time-cutoff reason at 10 AM
+});
+
+test("intel: a genuinely post-cutoff SKIP (no gate block, no chase/liquidity) still cites the 3:00 ET cutoff", () => {
+  // The honest cutoff case must survive: when nothing HARD-blocked the find and it's
+  // not a chase/illiquid, the only reason it's a SKIP is the 15:00 ET no-fresh-entry
+  // rule (resolveFreshFindStatus's pastCutoff branch). Guarded on the clock, so this
+  // line appears ONLY at/after 15:00 ET.
+  const s = enrichSetup(baseSetup(), fakeDossier());
+  s.gate = null; // no hard block
+  const note = buildIntelNote({
+    status: "SKIP", setup: s, plan: null,
+    entryPremium: 3, livePnlPct: null, planOutcome: null, planPnlPct: null,
+    nowEtMinutes: 15 * 60 + 10, // 15:10 ET — genuinely past the cutoff
+  });
+  assert.equal(note.action, "PASS");
+  assert.match(note.reason, /3:00 ET cutoff/);
+});
+
+test("intel: a SKIP with no block/chase/liquidity BEFORE the cutoff refuses to fabricate a cutoff reason", () => {
+  // Defensive honesty: if a find lands in the SKIP lane mid-session with no concrete
+  // block (a state the Largo path shouldn't normally produce), the narration must NOT
+  // invent the 3 PM cutoff — it states an honest generic instead.
+  const s = enrichSetup(baseSetup(), fakeDossier());
+  s.gate = null;
+  const note = buildIntelNote({
+    status: "SKIP", setup: s, plan: null,
+    entryPremium: 3, livePnlPct: null, planOutcome: null, planPnlPct: null,
+    nowEtMinutes: 10 * 60, // 10:00 ET — nowhere near the cutoff
+  });
+  assert.equal(note.action, "PASS");
+  assert.doesNotMatch(note.reason, /cutoff/i);
+  assert.match(note.reason, /not committed/i);
 });
 
 test("intel: TRIM and stop-out SELL read like a desk, with the numbers", () => {

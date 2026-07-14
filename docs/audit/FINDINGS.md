@@ -1527,3 +1527,57 @@ intact. Full suite **3669 pass / 0 fail**; tsc + eslint clean; `npm run build` g
   **3713 pass / 0 fail**; `npm run build` green; eslint 0 errors on changed files.
 - **Status:** FIXED + tested. DRAFT PR open (not merged — user live-validates the sign against the
   server on the deployed build before merge).
+
+## 2026-07-14 — 0DTE intel narration fabricated a refusal reason (Night Hawk sweep, RTH) — PR fix/zerodte-honest-skip-reason
+
+### P1 — Largo narrated a score-floor-blocked 0DTE find as "after the 3:00 ET cutoff" at 10 AM (FIXED, tested)
+
+- **Severity:** P1 — honesty-critical. The trade DECISION was correct (a real fresh SPXW put 7540,
+  post-edge score 43, was hard-blocked by the G-3 score floor `43 < 65` and NOT committed — right call).
+  But the member-facing EXPLANATION was fabricated: `POST /api/market/largo/query` at ~10:15 ET narrated
+  it as *"Flagged after the 3:00 ET cutoff — a fresh 0DTE entry this late trades against the clock, not
+  the tape. Watch-only."* — false on both counts (it was 10 AM, and the block was the score floor, not
+  the clock). Inventing a refusal reason on a platform whose entire ethos is honesty is worse than a
+  wrong number.
+- **Root cause:** `src/lib/zerodte/intel.ts` — `buildIntelNote`'s `status === "SKIP"` branch handled only
+  two sub-cases (`plan.illiquid`, `plan.entry_status === "MOVED"`) and then fell through an unconditional
+  `else return` that ALWAYS blamed the 15:00 ET cutoff — it never read the hard-gate block metadata
+  (`setup.gate.blocks`) and never checked the clock (`nowEtMinutes`). It is reached for score-floor /
+  tape / governor blocks because a hard-BLOCKED fresh find is assigned `status:"SKIP"` in
+  `src/lib/platform/zerodte-service.ts:353` (`s.gate?.verdict === "BLOCKED" ? "SKIP"`), and that SKIP's
+  intel string is what the Largo consumer `zeroDtePlaysForLargo` (`zerodte-service.ts:383`) hands the
+  member. So EVERY hard-gate-blocked 0DTE find surfaced to Largo was narrated as a 3 PM-cutoff refusal
+  regardless of the real reason or the actual time of day.
+- **Why the board was UNAFFECTED (the reference):** the board's `SkipCard`
+  (`src/features/nighthawk/components/ZeroDteBoard.tsx:1143`) reads `setup.gate.blocks` directly and
+  renders each block's own sentence verbatim; it only shows the "late window / 3:00 ET cutoff" line in
+  the `blocks.length === 0 && !moved && !illiquid && status !== "WATCH"` fallthrough — i.e. ONLY for a
+  genuine post-cutoff SKIP. `buildIntelNote` had none of that block-awareness. Two mouths, one brain —
+  but only the board's mouth was honest.
+- **Blast radius:** exactly one consumer — the Largo/BIE 0DTE tool path (`zeroDtePlaysForLargo` →
+  `get_zerodte_plays`), both the ledger-row `plays` map and the `fresh_finds` map call `buildIntelNote`;
+  only the SKIP branch was wrong, so committed OPEN/HOLD/TRIM/CLOSED narration was unaffected, and the
+  board pane was unaffected. No second copy of the logic to fix.
+- **Fix:** `buildIntelNote`'s SKIP branch now mirrors the board's precedence. It reads
+  `setup.gate?.verdict === "BLOCKED" ? setup.gate.blocks : []` FIRST and, when non-empty, narrates the
+  gate's OWN sentence(s) verbatim (the exact copy the board renders — e.g. *"Score 43 is below the 65
+  commit floor — …"*). Only when there is NO hard block, and it's not a chase/illiquid, does it consider
+  the cutoff line — and even then it is guarded on `nowEtMinutes >= 15*60`, so a time-cutoff reason can
+  NEVER be emitted before 15:00 ET. If the clock is unknown or still inside the entry window with no
+  concrete block, it states an honest generic (*"Not committed — the desk has not cleared this fresh find
+  for entry."*) rather than fabricate anything. The 15:00 threshold is aligned with `sessionHeat`'s
+  POWER_HOUR boundary (`board.ts`), which is exactly when `resolveFreshFindStatus`'s `pastCutoff` fires.
+  The trade decision is unchanged — a blocked find stays PASS/refused; only the explanation becomes true.
+- **Fix rationale:** narrating `block.reason` verbatim (rather than re-deriving a phrase from `block.code`)
+  keeps Largo and the board word-identical and means any future gate-copy change flows to both surfaces
+  with no drift. Left the `illiquid` / `MOVED` branches and their ordering unchanged — both were already
+  honest and are out of this bug's scope.
+- **Evidence:** unit test reproduces the live case with a REAL `evaluateZeroDteGates` verdict (SPXW short,
+  score 43, 10:00 ET, aligned down tape → only the `score_floor` block): the note now matches
+  `/below the 65 commit floor/` and cites `43`, and `does NOT match /cutoff/`. Two companion tests pin the
+  honest cutoff case (no block, 15:10 ET → still cites the 3:00 ET cutoff) and the defensive case (no
+  block, 10:00 ET → honest generic, never a fabricated cutoff).
+- **Files:** `src/lib/zerodte/intel.ts` (SKIP branch), `src/lib/zerodte/board.test.ts` (+3 tests).
+- **Validation:** full suite **3709 pass / 0 fail**; `tsc --noEmit` clean; `npx eslint` (changed) clean;
+  `npm run build` green.
+- **Status:** FIXED — DRAFT PR opened, held for live validation (do not auto-merge).
