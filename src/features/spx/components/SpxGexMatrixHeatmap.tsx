@@ -168,7 +168,7 @@ export function SpxGexMatrixHeatmap({
   const matrixKey = "/api/market/gex-heatmap?ticker=SPX";
   const cachedMatrix = useMemo(() => readGexHeatmapSessionCache<GexHeatmapResponse>("SPX"), []);
 
-  const { data, isLoading, error, isValidating } = useSWR<GexHeatmapResponse>(
+  const { data, isLoading, error, isValidating, mutate } = useSWR<GexHeatmapResponse>(
     matrixKey,
     fetchGexHeatmap,
     {
@@ -406,7 +406,6 @@ export function SpxGexMatrixHeatmap({
       title="Dealer gamma map"
       actions={
         <span className="flex items-center gap-2 font-mono text-[10px] tabular-nums text-sky-300">
-          {isValidating && !isLoading && <span className="text-cyan-400">↻</span>}
           <span
             className={clsx("badge-live-dot", feedLive ? "opacity-100" : "opacity-40")}
             aria-hidden
@@ -415,6 +414,24 @@ export function SpxGexMatrixHeatmap({
             <span className="text-amber-300/90 uppercase tracking-wider">GEX stale</span>
           )}
           {asofLabel ? <span>{asofLabel} ET</span> : null}
+          {/* Manual refresh (user-directed 2026-07-14): revalidates ONLY this panel's SWR key
+              (matrix data — no page reload) and recenters the ladder/table on spot when the
+              fresh payload lands. Replaces the old bottom "Recenter on spot" button. */}
+          <button
+            type="button"
+            className={clsx(
+              "spx-matrix-refresh-btn",
+              isValidating && "spx-matrix-refresh-btn--spinning"
+            )}
+            onClick={() => {
+              userPinnedScrollRef.current = false;
+              void mutate().finally(() => centerSpotRow("smooth"));
+            }}
+            title="Refresh gamma map data and recenter on spot"
+            aria-label="Refresh dealer gamma map"
+          >
+            ↻
+          </button>
         </span>
       }
       className="spx-odte-matrix-panel spx-gex-matrix-heatmap flex flex-1 min-h-0 flex-col overflow-hidden"
@@ -740,18 +757,8 @@ export function SpxGexMatrixHeatmap({
           flowCallPrem={flow0dteCallPrem}
           flowPutPrem={flow0dtePutPrem}
         />
-        {view === "table" && (
-          <button
-            type="button"
-            className="spx-gex-matrix-recenter mt-1 shrink-0 self-center font-mono text-[9px] uppercase tracking-[0.14em] text-cyan-400/80 hover:text-cyan-300"
-            onClick={() => {
-              userPinnedScrollRef.current = false;
-              centerSpotRow("smooth");
-            }}
-          >
-            Recenter on spot
-          </button>
-        )}
+        {/* Bottom "Recenter on spot" removed (user-directed 2026-07-14) — the header refresh
+            button now recenters after revalidating, and the row goes back to the panels. */}
         </div>
       )}
     </Panel>
