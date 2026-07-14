@@ -145,6 +145,27 @@ Dynamic-universe MECHANISM is sound (TTL 45d > retention 14d; cap 100; recorder 
   card (#34). (bie fix agent)
 - N5-3 SESSION WRAPPED not reproducible RTH (off-hours only) — unverified.
 
-### Vector / Night Hawk / Thermal — _(pending)_
+### Night Hawk (live 13:55Z, ~45min session) — 33 PASS / 0 real FAIL, NO P0/P1 — `scratchpad/live-sweep-nighthawk.md`
+Honesty spine intact live: A+ earned-not-asserted (unlocked:false, a_graded:0, 46 rows untiered not falsely-C, inversion:false, never renders as conviction); NH overnight WR 11.1% (v2_fillability), 0DTE 37%/46; D-1 stop pin −50% live-correct; latest edition 2026-07-15 (not stale); old-date 2026-06-02 → stale:true flagged; N10 debrief honest 200; N11 observations NOT member-served; governor strip + one-way door + idle marks lane + zero console errors + clean UI desktop+mobile.
+- **P2 F-2 fabricated refusal reason (honesty)**: a correctly hard-blocked find (SPXW put 7540, score 43<65 floor) was narrated by Largo at 10:15 ET as "flagged after 3:00 ET cutoff, watch-only" — false (it's 10AM; real block is score floor). Root: `zerodte/intel.ts:102-105` else-branch unconditionally blames the 15:00 cutoff, ignores `gate_blocks`, never checks nowEtMinutes; reached because BLOCKED→status:"SKIP" (`zerodte-service.ts:353`); only the Largo consumer `zeroDtePlaysForLargo` (`zerodte-service.ts:383`) is wrong (board SkipCard is block-aware/correct). Trade decision correct (refused) — false EXPLANATION only. → FIX (zerodte-intel fix agent).
+- Residual (not a defect): live OPEN-position lanes (sub-second marks on a real position, exit engine OPEN→CLOSED, commit-latch transition, tier/cortex/invalidator pins on a committed row) couldn't be exercised — quiet open, no play committed. Re-run when a position is genuinely OPEN.
+
+### Vector / Thermal — _(pending)_
+### Volume-adjusted wall engine verification (rail-shot screenshots + probes, live ~14:08Z)
+Visual evidence: `scratchpad/rail-shot/rail-{SPX,TSLA,NVDA}.png`. Staggered-births signal:
+SPX 8 distinct bead origins, TSLA 8, NVDA 4 (mid-session births, not all at open).
+- **PASS mid-session births**: beads staggered across today's session (right side), not all at open. ✓
+- **PASS volume-adjusted walls**: SPX 7550C "firm held 90% · 85/100", 7500P "thin held 33% · 35/100" — scored strength live. ✓
+- **PASS DTE toggle**: 0DTE/WEEKLY/MONTHLY, NO ALL, default WEEKLY. ✓
+- **P1 FLIP DIVERGENCE (visual, confirms SPX-Slayer#1 / N4-1/N5-1)**: chart banner "gamma flip **7,643.81**"
+  vs desk terminal "gamma pivot **7,535**" on the SAME screen (108pt); 7643.81 is implausible (above the
+  7550 call wall, spot 7531) → the Vector WEEKLY flip derivation is the outlier. → VECTOR-FLIP UNIFICATION
+  must fix the weekly/chart-banner flip, not just 0DTE.
+- **P2 CHECK time labels**: terminal "LIVE 2:08:32 PM" + chart "3:30:00 PM" while ~10:08 ET → UTC leaking
+  into a market clock that should be ET (14:08→"2:08 PM"). Investigate the Vector chart/terminal time format.
+- **CHECK TSLA 0DTE honest-gap**: TSLA 0dte ladder 88 rows (≈ weekly 102) + 0dte rail 20 samples — NOT the
+  honest empty gap expected for a name with no same-day chain; likely the Friday weekly chain mislabeled
+  as 0DTE. Ladder response doesn't expose expiry — Vector sweep to confirm the actual 0dte expiry date. If
+  it's Fri 07-17 (not 07-14), it's a mislabeled fallback → fix the equity-0DTE honest gap (bb4ddeb scope).
 ### Technicals session-anchoring (OR-15m-Friday hypothesis: 3→22 seed bump) — _(pending, Vector sweep)_
 ### Multi-session continuity (Gap A/B) — _(building, feat/vector-multiday-continuity)_
