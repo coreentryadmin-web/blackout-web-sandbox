@@ -1108,3 +1108,40 @@ against staging: **68 pass · 0 fail · 4 skip · 3 expected-fail (keyed to #338
 - **Evidence (gauntlet):** max pain 7,525 (desk) vs 7,400 (Vector) now renders "The SPX desk and
   Vector DISAGREE on max pain … (Δ 125 pts, 1.7%)". `cross-check-read.test.ts`.
 - **Status:** FIXED (tsc clean, suite green).
+
+### GEX-DENSE-LADDER — GEX strike ladder was too SPARSE vs Skylit (dense-coverage fix, tested)
+- **Severity:** Medium (member-visible correctness/parity — the ladder is the Skylit-parity panel).
+- **Reported:** a member compared our $FIG GEX ladder to Skylit and we showed FAR fewer strikes
+  (skipped 28/29/31–34 above spot and everything below 17.5); Skylit showed a dense ladder. Owner:
+  "show ALL strikes, keep our canonical numbers." This EXTENDS #345 (which stopped the "all" ±12%
+  band truncation and added top-N-per-side wall retain) — coverage/density only, no math change.
+- **Root cause:** DENSITY, not the formula. `src/features/vector/lib/vector-gex-ladder.ts`
+  `buildGexLadder` re-narrowed the (already-canonical) `{strike: netGex}` map to a **±8% display
+  band** (`bandPct` 0.08) and then a **40-row cap** (`maxRows` 40), keeping only strikes nearest
+  spot plus the force-retained per-side walls. The upstream chain (`getHorizonStrikeTotals` →
+  `loadCurrentChainContracts`) already fetches the sensible traded range `[spot·0.7, spot·1.35]`
+  (−30%/+35%), so the ±8% window threw away most of the real-OI strikes the chain carried. On a
+  low-priced / high-dispersion name (FIG spot ~23) the fetched chain has ~30 strikes but the panel
+  rendered ~11.
+- **Fix (`vector-gex-ladder.ts` ONLY):** widened the default display band `bandPct` 0.08 → **0.50**
+  (a no-op vs the fetched −30%/+35% range — it no longer narrows the tradable structure) and raised
+  the default `maxRows` 40 → **200** (dense; the list scrolls). `keepPerSide` (top-N walls per side,
+  #345) is unchanged; the king/−GEX-peak/+GEX-peak markers and strike-descending order are unchanged;
+  **every row's signed dollar-gamma and magnitude are byte-identical** to before for strikes that
+  were already shown (proven by a diff test — `maxAbs` is unchanged because the king is always
+  retained, so no magnitude/bar shifts). The GEX formula (`gexLadderAtSpot` `:94`, canonical
+  `sign·γ·OI·100·S²·0.01`) and the heatmap/desk/Largo wall math are **untouched**.
+- **Blast radius (all ladder surfaces route through `buildGexLadder` with defaults → all get dense):**
+  the ladder API `src/app/api/market/vector/gex-ladder/route.ts` (Vector panel, every DTE incl.
+  "all"), the panel component `VectorGexLadder.tsx` (renders whatever rows the API returns; no
+  client cap; scrolls via `.vector-gex-ladder-rows{overflow-y:auto}`), and the BIE/Largo full-state
+  `src/lib/bie/vector-full-state.ts:200` (denser ladder = MORE grounded citable strikes in
+  `knownVectorNumbers`, strictly better for honesty; `ladderBriefLine` still cites only kings+count).
+  The SPX/thermal GEX **matrix heatmaps** are a different visualization (strike×time grid) and do NOT
+  use `buildGexLadder` — not in scope, not touched.
+- **Evidence (unit, `vector-gex-ladder.test.ts`):** FIG fixture now renders **20/20** strikes (was
+  ~11) incl. the previously-dropped 30/27/26/20/18/17.5/17; a both-sided wide fixture renders
+  12.5→34; a diff test asserts every previously-shown strike keeps identical `gex`/`side`/`magnitude`
+  and `maxAbs` is unchanged; kings/ordering re-asserted on the dense set. 12 tests pass.
+- **Status:** FIXED — DRAFT PR (deploy-risk: member-visible density increase on the ladder panel);
+  post-deploy `npm run validate:vector-hardcore` is the standing gate. Left UNMERGED per owner.

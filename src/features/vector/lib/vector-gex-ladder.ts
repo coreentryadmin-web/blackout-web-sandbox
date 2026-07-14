@@ -35,12 +35,24 @@ export type GexLadder = {
 };
 
 export type BuildGexLadderOpts = {
-  /** Max rows to keep (nearest-to-spot wins when the band has more). Default 40. */
+  /**
+   * Max rows to keep (nearest-to-spot wins when the band has more). Default 200 — a DENSE ladder:
+   * a member wants every material strike Skylit shows, not a tight near-money slice. 200 covers the
+   * entire fetched chain for any normally-priced name (a low-priced name's whole chain is a few
+   * dozen strikes; even SPX's 5-point strikes give a dense ±6-7% near-money window at 200 rows,
+   * with the fatter far walls still force-retained by `keepPerSide`). The list scrolls, so a long
+   * ladder is a feature, not a layout problem.
+   */
   maxRows?: number;
   /**
-   * Half-width of the strike band to keep, as a fraction of spot (e.g. 0.08 = ±8%). Applied only
-   * when spot is known. Default 0.08 — wide enough to show the structure a member trades around,
-   * tight enough to drop far-OTM noise. `maxRows` still caps the result after banding.
+   * Half-width of the strike band to keep, as a fraction of spot (e.g. 0.50 = ±50%). Applied only
+   * when spot is known. Default 0.50 — deliberately GENEROUS so the display band is NOT the density
+   * limiter: the upstream chain fetch already bands the traded range to [spot·0.7, spot·1.35]
+   * (−30%/+35%), so a ±50% display window shows every strike that range carries and only trims a
+   * true far-tail artifact. (This replaced the old ±8% window, which — compounded by a 40-row cap —
+   * dropped fat walls and whole runs of real-OI strikes on low-priced / high-dispersion names: FIG
+   * at spot ~23 showed ~11 strikes where Skylit showed the full ~30-strike chain. See
+   * docs/audit/FINDINGS.md.) `maxRows` (nearest-to-spot) is the real bound now, not this band.
    */
   bandPct?: number;
   /**
@@ -75,7 +87,7 @@ export function buildGexLadder(
   opts: BuildGexLadderOpts = {}
 ): GexLadder {
   if (!strikeTotals) return { ...EMPTY, spot };
-  const { maxRows = 40, bandPct = 0.08, keepPerSide = DEFAULT_KEEP_PER_SIDE } = opts;
+  const { maxRows = 200, bandPct = 0.5, keepPerSide = DEFAULT_KEEP_PER_SIDE } = opts;
 
   let entries: Array<{ strike: number; gex: number }> = [];
   for (const [key, value] of Object.entries(strikeTotals)) {
