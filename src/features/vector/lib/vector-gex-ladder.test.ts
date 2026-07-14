@@ -84,45 +84,108 @@ test("buildGexLadder: a put king OUTSIDE the nearest-N band is force-retained + 
   assert.equal(putKing!.magnitude, 1);
 });
 
-test("buildGexLadder: material runner-up walls OUTSIDE the band are retained (FIG missing-strike bug)", () => {
-  // Live FIG shape @ spot 23.2 (see docs/audit/FINDINGS.md GEX-vs-Skylit forensic): a fat call wall
-  // at strike 30 (OI 47k → +$648K) and the true put wall at 17.5 (−$323K) both sit OUTSIDE the ±8%
-  // display band [21.34, 25.06]. Before the top-N-per-side retain only the single king per side
-  // survived, so the panel showed the −GEX peak pinned at the near-spot strike 20 and hid the 30
-  // call wall entirely. Numbers are the real recomputed net-GEX per strike.
-  const fig: Record<string, number> = {
-    "30": 648_000, "27": 46_000, "26": 68_000, "25.5": 2_000, "25": 832_000,
-    "24.5": 11_000, "24": 157_000, "23.5": 37_000, "23": 212_000, "22.5": 83_000,
-    "22": 125_000, "21.5": 31_000, "21": 400, "20.5": -10_000, "20": -174_000,
-    "19.5": 12_000, "19": -10_000, "18": -20_000, "17.5": -323_000, "17": 19_000,
-  };
-  const l = buildGexLadder(fig, 23.2); // defaults: bandPct 0.08, maxRows 40, keepPerSide 3
+// The live FIG shape @ spot 23.2 (see docs/audit/FINDINGS.md GEX-vs-Skylit forensic). Real
+// recomputed net-GEX per strike — the fat call wall at 30 (OI 47k → +$648K) and the true put wall
+// at 17.5 (−$323K) both sit well outside a tight near-money window. Shared by the density tests.
+const FIG_SPOT = 23.2;
+const FIG_TOTALS: Record<string, number> = {
+  "30": 648_000, "27": 46_000, "26": 68_000, "25.5": 2_000, "25": 832_000,
+  "24.5": 11_000, "24": 157_000, "23.5": 37_000, "23": 212_000, "22.5": 83_000,
+  "22": 125_000, "21.5": 31_000, "21": 400, "20.5": -10_000, "20": -174_000,
+  "19.5": 12_000, "19": -10_000, "18": -20_000, "17.5": -323_000, "17": 19_000,
+};
 
+test("buildGexLadder: DENSE coverage — every material strike renders on the default ladder (FIG)", () => {
+  // The product ask: show ALL strikes like Skylit, keep our canonical numbers. With the wide default
+  // display band (0.50) + high row cap (200), the whole fetched FIG chain renders — not the ~11
+  // strikes the old ±8% window + 40-row cap left. Nothing here is banded away.
+  const l = buildGexLadder(FIG_TOTALS, FIG_SPOT); // defaults: bandPct 0.50, maxRows 200, keepPerSide 3
+
+  // EVERY strike in the map renders (20/20) — full chain density, no silent drops.
+  assert.equal(l.rows.length, Object.keys(FIG_TOTALS).length, "all 20 material strikes render");
   const strikes = new Set(l.rows.map((r) => r.strike));
-  // The fat call wall at 30 (a runner-up, NOT the king) is no longer dropped by the ±8% window.
-  assert.ok(strikes.has(30), "material +$648K call wall at 30 is retained");
-  // The true put wall at 17.5 is retained AND crowned — not the band-edge strike 20.
-  assert.ok(strikes.has(17.5), "true put wall at 17.5 is retained");
-  const putKing = l.rows.find((r) => r.isKing && r.side === "put");
-  assert.equal(putKing!.strike, 17.5, "put king is the TRUE put wall (17.5), not the band edge (20)");
-  // The most-negative displayed row (−GEX peak the panel highlights) is 17.5, not 20.
+  for (const k of Object.keys(FIG_TOTALS)) {
+    assert.ok(strikes.has(Number(k)), `strike ${k} present in the dense ladder`);
+  }
+  // The specific strikes the member said were missing vs Skylit are now all present.
+  for (const s of [30, 27, 26, 20, 18, 17.5, 17]) {
+    assert.ok(strikes.has(s), `previously-dropped strike ${s} now renders`);
+  }
+
+  // Ordering stays strike-descending (price-axis order).
+  const ordered = l.rows.map((r) => r.strike);
+  assert.deepEqual(ordered, [...ordered].sort((a, b) => b - a), "rows stay strike-descending");
+
+  // Wall markers correct on the dense set: exactly one king per side, at the true walls.
+  const kings = l.rows.filter((r) => r.isKing);
+  assert.equal(kings.length, 2, "exactly one king per side");
+  assert.equal(kings.find((r) => r.side === "call")!.strike, 25, "call king = strongest call (25)");
+  assert.equal(kings.find((r) => r.side === "put")!.strike, 17.5, "put king = TRUE put wall (17.5)");
+  // −GEX peak (most-negative displayed row) is the true put wall, not a near-spot band edge.
   const minRow = l.rows.reduce((a, b) => (b.gex < a.gex ? b : a));
-  assert.equal(minRow.strike, 17.5, "−GEX peak is 17.5, fixing the band-edge-pinned '20' artifact");
-  // Call king unchanged (25 is the strongest), and the runner-up put wall 20 also survives.
-  assert.equal(l.rows.find((r) => r.isKing && r.side === "call")!.strike, 25);
-  assert.ok(strikes.has(20), "runner-up put wall at 20 also retained");
+  assert.equal(minRow.strike, 17.5, "−GEX peak is 17.5, not a band-edge artifact");
 });
 
-test("buildGexLadder: keepPerSide=1 reproduces the old single-king retain (runner-ups dropped)", () => {
-  // Regression guard: with keepPerSide=1 only the king per side is force-retained, so a fat
-  // out-of-band runner-up wall is dropped — the exact pre-fix behaviour, proving the new default
-  // (3) is what surfaces the runner-ups.
+test("buildGexLadder: DENSE ladder keeps CANONICAL values — existing strikes' gex + magnitude unchanged", () => {
+  // The ONLY thing density changes is COVERAGE. Every strike that appeared before must keep the
+  // EXACT same signed dollar-gamma and the exact same magnitude (|gex|/maxAbs). We prove it by
+  // diffing the dense default ladder against a narrow-band ladder (the pre-density behaviour): every
+  // strike common to both carries identical numbers — only NEW strikes are added by the wider band.
+  const dense = buildGexLadder(FIG_TOTALS, FIG_SPOT);
+  const narrow = buildGexLadder(FIG_TOTALS, FIG_SPOT, { bandPct: 0.08, maxRows: 40 });
+
+  const denseByStrike = new Map(dense.rows.map((r) => [r.strike, r]));
+  assert.ok(narrow.rows.length < dense.rows.length, "the narrow ladder really is sparser (density increased)");
+  // maxAbs (the magnitude normaliser) is identical — the king is retained in both, so no strike's
+  // bar/intensity shifts when the ladder gets denser.
+  assert.equal(dense.maxAbs, narrow.maxAbs, "maxAbs unchanged → magnitudes are on the same scale");
+  for (const nr of narrow.rows) {
+    const dr = denseByStrike.get(nr.strike);
+    assert.ok(dr, `strike ${nr.strike} still present in the dense ladder`);
+    assert.equal(dr!.gex, nr.gex, `strike ${nr.strike} keeps identical signed net-GEX`);
+    assert.equal(dr!.side, nr.side, `strike ${nr.strike} keeps identical side`);
+    assert.equal(dr!.magnitude, nr.magnitude, `strike ${nr.strike} keeps identical magnitude`);
+  }
+  // And every dense row's gex equals the raw canonical map value — the formula is untouched.
+  for (const r of dense.rows) {
+    assert.equal(r.gex, FIG_TOTALS[String(r.strike)], `strike ${r.strike} gex == canonical map value`);
+  }
+});
+
+test("buildGexLadder: dense band spans deep OTM both sides — 12.5 put through 30+ call all render", () => {
+  // A wider-chain fixture (the member's actual complaint: strikes 28/29/30 above and everything
+  // below 17.5 were skipped). With the dense defaults a chain spanning 12.5 → 34 all renders when
+  // the strikes carry real OI — the "dense where there's real OI" Skylit parity, in one ladder.
+  const wide: Record<string, number> = {
+    "34": 90_000, "33": 40_000, "32": 55_000, "31": 70_000, "30": 648_000, "29": 120_000,
+    "28": 210_000, "26": 68_000, "25": 832_000, "24": 157_000, "23": 212_000, "22": 125_000,
+    "21": 90_000, "20": -174_000, "18": -20_000, "17.5": -323_000, "15": -60_000, "12.5": -40_000,
+  };
+  const l = buildGexLadder(wide, 24);
+  const strikes = new Set(l.rows.map((r) => r.strike));
+  for (const s of [28, 29, 30, 31, 32, 33, 34, 17.5, 15, 12.5]) {
+    assert.ok(strikes.has(s), `strike ${s} renders (dense both-sided coverage)`);
+  }
+  assert.equal(l.rows.length, Object.keys(wide).length, "the whole wide chain renders, no drops");
+  // Ordering + one-king-per-side still hold on the wide set.
+  const ordered = l.rows.map((r) => r.strike);
+  assert.deepEqual(ordered, [...ordered].sort((a, b) => b - a), "strike-descending");
+  assert.equal(l.rows.filter((r) => r.isKing).length, 2, "one king per side");
+  assert.equal(l.rows.find((r) => r.isKing && r.side === "call")!.strike, 25, "call king 25");
+  assert.equal(l.rows.find((r) => r.isKing && r.side === "put")!.strike, 17.5, "put king 17.5");
+});
+
+test("buildGexLadder: keepPerSide=1 + narrow band reproduces the old single-king retain (runner-ups dropped)", () => {
+  // Regression guard for the #345 top-N-per-side retain: with an explicit NARROW band (±8%) and
+  // keepPerSide=1 only the king per side is force-retained, so a fat out-of-band runner-up wall is
+  // dropped — the exact pre-#345 behaviour. (The band must be passed explicitly now that the default
+  // is wide; the whole point of the new default is that 30 is NO LONGER out of band.)
   const fig: Record<string, number> = {
     "30": 648_000, "25": 832_000, "24": 157_000, "23": 212_000, "22": 125_000, "17.5": -323_000, "20": -174_000,
   };
-  const l = buildGexLadder(fig, 23.2, { keepPerSide: 1 });
+  const l = buildGexLadder(fig, 23.2, { keepPerSide: 1, bandPct: 0.08 });
   const strikes = new Set(l.rows.map((r) => r.strike));
-  assert.ok(!strikes.has(30), "with keepPerSide=1 the out-of-band call runner-up 30 is dropped");
+  assert.ok(!strikes.has(30), "with keepPerSide=1 + ±8% band the out-of-band call runner-up 30 is dropped");
   assert.ok(strikes.has(25), "call king still retained");
   assert.ok(strikes.has(17.5), "put king still retained");
 });

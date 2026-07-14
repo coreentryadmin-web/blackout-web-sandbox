@@ -9744,9 +9744,11 @@ body::before {
   }
 
   @media (min-width: 1280px) {
-    /* Proportions per member spec: ~10% ladder · ~60% chart · ~30% terminal. The ladder holds only a
-       few dense rows so it stays thin (min 96px so it never collapses); the terminal is the main
-       scroll surface so it gets ~30%; the chart takes the remaining ~60%. */
+    /* Proportions per member spec: ~10% ladder · ~60% chart · ~30% terminal. The ladder is a thin
+       rail (min 96px so it never collapses) that fills its column height and SCROLLS internally —
+       it now carries the FULL dense strike chain (every material strike, Skylit parity), so
+       `.vector-gex-ladder-rows` (overflow-y:auto) is the scroll surface; the terminal gets ~30%;
+       the chart takes the remaining ~60%. */
     .vector-chart-terminal-grid {
       grid-template-columns: minmax(96px, 10%) minmax(0, 1fr) minmax(300px, 30%);
     }
