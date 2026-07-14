@@ -240,6 +240,63 @@ test("commit latch: an uncommitted fresh find is WATCH with non-actionable intel
   assert.match(largo.fresh_finds[0]!.intel, /NOT committed/);
 });
 
+// ── PR-F tier wiring: pinned tier passthrough + F for refused finds ────────────────
+
+test("tier passthrough: entry_context.tier rides the board ledger row AND the Largo play unchanged (mirror of the cortex passthrough)", async () => {
+  const pinnedTier = {
+    tier: "B",
+    factors: [
+      { label: "Prime score band", direction: "up", detail: "Score 78 sits in 75-84 — the best measured band." },
+      { label: "Cortex evidence missing", direction: "down", detail: "Cortex abstained — A is out of reach." },
+    ],
+  };
+  state.ledgerRead = {
+    rows: [ledgerRow({ entry_context: { tier: pinnedTier, cortex: null } })],
+    committed_known: true,
+  };
+  state.setups = [];
+
+  const { buildZeroDteBoardPayload, zeroDtePlaysForLargo } = await import("./zerodte-service");
+  const board = await buildZeroDteBoardPayload();
+  assert.deepEqual(board.ledger[0]!.tier, pinnedTier, "board row carries the pinned blob verbatim");
+  const largo = (await zeroDtePlaysForLargo()) as { plays: Array<{ tier: unknown }> };
+  assert.deepEqual(largo.plays[0]!.tier, pinnedTier, "Largo play cites the same pinned tier — zero extra IO");
+});
+
+test("tier passthrough: a pre-wiring row (no entry_context.tier) serves tier:null — no chip, never a re-derived grade", async () => {
+  state.ledgerRead = { rows: [ledgerRow({ entry_context: { cortex: null } })], committed_known: true };
+  state.setups = [];
+  const { buildZeroDteBoardPayload } = await import("./zerodte-service");
+  const board = await buildZeroDteBoardPayload();
+  assert.equal(board.ledger[0]!.tier, null);
+});
+
+test("fresh-lane tiers: a refused (SKIP) find carries tierForSkip's F with each block as a down factor; a WATCH candidate carries NO tier", async () => {
+  state.ledgerRead = { rows: [], committed_known: true };
+  state.setups = [
+    freshFind("TSLA"), // clean RTH find → WATCH (not a decision — must get no tier)
+    freshFind("META", {
+      gate: {
+        verdict: "BLOCKED",
+        blocks: [{ code: "score_floor", reason: "Score 62 is under the 65 floor.", threshold: 65, unlock_et: null }],
+      },
+    }),
+  ];
+  const { zeroDtePlaysForLargo } = await import("./zerodte-service");
+  const largo = (await zeroDtePlaysForLargo()) as {
+    fresh_finds: Array<{ ticker: string; status: string; tier: { tier: string; factors: Array<Record<string, unknown>> } | null }>;
+  };
+  const meta = largo.fresh_finds.find((f) => f.ticker === "META")!;
+  assert.equal(meta.status, "SKIP");
+  assert.equal(meta.tier!.tier, "F");
+  assert.deepEqual(meta.tier!.factors, [
+    { label: "score_floor", direction: "down", detail: "Score 62 is under the 65 floor." },
+  ]);
+  const tsla = largo.fresh_finds.find((f) => f.ticker === "TSLA")!;
+  assert.equal(tsla.status, "WATCH");
+  assert.equal(tsla.tier, null, "an uncommitted, unrefused candidate is not a decision — no invented grade");
+});
+
 test("commit latch: unknowable committed set (ledger read failed, no same-session snapshot) fails CLOSED — no fresh finds render, upstream degraded", async () => {
   const { buildZeroDteBoardPayload } = await import("./zerodte-service");
   // WHY: with the committed set unreadable, a committed play's ticker (which

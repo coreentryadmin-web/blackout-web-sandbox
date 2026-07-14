@@ -23,12 +23,17 @@ import {
   isCortexBlockCode,
   minutesUntilEtUnlock,
   readCortexView,
+  readTierAssignment,
   reentryLockRemainingMs,
   resolveZeroDteReadiness,
   suggestedZeroDteSize,
   zeroDteGateLabel,
   type PaneCortexView,
 } from "@/lib/zerodte/pane";
+// Client-safe: tiers.ts is pure — its one import (./gates constants) reaches only
+// modules already stubbed for the client bundle (next.config.mjs aliases ioredis
+// to false, same isomorphic pattern as spx-desk-merge.ts).
+import { displayTierFor, tierForSkip, type TierFactor, type ZeroDteTier } from "@/lib/zerodte/tiers";
 import { LOW_N_THRESHOLD } from "@/lib/zerodte/record";
 import { useZeroDteLiveMarks } from "@/features/nighthawk/hooks/useZeroDteLiveMarks";
 import { shortMonthDay } from "@/lib/relative-time";
@@ -76,6 +81,9 @@ type LedgerRow = {
   /** Commit-time Cortex evidence blob (entry_context.cortex passthrough, #318) —
    *  opaque here; validated structurally by readCortexView. */
   cortex?: unknown;
+  /** Commit-time merit tier blob (entry_context.tier passthrough, PR-F) — opaque
+   *  here; validated structurally by readTierAssignment. */
+  tier?: unknown;
 };
 
 /** G-5 session risk summary (additive, PR-D — zerodte-service's governor block). */
@@ -202,6 +210,13 @@ type PlayRow = {
    *  live assessment; fresh finds carry the live assessment. Null = no verdict
    *  on record → the card says so honestly, never fabricates a table. */
   cortex: PaneCortexView | null;
+  /** Merit tier for the card's chip (PR-F). Committed rows carry the PINNED
+   *  commit-time assignment (entry_context.tier passthrough — what the desk graded
+   *  when the money moved, never a live re-derivation); refused fresh finds carry
+   *  tierForSkip's F (each failing gate a "down" factor). Null = no tier on record
+   *  (pre-wiring rows) or a WATCH candidate — an uncommitted, unrefused find is not
+   *  a decision yet, so it gets NO grade rather than an invented provisional one. */
+  tier: { tier: ZeroDteTier | "F"; factors: TierFactor[] } | null;
   /** BIE ecosystem echo — see LedgerRow. Null for fresh finds not yet persisted. */
   nighthawkEcho: NighthawkEcho | null;
   /** B-9 live-marks lane overlay (see overlayLiveMark): quote timestamp,
@@ -281,6 +296,9 @@ export function mergePlays(
     spike: r.spike,
     setup: byTicker.get(r.ticker) ?? null,
     cortex: readCortexView(r.cortex) ?? readCortexView(byTicker.get(r.ticker)?.cortex),
+    // Pinned commit-time tier ONLY — no fallback to a live re-derivation: the chip
+    // grades the decision that printed, and a decision's grade doesn't move after.
+    tier: readTierAssignment(r.tier),
     nighthawkEcho: r.nighthawk_echo,
     mark_as_of: r.mark_as_of ?? null,
     mark_source: r.mark_source ?? null,
@@ -298,23 +316,24 @@ export function mergePlays(
     if (seen.has(s.ticker.toUpperCase())) continue;
     if (sessionClosed) continue;
     const moved = s.plan?.entry_status === "MOVED";
+    // Hard-gate-blocked finds are SKIP regardless of clock/liquidity — the gate
+    // stack (src/lib/zerodte/gates.ts) already decided this is not committable.
+    // Same rule zeroDtePlaysForLargo applies, so the pane and Largo can never
+    // disagree about whether a blocked find is a play. Everything else is at most
+    // WATCH — an uncommitted find NEVER wears OPEN (resolveFreshFindStatus,
+    // board.ts): pre-#latch it did, rendered exactly like a live position, and
+    // visibly "regressed" to a watch card when the next scan tick's re-derived
+    // plan/gate flapped. OPEN is reserved for ledger rows above.
+    const status =
+      s.gate?.verdict === "BLOCKED"
+        ? ("SKIP" as const)
+        : resolveFreshFindStatus(heatState, moved, Boolean(s.plan?.illiquid));
     rows.push({
       ticker: s.ticker,
       direction: s.direction,
       strike: s.top_strike,
       expiry: s.expiry || null,
-      // Hard-gate-blocked finds are SKIP regardless of clock/liquidity — the gate
-      // stack (src/lib/zerodte/gates.ts) already decided this is not committable.
-      // Same rule zeroDtePlaysForLargo applies, so the pane and Largo can never
-      // disagree about whether a blocked find is a play. Everything else is at most
-      // WATCH — an uncommitted find NEVER wears OPEN (resolveFreshFindStatus,
-      // board.ts): pre-#latch it did, rendered exactly like a live position, and
-      // visibly "regressed" to a watch card when the next scan tick's re-derived
-      // plan/gate flapped. OPEN is reserved for ledger rows above.
-      status:
-        s.gate?.verdict === "BLOCKED"
-          ? "SKIP"
-          : resolveFreshFindStatus(heatState, moved, Boolean(s.plan?.illiquid)),
+      status,
       committed: false,
       entry_premium: s.plan?.entry_max ?? s.top_strike_avg_fill,
       flow_avg_fill: s.top_strike_avg_fill,
@@ -329,6 +348,10 @@ export function mergePlays(
       spike: s.spike,
       setup: s,
       cortex: readCortexView(s.cortex),
+      // Refused finds get the F assignment (tierForSkip — the #325 wiring the SKIP
+      // cards were promised); WATCH candidates get NO tier (not decisions yet).
+      // Same rule as zeroDtePlaysForLargo's fresh lane, so pane and Largo agree.
+      tier: status === "SKIP" ? tierForSkip(s.gate?.verdict === "BLOCKED" ? s.gate.blocks : null) : null,
       nighthawkEcho: null,
     });
   }
@@ -700,6 +723,74 @@ function ConvictionBadge({ raw }: { raw: string | null }) {
   );
 }
 
+// ── merit tier chip (PR-F) ───────────────────────────────────────────────────────
+
+/** A+ display gate for displayTierFor — the promotion is EARNED from the measured
+ *  A-bucket record (tier_record.aplus.unlocked, calibration.ts), never asserted.
+ *  Held OFF here because the board payload doesn't carry the calibration report
+ *  (it's admin-gated and a heavy ledger-range aggregation — not worth adding to
+ *  the 5s board hot path for one chip), and A-as-A is always honest.
+ *  TODO(PR-F3): surface tier_record.aplus.unlocked as a tiny cached scalar on the
+ *  board payload (computed alongside the record route's existing ledger read) and
+ *  thread it through mergePlays to this gate. */
+const APLUS_UNLOCKED = false;
+
+/** The tier chip: the commit-time merit grade (or F for a refused find). Tone
+ *  follows the pane's severity conventions (ConvictionBadge/StatusBadge): A bull,
+ *  B sky, C neutral, F bear. The full factor list renders in the expanded detail
+ *  (TierFactorsBlock); the chip's title carries the one-line labels. */
+function TierChip({ tier }: { tier: NonNullable<PlayRow["tier"]> }) {
+  const display = tier.tier === "F" ? "F" : displayTierFor(tier.tier, APLUS_UNLOCKED);
+  const tone =
+    display === "F" ? "bear" : display === "A+" || display === "A" ? "bull" : display === "B" ? "sky" : "neutral";
+  return (
+    <Badge
+      tone={tone}
+      size="sm"
+      title={
+        (display === "F"
+          ? "Tier F — refused by the desk (skips are F by definition). "
+          : `Merit tier ${display} — graded at commit from the pinned entry evidence, never re-derived. `) +
+        (tier.factors.length > 0 ? `Factors: ${tier.factors.map((f) => f.label).join(" · ")}.` : "")
+      }
+    >
+      tier {display}
+    </Badge>
+  );
+}
+
+/** "Why this grade" — every point and cap behind the tier, verbatim from the pinned
+ *  factors (same visual grammar as the Cortex evidence rows above it). */
+function TierFactorsBlock({ tier }: { tier: NonNullable<PlayRow["tier"]> }) {
+  return (
+    <div>
+      <div className="flex items-center justify-between gap-2">
+        <p className="font-mono text-[10px] uppercase tracking-widest text-sky-300/50">
+          Merit tier · graded at commit
+        </p>
+        <span className="t-num text-[11px] font-bold text-sky-200/85">
+          tier {tier.tier === "F" ? "F" : displayTierFor(tier.tier, APLUS_UNLOCKED)}
+        </span>
+      </div>
+      <ul className="mt-1.5 space-y-1">
+        {tier.factors.map((f, i) => (
+          <li key={`${f.label}-${i}`} className="flex items-start gap-2 rounded-md px-1.5 py-1">
+            <span
+              className={clsx(
+                "mt-px shrink-0 font-mono text-[10px] font-semibold",
+                f.direction === "up" ? "text-bull/80" : "text-bear/80"
+              )}
+            >
+              {f.direction === "up" ? "▲" : "▼"} {f.label}
+            </span>
+            <span className="min-w-0 flex-1 text-[11px] leading-snug text-sky-200/85">{f.detail}</span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 function SizeChip({ view }: { view: PaneCortexView | null }) {
   const verdict = view && !view.abstained ? view.verdict : null;
   const chip = suggestedZeroDteSize(verdict?.score ?? null, (verdict?.vetoes.length ?? 0) > 0);
@@ -834,6 +925,9 @@ function PlayDetail({ row, nowMs }: { row: PlayRow; nowMs: number }) {
     <div className="space-y-3 border-t border-white/[0.06] px-4 py-3">
       <CortexEvidenceBlock view={row.cortex} />
 
+      {/* why this grade (PR-F) — the pinned tier factors, when the row carries them */}
+      {row.tier && <TierFactorsBlock tier={row.tier} />}
+
       {/* why the play was picked */}
       <div>
         <p className="font-mono text-[10px] uppercase tracking-widest text-sky-300/50">Why this play</p>
@@ -950,6 +1044,7 @@ function PlayCard({ row, nowMs }: { row: PlayRow; nowMs: number }) {
           <span className="font-mono text-[10px] uppercase tracking-widest text-sky-300/50">
             exp {row.expiry ? shortMonthDay(row.expiry) : "—"}
           </span>
+          {row.tier && <TierChip tier={row.tier} />}
           <ConvictionBadge raw={row.conviction} />
           {live && <SizeChip view={view} />}
           {row.closed_reason === "stopped" && (
@@ -1060,6 +1155,10 @@ function SkipCard({ row, nowMs }: { row: PlayRow; nowMs: number }) {
         <Badge tone={row.direction === "long" ? "bull" : "bear"} size="sm">
           {row.direction}
         </Badge>
+        {/* F chip (PR-F): a refused find is a graded decision — tier F by definition.
+            WATCH candidates carry tier:null (no chip): not a decision yet, no grade.
+            The factor detail is the block list below — never duplicated here. */}
+        {row.tier && <TierChip tier={row.tier} />}
         <span className="ml-auto flex items-baseline gap-1.5">
           <span className="font-mono text-[9px] uppercase tracking-[0.18em] text-sky-300/40">score</span>
           <span className="t-num text-[12px] font-bold text-sky-200/80">{Math.round(row.score)}</span>

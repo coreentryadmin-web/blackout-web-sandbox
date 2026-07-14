@@ -32,6 +32,8 @@ const state = {
   gradeCalls: [] as Array<{ sessionDate: string; ticker: string; grade: Record<string, unknown> }>,
   aggBarCalls: [] as Array<{ symbol: string; timespan: string }>,
   dailyBars: new Map<string, Array<{ t: number; o: number; h: number; l: number; c: number }>>(),
+  // persistZeroDteScan wiring (PR-F commit-time tier stamp test below)
+  upsertRows: [] as Array<Record<string, unknown>>,
 };
 
 function resetState() {
@@ -43,6 +45,7 @@ function resetState() {
   state.gradeCalls = [];
   state.aggBarCalls = [];
   state.dailyBars = new Map();
+  state.upsertRows = [];
 }
 
 // scan.ts's exit-engine wiring (./exit-sync) imports ./live-marks, which reaches
@@ -88,7 +91,10 @@ mock.module("../db", {
     },
     insertAlertAuditLog: async () => {},
     updateZeroDtePlanOutcome: async () => {},
-    upsertZeroDteSetupLog: async () => new Set<string>(),
+    upsertZeroDteSetupLog: async (rows: Array<Record<string, unknown>>) => {
+      state.upsertRows.push(...rows);
+      return new Set<string>();
+    },
   },
 });
 
@@ -365,4 +371,93 @@ test("gradeZeroDteLedger: an index-root row (SPXW) fetches its close from I:SPX 
   assert.equal(grade.close_price, 7575.39, "close must come from the I:SPX bar");
   assert.equal(grade.direction_hit, true, "long from 7564.68 into a 7575.39 close is a hit");
   assert.ok(grade.move_pct != null && grade.move_pct > 0);
+});
+
+// ── PR-F commit-time tier stamp (persistZeroDteScan → entry_context.tier) ──────────
+// The #325 PR body promised exactly this wiring: "one assignZeroDteTier call at
+// commit". buildZeroDteEntryContext (REAL here, like the rest of ./entry-context's
+// pure half) pins the tier by feeding the just-built blob through
+// tierFromEntryContext, so the ledger row the upsert receives must carry the
+// {tier, factors} assignment computed from the SAME values being pinned.
+
+test("persistZeroDteScan: a fresh COMMIT's upserted row pins entry_context.tier from the same pinned evidence", async () => {
+  resetState();
+  // Day-open VIX 16.1 — the F-1 calm band (15-17). The session-context fetch reads
+  // it through the same mocked Polygon provider as everything else in this file.
+  state.dailyBars.set("I:VIX", [{ t: Date.parse("2026-07-06T13:30:00Z"), o: 16.1, h: 17, l: 15.8, c: 16.5 }]);
+
+  const setup = {
+    ticker: "NVDA",
+    direction: "long" as const,
+    top_strike: 145,
+    expiry: "2026-07-06",
+    score: 78, // prime band (75-84) — the best measured band
+    dossier_score: null,
+    conviction: null,
+    gross_premium: 2_000_000,
+    spike: false,
+    underlying_price: 140,
+    top_strike_avg_fill: 4.2,
+    plan: null,
+    gamma_regime: null,
+    // Clean multi-source Cortex support at commit (assessment shape — the real
+    // cortexEntryContextFor flattens it into the blob the tier engine reads).
+    cortex: {
+      abstained: false as const,
+      decision: "PASS" as const,
+      verdict: {
+        ticker: "NVDA",
+        direction: "long" as const,
+        asOf: "2026-07-06T15:00:00.000Z",
+        score: 2.1,
+        conviction: "A" as const,
+        vetoes: [],
+        supports: [
+          { source: "gex-walls", stance: "supports", weight: 1.0, halfLifeSec: 900, asOf: "2026-07-06T15:00:00.000Z", detail: "path clear" },
+          { source: "wall-trend", stance: "supports", weight: 1.1, halfLifeSec: 900, asOf: "2026-07-06T15:00:00.000Z", detail: "wall growing" },
+        ],
+        opposes: [],
+        absent: [],
+        narrative: [],
+      },
+    },
+    gate: {
+      verdict: "COMMIT" as const,
+      blocks: [],
+      calibration: {
+        score_at_commit: 78,
+        market_bias: "up",
+        committed_at_et: "11:30",
+        g4_vix: { day_open_vix: 16.1, tier: "calm", would_block: false, would_halve_size: false, note: "calm" },
+        g6_conflict: { conflict: false, against: [], would_block: false, note: "No cross-system conflict." },
+      },
+    },
+    earnings: null,
+    news_hot: null,
+    halted: false,
+    fib_note: null,
+    direction_confirmed: null,
+  };
+
+  const { persistZeroDteScan } = await mod();
+  const logged = await persistZeroDteScan([setup as never]);
+
+  assert.equal(logged, 1);
+  assert.equal(state.upsertRows.length, 1);
+  const ctx = state.upsertRows[0]!.entry_context as {
+    score: number | null;
+    vix_open: number | null;
+    tier: { tier: string; factors: Array<{ label: string; direction: string }> } | null;
+  };
+  assert.equal(ctx.score, 78);
+  assert.equal(ctx.vix_open, 16.1);
+  // Prime score (+2) + calm VIX (+2) + clean Cortex (+2) ≥ the A bar even with the
+  // early-window penalty (committed_at_et is stamped from the REAL clock, so the
+  // F-4 factor's presence depends on when this test runs — the tier does not).
+  assert.ok(ctx.tier, "the commit-time tier must be pinned alongside the evidence it ranks");
+  assert.equal(ctx.tier!.tier, "A");
+  const labels = ctx.tier!.factors.map((f) => f.label);
+  for (const expected of ["Prime score band", "VIX calm band", "Clean Cortex support"]) {
+    assert.ok(labels.includes(expected), `factor "${expected}" must argue the tier (got: ${labels.join(", ")})`);
+  }
 });

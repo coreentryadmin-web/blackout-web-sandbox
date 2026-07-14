@@ -9,6 +9,7 @@ import {
   minutesUntilEtUnlock,
   readCortexVerdict,
   readCortexView,
+  readTierAssignment,
   reentryLockRemainingMs,
   resolveZeroDteReadiness,
   suggestedZeroDteSize,
@@ -100,6 +101,44 @@ test("readCortexView: pre-wire-in rows / malformed blobs read as null (no verdic
   const view = readCortexView({ abstained: false, decision: "NOT_A_DECISION", verdict: validVerdict });
   assert.ok(view && !view.abstained);
   assert.equal(view.decision, null); // unknown decision string degrades to null, verdict survives
+});
+
+// ── PR-F merit-tier structural read ─────────────────────────────────────────────────
+
+test("readTierAssignment: a pinned {tier, factors} blob passes through intact", () => {
+  const blob = {
+    tier: "B",
+    factors: [
+      { label: "Mid score band", direction: "up", detail: "Score 68 in 65-74." },
+      { label: "Early window", direction: "down", detail: "Committed before 11:00 ET." },
+    ],
+  };
+  assert.deepEqual(readTierAssignment(blob), blob);
+  // Zero factors is a legal (if unusual) assignment — the shape is what's validated.
+  assert.deepEqual(readTierAssignment({ tier: "C", factors: [] }), { tier: "C", factors: [] });
+});
+
+test("readTierAssignment: malformed/absent blobs read as null — no chip, never a guessed grade", () => {
+  assert.equal(readTierAssignment(undefined), null);
+  assert.equal(readTierAssignment(null), null);
+  assert.equal(readTierAssignment("A"), null);
+  assert.equal(readTierAssignment({}), null);
+  assert.equal(readTierAssignment({ tier: "A" }), null); // factors missing
+  assert.equal(readTierAssignment({ tier: "A", factors: "broken" }), null);
+  assert.equal(
+    readTierAssignment({ tier: "A", factors: [{ label: "x", direction: "sideways", detail: "y" }] }),
+    null,
+    "an unknown factor direction is a malformed blob"
+  );
+});
+
+test("readTierAssignment: only assignable letters pass — a blob claiming A+ or F is malformed by definition", () => {
+  // A+ is a DISPLAY promotion (displayTierFor over the measured record) and F is the
+  // skip pile (tierForSkip) — neither can be a pinned entry assignment, so a blob
+  // asserting one must not render as if the engine said it (tiers.ts rules 1 + F).
+  assert.equal(readTierAssignment({ tier: "A+", factors: [] }), null);
+  assert.equal(readTierAssignment({ tier: "F", factors: [] }), null);
+  assert.equal(readTierAssignment({ tier: "D", factors: [] }), null);
 });
 
 // ── B-4 suggested size (0.5×/1× only) ───────────────────────────────────────────────

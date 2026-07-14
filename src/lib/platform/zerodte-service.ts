@@ -20,6 +20,7 @@ import {
 } from "@/lib/zerodte/board";
 import { buildIntelNote } from "@/lib/zerodte/intel";
 import { cortexSummaryFor } from "@/lib/zerodte/cortex-gate";
+import { tierForSkip } from "@/lib/zerodte/tiers";
 import {
   closedStopReason,
   isZeroDteMarkStale,
@@ -75,6 +76,13 @@ export type ZeroDteBoardLedgerRow = {
    *  shows an honest "gates-only" line, never a fabricated table. Served as an
    *  opaque blob; the client validates the shape structurally (zerodte/pane.ts). */
   cortex: Record<string, unknown> | null;
+  /** Commit-time merit tier pinned on the row (entry_context.tier, PR-F) — the
+   *  {tier, factors[]} assignment stamped by the SAME scan pass that committed the
+   *  play. Same passthrough contract as `cortex` above: served opaque, validated
+   *  structurally client-side (readTierAssignment, zerodte/pane.ts); null on rows
+   *  committed before the tier wiring shipped — the pane simply shows no chip,
+   *  never a re-derived or fabricated grade. */
+  tier: Record<string, unknown> | null;
 };
 
 export type ZeroDteBoardPayload = {
@@ -147,6 +155,10 @@ function mapLedgerRow(
     cortex:
       r.entry_context && typeof r.entry_context.cortex === "object"
         ? ((r.entry_context.cortex as Record<string, unknown> | null) ?? null)
+        : null,
+    tier:
+      r.entry_context && typeof r.entry_context.tier === "object"
+        ? ((r.entry_context.tier as Record<string, unknown> | null) ?? null)
         : null,
   };
 }
@@ -307,6 +319,10 @@ export async function zeroDtePlaysForLargo(): Promise<Record<string, unknown>> {
       peak_score: r.score_max,
       action: intel.action,
       intel: intel.reason,
+      // Commit-time merit tier (PR-F) — the pinned {tier, factors} blob riding the
+      // board row (entry_context passthrough, already read: zero extra IO). Null on
+      // pre-wiring rows; Largo cites the letter, never invents one.
+      tier: r.tier,
       graded: r.plan_outcome ? { outcome: r.plan_outcome, pnl_pct: r.plan_pnl_pct } : null,
     };
   });
@@ -352,6 +368,13 @@ export async function zeroDtePlaysForLargo(): Promise<Record<string, unknown>> {
             // Machine code + human sentence per failing gate (null = clear/ungated) —
             // the same copy the board's SKIP cards render.
             gate_blocks: s.gate?.verdict === "BLOCKED" ? s.gate.blocks : null,
+            // Merit tier (PR-F): a refused find IS a decision, so a SKIP carries the
+            // F assignment with each failing gate as a "down" factor (gate blocks
+            // when hard-gated; tierForSkip's generic factor for chase/liquidity/late
+            // refusals). A WATCH candidate is NOT a decision yet — no tier, ever:
+            // inventing a provisional grade for an uncommitted find would be exactly
+            // the asserted-not-earned labeling the tier engine exists to kill.
+            tier: status === "SKIP" ? tierForSkip(s.gate?.verdict === "BLOCKED" ? s.gate.blocks : null) : null,
             // Night Hawk Cortex verdict summary (design §2 "the full evidence table
             // on every card — including SKIPs"): committed finds carry score/
             // conviction + top supports; Cortex-blocked SKIPs carry the veto /

@@ -483,6 +483,82 @@ test("mergePlays: ledger row without its own expiry falls back to the live setup
   assert.equal(rows[0]!.expiry, "2026-07-07");
 });
 
+// ── PR-F merit-tier chips (mergePlays tier mapping) ─────────────────────────────────
+
+test("mergePlays: committed row carries its PINNED entry_context.tier (structurally validated); malformed blobs read as null", () => {
+  const pinnedTier = {
+    tier: "A",
+    factors: [
+      { label: "Prime score band", direction: "up", detail: "Score 78 sits in 75-84." },
+      { label: "VIX calm band", direction: "up", detail: "Day-open VIX 16.1 in 15-17." },
+    ],
+  };
+  const ledgerRow = (tier: unknown) => ({
+    ticker: "NVDA",
+    direction: "long" as const,
+    score_max: 80,
+    spike: false,
+    first_flagged_at: new Date().toISOString(),
+    underlying_at_flag: 138,
+    top_strike: 140,
+    expiry: null,
+    conviction: null,
+    entry_premium: 4.2,
+    flow_avg_fill: 4.2,
+    status: "OPEN",
+    last_mark: 4.3,
+    live_pnl_pct: 2.38,
+    move_pct: null,
+    direction_hit: null,
+    plan_outcome: null,
+    plan_pnl_pct: null,
+    graded: false,
+    nighthawk_echo: null,
+    tier,
+  });
+  const good = mergePlays([], [ledgerRow(pinnedTier)], "RTH");
+  assert.deepEqual(good[0]!.tier, pinnedTier);
+  // Malformed shapes (pre-wiring rows, a blob claiming a letter the entry engine
+  // cannot mint) render NO chip — never a guessed or trusted-verbatim grade.
+  for (const bad of [undefined, null, "A", { tier: "A+" }, { tier: "A", factors: "x" }, { tier: "D", factors: [] }]) {
+    const rows = mergePlays([], [ledgerRow(bad)], "RTH");
+    assert.equal(rows[0]!.tier, null, `malformed tier blob ${JSON.stringify(bad)} must read as null`);
+  }
+});
+
+test("mergePlays: gate-BLOCKED fresh find carries tier F with each block as a down factor; WATCH candidate carries NO tier", () => {
+  const blocked = fakeSetup("META", null);
+  blocked.gate = {
+    verdict: "BLOCKED",
+    blocks: [
+      { code: "score_floor", reason: "Score 62 is under the 65 floor.", threshold: 65, unlock_et: null },
+      { code: "tape_alignment", reason: "Long setup fights the DOWN tape.", threshold: null, unlock_et: null },
+    ],
+    calibration: {
+      score_at_commit: 62,
+      market_bias: "down",
+      committed_at_et: "10:15",
+      g4_vix: { day_open_vix: null, tier: "unknown", would_block: false, would_halve_size: false, note: "n/a" },
+      g6_conflict: { conflict: false, against: [], would_block: false, note: "No cross-system conflict." },
+    },
+  };
+  const rows = mergePlays([blocked, fakeSetup("TSLA", null)], [], "RTH");
+  const meta = rows.find((r) => r.ticker === "META")!;
+  assert.equal(meta.status, "SKIP");
+  assert.equal(meta.tier!.tier, "F");
+  assert.deepEqual(
+    meta.tier!.factors.map((f) => [f.label, f.direction]),
+    [
+      ["score_floor", "down"],
+      ["tape_alignment", "down"],
+    ]
+  );
+  // A clean uncommitted candidate is not a decision yet — no tier, no chip.
+  const tsla = rows.find((r) => r.ticker === "TSLA")!;
+  assert.equal(tsla.status, "WATCH");
+  assert.equal(tsla.tier, null);
+});
+
 // ── B-9 live-marks overlay (overlayLiveMark) ───────────────────────────────────────
 
 import { overlayLiveMark } from "./ZeroDteBoard";
@@ -509,6 +585,7 @@ function playRow(over: Partial<Parameters<typeof overlayLiveMark>[0]>): Paramete
     spike: false,
     setup: null,
     cortex: null,
+    tier: null,
     nighthawkEcho: null,
     ...over,
   };
