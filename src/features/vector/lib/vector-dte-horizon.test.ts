@@ -2,6 +2,9 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   expiriesForHorizon,
+  resolveHorizonExpiries,
+  horizonScopeShortLabel,
+  formatExpiryShort,
   normalizeDteHorizon,
   isVectorDteHorizon,
   dteHorizonLabel,
@@ -110,4 +113,49 @@ test("normalizeDteHorizon: case-insensitive — UI-cased '0DTE'/'WEEKLY' must no
   assert.equal(normalizeDteHorizon("ALL"), "all");
   assert.equal(normalizeDteHorizon("garbage"), "all");
   assert.equal(normalizeDteHorizon(null), "all");
+});
+
+// ---- P1-B: honest nearest-expiry fallback signal (0DTE silently showing the next expiry) ----
+
+test("resolveHorizonExpiries: in-window match is NOT a fallback", () => {
+  const r = resolveHorizonExpiries(EXPS, "0dte", "2026-07-13"); // 07-13 is a same-day expiry
+  assert.deepEqual(r.expiries, ["2026-07-13"]);
+  assert.equal(r.isFallback, false);
+  assert.equal(r.fallbackExpiry, null);
+});
+
+test("resolveHorizonExpiries: 0DTE with NO same-day expiry falls back to nearest + flags it", () => {
+  // Tuesday 07-14, but the chain's nearest expiry is 07-15 (TSLA/NVDA on a Tuesday — the live bug).
+  const exps = ["2026-07-15", "2026-07-18", "2026-08-15"];
+  const r = resolveHorizonExpiries(exps, "0dte", "2026-07-14");
+  assert.deepEqual(r.expiries, ["2026-07-15"], "returns the nearest expiry so walls never blank");
+  assert.equal(r.isFallback, true);
+  assert.equal(r.fallbackExpiry, "2026-07-15");
+  // expiriesForHorizon (the array-only delegate) still returns the same set — backward compatible.
+  assert.deepEqual(expiriesForHorizon(exps, "0dte", "2026-07-14"), ["2026-07-15"]);
+});
+
+test("resolveHorizonExpiries: 'all' and empty chains never report a fallback", () => {
+  assert.equal(resolveHorizonExpiries(EXPS, "all", "2026-07-13").isFallback, false);
+  assert.deepEqual(resolveHorizonExpiries([], "0dte", "2026-07-14"), {
+    expiries: [],
+    isFallback: false,
+    fallbackExpiry: null,
+  });
+});
+
+test("horizonScopeShortLabel: plain label normally, honest 'no 0DTE · <expiry>' on fallback", () => {
+  assert.equal(horizonScopeShortLabel("0dte", { isFallback: false, fallbackExpiry: null }), "0DTE");
+  assert.equal(horizonScopeShortLabel("all", null), "near-term");
+  assert.equal(horizonScopeShortLabel("weekly", undefined), "Weekly");
+  assert.equal(
+    horizonScopeShortLabel("0dte", { isFallback: true, fallbackExpiry: "2026-07-15" }),
+    "no 0DTE · Jul 15"
+  );
+});
+
+test("formatExpiryShort: UTC-parsed so it never drifts a day; bad date passes through", () => {
+  assert.equal(formatExpiryShort("2026-07-15"), "Jul 15");
+  assert.equal(formatExpiryShort("2026-01-01"), "Jan 1");
+  assert.equal(formatExpiryShort("not-a-date"), "not-a-date");
 });

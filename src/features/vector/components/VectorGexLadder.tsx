@@ -3,7 +3,7 @@
 import clsx from "clsx";
 import { useEffect, useRef, useState } from "react";
 import { buildGexLadder, type GexLadder, type GexLadderRow } from "@/features/vector/lib/vector-gex-ladder";
-import { dteHorizonLabel, type VectorDteHorizon } from "@/features/vector/lib/vector-dte-horizon";
+import { horizonScopeShortLabel, type VectorDteHorizon } from "@/features/vector/lib/vector-dte-horizon";
 
 /**
  * GEX signing lens. `oi` (DEFAULT) = our canonical view: static call+/put− weighted by OPEN
@@ -39,7 +39,16 @@ type Props = {
   dteHorizon?: VectorDteHorizon;
 };
 
-type LadderResponse = { spot: number | null; asOf: string | null; ladder: GexLadder; mode?: GexLensMode };
+/** P1-B honesty signal: when a bounded horizon (e.g. 0DTE) had no in-window expiry, the ladder is
+ *  really the NEAREST expiry — surfaced so the header labels it honestly, not as the requested DTE. */
+type LadderScope = { isFallback: boolean; fallbackExpiry: string | null };
+type LadderResponse = {
+  spot: number | null;
+  asOf: string | null;
+  ladder: GexLadder;
+  mode?: GexLensMode;
+  scope?: LadderScope | null;
+};
 
 /**
  * Strike-ladder side panel — the dense per-strike net-GEX column a member scans alongside the
@@ -54,6 +63,9 @@ export function VectorGexLadder({ ticker, liveSession, initialSpot = null, dteHo
   const [ladder, setLadder] = useState<GexLadder>(() => buildGexLadder(null, initialSpot));
   const [spot, setSpot] = useState<number | null>(initialSpot);
   const [asOf, setAsOf] = useState<string | null>(null);
+  // P1-B: honest nearest-expiry fallback signal for the header scope label. Null = no fallback / not
+  // yet known / flow lens (which is inherently all-expiry, never a per-horizon fallback).
+  const [scope, setScope] = useState<LadderScope | null>(null);
   const [state, setState] = useState<"loading" | "ready" | "error">("loading");
   // GEX signing lens — OI (canonical, default) vs Flow (today's directional flow, Skylit parity).
   // Switching refetches with `?mode=flow` and re-renders the SAME dense ladder off the flow-signed
@@ -83,6 +95,8 @@ export function VectorGexLadder({ ticker, liveSession, initialSpot = null, dteHo
         setLadder(data.ladder ?? buildGexLadder(null, data.spot ?? null));
         setSpot(data.spot ?? null);
         setAsOf(data.asOf ?? null);
+        // Flow lens is all-expiry (no per-horizon fallback); only the OI path reports a scope.
+        setScope(mode === "flow" ? null : data.scope ?? null);
         setState("ready");
       } catch {
         if (!cancelled && tickerRef.current === ticker) setState("error");
@@ -135,9 +149,21 @@ export function VectorGexLadder({ ticker, liveSession, initialSpot = null, dteHo
         <span className="vector-gex-ladder-title">GEX Ladder</span>
         <span className="vector-gex-ladder-sub">
           {spot != null ? `spot ${spot.toLocaleString("en-US", { maximumFractionDigits: 2 })}` : "—"}
-          <span className="vector-gex-ladder-scope">
+          <span
+            className={clsx(
+              "vector-gex-ladder-scope",
+              // P1-B: a fallback scope is a data-honesty caution, styled distinctly so the member
+              // reads "this isn't really 0DTE" rather than mistaking the nearest expiry for it.
+              scope?.isFallback && "vector-gex-ladder-scope--fallback"
+            )}
+            title={
+              scope?.isFallback && scope.fallbackExpiry
+                ? `No ${dteHorizon.toUpperCase()} expiry available — showing the nearest chain (${scope.fallbackExpiry})`
+                : undefined
+            }
+          >
             {" · "}
-            {mode === "flow" ? "flow · all exp" : dteHorizon === "all" ? "near-term" : dteHorizonLabel(dteHorizon)}
+            {mode === "flow" ? "flow · all exp" : horizonScopeShortLabel(dteHorizon, scope)}
           </span>
         </span>
       </header>

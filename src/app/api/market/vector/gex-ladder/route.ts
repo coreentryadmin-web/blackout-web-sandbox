@@ -80,8 +80,10 @@ export async function GET(req: NextRequest) {
   const scoped = await getHorizonStrikeTotals(ticker, horizon).catch(() => null);
   if (scoped) {
     const ladder = buildGexLadder(scoped.strikeTotals, scoped.spot, { kingStrikes });
+    // scope (P1-B): tells the client this ladder FELL BACK to the nearest expiry (e.g. "0DTE" asked
+    // for a name with no same-day chain) so the header labels it honestly instead of "0DTE".
     return NextResponse.json(
-      roundFloats({ ticker, spot: scoped.spot, asOf: null, horizon, mode, ladder })
+      roundFloats({ ticker, spot: scoped.spot, asOf: null, horizon, mode, ladder, scope: scoped.scope })
     );
   }
 

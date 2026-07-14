@@ -9991,6 +9991,12 @@ body::before {
   .vector-gex-ladder-scope {
     color: rgba(148, 163, 184, 0.55);
   }
+  /* P1-B: nearest-expiry fallback — amber caution so "no 0DTE · Jul 15" reads as a data honesty
+     note, not a normal scope label. The member must not mistake it for today's 0DTE structure. */
+  .vector-gex-ladder-scope--fallback {
+    color: rgba(251, 191, 36, 0.9);
+    font-weight: 600;
+  }
 
   /* Lens toggle row: OI (canonical) | Flow (today), plus the ⓘ explainer. */
   .vector-gex-ladder-lens {

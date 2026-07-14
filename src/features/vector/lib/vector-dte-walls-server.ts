@@ -9,7 +9,7 @@ import {
   perExpiryWallsFromContracts,
   type PerExpiryWalls,
 } from "./vector-dte-walls-core";
-import { expiriesForHorizon, type VectorDteHorizon } from "./vector-dte-horizon";
+import { resolveHorizonExpiries, type VectorDteHorizon } from "./vector-dte-horizon";
 
 /**
  * Per-expiry GEX walls + gamma flip for a DTE horizon, for ANY optionable ticker.
@@ -78,7 +78,13 @@ export async function getPerExpiryGexWalls(
 export async function getHorizonStrikeTotals(
   ticker: string,
   horizon: VectorDteHorizon
-): Promise<{ spot: number; strikeTotals: Record<string, number> } | null> {
+): Promise<{
+  spot: number;
+  strikeTotals: Record<string, number>;
+  /** Honesty signal (P1-B): true + the shown expiry when the requested horizon had no in-window
+   *  expiry and this ladder is really the NEAREST expiry (so the route/UI can label it honestly). */
+  scope: { isFallback: boolean; fallbackExpiry: string | null };
+} | null> {
   const t = normalizeVectorTicker(ticker);
   try {
     const pos = await getGexPositioning(t);
@@ -88,15 +94,22 @@ export async function getHorizonStrikeTotals(
     if (!contracts.length) return null;
     const today = todayEtYmd();
     const expiries = [...new Set(contracts.map((c) => c.expiry))].sort();
-    const scoped = new Set(expiriesForHorizon(expiries, horizon, today));
-    if (scoped.size === 0) return null;
-    const filtered = contracts.filter((c) => scoped.has(c.expiry));
+    // resolveHorizonExpiries (not just expiriesForHorizon) so we learn whether the horizon FELL
+    // BACK to the nearest expiry — the "0DTE silently shows 07-15" mislabel the route must surface.
+    const resolution = resolveHorizonExpiries(expiries, horizon, today);
+    const scopedSet = new Set(resolution.expiries);
+    if (scopedSet.size === 0) return null;
+    const filtered = contracts.filter((c) => scopedSet.has(c.expiry));
     if (!filtered.length) return null;
     const ladder = gexLadderAtSpot(filtered, spot, today);
     if (ladder.size === 0) return null;
     const strikeTotals: Record<string, number> = {};
     for (const [strike, gex] of ladder) strikeTotals[String(strike)] = gex;
-    return { spot, strikeTotals };
+    return {
+      spot,
+      strikeTotals,
+      scope: { isFallback: resolution.isFallback, fallbackExpiry: resolution.fallbackExpiry },
+    };
   } catch {
     return null; // honest fallback — the route drops back to the near-term heatmap
   }

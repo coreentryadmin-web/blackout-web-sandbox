@@ -84,33 +84,88 @@ function dteDays(todayYmd: string, expiryYmd: string): number | null {
   return Math.round((b - a) / 86_400_000);
 }
 
+/** Result of scoping expiries to a horizon, WITH the honesty signal the UI needs (P1-B). */
+export type HorizonExpiryResolution = {
+  /** The expiries to use (never empty unless there are no live expiries at all). */
+  expiries: string[];
+  /**
+   * True when a BOUNDED horizon had NO expiry inside its window and we fell back to the single
+   * nearest live expiry (e.g. "0DTE" requested on a Tuesday for a name whose nearest chain is
+   * Wednesday). The fallback keeps walls from vanishing, but the caller MUST surface it — rendering
+   * the nearest expiry's ladder silently labeled "0DTE" shows members the wrong expiry's dealer
+   * positioning (live sweep: TSLA/NVDA "0DTE" drew a full 07-15 ladder with no signal).
+   */
+  isFallback: boolean;
+  /** The nearest expiry actually shown when `isFallback` (else null). */
+  fallbackExpiry: string | null;
+};
+
 /**
- * Filter a sorted list of `YYYY-MM-DD` expiries to the ones inside `horizon`.
+ * Scope a sorted list of `YYYY-MM-DD` expiries to `horizon`, reporting whether the result is an
+ * honest in-window match or a nearest-expiry FALLBACK.
  *
  * Rules:
  *  - Past expiries (dte < 0) are always dropped — a wall on a dead expiry is noise.
- *  - "all" returns every non-expired expiry.
+ *  - "all" returns every non-expired expiry (never a fallback).
  *  - "0dte"/"weekly"/"monthly" return expiries within the inclusive DTE ceiling.
- *  - HONEST FALLBACK: if a bounded horizon has no matching expiry (e.g. "0dte"
- *    over a weekend when the nearest expiry is Monday), return the single NEAREST
- *    expiry rather than an empty set — walls must never silently vanish because
- *    the requested horizon happened to be empty. Returning empty would blank the
- *    overlay and read as "no dealer positioning", which is wrong.
+ *  - HONEST FALLBACK: if a bounded horizon has no matching expiry, return the single NEAREST expiry
+ *    (so walls never silently blank) but flag `isFallback` + `fallbackExpiry` so the UI can label it
+ *    honestly ("no 0DTE — showing 07-15") instead of mislabeling it as the requested horizon.
+ */
+export function resolveHorizonExpiries(
+  expiries: readonly string[],
+  horizon: VectorDteHorizon,
+  todayYmd: string
+): HorizonExpiryResolution {
+  const live = expiries
+    .map((e) => ({ e, dte: dteDays(todayYmd, e) }))
+    .filter((x): x is { e: string; dte: number } => x.dte != null && x.dte >= 0)
+    .sort((a, b) => a.dte - b.dte);
+
+  if (!live.length) return { expiries: [], isFallback: false, fallbackExpiry: null };
+  if (horizon === "all") return { expiries: live.map((x) => x.e), isFallback: false, fallbackExpiry: null };
+
+  const maxDte = HORIZON_MAX_DTE[horizon];
+  const within = live.filter((x) => x.dte <= maxDte).map((x) => x.e);
+  if (within.length) return { expiries: within, isFallback: false, fallbackExpiry: null };
+  const nearest = live[0]!.e;
+  return { expiries: [nearest], isFallback: true, fallbackExpiry: nearest };
+}
+
+/**
+ * Filter a sorted list of `YYYY-MM-DD` expiries to the ones inside `horizon` (just the array —
+ * delegates to {@link resolveHorizonExpiries}). Kept as the stable signature for every existing
+ * consumer that only needs the expiry set; callers that must render an honest scope label use
+ * resolveHorizonExpiries directly.
  */
 export function expiriesForHorizon(
   expiries: readonly string[],
   horizon: VectorDteHorizon,
   todayYmd: string
 ): string[] {
-  const live = expiries
-    .map((e) => ({ e, dte: dteDays(todayYmd, e) }))
-    .filter((x): x is { e: string; dte: number } => x.dte != null && x.dte >= 0)
-    .sort((a, b) => a.dte - b.dte);
+  return resolveHorizonExpiries(expiries, horizon, todayYmd).expiries;
+}
 
-  if (!live.length) return [];
-  if (horizon === "all") return live.map((x) => x.e);
+/** Compact ET-safe "MON D" render of a `YYYY-MM-DD` expiry (expiry is a bare calendar date — parse
+ *  as UTC so it never drifts a day across time zones). Returns the raw string on a bad date. */
+export function formatExpiryShort(ymd: string): string {
+  const ms = Date.parse(`${ymd}T00:00:00Z`);
+  if (!Number.isFinite(ms)) return ymd;
+  return new Intl.DateTimeFormat("en-US", { timeZone: "UTC", month: "short", day: "numeric" }).format(
+    new Date(ms)
+  );
+}
 
-  const maxDte = HORIZON_MAX_DTE[horizon];
-  const within = live.filter((x) => x.dte <= maxDte).map((x) => x.e);
-  return within.length ? within : [live[0]!.e];
+/**
+ * The honest short scope label for the GEX ladder / chart header. Normally just the horizon name
+ * ("0DTE" / "Weekly" / "near-term"), but when the horizon FELL BACK to the nearest expiry it reads
+ * e.g. "no 0DTE · Jul 15" so members never mistake a 07-15 ladder for today's 0DTE (P1-B).
+ */
+export function horizonScopeShortLabel(
+  horizon: VectorDteHorizon,
+  scope?: { isFallback?: boolean; fallbackExpiry?: string | null } | null
+): string {
+  const base = horizon === "all" ? "near-term" : dteHorizonLabel(horizon);
+  if (horizon === "all" || !scope?.isFallback || !scope.fallbackExpiry) return base;
+  return `no ${dteHorizonLabel(horizon)} · ${formatExpiryShort(scope.fallbackExpiry)}`;
 }
