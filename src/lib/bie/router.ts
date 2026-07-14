@@ -27,7 +27,8 @@ export type BieIntent =
   | "verdict"
   | "compound_lookup"
   | "system_diagnostic"
-  | "cortex_read";
+  | "cortex_read"
+  | "nighthawk_edition";
 
 export type BieRoute = {
   intent: BieIntent;
@@ -129,7 +130,7 @@ const CONCEPT_RE =
  *  Deliberately status VERBS + product-state nouns, NOT bare "market" (so "what is market structure"
  *  stays a concept). */
 const CONCEPT_LIVE_HINT_RE =
-  /\b(doing|happening|going on|right now|look(ing)? like|the setup|the play|the trade|the bias|the read|tonight|tonight's|today's|latest|current|this week|edition)\b/i;
+  /\b(doing|happening|going on|right now|look(ing)? like|the setup|the play|the trade|the bias|the read|tonight|tonight's|today's|tomorrow|tomorrow's|latest|current|this week|edition|playbook)\b/i;
 /** Teach/opinion/reasoning shapes that belong with Claude, not a glossary lookup. */
 const CONCEPT_TEACH_EXCLUDE_RE =
   /\bin general\b|\bshould i\b|\bwould you\b|\bthink\b|\bworried\b|\bopinion\b|\bpredict\b|\bforecast\b|\bhow\b[^?]{0,40}\bwork/i;
@@ -193,6 +194,86 @@ const CORTEX_DECISION_RE =
 
 function isCortexQuestion(q: string): boolean {
   return CORTEX_TERM_RE.test(q) || CORTEX_DECISION_RE.test(q);
+}
+
+// Night Hawk EDITION read (PR-N9) — the deterministic "tomorrow's plays" path. Shapes:
+//  1. edition asks: "tomorrow's plays", "tonight's playbook", "what's in the edition",
+//     "what is tonight's Night Hawk edition", terse "playbook" / "nh";
+//  2. pick-WHY: "why was CSX picked (tonight)?", "why was the pick pulled?", "was AMD
+//     pulled?" — answered from the PINNED records (#331: publish_context, the persisted
+//     morning_verdict, the one-way pulled latch), never reconstructed;
+//  3. terse "nh <ticker>" — that pick's full story;
+//  4. morning-check asks: "what did the morning check see?".
+// Placement: AFTER concept/diagnostic (a definitional "what is a pulled play" stays a
+// glossary read; "why isn't the edition loading" stays a diagnostic) and BEFORE the
+// cortex branch — "why was <ticker> picked/pulled" is an OVERNIGHT decision question,
+// while the ticker-less "why was the top play picked" (no NH marker, no ticker subject)
+// deliberately falls through to the 0DTE cortex_read exactly as before (#327's tested
+// shape). Also before REASONING_RE, or the "why" would bail to Claude.
+const NIGHTHAWK_TERM_RE = /\bnight\s?hawk\b/i;
+const NH_EDITION_HINT_RE =
+  /\b(edition|playbook|plays?|picks?|picked|pulled|morning\s+(check|confirm(?:ation)?|verdict))\b/i;
+const NH_OVERNIGHT_MARKER_RE = /\b(tonight'?s?|tomorrow'?s?|overnight|edition|playbook|night\s?hawk)\b/i;
+const NH_TOMORROW_PLAYS_RE = /\b(tomorrow'?s|tonight'?s)\s+(plays?|picks?|playbook|edition|setups?)\b/i;
+const NH_IN_EDITION_RE = /\bwhat'?s?\s+(?:is\s+)?in\s+the\s+(edition|playbook)\b/i;
+const NH_TERSE_TICKER_RE = /^(?:nh|night\s?hawk)\s+\$?([a-z]{1,5})\??\s*$/i;
+const NH_TERSE_EDITION_RE = /^(?:nh|playbook|the\s+playbook|the\s+edition|night\s?hawk\s+edition)\??\s*$/i;
+// "pulled" only counts as the LATCH verb when not followed by a direction word —
+// "price got pulled back / pulled lower" is tape talk, not the morning-confirm latch.
+const NH_PULLED_WORD = /\bpulled\b(?!\s+(?:back|lower|higher|down|up|toward|into|in)\b)/i;
+const NH_PICK_WHY_RE =
+  /\bwhy\b[^?]{0,80}\b(?:was|were|did|didn'?t|wasn'?t|is|isn'?t)\b[^?]{0,80}\b(?:picked|pulled(?!\s+(?:back|lower|higher|down|up|toward|into|in)\b)|chosen|selected)\b/i;
+// The word directly before picked/pulled ("why was CSX picked") — edition tickers are
+// often outside KNOWN_TICKERS (CSX, DELL, PANW…), so the subject capture is the primary
+// ticker source and extractKnownTicker is the fallback.
+const NH_PICK_SUBJECT_RE =
+  /\b(?:was|were|is)\s+(?:the\s+)?\$?([A-Za-z]{1,5})\s+(?:play\s+|pick\s+)?(?:picked|pulled|chosen|selected)\b/i;
+const NH_PICK_STOPWORDS = new Set(["THE", "IT", "WE", "THEY", "THIS", "THAT", "TOP", "A", "AN", "MY", "OUR", "PLAY", "PICK", "ONE", "PLAYS", "PICKS"]);
+// "was X pulled" without a why — pulled is Night Hawk vocabulary (the one-way latch);
+// the NH_PULLED_WORD lookahead keeps "pulled back / pulled lower" (price talk) out.
+const NH_PULLED_STATE_RE =
+  /\b(?:was|were|got|is|why)\b[^?]{0,60}\bpulled\b(?!\s+(?:back|lower|higher|down|up|toward|into|in)\b)/i;
+const NH_MORNING_RE = /\bmorning\s+(check|confirm(?:ation)?|verdict)\b/i;
+
+function nighthawkSubjectTicker(q: string): string | null {
+  const subj = q.match(NH_PICK_SUBJECT_RE)?.[1]?.toUpperCase() ?? null;
+  if (subj && !NH_PICK_STOPWORDS.has(subj)) return subj;
+  return extractKnownTicker(q);
+}
+
+function nighthawkEditionRoute(q: string): BieRoute | null {
+  const terse = q.match(NH_TERSE_TICKER_RE);
+  if (terse) return { intent: "nighthawk_edition", ticker: terse[1]!.toUpperCase() };
+  if (NH_TERSE_EDITION_RE.test(q)) return { intent: "nighthawk_edition", ticker: null };
+  if (NH_PICK_WHY_RE.test(q)) {
+    const ticker = nighthawkSubjectTicker(q);
+    // "picked" needs a ticker subject or an overnight marker, so the ticker-less 0DTE
+    // "why was the top play picked" keeps falling through to cortex_read (tested there).
+    if (NH_PULLED_WORD.test(q) || ticker != null || NH_OVERNIGHT_MARKER_RE.test(q)) {
+      return { intent: "nighthawk_edition", ticker };
+    }
+  }
+  if (NH_PULLED_STATE_RE.test(q)) {
+    return { intent: "nighthawk_edition", ticker: nighthawkSubjectTicker(q) };
+  }
+  if (NH_TOMORROW_PLAYS_RE.test(q) || NH_IN_EDITION_RE.test(q)) {
+    return { intent: "nighthawk_edition", ticker: null };
+  }
+  // "the playbook" / "the edition" (any lead-in) — Night Hawk vocabulary, unless the
+  // question is explicitly about an SPX/0DTE surface (those own their desks' terms).
+  if (
+    /\b(?:the|tonight'?s|tomorrow'?s)\s+(?:playbook|edition)\b/i.test(q) &&
+    !/\b(spx|s&p|es|0\s?dte|zero\s?dte|zerodte)\b/i.test(q)
+  ) {
+    return { intent: "nighthawk_edition", ticker: null };
+  }
+  if (NIGHTHAWK_TERM_RE.test(q) && NH_EDITION_HINT_RE.test(q)) {
+    return { intent: "nighthawk_edition", ticker: extractKnownTicker(q) };
+  }
+  if (NH_MORNING_RE.test(q)) {
+    return { intent: "nighthawk_edition", ticker: extractKnownTicker(q) };
+  }
+  return null;
 }
 
 /** Vector DTE horizon named in the question, defaulting to "all" (whole-chain view). */
@@ -268,6 +349,16 @@ export function classifyBieIntent(question: string, ledgerTickers: Set<string>):
   // signals. MUST be before REASONING_RE (and before the vector branch, whose "forming" overlaps),
   // or "why" bails to Claude / the surface gets read as a normal Vector question.
   if (isDiagnosticQuestion(q)) return { intent: "system_diagnostic", ticker: extractKnownTicker(q) };
+
+  // "tomorrow's plays" / "tonight's playbook" / "why was <ticker> picked/pulled" /
+  // "what did the morning check see" / terse "nh <ticker>" → the Night Hawk EDITION
+  // read (PR-N9), answered from the pinned publish/verdict/pull records. Before the
+  // cortex branch (which owns commit/skip/exit — the 0DTE decision verbs) and before
+  // REASONING_RE; the ticker-less "why was the top play picked" still falls to cortex.
+  {
+    const nh = nighthawkEditionRoute(q);
+    if (nh) return nh;
+  }
 
   // "cortex <ticker>" / "what does cortex say about X" / "why did we commit/skip/exit X"
   // → the Cortex decision read (pinned commit/skip records first, live composition
@@ -368,6 +459,13 @@ export function classifyBieStagingFallback(question: string): BieRoute {
   if (isConceptQuestion(q)) return { intent: "concept_read", ticker: null };
   if (isUniversalLookup(q)) return { intent: "universal_lookup", ticker: extractKnownTicker(q) };
   if (isDiagnosticQuestion(q)) return { intent: "system_diagnostic", ticker: extractKnownTicker(q) };
+  // Same Night Hawk edition branch as the primary classifier (same placement: after
+  // concept/diagnostic, before the cortex branch — "why was X picked/pulled" is an
+  // overnight decision question).
+  {
+    const nh = nighthawkEditionRoute(q);
+    if (nh) return nh;
+  }
   // Same Cortex decision-read branch as the primary classifier (and same placement:
   // before the verdict/SPX branches so "cortex verdict on X" isn't stolen).
   if (isCortexQuestion(q)) return { intent: "cortex_read", ticker: extractKnownTicker(q) };
@@ -458,5 +556,7 @@ export function bieFollowups(intent: BieIntent): string[] {
       return ["Is the flow pipeline healthy?", "Why isn't SPX GEX updating?", "What's the SPX setup right now?"];
     case "cortex_read":
       return ["Show today's 0DTE plays", "What is a Cortex veto?", "What does Cortex say about SPY?"];
+    case "nighthawk_edition":
+      return ["Show tonight's playbook", "What is publish context?", "What is the morning confirmation?"];
   }
 }
