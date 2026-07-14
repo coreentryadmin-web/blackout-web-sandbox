@@ -169,6 +169,12 @@ export function buildNighthawkPublishContext(opts: {
    *  play publishes with its full evidence vector pinned so the Debrief (#337) and future
    *  calibration read the substrate that decided it. Omitted/null ⇒ the key is null. */
   cortexOvernight?: Record<string, unknown> | null;
+  /** PR-N7: the play's PRE-DECLARED invalidators (invalidators.ts) — 2–4 serializable,
+   *  machine-checkable falsifiers derived from the SAME evidence that justified the play.
+   *  Pinned here (COALESCE first-write-wins ⇒ IMMUTABLE after publish) so the 9:15 morning
+   *  grade can only run the conditions the desk pre-committed to, never a post-hoc one.
+   *  Passed as opaque data (the pin does not re-derive it). Omitted ⇒ empty list. */
+  invalidators?: Array<Record<string, unknown>> | null;
 }): Record<string, unknown> {
   const { play, scored, dossier, market, builtAt } = opts;
   // One geometry computation shared with publish-gates.ts — see NighthawkPublishGeometry.
@@ -203,6 +209,10 @@ export function buildNighthawkPublishContext(opts: {
     // ── PR-N5 overnight Cortex verdict for THIS play (null when the lens abstained
     //    at the whole-edition level or was not run) — the §3.5 calibration substrate ──
     cortex_overnight: opts.cortexOvernight ?? null,
+
+    // ── PR-N7 pre-declared invalidators for THIS play — pinned, immutable, so the
+    //    morning grade is objective (runs only these pre-committed falsifiers) ─────────
+    invalidators: opts.invalidators ?? [],
 
     // ── That evening's market state (regime + the BIE breadth bundle) ──────────
     market: {
@@ -253,6 +263,9 @@ export function buildNighthawkPublishContexts(opts: {
   /** PR-N5: per-ticker composed overnight Cortex verdict (cortex-overnight/compose.ts).
    *  Missing ticker/omitted map ⇒ null cortex_overnight key on that pin. */
   cortexOvernight?: Record<string, Record<string, unknown> | null>;
+  /** PR-N7: per-ticker pre-declared invalidators (invalidators.ts deriveInvalidators).
+   *  Missing ticker/omitted map ⇒ empty invalidators list on that pin. */
+  invalidators?: Record<string, Array<Record<string, unknown>> | null>;
 }): Record<string, Record<string, unknown> | null> {
   const out: Record<string, Record<string, unknown> | null> = {};
   let plays: PlaybookPlay[] = [];
@@ -274,6 +287,7 @@ export function buildNighthawkPublishContexts(opts: {
         builtAt: opts.builtAt,
         gates: opts.gateResults?.[ticker] ?? null,
         cortexOvernight: opts.cortexOvernight?.[ticker] ?? null,
+        invalidators: opts.invalidators?.[ticker] ?? null,
       });
     } catch (err) {
       // Fail-soft: this play publishes un-pinned; the row still syncs.

@@ -34,9 +34,20 @@ import { logCronRun } from "@/lib/cron-run";
 import { fetchIndexSnapshots, fetchStockSnapshots } from "@/lib/providers/polygon";
 import {
   computePlayVerdict,
+  worsenPlayStatus,
   type PlayConfirmStatus,
   type PlayStatus,
 } from "@/features/nighthawk/lib/morning-confirm-verdict";
+// PR-N6/N7 — the binding overnight axes: re-evaluate the pinned THESIS (thesis-drift) and
+// run the pinned pre-declared INVALIDATORS against the morning state. Both are ONE-WAY (can
+// only degrade/invalidate); the composed `status` folds them in via worsenPlayStatus.
+import { detectThesisDrift, overnightAxisStatus } from "@/features/nighthawk/lib/thesis-drift";
+import {
+  evaluateInvalidators,
+  firedInvalidators,
+  type MorningState,
+} from "@/features/nighthawk/lib/invalidators";
+import { fetchPendingNighthawkOutcomes } from "@/lib/db";
 import { persistNighthawkMorningVerdicts } from "@/features/nighthawk/lib/morning-verdict-persist";
 import { notifyOpsDiscord } from "@/features/spx/lib/spx-play-notify";
 import { makeRedis } from "@/lib/make-redis";
@@ -158,6 +169,90 @@ async function fetchSpxPriorClose(): Promise<number | null> {
   }
 }
 
+
+// SPX-index tickers whose morning walls the platform-intel SPX brief legitimately supplies.
+// A stock (or SPY, which trades ~1/10 of SPX) must NOT borrow SPX-scale walls — for those,
+// the morning wall stays null so the wall-migration invalidator self-skips (UNKNOWN) rather
+// than misfiring on a cross-instrument comparison.
+const SPX_INDEX_TICKERS = new Set(["SPX", "SPXW"]);
+
+/**
+ * PR-N6/N7 — fold the two ONE-WAY overnight axes onto a play's base PRICE verdict:
+ *   - thesis-drift (N6): re-evaluate each pinned cortex evidence source's premise;
+ *   - pinned invalidators (N7): run the pre-declared falsifiers against the morning state.
+ * Both can only worsen the grade (worsenPlayStatus). The evidence for any downgrade rides
+ * in the additive PlayStatus fields (thesisDrift / thesisVerdict / invalidatorsFired).
+ * Fail-soft: a play with no pinned context (pre-N5/N7, or a fetch miss) returns `base`
+ * unchanged — the axes never manufacture a downgrade from missing evidence.
+ */
+function applyOvernightAxes(
+  play: PlaybookPlay,
+  base: PlayStatus,
+  ctx: {
+    stockPremarket: number | null;
+    spxPremarket: number | null;
+    intel: { regime: string | null; call_wall: number | null; put_wall: number | null };
+    publishContext: Record<string, unknown> | null;
+    checkedAt: string;
+  }
+): PlayStatus {
+  if (!ctx.publishContext) return base;
+
+  const ticker = play.ticker.toUpperCase();
+  const isSpxIndex = SPX_INDEX_TICKERS.has(ticker);
+  // Morning spot: the play's OWN pre-market (or the SPX index pre-market for an SPX play).
+  const spot = isSpxIndex ? ctx.spxPremarket : ctx.stockPremarket;
+
+  const morningState: MorningState = {
+    ticker,
+    asOf: ctx.checkedAt,
+    spot: spot != null && spot > 0 ? spot : null,
+    // The morning cron does not re-fetch a per-ticker gamma-flip; the flip falsifier is
+    // pinned as a LEVEL, so flip drift needs only morning spot (below), not this field.
+    gammaFlip: null,
+    // Index walls only (see SPX_INDEX_TICKERS); a stock's morning wall is not re-fetched.
+    callWall: isSpxIndex ? ctx.intel.call_wall : null,
+    putWall: isSpxIndex ? ctx.intel.put_wall : null,
+    regime: ctx.intel.regime,
+    // Dark-pool bias is not re-fetched at morning — null keeps that falsifier honestly
+    // UNKNOWN (never fires) rather than fabricating a "held" from no read.
+    darkPoolBias: null,
+  };
+
+  const thesis = detectThesisDrift(ctx.publishContext as Parameters<typeof detectThesisDrift>[0], morningState);
+  const evals = evaluateInvalidators((ctx.publishContext as Record<string, unknown>).invalidators, morningState);
+  const fired = firedInvalidators(evals);
+  const axis = overnightAxisStatus(thesis.thesisVerdict, evals);
+
+  const status = worsenPlayStatus(base.status, axis.status);
+  const worsened = status !== base.status;
+  const axisReasons = [
+    ...(thesis.thesisVerdict !== "HELD" ? [thesis.reason] : []),
+    ...axis.reasons,
+  ];
+  // Only surface axis reasons in the member-facing string when they actually changed the
+  // grade (the full evidence is always in thesisDrift/invalidatorsFired regardless).
+  let reason = base.reason;
+  if (worsened && axisReasons.length) {
+    const priceHadContent = base.reason && base.reason !== "All checks passed";
+    reason = priceHadContent
+      ? `${base.reason}; overnight: ${axisReasons.join("; ")}`
+      : `Overnight axis: ${axisReasons.join("; ")}`;
+  }
+
+  return {
+    ...base,
+    status,
+    reason,
+    thesisDrift: thesis.perSource,
+    thesisVerdict: thesis.thesisVerdict,
+    invalidatorsFired: fired.map((e) => ({
+      id: e.invalidator.id,
+      severity: e.invalidator.severity,
+      detail: e.detail,
+    })),
+  };
+}
 
 function renderMarkdown(result: MorningConfirmResult): string {
   const { edition_for, checked_at, spx_premarket, prior_close, overnight_gap_pts, regime, plays, summary } = result;
@@ -346,9 +441,26 @@ export async function GET(req: NextRequest) {
       return NextResponse.json(payload);
     }
 
+    // ── Phase 2.5: load the pinned publish contexts (PR-N6/N7) ───────────────
+    // The overnight axes re-check what the builder PINNED at publish (cortex_overnight +
+    // invalidators, both immutable). Fetch this morning's freshly-published (pending)
+    // outcome rows and key their publish_context by ticker. Fail-soft: an empty/failed
+    // fetch simply means the axes have nothing to re-check (no downgrade) — never a crash.
+    const publishContextByTicker = new Map<string, Record<string, unknown>>();
+    try {
+      const pendingRows = await fetchPendingNighthawkOutcomes(2);
+      for (const row of pendingRows) {
+        if (row.edition_for !== editionFor) continue;
+        if (row.publish_context) publishContextByTicker.set(row.ticker.toUpperCase(), row.publish_context);
+      }
+    } catch (err) {
+      console.warn("[nighthawk-morning-confirm] publish_context fetch failed (overnight axes skipped):", err);
+    }
+
     // ── Phase 3: per-play verdicts ──────────────────────────────────────────
-    const playStatuses: PlayStatus[] = plays.map((play) =>
-      computePlayVerdict(play, {
+    // Base PRICE verdict (unchanged logic), then compose the overnight axes ONE-WAY on top.
+    const playStatuses: PlayStatus[] = plays.map((play) => {
+      const base = computePlayVerdict(play, {
         gapPts,
         regime: intel.regime,
         anomalies: intel.anomalies,
@@ -357,8 +469,15 @@ export async function GET(req: NextRequest) {
         editionCallWall,
         editionPutWall,
         stockPremarket: stockSnaps[play.ticker.toUpperCase()]?.price ?? null,
-      })
-    );
+      });
+      return applyOvernightAxes(play, base, {
+        stockPremarket: stockSnaps[play.ticker.toUpperCase()]?.price ?? null,
+        spxPremarket,
+        intel,
+        publishContext: publishContextByTicker.get(play.ticker.toUpperCase()) ?? null,
+        checkedAt: new Date().toISOString(),
+      });
+    });
 
     const summary = {
       confirmed: playStatuses.filter((p) => p.status === "CONFIRMED").length,

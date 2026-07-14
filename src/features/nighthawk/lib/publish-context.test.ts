@@ -310,3 +310,42 @@ test("plural builder tolerates garbage input wholesale (returns {} rather than t
   });
   assert.deepEqual(out, {});
 });
+
+// ── PR-N7: pinned invalidators (immutable falsifiers) ─────────────────────────────────
+
+test("pin carries pre-declared invalidators; omitted ⇒ empty list (never undefined)", () => {
+  const invs = [
+    { id: "flip_break", source: "wall-migration", describe: "opens below flip 7480", check: { kind: "lt", metric: "spot", level: 7480 }, severity: "kill" },
+  ];
+  const withInvs = buildNighthawkPublishContext({
+    play: play(),
+    scored: scored(),
+    dossier: dossier(),
+    market: market(),
+    builtAt: "2026-07-14T21:35:00.000Z",
+    invalidators: invs,
+  });
+  assert.deepEqual(withInvs.invalidators, invs);
+
+  // Omitted ⇒ [] so the morning grade always finds an array (never has to guard undefined).
+  const withoutInvs = buildNighthawkPublishContext({
+    play: play(),
+    scored: scored(),
+    dossier: dossier(),
+    market: market(),
+    builtAt: "2026-07-14T21:35:00.000Z",
+  });
+  assert.deepEqual(withoutInvs.invalidators, []);
+});
+
+test("plural builder threads per-ticker invalidators into each pin", () => {
+  const out = buildNighthawkPublishContexts({
+    plays: [play()],
+    dossiers: { AMD: dossier() },
+    market: market(),
+    builtAt: "2026-07-14T21:35:00.000Z",
+    invalidators: { AMD: [{ id: "flip_break", source: "wall-migration", describe: "d", check: { kind: "lt", metric: "spot", level: 1 }, severity: "kill" }] },
+  });
+  const pinned = out.AMD as Record<string, unknown>;
+  assert.equal((pinned.invalidators as unknown[]).length, 1);
+});

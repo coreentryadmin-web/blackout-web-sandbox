@@ -12,7 +12,43 @@ export type PlayStatus = {
   direction: string;
   status: PlayConfirmStatus;
   reason: string;
+  // ── PR-N6/N7 overnight axes (ADDITIVE, all OPTIONAL) ──────────────────────────────
+  // Optional so old cached play-status blobs (written before N6/N7) deserialize cleanly
+  // and the play-status route stays 200 for a not-yet-run/legacy edition. `status`/`reason`
+  // above already fold in any downgrade these caused — these fields are the EVIDENCE for it.
+  /** PR-N6 thesis-drift: per pinned-source held/weakened/flipped + aggregate verdict. */
+  thesisDrift?: import("./thesis-drift").SourceDrift[];
+  thesisVerdict?: import("./thesis-drift").ThesisVerdict;
+  /** PR-N7: the pinned invalidators that FIRED against the morning state (id + reason). */
+  invalidatorsFired?: Array<{ id: string; severity: "kill" | "degrade"; detail: string }>;
 };
+
+// Severity rank for the CONFIRMED→INVALIDATED axis. UNVERIFIED is a statement about DATA,
+// not the play, so it lives OFF this scale (worsenPlayStatus leaves it untouched).
+const STATUS_RANK: Record<Exclude<PlayConfirmStatus, "UNVERIFIED">, number> = {
+  CONFIRMED: 0,
+  DEGRADED: 1,
+  INVALIDATED: 2,
+};
+
+/**
+ * Compose the price verdict with the overnight axes' implied status, ONE-WAY: return the
+ * WORSE of the two, never an upgrade. PR-N6/N7 — thesis-drift and fired invalidators can
+ * only degrade/invalidate a play, matching the repo's one-way-latch philosophy.
+ *
+ * UNVERIFIED is preserved as-is: it means no pre-market data was reachable, in which case
+ * the overnight axes had no morning spot to fire on anyway — dressing that in a downgrade
+ * would imply a check ran that did not.
+ */
+export function worsenPlayStatus(
+  base: PlayConfirmStatus,
+  axis: PlayConfirmStatus | null
+): PlayConfirmStatus {
+  if (axis == null) return base;
+  if (base === "UNVERIFIED") return base;
+  if (axis === "UNVERIFIED") return base;
+  return STATUS_RANK[axis] > STATUS_RANK[base] ? axis : base;
+}
 
 // Overnight gap threshold: > this many SPX points (absolute) = significant gap.
 export const GAP_PTS_THRESHOLD = 20;
