@@ -8,6 +8,9 @@
 // never to a fabricated value.
 
 import { CONVICTION_A_MIN_SCORE } from "@/lib/nighthawk/cortex/compose";
+// Type-only (erased): the tier shapes come from the engine so the reader below can
+// never drift from what assignZeroDteTier/tierForSkip actually emit.
+import type { TierFactor, ZeroDteTier, ZeroDteTierAssignment } from "./tiers";
 
 // ── Cortex verdict (defensive structural read) ─────────────────────────────────────
 // The cortex wire-in (#318) ships the evidence in TWO shapes the pane must accept:
@@ -97,6 +100,41 @@ export function readCortexView(raw: unknown): PaneCortexView | null {
   }
   const decision = typeof a.decision === "string" && CORTEX_DECISIONS.has(a.decision) ? (a.decision as "PASS" | "VETO" | "NET_NEGATIVE") : null;
   return { abstained: false, decision, verdict };
+}
+
+// ── Merit tier (PR-F, defensive structural read) ────────────────────────────────────
+// A committed row's tier is the PINNED entry_context.tier blob (assignZeroDteTier at
+// commit), served opaque by the board payload exactly like the cortex blob above and
+// crossing the same HTTP/JSON boundary — so the pane reads it STRUCTURALLY. Anything
+// malformed (pre-wiring rows, partial blobs) reads as null: no chip, never a guessed
+// grade. Only assignable letters (A/B/C) pass — the entry engine cannot mint "A+"
+// (tiers.ts rule 1) and only skips are "F", so a blob claiming either is malformed
+// by definition and must not render as if the engine said it.
+
+const ASSIGNABLE_TIERS = new Set<string>(["A", "B", "C"]);
+
+function isTierFactorArray(v: unknown): v is TierFactor[] {
+  return (
+    Array.isArray(v) &&
+    v.every(
+      (f) =>
+        f != null &&
+        typeof f === "object" &&
+        typeof (f as TierFactor).label === "string" &&
+        typeof (f as TierFactor).detail === "string" &&
+        ((f as TierFactor).direction === "up" || (f as TierFactor).direction === "down")
+    )
+  );
+}
+
+/** Structurally validate a maybe-tier payload field into the engine's assignment
+ *  shape. Null = no (usable) tier on record — the card renders without a chip. */
+export function readTierAssignment(raw: unknown): ZeroDteTierAssignment | null {
+  if (raw == null || typeof raw !== "object") return null;
+  const t = raw as Record<string, unknown>;
+  if (typeof t.tier !== "string" || !ASSIGNABLE_TIERS.has(t.tier)) return null;
+  if (!isTierFactorArray(t.factors)) return null;
+  return { tier: t.tier as ZeroDteTier, factors: t.factors };
 }
 
 // ── B-4 suggested size (0.5× / 1× ONLY) ────────────────────────────────────────────

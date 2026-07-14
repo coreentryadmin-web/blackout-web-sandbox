@@ -17,6 +17,9 @@ import { todayEt } from "@/features/nighthawk/lib/session";
 import { fetchAggBars } from "@/lib/providers/polygon-largo";
 import { withServerCache } from "@/lib/server-cache";
 import { computeIntradayRead, marketBias, type MarketBias } from "./intraday";
+// Runtime import is safe here: ./tiers is pure (its only import is ./gates
+// constants), so it adds no providers to this module's load graph.
+import { tierFromEntryContext, type ZeroDteTierAssignment } from "./tiers";
 // Type-only (erased): keeps this module import-light — ./cortex-gate's runtime
 // deps (the Cortex barrel) never enter this module's load graph.
 import type { ZeroDteCortexEntryContext } from "./cortex-gate";
@@ -76,6 +79,13 @@ export type ZeroDteEntryContext = {
    *  on refresh-lane setups (the Cortex only runs on fresh gate survivors); the
    *  upsert's COALESCE pin keeps the commit-time value either way. */
   cortex: ZeroDteCortexEntryContext | null;
+  /** Merit tier at commit (PR-F: assignZeroDteTier over the SAME values pinned
+   *  above), with the complete factor list arguing it — the pane's tier chip
+   *  renders these verbatim. Null when the tier computation itself failed
+   *  (fail-soft: a tier is advisory ranking, never allowed to block a commit).
+   *  Note the tier is DERIVED from the blob's own fields, so a null here costs
+   *  nothing durable — tierFromEntryContext re-derives it from the same pins. */
+  tier: ZeroDteTierAssignment | null;
 };
 
 /** "YYYY-MM-DD HH:mm ET" for an epoch-ms instant. en-CA date + en-GB 24h time give
@@ -107,14 +117,29 @@ export function buildZeroDteEntryContext(
   nowMs: number
 ): ZeroDteEntryContext {
   const vix = session?.vix_open;
-  return {
+  const ctx: ZeroDteEntryContext = {
     vix_open: vix != null && Number.isFinite(vix) ? Math.round(vix * 100) / 100 : null,
     spy_bias: session?.spy_bias ?? null,
     gamma_regime: play.gamma_regime ?? null,
     score: play.score != null && Number.isFinite(play.score) ? Math.round(play.score) : null,
     committed_at_et: formatEtStamp(nowMs),
     cortex: play.cortex ?? null,
+    tier: null,
   };
+  // Commit-time merit tier (PR-F wiring): computed by feeding the JUST-BUILT blob
+  // through tierFromEntryContext — the SAME adapter the calibration/record analyses
+  // use to tier past rows retroactively — so the pinned tier and a retroactive
+  // re-derivation of the same row can never disagree (one blob→input mapping, one
+  // assignZeroDteTier call). tierFromEntryContext is defensive on data by design;
+  // this catch guards programmer error only, and FAIL-SOFT is the contract: a tier
+  // is an advisory ranking, so its failure must never block a commit (null tier,
+  // log-only — same posture as the Cortex outage path in cortex-gate.ts).
+  try {
+    ctx.tier = tierFromEntryContext(ctx as unknown as Record<string, unknown>);
+  } catch (err) {
+    console.warn("[zerodte-tiers] commit-time tier assignment failed (fail-soft, tier=null):", err);
+  }
+  return ctx;
 }
 
 const SESSION_CTX_TTL_MS = 3 * 60 * 1000; // same cadence as the intraday read cache

@@ -37,7 +37,7 @@ import {
 export type ComposeBieOpts = { question?: string };
 
 /** Deterministic answer plus the raw source payload for Layer 4 claim verification. */
-import type { BieComposed } from "@/lib/bie/composers-shared";
+import { tierLine, type BieComposed } from "@/lib/bie/composers-shared";
 export type { BieComposed };
 
 const fmt = (n: unknown, digits = 2): string =>
@@ -56,6 +56,10 @@ type LargoPlay = {
   peak_score: number;
   action: string;
   intel: string;
+  /** Commit-time merit tier (PR-F, entry_context.tier passthrough on the board
+   *  row) — opaque blob, read structurally by tierLine below; absent/null on rows
+   *  committed before the tier wiring shipped. */
+  tier?: { tier?: unknown; factors?: unknown } | null;
   graded: { outcome: string; pnl_pct: number | null } | null;
 };
 
@@ -67,7 +71,7 @@ function playLine(p: LargoPlay): string {
       : p.live_pnl_pct != null
         ? `${p.live_pnl_pct >= 0 ? "+" : ""}${p.live_pnl_pct}%`
         : "";
-  return `**${p.status}** · **${contract}**${p.entry_premium != null ? ` @ $${fmt(p.entry_premium)}` : ""}${state ? ` (${state})` : ""}\n  ${p.action} — ${p.intel}`;
+  return `**${p.status}** · **${contract}**${p.entry_premium != null ? ` @ $${fmt(p.entry_premium)}` : ""}${state ? ` (${state})` : ""}\n  ${p.action} — ${p.intel}${tierLine(p.tier)}`;
 }
 
 async function composeZeroDtePlays(): Promise<BieComposed | null> {

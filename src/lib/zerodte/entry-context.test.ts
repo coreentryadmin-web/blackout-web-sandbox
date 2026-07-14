@@ -37,12 +37,12 @@ test("formatEtStamp renders the desk (ET) wall clock", async () => {
 
 test("buildZeroDteEntryContext: rounds at the data layer, passes per-name fields through", async () => {
   const { buildZeroDteEntryContext } = await mod();
-  const ctx = buildZeroDteEntryContext(
+  const { tier, ...rest } = buildZeroDteEntryContext(
     { score: 68.4, gamma_regime: "positive" },
     { vix_open: 17.230000000000004, spy_bias: "down" },
     FLAG_MS
   );
-  assert.deepEqual(ctx, {
+  assert.deepEqual(rest, {
     vix_open: 17.23,
     spy_bias: "down",
     gamma_regime: "positive",
@@ -50,6 +50,63 @@ test("buildZeroDteEntryContext: rounds at the data layer, passes per-name fields
     committed_at_et: "2026-07-13 09:55 ET",
     cortex: null, // pre-wire-in call shape (no cortex arg) → null, never a fabricated blob
   });
+  // PR-F: the merit tier is pinned alongside, computed from the SAME values just
+  // pinned above (score 68 mid-band +1, VIX 17.23 elevated −2, no Cortex → A capped
+  // out, 09:55 ET early window −1 → net −2 → C).
+  assert.ok(tier);
+  assert.equal(tier!.tier, "C");
+  assert.deepEqual(
+    tier!.factors.map((f) => [f.label, f.direction]),
+    [
+      ["Mid score band", "up"],
+      ["VIX elevated", "down"],
+      ["Cortex evidence missing", "down"],
+      ["Early window", "down"],
+    ]
+  );
+});
+
+test("buildZeroDteEntryContext: pins the commit-time merit tier — strong pinned evidence grades A from the same blob (PR-F)", async () => {
+  const { buildZeroDteEntryContext } = await mod();
+  // 13:05 ET (17:05Z, EDT): outside the F-4 early window. Prime-band score (+2),
+  // calm VIX 16.1 (+2), clean multi-source Cortex support (+2) → 6 points, no caps → A.
+  const ctx = buildZeroDteEntryContext(
+    {
+      score: 78,
+      gamma_regime: null,
+      cortex: {
+        abstained: false as const,
+        decision: "PASS" as const,
+        as_of: "2026-07-13T17:05:00.000Z",
+        score: 2.1,
+        conviction: "A" as const,
+        vetoes: [],
+        supports: [
+          { source: "gex-walls" as const, stance: "supports" as const, weight: 1.0, halfLifeSec: 900, asOf: "2026-07-13T17:04:00.000Z", detail: "path clear" },
+          { source: "wall-trend" as const, stance: "supports" as const, weight: 1.1, halfLifeSec: 900, asOf: "2026-07-13T17:04:00.000Z", detail: "wall growing" },
+        ],
+        opposes: [],
+        absent: [],
+        narrative: [],
+      },
+    },
+    { vix_open: 16.1, spy_bias: "up" },
+    Date.parse("2026-07-13T17:05:00Z")
+  );
+  assert.ok(ctx.tier);
+  assert.equal(ctx.tier!.tier, "A");
+  assert.deepEqual(
+    ctx.tier!.factors.map((f) => [f.label, f.direction]),
+    [
+      ["Prime score band", "up"],
+      ["VIX calm band", "up"],
+      ["Clean Cortex support", "up"],
+    ]
+  );
+  // Parity guarantee: the pinned tier IS tierFromEntryContext over the pinned blob —
+  // a retroactive re-derivation of this exact row can never disagree with the chip.
+  const { tierFromEntryContext } = await import("./tiers");
+  assert.deepEqual(tierFromEntryContext(ctx as unknown as Record<string, unknown>), ctx.tier);
 });
 
 test("buildZeroDteEntryContext: pins the Cortex evidence blob verbatim (commit) and the abstain record (outage)", async () => {
@@ -107,8 +164,8 @@ test("buildZeroDteEntryContext: pins the Cortex evidence blob verbatim (commit) 
 
 test("buildZeroDteEntryContext: null session context never blocks a commit blob", async () => {
   const { buildZeroDteEntryContext } = await mod();
-  const ctx = buildZeroDteEntryContext({ score: null, gamma_regime: null }, null, FLAG_MS);
-  assert.deepEqual(ctx, {
+  const { tier, ...rest } = buildZeroDteEntryContext({ score: null, gamma_regime: null }, null, FLAG_MS);
+  assert.deepEqual(rest, {
     vix_open: null,
     spy_bias: null,
     gamma_regime: null,
@@ -116,6 +173,8 @@ test("buildZeroDteEntryContext: null session context never blocks a commit blob"
     committed_at_et: "2026-07-13 09:55 ET",
     cortex: null,
   });
+  // All-null evidence still tiers (rule 3: gaps degrade) — score missing caps at C.
+  assert.equal(tier?.tier, "C");
 });
 
 test("fetchZeroDteSessionContext: VIX day-open from the daily bar, bias from SPY tape; cached", async () => {
