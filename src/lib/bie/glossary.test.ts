@@ -84,6 +84,39 @@ describe("lookupGlossary", () => {
     assert.doesNotMatch(largo.definition, /evening swing-pick/i); // not the Night Hawk def
   });
 
+  // PR-L1 — live-battery substance gaps. "What does positive/negative gamma mean" resolves to the
+  // Gamma regime entry, whose text previously spoke only the long/short-gamma register: a member
+  // asking in the positive/negative vocabulary got an answer that never used their words nor the
+  // suppress/stabilize (resp. amplify/accelerate) mechanics. The definition now answers in BOTH
+  // registers — pin the exact vocabulary so it can't regress to jargon-only.
+  test("positive/negative gamma questions get the suppress/amplify mechanics in the member's own vocabulary", () => {
+    const pos = lookupGlossary("what does positive gamma mean for the market?")!;
+    assert.match(pos.term, /Gamma regime/i);
+    assert.match(pos.definition, /positive gamma/i);
+    assert.match(pos.definition, /suppress/i);
+    assert.match(pos.definition, /stabiliz/i);
+    assert.match(pos.definition, /pins|pin\b/i);
+
+    const neg = lookupGlossary("what does negative gamma mean?")!;
+    assert.match(neg.term, /Gamma regime/i);
+    assert.match(neg.definition, /negative gamma/i);
+    assert.match(neg.definition, /amplif/i);
+    assert.match(neg.definition, /accelerate/i);
+    assert.match(neg.definition, /volatility feeds on itself/i);
+  });
+
+  // PR-L1 — reported live: "what is Thermal" answered with the DARK-POOL definition. The matcher
+  // itself was never the culprit (the collision was the question-less answer-cache key, see
+  // platform-cache.test.ts) — but pin the matcher level too so an alias regression can't recreate
+  // the same member-visible symptom from a second direction.
+  test("REGRESSION (PR-L1): 'what is Thermal' resolves to Thermal, never the dark-pool entry", () => {
+    const hit = lookupGlossary("what is Thermal")!;
+    assert.equal(hit.term, "Thermal");
+    assert.doesNotMatch(hit.definition, /dark[- ]pool/i);
+    // And the dark-pool question keeps its own entry — no swap in either direction.
+    assert.match(lookupGlossary("what is a dark pool level?")!.term, /Dark pool/i);
+  });
+
   test("plural + alias tolerance", () => {
     assert.match(lookupGlossary("what are call walls")!.term, /Call wall/i);
     assert.match(lookupGlossary("explain the flip")!.term, /Gamma flip/i);

@@ -49,6 +49,35 @@ export async function getCachedBiePlatformContext(
   );
 }
 
+/**
+ * Intents whose composers read the member's QUESTION itself (not just intent+ticker) to build the
+ * answer. For these the cache key MUST carry a question hash: without it every distinct question
+ * within a TTL window shares one key and is served whatever answer happened to be cached first.
+ * That was the live concept-coverage defect (PR-L1): every `concept_read` shared
+ * `bie:largo:concept_read:na:na`, so "what is max pain?" (and 12 other definitional questions)
+ * returned the cached "what is GEX?" answer, and "what is Thermal" returned the cached dark-pool
+ * definition — the glossary matcher was resolving every term correctly, but the wrong cached
+ * envelope was served. The same collision applied to every other question-shaped leg listed here
+ * (e.g. "why did we SKIP X" vs "why did we COMMIT X" on cortex_read; two different /api paths on
+ * universal_lookup; a 0DTE vs monthly phrasing on vector_read — the horizon lives in the question).
+ *
+ * Intents NOT listed here (spx_structure, market_context, flow_tape, …) compose the same answer
+ * for every phrasing, so keying them question-less is deliberate: it keeps the cache hit-rate high
+ * ("same numbers for every member" within the TTL) instead of fragmenting per phrasing.
+ */
+const QUESTION_KEYED_INTENTS = new Set([
+  "spx_desk_read",
+  "spx_invalidation",
+  "ticker_advice",
+  "concept_read",
+  "universal_lookup",
+  "verdict",
+  "system_diagnostic",
+  "cortex_read",
+  "nighthawk_edition",
+  "vector_read",
+]);
+
 export function largoAnswerCacheKey(
   intent: string,
   ticker: string | null,
@@ -57,7 +86,7 @@ export function largoAnswerCacheKey(
 ): string {
   const q = question?.trim();
   const qSlug =
-    q && (intent === "spx_desk_read" || intent === "spx_invalidation" || intent === "ticker_advice")
+    q && QUESTION_KEYED_INTENTS.has(intent)
       ? createHash("sha256").update(q.slice(0, 120)).digest("hex").slice(0, 8)
       : "na";
   const b = tickerB ? `:${tickerB}` : "";
