@@ -12,14 +12,9 @@ function envNumber(name: string, fallback: number): number {
   return Number.isFinite(n) && n > 0 ? n : fallback;
 }
 
-// PgBouncer sits in front of Postgres on Railway (docs/PGBOUNCER-SETUP.md) and has a fixed
-// DEFAULT_POOL_SIZE (backend budget) shared by every web replica. Each replica's own PG_POOL_MAX
-// must leave headroom under (budget / REPLICA_COUNT) or N replicas' pools can jointly
-// oversubscribe the pooler — confirmed live: production ran PG_POOL_MAX=15 x 5 replicas = 75
-// against a 20-backend budget, a real 3.75x oversubscription that a prior "Query read timeout"
-// investigation missed by modeling the ceiling off the code default (5) instead of the
-// documented production override (15) (docs/audit/FINDINGS.md, 2026-07-03 entry). Both knobs are
-// overridable so this stays correct if the topology or PgBouncer config ever changes.
+// AWS RDS has no shared pool per replica; each ECS task directly connects. PG_POOL_MAX is the
+// per-task connection budget. N tasks × PG_POOL_MAX must fit within RDS max_connections (~NCONNMAX env).
+// Overridable per deployment topology.
 /** Exported for unit testing — pure, no env/module-load-order dependence. */
 export function computeSafePgPoolMaxDefault(pgBouncerBackendBudget: number, replicaCount: number): number {
   return Math.max(1, Math.floor(pgBouncerBackendBudget / Math.max(1, Math.floor(replicaCount))));
@@ -67,22 +62,18 @@ export function databaseConnectionMode(): "private" | "public" | "unknown" {
 function poolSsl(connectionString: string): false | { rejectUnauthorized: boolean } {
   if (process.env.DATABASE_SSL === "0") return false;
   if (connectionString.includes("localhost") || connectionString.includes("127.0.0.1")) return false;
-  // Railway private network — traffic never leaves the internal VPC, no TLS needed
-  if (connectionString.includes(".railway.internal")) return false;
   // Set DATABASE_SSL_STRICT=1 when using a managed Postgres with a properly-signed CA cert.
-  // Default false because Railway's public endpoint uses a cert not in Node's default trust store.
   const strict = process.env.DATABASE_SSL_STRICT === "1";
   return { rejectUnauthorized: strict };
 }
 
-/** True when the connection string targets PgBouncer (not direct Postgres). */
+/** True when the connection string targets a proxy/pooler (not direct Postgres). */
 function connectionViaPooler(connectionString: string): boolean {
   try {
     const host = new URL(connectionString).hostname.toLowerCase();
     return (
       host.includes("pgbouncer") ||
       host.includes("pooler") ||
-      host.includes("proxy.rlwy") ||
       host.includes("-pool.") ||
       // AWS RDS Proxy: {name}.proxy-{id}.{region}.rds.amazonaws.com
       host.includes(".proxy-")
