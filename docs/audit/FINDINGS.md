@@ -948,3 +948,96 @@ against staging: **68 pass · 0 fail · 4 skip · 3 expected-fail (keyed to #338
   self-correcting; a server-side weekly seed flip would close it but is out of this small scope).
 - **Status:** PARTIAL — seed-time single-source shipped + tested; live-cadence snapshot store
   tracked to `fix/vector-surface-sync` (finalize during RTH).
+## 2026-07-14 — Largo gauntlet + hardcore (#339) remaining defects — PR-L4de
+
+### P0 — scenario engine (#340) DEPLOYED but never reached: compound decomposer splits the what-if (FIXED, tested)
+- **Severity:** P0 — the scenario engine is worthless until routing reaches it.
+- **Root cause:** ORDERING. `runLargoQuery` runs `isCompoundQuestion` → `composeCompound`
+  (`src/lib/largo-terminal.ts:297`) BEFORE intent routing. The run-on splitter
+  (`decompose.ts:splitRunOn`) chopped a scenario what-if into ≥3 comma/"and" fragments. The scenario
+  double-gate (`router.ts:scenarioRoute`) needs BOTH the hypothetical trigger ("if") AND a parseable
+  shift ("drops 1%") in the SAME string — both live only in fragment 1 — so fragments 2-3 got
+  "no deterministic read" and fragment 1 timed out under the 4s per-friend cap. The engine never saw
+  the whole question.
+- **Evidence (live staging, fired by the coordinator):** "If SPX drops 1% at tomorrow's open, what
+  happens to the dealer positioning picture — does the regime flip, and which walls become live?" →
+  "Answering 3 parts (0 with live data, 3 unavailable): 1) …timed out; 2) …no deterministic read;
+  3) …no deterministic read."
+- **Fix:** a coherent-scenario guard in `decompose.ts:splitCompoundQuestion` — when the hypothetical
+  trigger appears in the LEADING clause (first ~60 chars) AND the double-gate `isScenarioQuestion`
+  (new shared predicate in `scenario-read.ts`, now the single source of truth used by both the router
+  and the decomposer) holds, the message routes WHOLE (returns `[q]`), never run-on-split. The
+  leading-clause requirement is what keeps a genuine multi-topic run-on with a buried throwaway "if"
+  (`…just say so if you can't get data`) still splitting. Once whole, the question runs on the normal
+  single-intent path (no 4s compound cap) → the scenario composer, resolving the timeout too.
+- **Belt-and-suspenders (L4e-2):** `composeCompound` now falls back to answering the WHOLE question
+  through the best single intent whenever <half the decomposed parts returned live data — a general
+  guard against mostly-"unavailable" stub walls, not just the scenario shape.
+- **After:** `isCompoundQuestion(SCENARIO_Q) === false` and `classifyBieIntent(SCENARIO_Q) →
+  scenario`; the buried-"if" run-on still splits ≥3. `decompose.test.ts`, `router.test.ts`.
+- **Status:** FIXED (tsc clean, suite green). Deterministic.
+
+### L4d-1 (honesty) — off-topic asks topic-swapped into a market dump (FIXED, tested)
+- **Root cause:** the staging BIE-only last-resort `classifyBieStagingFallback` (`router.ts`) had no
+  off-topic guard — anything that matched no intent fell through to the terminal `market_context`
+  dump.
+- **Evidence (gauntlet):** "Write me a poem" → a full SPX-desk + HELIX-tape dump, no scope statement.
+- **Fix:** an off-topic detector (`isOffTopicQuestion`) placed AFTER every specific-intent router (so
+  an edition pick-why "why was CSX picked", a cortex decision-why, etc. keep their homes even with no
+  generic market vocabulary) and BEFORE the generic `market_context`/ticker catch-alls (every one of
+  which requires a market subject anyway). A question with NO market/platform subject — no ticker, no
+  `$`-symbol, no glossary term, no market/platform vocabulary — routes to a new `off_topic` intent
+  whose composer returns an honest scope envelope ("I'm the BlackOut desk intelligence … I can't
+  write poems / do general chat"), never a market read.
+- **Evidence it doesn't over-trigger:** a battery of terse LEGIT asks ("flip spx", "nh", "gex",
+  "$NVDA", "our record", "why was CSX picked tonight?") is never flagged; imperative/chat off-topic
+  ("write me a poem", "tell me a joke", injection imperatives) → `off_topic`; "what is …"-style
+  off-topic ("what is 2+2") resolves to the honest glossary-miss (also non-dump). `router.test.ts`.
+- **Status:** FIXED (tsc clean, suite green).
+
+### L4d-2 (honesty) — off-hours "right now" reads carried no staleness marker (FIXED, tested)
+- **Root cause:** the desk / Vector string briefs render a live "right now" read from a CAPTURED
+  snapshot but never surfaced its as-of, so an off-hours prior-close capture read as fresh.
+- **Fix:** `staleness.ts:stalenessMarker(asOf, now)` — a compact "· as of HH:MM ET[, prior close]"
+  marker computed from the data's OWN timestamp, appended to the SPX desk read (`desk.as_of`) and the
+  Vector read (`state.asOf`) in `composers.ts`, but ONLY when genuinely stale: off-hours (weekend /
+  before 09:30 / at-or-after 16:00 ET → "prior close") or older than a 15-min freshness threshold
+  during RTH (→ "delayed"). Fresh RTH data → no marker. Injectable `now` clock → fully deterministic
+  test (the task's exact "· as of 20:10 ET, prior close" example is asserted). `staleness.test.ts`.
+- **Status:** FIXED (tsc clean, suite green).
+
+### L4e-1 (routing) — "honest record" asks fell to market_context instead of the record (FIXED, tested)
+- **Root cause:** COVERAGE. "our record" / "track record" / "how are the plays doing overall" matched
+  no intent (the concept branch or the terminal `market_context` swallowed them).
+- **Fix:** `NH_RECORD_ASK_RE` (exported from `router.ts`, single source of truth) routes these to
+  `nighthawk_edition` (ticker-less), BEFORE the concept branch (a record ask is not a definition), and
+  `composeNighthawkEditionRead` dispatches a ticker-less record ask to a NEW
+  `readNighthawkOverallRecord` — the honest aggregate win rate across every graded edition, pulled +
+  unfilled EXCLUDED from the denominator both directions (same rule as `debrief-aggregate.ts`), with a
+  by-conviction split. Distinct from the edition read ("why was X picked" — has a ticker) and the
+  session debrief ("how did last night do" — `NH_DEBRIEF_ASK_RE`); neither is stolen.
+- **Evidence/after:** the "11.1% (1–8 over 9 scoreable across 2 editions)" aggregate renders with the
+  pulled/unfilled exclusion note. `nighthawk-edition-read.test.ts`, `router.test.ts`.
+- **Status:** FIXED (tsc clean, suite green).
+
+### L4e-3 (freshness) — "tomorrow's plays" served a stale (4-day-old) edition (FIXED, tested)
+- **Root cause:** SELECTION. `nighthawk-edition-read.ts:editionRowFor` preferred the latest PLAYABLE
+  edition unconditionally, so when a newer edition existed that the playable-only query skipped, the
+  read served the older playbook.
+- **Fix:** read BOTH the latest-playable and the latest-of-any-kind and select the newer by
+  `edition_for` (`pickLatestEdition`, ties → the plays-carrying playable row). "tomorrow's plays" now
+  serves the LATEST published edition (max edition_for). `nighthawk-edition-read.test.ts`.
+- **Status:** FIXED (tsc clean, suite green).
+
+### L4e-4 (cross-surface) — a desk/Vector disagreement went unflagged (FIXED, tested)
+- **Root cause:** COVERAGE. A cross-check ask ("do they agree?") had no intent; it fell to
+  `vector_read` for SPX and answered ONE surface silently.
+- **Fix:** a `cross_check` intent (`isCrossCheckQuestion`: a cross-check/reconcile verb OR an
+  agreement cue + BOTH surfaces named; placed before `VECTOR_RE` so "vector" isn't stolen) →
+  `cross-check-read.ts:composeCrossCheck`, which reads the SAME metric (max pain / gamma flip / regime
+  posture) from the SPX desk AND the Vector engine and FLAGS a MATERIAL divergence (>0.3% relative)
+  explicitly in the headline, rather than choosing a side. Honest partial state when a surface is
+  unavailable (never one side dressed as both).
+- **Evidence (gauntlet):** max pain 7,525 (desk) vs 7,400 (Vector) now renders "The SPX desk and
+  Vector DISAGREE on max pain … (Δ 125 pts, 1.7%)". `cross-check-read.test.ts`.
+- **Status:** FIXED (tsc clean, suite green).

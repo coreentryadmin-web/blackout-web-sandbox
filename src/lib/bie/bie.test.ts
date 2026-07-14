@@ -63,7 +63,10 @@ test("router: loose market context phrases route without exact match", () => {
 
 test("router: classifyBieStagingFallback never leaves Largo without a route", () => {
   assert.equal(classifyBieStagingFallback("random question about hedging flows").intent, "flow_tape");
-  assert.equal(classifyBieStagingFallback("tell me something").intent, "market_context");
+  // PR-L4d-1: a subject-less ask ("tell me something") is now the honest OFF-TOPIC scope envelope,
+  // not the market_context DUMP it used to fall through to. It is still a deterministic route (the
+  // invariant this test guards — never null), just the correct one.
+  assert.equal(classifyBieStagingFallback("tell me something").intent, "off_topic");
   assert.equal(classifyBieStagingFallback("SPX gamma").intent, "spx_desk_read");
   assert.equal(classifyBieStagingFallback("what's going on with NVDA").intent, "ticker_ecosystem");
   assert.equal(classifyBieStagingFallback("what's going on with NVDA").ticker, "NVDA");

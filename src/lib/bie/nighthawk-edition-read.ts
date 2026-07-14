@@ -46,6 +46,9 @@ import {
   type BieUnavailableSource,
 } from "./answer-envelope";
 import type { BieComposed } from "./composers-shared";
+// Single source of truth for the record-ask shape — the router uses the same regex to route these
+// asks here, so routing and composing can never drift on what counts as a "record" question.
+import { NH_RECORD_ASK_RE } from "./router";
 
 // ── Small shared formatting helpers ────────────────────────────────────────────────
 
@@ -945,16 +948,34 @@ export function buildNighthawkNoEditionEnvelope(dateYmd: string | null, unreadab
 
 type EditionLookup = { row: NhEditionRowLike | null; unreadable: boolean };
 
+/** Pick the LATEST-published of two editions by edition_for (YYYY-MM-DD, lexicographically ordered).
+ *  On a tie (same date) prefer `playable` — the plays-carrying row is the one members see. Nulls are
+ *  handled: either missing → the other; both missing → null. */
+export function pickLatestEdition(
+  playable: NhEditionRowLike | null,
+  latestAny: NhEditionRowLike | null
+): NhEditionRowLike | null {
+  if (!playable) return latestAny;
+  if (!latestAny) return playable;
+  // Strictly NEWER any-edition wins; equal or older → keep the playable one.
+  return latestAny.edition_for > playable.edition_for ? latestAny : playable;
+}
+
 async function editionRowFor(dateYmd: string | null): Promise<EditionLookup> {
   try {
     const db = await import("../db");
     if (!db.dbConfigured()) return { row: null, unreadable: true };
     if (dateYmd) return { row: await db.fetchNighthawkEditionByDate(dateYmd), unreadable: false };
-    // Default: the latest edition that actually carries plays (the playbook members
-    // see), falling back to the latest row of any kind (recap-only nights are real).
-    const playable = await db.fetchLatestPlayableNighthawkEdition().catch(() => null);
-    if (playable) return { row: playable, unreadable: false };
-    return { row: await db.fetchLatestNighthawkEdition(), unreadable: false };
+    // Default: the LATEST published edition (max edition_for). PR-L4e-3 — this used to return the
+    // latest PLAYABLE edition unconditionally, which served a STALE playbook ("tomorrow's plays"
+    // returned a 4-day-old edition) whenever a newer edition existed that the playable-only query
+    // skipped. Read BOTH the latest-playable and the latest-of-any-kind and select the newer by
+    // edition_for, so freshness wins while a same-date playable edition is still preferred.
+    const [playable, latestAny] = await Promise.all([
+      db.fetchLatestPlayableNighthawkEdition().catch(() => null),
+      db.fetchLatestNighthawkEdition().catch(() => null),
+    ]);
+    return { row: pickLatestEdition(playable, latestAny), unreadable: false };
   } catch {
     return { row: null, unreadable: true };
   }
@@ -1107,6 +1128,186 @@ export async function readNighthawkSessionDebrief(dateYmd?: string): Promise<Bie
   };
 }
 
+// ── Overall accountability record (PR-L4e-1) ────────────────────────────────────────
+
+/** The honest aggregate over all graded plays. Same denominator rule as debrief-aggregate.ts's
+ *  groupRecord: scoreable EXCLUDES unfilled + pulled (a pulled play is counterfactual-only, excluded
+ *  in BOTH directions), wins = target, losses = stop. Nothing is recomputed — the persisted `outcome`
+ *  grade is read as-is. */
+export type NighthawkOverallRecord = {
+  editions: number;
+  total: number;
+  scoreable: number;
+  wins: number;
+  losses: number;
+  unfilled: number;
+  pulled: number;
+  win_rate_pct: number | null;
+  low_n: boolean;
+  by_conviction: Array<{ conviction: string; scoreable: number; wins: number; losses: number; win_rate_pct: number | null }>;
+};
+
+/** Low-sample floor: a win rate over fewer than this many scoreable plays is flagged, not headlined. */
+const OVERALL_LOW_N = 10;
+const CONVICTION_ORDER = ["A+", "A", "B", "C"] as const;
+
+function round1(x: number): number {
+  return Math.round(x * 10) / 10;
+}
+
+/** Aggregate raw outcome rows into the honest overall record (pure — unit-tested directly). */
+export function aggregateOverallRecord(rows: NhOutcomeRowLike[]): NighthawkOverallRecord {
+  const graded = rows.filter((r) => r.outcome !== "pending");
+  const scoreableRows = graded.filter((r) => r.outcome !== "unfilled" && r.pulled !== true);
+  const wins = scoreableRows.filter((r) => r.outcome === "target").length;
+  const losses = scoreableRows.filter((r) => r.outcome === "stop").length;
+  const editions = new Set(graded.map((r) => r.edition_for)).size;
+  const by_conviction = CONVICTION_ORDER.map((c) => {
+    const cr = scoreableRows.filter((r) => r.conviction.toUpperCase() === c);
+    const w = cr.filter((r) => r.outcome === "target").length;
+    const l = cr.filter((r) => r.outcome === "stop").length;
+    return {
+      conviction: c,
+      scoreable: cr.length,
+      wins: w,
+      losses: l,
+      win_rate_pct: cr.length > 0 ? round1((w / cr.length) * 100) : null,
+    };
+  }).filter((g) => g.scoreable > 0);
+  return {
+    editions,
+    total: graded.length,
+    scoreable: scoreableRows.length,
+    wins,
+    losses,
+    unfilled: graded.filter((r) => r.outcome === "unfilled").length,
+    pulled: graded.filter((r) => r.pulled === true).length,
+    win_rate_pct: scoreableRows.length > 0 ? round1((wins / scoreableRows.length) * 100) : null,
+    low_n: scoreableRows.length < OVERALL_LOW_N,
+    by_conviction,
+  };
+}
+
+/** All graded (non-pending) outcome rows across every edition, newest first. Bounded so a huge ledger
+ *  can't blow the hot path. Fail-soft to [] (the reader then serves the honest empty/outage envelope). */
+async function allGradedOutcomeRows(): Promise<NhOutcomeRowLike[]> {
+  try {
+    const db = await import("../db");
+    if (!db.dbConfigured()) return [];
+    const res = await db.dbQuery(
+      `SELECT ${OUTCOME_COLUMNS}
+       FROM nighthawk_play_outcomes
+       WHERE outcome <> 'pending'
+       ORDER BY edition_for DESC
+       LIMIT 5000`
+    );
+    return res.rows.map((r) => mapOutcomeRow(r as Record<string, unknown>));
+  } catch {
+    return [];
+  }
+}
+
+/** The honest-record envelope: headline win rate + the pulled/unfilled exclusions + conviction split. */
+export function buildNighthawkOverallRecordEnvelope(rec: NighthawkOverallRecord): BieAnswerEnvelope {
+  const rate = rec.win_rate_pct != null ? `${rec.win_rate_pct}%` : "—";
+  const headline =
+    rec.scoreable === 0
+      ? "Night Hawk record: no scoreable plays yet"
+      : `Night Hawk record: ${rate} win rate (${rec.wins}–${rec.losses} over ${rec.scoreable} scoreable play${rec.scoreable === 1 ? "" : "s"} across ${rec.editions} edition${rec.editions === 1 ? "" : "s"})${rec.low_n ? " — low sample" : ""}`;
+  const convictionBody =
+    rec.by_conviction.length > 0
+      ? rec.by_conviction
+          .map((g) => `- Conviction ${g.conviction}: ${g.win_rate_pct != null ? `${g.win_rate_pct}%` : "—"} (${g.wins}–${g.losses} of ${g.scoreable})`)
+          .join("\n")
+      : "- No conviction-tagged scoreable plays yet.";
+  return makeEnvelope({
+    headline,
+    bias: "neutral",
+    intent: "nighthawk_edition",
+    sections: [
+      {
+        title: "Overall record",
+        body:
+          `${rec.wins} target hit${rec.wins === 1 ? "" : "s"} and ${rec.losses} stop${rec.losses === 1 ? "" : "s"} over ${rec.scoreable} scoreable plays (${rec.editions} editions). ` +
+          `${rec.pulled} pulled and ${rec.unfilled} unfilled play${rec.unfilled === 1 ? "" : "s"} are EXCLUDED from the denominator — a pulled play adds neither a win nor a loss (counterfactual-only, both directions), and an unfilled play never traded. Nothing here is recomputed; the persisted grade of each play is read as-is.` +
+          (rec.low_n ? ` The sample is small (<${OVERALL_LOW_N}) — read the rate as directional, not settled.` : ""),
+        provenance: { source: NH_SOURCE_LEDGER, asOf: null },
+      },
+      {
+        title: "By conviction",
+        body: convictionBody,
+        provenance: { source: NH_SOURCE_LEDGER, asOf: null },
+      },
+    ],
+    evidence: [],
+    confidence:
+      rec.scoreable === 0
+        ? { level: "insufficient", why: "No graded, scoreable plays are on record yet." }
+        : rec.low_n
+          ? { level: "low", why: `Honest aggregate of the outcome ledger, but only ${rec.scoreable} scoreable plays — a small sample.` }
+          : { level: "high", why: "Honest aggregate read directly from the outcome ledger — persisted grades, no recomputation." },
+    unavailableSources: [],
+    followups: ["Show tonight's playbook", "How did last night's plays do?", ...NH_FOLLOWUPS.slice(0, 1)],
+  });
+}
+
+/** Outage/empty record envelope — the ledger could not be read this turn. */
+function buildNighthawkNoRecordEnvelope(): BieAnswerEnvelope {
+  return makeEnvelope({
+    headline: "Night Hawk record unreadable this turn",
+    bias: "neutral",
+    intent: "nighthawk_edition",
+    sections: [
+      {
+        title: "Ledger unreachable",
+        body: "The outcome ledger could not be read this turn — no record is being invented in its place. Try again shortly.",
+        provenance: { source: NH_SOURCE_LEDGER, asOf: null },
+      },
+    ],
+    evidence: [],
+    confidence: { level: "insufficient", why: "The outcome ledger read failed — nothing to present." },
+    unavailableSources: [{ source: NH_SOURCE_LEDGER, reason: "read failed" }],
+    followups: ["Show tonight's playbook", ...NH_FOLLOWUPS.slice(0, 2)],
+  });
+}
+
+/**
+ * PR-L4e-1 — the OVERALL accountability record: "what is our honest Night Hawk record right now",
+ * "our track record", "how are the plays doing overall". The honest aggregate win rate across every
+ * graded edition, with pulled/unfilled plays excluded from the denominator (both directions), plus a
+ * conviction split. Distinct from the session debrief ("how did last night do") and the edition read
+ * ("why was X picked"). Never throws — outage serves the honest unreadable envelope.
+ */
+export async function readNighthawkOverallRecord(): Promise<BieComposed> {
+  let dbUp = true;
+  try {
+    const db = await import("../db");
+    dbUp = db.dbConfigured();
+  } catch {
+    dbUp = false;
+  }
+  if (!dbUp) {
+    const envelope = buildNighthawkNoRecordEnvelope();
+    return { answer: envelope.markdown, context: { mode: "unreadable" }, envelope };
+  }
+  const rows = await allGradedOutcomeRows();
+  const rec = aggregateOverallRecord(rows);
+  const envelope = buildNighthawkOverallRecordEnvelope(rec);
+  return {
+    answer: envelope.markdown,
+    context: {
+      mode: "overall_record",
+      editions: rec.editions,
+      scoreable: rec.scoreable,
+      wins: rec.wins,
+      losses: rec.losses,
+      win_rate_pct: rec.win_rate_pct,
+      low_n: rec.low_n,
+    },
+    envelope,
+  };
+}
+
 /**
  * The edition read: ranked plays with pinned evidence, pulled state, morning verdicts
  * and grades. `dateYmd` scopes to one edition (YYYY-MM-DD); default is the latest
@@ -1191,6 +1392,9 @@ export const NH_DEBRIEF_ASK_RE =
 export async function composeNighthawkEditionRead(ticker: string | null, question: string): Promise<BieComposed> {
   const dateYmd = dateFromQuestion(question);
   if (ticker) return readNighthawkPickWhy(ticker, dateYmd);
+  // "our record" / "track record" / "how are the plays doing overall" → the OVERALL accountability
+  // record (PR-L4e-1). Before the debrief branch so a "record" ask is never read as a session debrief.
+  if (NH_RECORD_ASK_RE.test(question)) return readNighthawkOverallRecord();
   if (NH_DEBRIEF_ASK_RE.test(question)) return readNighthawkSessionDebrief(dateYmd);
   return readNighthawkEdition(dateYmd);
 }

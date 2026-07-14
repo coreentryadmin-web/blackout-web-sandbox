@@ -12,6 +12,8 @@
 //      clauses, so a short single question ("compare SPY and QQQ") is never over-split.
 // Anything not matching a detector returns [message] — a single question, handled unchanged.
 
+import { isScenarioQuestion, SCENARIO_TRIGGER_RE } from "./scenario-read";
+
 /** Hard cap on sub-questions so a pathological input can't fan out unboundedly. */
 export const MAX_SUB_QUESTIONS = 20;
 
@@ -67,6 +69,18 @@ export function splitCompoundQuestion(question: string): string[] {
 
   const byQ = splitByQuestionMarks(q);
   if (byQ.length >= 2) return byQ.slice(0, MAX_SUB_QUESTIONS);
+
+  // COHERENT-SCENARIO guard (PR-L4e-2): a single scenario what-if FRAMED as a hypothetical from the
+  // start — "if SPX drops 1% at tomorrow's open … does the regime flip, and which walls become
+  // live?" — must route WHOLE to the scenario engine, NOT be run-on-split. The scenario double-gate
+  // (hypothetical trigger + parseable shift) is satisfied only by the FULL string; the "and …"/","
+  // clauses are the regime/wall facets the composer answers together, so splitting them strands the
+  // trigger + shift in one fragment and emits mostly-"unavailable" stubs (deployed gauntlet: 3/3
+  // unavailable for exactly this shape). The trigger must appear in the LEADING clause (first ~60
+  // chars) so a genuine multi-topic run-on that merely contains a throwaway "if" late in the sentence
+  // ("…just say so if you can't get data") is NOT suppressed — only questions actually framed as a
+  // scenario are. Placed AFTER the numbered / multi-"?" detectors so an explicit enumeration wins.
+  if (SCENARIO_TRIGGER_RE.test(q.slice(0, 60)) && isScenarioQuestion(q)) return [q];
 
   const runOn = splitRunOn(q);
   if (runOn.length >= 3) return runOn.slice(0, MAX_SUB_QUESTIONS);

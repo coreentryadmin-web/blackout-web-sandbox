@@ -109,3 +109,41 @@ describe("labelForSubQuestion", () => {
     assert.ok(labelForSubQuestion(long).endsWith("…"));
   });
 });
+
+// ── PR-L4e-2 / scenario-routing (coordinator's highest-priority deployed bug): a coherent scenario
+// what-if FRAMED as a hypothetical must route WHOLE to the scenario engine, never be run-on-split
+// into fragments whose sub-intents can't reassemble the shift + trigger (deployed: 3/3 unavailable).
+describe("splitCompoundQuestion — coherent-scenario guard (PR-L4e-2)", () => {
+  // The exact deployed gauntlet question the scenario engine (#340) never reached.
+  const SCENARIO_Q =
+    "If SPX drops 1% at tomorrow's open, what happens to the dealer positioning picture — does the " +
+    "regime flip, and which walls become live?";
+
+  test("the deployed gauntlet scenario is NOT decomposed — it routes as ONE unit", () => {
+    assert.deepEqual(splitCompoundQuestion(SCENARIO_Q), [SCENARIO_Q]);
+    assert.equal(isCompoundQuestion(SCENARIO_Q), false);
+  });
+
+  test("scenario-framed variants (leading hypothetical + shift + sub-clauses) stay whole", () => {
+    const wholes = [
+      "What happens if SPY breaks 745 at the open, does the regime flip, and which walls become live?",
+      "Suppose NVDA falls 3% tomorrow — does its flip give way, and do the call walls become magnets?",
+      "If we lose the flip, does the regime turn negative, and which dealer walls come alive?",
+    ];
+    for (const q of wholes) {
+      assert.equal(isCompoundQuestion(q), false, `must stay whole: ${q}`);
+    }
+  });
+
+  test("a genuine multi-topic run-on with a BURIED throwaway 'if' still decomposes (no over-suppression)", () => {
+    // The exact regression risk: a 15-topic run-on ending "…just say so if you can't get data" both
+    // trips SCENARIO_TRIGGER_RE ('if') and parseShift ('above or below its flip'), yet is NOT framed
+    // as a scenario (the trigger is late) — it must still split.
+    const QRUN =
+      "I'm trying to understand the whole picture right now — where's SPX pinned and is it long or short gamma, " +
+      "what's the biggest call wall on SPY and the put wall on QQQ, is NVDA above or below its flip, remind me what a gamma magnet is " +
+      "and what max pain means, tell me if the flow tape is healthy or stale, which names are hottest, and honestly if you can't get " +
+      "data for any of these just say so.";
+    assert.ok(splitCompoundQuestion(QRUN).length >= 3, "buried-if run-on must still split");
+  });
+});

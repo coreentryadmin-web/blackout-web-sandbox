@@ -145,6 +145,25 @@ export function parseShift(text: string): ShiftSpec | null {
   return null;
 }
 
+/** The hypothetical TRIGGER half of the scenario double-gate — "if / what if / suppose / imagine /
+ *  assume / were to / scenario / hypothetical(ly)". Exported as the single source of truth so the
+ *  router (scenarioRoute) and the compound decomposer (which must NOT split a coherent scenario ask)
+ *  agree on exactly what a scenario question looks like. */
+export const SCENARIO_TRIGGER_RE =
+  /\b(if|what\s+if|suppose|imagine|assume|were\s+to|scenario|hypothetical(?:ly)?)\b/i;
+
+/**
+ * True when a message is a single scenario what-if: it carries BOTH a hypothetical trigger AND a
+ * parseable price shift (percent / points / absolute level / structural "the flip"|"the wall").
+ * This is the exact double-gate scenarioRoute enforces. The decomposer consults it so a coherent
+ * scenario question expressed with sub-clauses ("if SPX drops 1% … does the regime flip, and which
+ * walls become live?") is routed WHOLE to the scenario engine rather than run-on-split into fragments
+ * whose sub-intents can't reassemble the hypothetical (the shift + trigger live only in one clause).
+ */
+export function isScenarioQuestion(text: string): boolean {
+  return SCENARIO_TRIGGER_RE.test(text) && parseShift(text) != null;
+}
+
 // ── Shift resolution (spec + live state → a concrete target spot) ──────────────────────────────────
 
 function fin(n: number | null | undefined): number | null {

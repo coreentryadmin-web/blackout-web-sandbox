@@ -25,6 +25,7 @@ import {
 } from "@/lib/bie/platform-cache";
 import { withServerCache } from "@/lib/server-cache";
 import { stripGroundingTokens } from "@/lib/bie/grounding-markers";
+import { appendStalenessMarker } from "@/lib/bie/staleness";
 import { classifyBieIntent, type BieRoute } from "./router";
 import {
   splitCompoundQuestion,
@@ -224,6 +225,10 @@ async function composeSpxDeskRead(question?: string): Promise<BieComposed | null
   } catch {
     /* desk read renders without the cortex block */
   }
+  // PR-L4d-2: this is a live "right now" desk read — if the underlying desk snapshot is stale
+  // (off-hours / older than the freshness threshold), surface an honest as-of marker so a prior-close
+  // capture is never presented as fresh. Sourced from the SAME timestamp the brief reads (desk.as_of).
+  answer = appendStalenessMarker(answer, desk.as_of);
   return {
     answer,
     context: { desk, confluence, brief, platform, cortex: cortexCitation },
@@ -295,7 +300,7 @@ async function composeVectorRead(
   }
 
   const brief = composeVectorDeskBrief(state, question);
-  const answer = stripGroundingTokens(
+  let answer = stripGroundingTokens(
     [
       `**Vector desk read — ${ticker.toUpperCase()} (${state.horizon.toUpperCase()})**`,
       "",
@@ -304,6 +309,9 @@ async function composeVectorRead(
       brief.body,
     ].join("\n")
   );
+  // PR-L4d-2: live "right now" Vector read — mark it as-of when the assembled state is stale
+  // (off-hours the underlying GEX/spot reflect the prior close). Sourced from state.asOf.
+  answer = appendStalenessMarker(answer, state.asOf);
   return { answer, context: { state, known: knownVectorNumbers(state) } };
 }
 
@@ -605,6 +613,26 @@ async function composeFlowTape(ticker: string | null): Promise<BieComposed | nul
   };
 }
 
+/**
+ * OFF-TOPIC scope envelope (PR-L4d-1) — the honest answer to an ask with no market/platform subject
+ * (poem / weather / arithmetic / general chat / prompt-injection). The staging BIE-only last-resort
+ * used to fall through to a full market_context dump for these; this states the scope plainly and
+ * offers the on-topic things Largo actually answers. Deterministic, no live read.
+ */
+function composeOffTopic(): BieComposed {
+  const answer = [
+    "**I'm the BlackOut desk intelligence.**",
+    "",
+    "I answer market-structure, plays, and platform questions — SPX / Vector desk reads, gamma " +
+      "structure (flip, walls, max pain, regime), the 0DTE command board, Night Hawk editions and " +
+      "our record, unusual flow, and how the platform works. I can't write poems, do general chat, " +
+      "or answer off-topic asks.",
+    "",
+    "Try: \"What's the SPX setup right now?\", \"How are today's plays doing?\", or \"What is the gamma flip?\"",
+  ].join("\n");
+  return { answer, context: { intent: "off_topic", scope: "out_of_scope" } };
+}
+
 /** Per-sub-question deadline — a slow friend must never stall the whole compound answer. */
 const COMPOUND_FRIEND_TIMEOUT_MS = 4000;
 const COMPOUND_TIMEOUT = Symbol("compound-timeout");
@@ -680,6 +708,21 @@ export async function composeCompound(
     })
   );
 
+  // WHOLE-QUESTION fallback (PR-L4e-2): if the decomposition MOSTLY failed — fewer than half the
+  // parts came back with live data — the split was probably spurious (a coherent single question
+  // chopped into fragments its sub-intents can't answer). Prefer ONE grounded answer to the whole
+  // question over a wall of "unavailable" stubs, exactly when that whole-question read succeeds.
+  // Conservative: only when the majority is unavailable AND the whole routes to a real intent AND it
+  // returns an answer; otherwise fall through to the honest labeled breakdown below.
+  const answeredCount = ledger.filter((p) => p.ok).length;
+  if (answeredCount * 2 < subQs.length) {
+    const whole = classifyBieIntent(question, ledgerTickers);
+    if (whole) {
+      const composed = await composeBieAnswer(whole, { question });
+      if (composed && composed.answer && composed.answer.trim()) return composed;
+    }
+  }
+
   const answer = synthesizeCompoundAnswer(ledger);
   return {
     answer,
@@ -737,6 +780,8 @@ function headlineForRoute(route: BieRoute): string {
     cortex_read: `${t}Cortex read`,
     nighthawk_edition: `${t}Night Hawk edition`,
     scenario: `${t}scenario`,
+    cross_check: "Cross-surface check",
+    off_topic: "Out of scope",
   };
   return map[route.intent] ?? "BIE read";
 }
@@ -814,6 +859,16 @@ async function composeBieAnswerUncached(route: BieRoute, opts?: ComposeBieOpts):
         const { composeScenario } = await import("@/lib/bie/scenario-read");
         return await composeScenario(route.ticker ?? "SPX", opts?.question ?? "", { horizon: route.horizon ?? "all" });
       }
+      case "cross_check": {
+        // Cross-surface cross-check (PR-L4e-4) — reads the SAME metric (max pain / gamma flip /
+        // regime) from the SPX desk AND the Vector engine and FLAGS a material divergence explicitly.
+        const { composeCrossCheck } = await import("@/lib/bie/cross-check-read");
+        return await composeCrossCheck(route.ticker ?? "SPX", route.horizon ?? "all");
+      }
+      case "off_topic":
+        // Off-topic scope envelope (PR-L4d-1) — honest "I answer market/platform questions", never a
+        // market dump. Deterministic; no live read.
+        return composeOffTopic();
       default:
         return null;
     }

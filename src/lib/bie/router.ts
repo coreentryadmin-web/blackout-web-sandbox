@@ -9,7 +9,7 @@
 import { KNOWN_TICKERS } from "@/lib/largo/question-intent";
 import { lookupGlossary } from "./glossary";
 import { namesUnsupportedHorizon } from "./vector-read-fallback";
-import { parseShift } from "./scenario-read";
+import { isScenarioQuestion } from "./scenario-read";
 
 export type BieIntent =
   | "zerodte_plays"
@@ -30,7 +30,9 @@ export type BieIntent =
   | "system_diagnostic"
   | "cortex_read"
   | "nighthawk_edition"
-  | "scenario";
+  | "scenario"
+  | "cross_check"
+  | "off_topic";
 
 export type BieRoute = {
   intent: BieIntent;
@@ -149,6 +151,7 @@ const CONCEPT_TEACH_EXCLUDE_RE =
  *  ("GEX", "max pain", "king node") — the terse-barrage shape a compound split produces — even
  *  without a "what is" lead-in, gated to a short phrase that actually resolves to a definition. */
 function isConceptQuestion(q: string): boolean {
+  if (NH_RECORD_ASK_RE.test(q)) return false; // "our track record" → the live record read, not a definition
   if (extractKnownTicker(q) != null) return false; // a named ticker → live read, not a definition
   if (CONCEPT_LIVE_HINT_RE.test(q)) return false; // "what is the market doing" → live
   if (CONCEPT_TEACH_EXCLUDE_RE.test(q)) return false; // "explain how gamma hedging works" → Claude
@@ -242,6 +245,15 @@ const NH_PICK_STOPWORDS = new Set(["THE", "IT", "WE", "THEY", "THIS", "THAT", "T
 const NH_PULLED_STATE_RE =
   /\b(?:was|were|got|is|why)\b[^?]{0,60}\bpulled\b(?!\s+(?:back|lower|higher|down|up|toward|into|in)\b)/i;
 const NH_MORNING_RE = /\bmorning\s+(check|confirm(?:ation)?|verdict)\b/i;
+// OVERALL-RECORD ask (PR-L4e-1) — "what is our honest Night Hawk record right now", "our track
+// record", "how are the plays doing overall". This is the ACCOUNTABILITY question — the honest
+// aggregate win-rate across editions — NOT "why was X picked" (edition, has a ticker) and NOT "how
+// did last night do" (the session debrief, NH_DEBRIEF_ASK_RE). Deliberately keyed on explicit
+// record vocabulary ("track record" / "our record" / "<nighthawk> record" / "record right now|so
+// far|overall" / "plays doing overall") so a plain "today's plays" / "how are today's plays doing"
+// (zerodte) is never stolen — those lack the record/overall marker.
+export const NH_RECORD_ASK_RE =
+  /\b(?:track[-\s]record|our\s+(?:honest\s+)?record|(?:night\s?hawk|nighthawk)\s+record|(?:overall|lifetime|all[-\s]?time)\s+record|record\s+(?:right\s+now|so\s+far|overall|to\s+date)|how\s+are\s+(?:the|our)\s+plays\s+doing\s+overall|plays\s+doing\s+overall)\b/i;
 
 function nighthawkSubjectTicker(q: string): string | null {
   const subj = q.match(NH_PICK_SUBJECT_RE)?.[1]?.toUpperCase() ?? null;
@@ -250,6 +262,10 @@ function nighthawkSubjectTicker(q: string): string | null {
 }
 
 function nighthawkEditionRoute(q: string): BieRoute | null {
+  // "our record" / "track record" / "how are the plays doing overall" → the accountability read
+  // (composeNighthawkEditionRead resolves the ticker-less record ask to the OVERALL honest record).
+  // First, before the terse-ticker and pick-why branches, so "our record" is never read as a ticker.
+  if (NH_RECORD_ASK_RE.test(q)) return { intent: "nighthawk_edition", ticker: null };
   const terse = q.match(NH_TERSE_TICKER_RE);
   if (terse) return { intent: "nighthawk_edition", ticker: terse[1]!.toUpperCase() };
   if (NH_TERSE_EDITION_RE.test(q)) return { intent: "nighthawk_edition", ticker: null };
@@ -291,13 +307,56 @@ function nighthawkEditionRoute(q: string): BieRoute | null {
 // (percent / points / absolute level / structural "the flip"|"the wall"). A definitional "what is the
 // flip" (no trigger, no scopeable shift), a verdict "is SPX 7500 good" (no trigger, "7500" isn't a
 // scoped shift), a cortex "why did we commit X" (no trigger) all fail one gate and keep their homes.
-const SCENARIO_TRIGGER_RE =
-  /\b(if|what\s+if|suppose|imagine|assume|were\s+to|scenario|hypothetical(?:ly)?)\b/i;
-
+// SCENARIO_TRIGGER_RE + the double-gate now live in scenario-read.ts (isScenarioQuestion) so the
+// compound decomposer and this router agree on exactly what a scenario question is. Re-exported symbol
+// kept in the import above; the local reference below preserves the original inline comment intent.
 function scenarioRoute(q: string): BieRoute | null {
-  if (!SCENARIO_TRIGGER_RE.test(q)) return null;
-  if (parseShift(q) == null) return null; // no scopeable price move → not a scenario
+  if (!isScenarioQuestion(q)) return null; // needs BOTH a hypothetical trigger AND a scopeable shift
   return { intent: "scenario", ticker: extractKnownTicker(q) ?? "SPX", horizon: extractHorizon(q) };
+}
+
+// CROSS-SURFACE cross-check (PR-L4e-4) — "cross-check Vector and the SPX desk: do they agree?",
+// "does Vector match the desk on max pain?", "reconcile the desk and Vector". composeCrossCheck reads
+// the SAME metric (max pain / gamma flip / regime) from BOTH surfaces and FLAGS a material divergence
+// explicitly instead of silently presenting one. Double-gated to avoid stealing a single-surface read:
+//   (1) an explicit cross-check/reconcile verb, OR an agreement cue (agree/match/disagree/consistent/
+//       line up/conflict/differ) — AND
+//   (2) BOTH surfaces named (Vector AND the SPX desk).
+// A plain "Vector setup on SPX" (no agreement cue, one surface) or "SPX desk read" is never caught.
+const CROSS_CHECK_VERB_RE = /\b(cross[-\s]?check|reconcile)\b/i;
+const CROSS_CHECK_AGREE_CUE_RE =
+  /\b(agree|agrees|disagree|disagrees|match(?:es|ing)?|consistent|conflict(?:s|ing)?|line\s+up|lines\s+up|differ(?:s|ing)?|discrepan\w*|same\s+(?:read|number|level))\b/i;
+const CROSS_CHECK_VECTOR_RE = /\bvector\b/i;
+const CROSS_CHECK_DESK_RE = /\b(spx\s*desk|the\s*desk|desk|slayer|sniper|spx)\b/i;
+
+function isCrossCheckQuestion(q: string): boolean {
+  const hasVector = CROSS_CHECK_VECTOR_RE.test(q);
+  const hasDesk = CROSS_CHECK_DESK_RE.test(q);
+  if (!hasVector || !hasDesk) return false; // a cross-check needs TWO named surfaces
+  return CROSS_CHECK_VERB_RE.test(q) || CROSS_CHECK_AGREE_CUE_RE.test(q);
+}
+
+// OFF-TOPIC scope guard (PR-L4d-1) — the staging BIE-only last-resort must NEVER answer an
+// off-topic ask (poem / weather / arithmetic / general chat / prompt-injection) with a market dump.
+// hasMarketSubject is the POSITIVE gate: a question is on-topic when it names a ticker, a $-symbol, a
+// glossary/concept term, or ANY market/platform vocabulary. Off-topic = none of those present. This
+// is deliberately conservative — a terse legit ask ("flip spx", "gex", "nh", a bare ticker) always
+// carries a subject, so it is NEVER caught; only a question with zero market/platform subject is.
+const MARKET_SUBJECT_RE =
+  /\b(spx|spy|es|s&p|qqq|iwm|vix|ndx|nq|dia|market|tape|gamma|gex|vex|dex|charm|vanna|flip|wall|walls|king\s*node|node|max\s*pain|magnet|bead|beads|regime|breadth|dealer|dealers|hedg\w*|dark\s*pool|vwap|ema|rsi|macd|expected\s*move|strike|strikes|calls?|puts?|option|options|earnings|invalidat\w*|setup|bias|trade|trades|trading|position|positioning|record|playbook|edition|pick|picks|plays?|vector|slayer|sniper|desk|cortex|night\s?hawk|nighthawk|0\s*dte|zero\s*dte|zerodte|dte|flow|whale|lotto|scanner|confluence|structure|levels?|support|resistance|expir\w*|weekly|monthly|ticker|stock|equity|chart|nh)\b/i;
+
+function hasMarketSubject(q: string): boolean {
+  if (extractKnownTicker(q) != null) return true; // named ticker (spx / nvda / $NVDA …)
+  if (/\$[A-Za-z]{1,5}\b/.test(q)) return true; // explicit $-prefixed symbol
+  if (MARKET_SUBJECT_RE.test(q)) return true; // any market/platform vocabulary
+  if (lookupGlossary(q) != null) return true; // a bare glossary/concept term
+  return false;
+}
+
+/** True when a question carries NO market/platform subject at all — an off-topic ask that must get
+ *  an honest scope envelope, never a market dump. Conservative: any subject at all → false. */
+function isOffTopicQuestion(q: string): boolean {
+  return !hasMarketSubject(q);
 }
 
 /** Vector DTE horizon named in the question, defaulting to "all" (whole-chain view). */
@@ -451,6 +510,14 @@ export function classifyBieIntent(question: string, ledgerTickers: Set<string>):
     return { intent: "vector_read", ticker: extractKnownTicker(q) ?? "SPX", horizon: "all" };
   }
 
+  // Cross-surface cross-check (PR-L4e-4) — "cross-check Vector and the SPX desk: do they agree?".
+  // BEFORE the VECTOR_RE branch (which would steal the "vector" mention) so the two-surface reconcile
+  // reaches composeCrossCheck, which flags a material max-pain/flip/regime divergence instead of
+  // silently answering one surface. Ticker defaults to SPX (the shared cross-surface index).
+  if (isCrossCheckQuestion(q)) {
+    return { intent: "cross_check", ticker: extractKnownTicker(q) ?? "SPX", horizon: extractHorizon(q) };
+  }
+
   // Explicit "vector" mention → the deterministic Vector desk read, for ANY ticker (incl. SPX on
   // Vector). Placed first so the Vector product wins over the SPX-Sniper branches when named.
   if (VECTOR_RE.test(q)) {
@@ -558,6 +625,11 @@ export function classifyBieStagingFallback(question: string): BieRoute {
     const scenario = scenarioRoute(q);
     if (scenario) return scenario;
   }
+  // Same cross-surface cross-check branch as the primary classifier (before VECTOR_RE, which would
+  // steal the "vector" mention) — a two-surface reconcile must flag divergence, not dump one surface.
+  if (isCrossCheckQuestion(q)) {
+    return { intent: "cross_check", ticker: extractKnownTicker(q) ?? "SPX", horizon: extractHorizon(q) };
+  }
   if (VECTOR_RE.test(q)) {
     return { intent: "vector_read", ticker: extractKnownTicker(q) ?? "SPX", horizon: extractHorizon(q) };
   }
@@ -582,6 +654,13 @@ export function classifyBieStagingFallback(question: string): BieRoute {
       return { intent: "vector_read", ticker: vTicker, horizon: extractHorizon(q) };
     }
   }
+  // OFF-TOPIC scope guard (PR-L4d-1) — placed AFTER every specific-intent router (so an edition
+  // pick-why "why was CSX picked", a cortex decision-why, etc. keep their homes even when they carry
+  // no generic market vocabulary) and BEFORE the generic market_context / ticker catch-alls. Every
+  // remaining branch below requires a market subject (a known ticker or market/SPX vocabulary), so a
+  // question with NO subject at all would otherwise fall through to the market_context DUMP — the
+  // exact L4d-1 bug (a poem got a full SPX-desk + HELIX-tape dump). It gets an honest scope envelope.
+  if (isOffTopicQuestion(q)) return { intent: "off_topic", ticker: null };
   if (MARKET_CONTEXT_RE.test(q) || MARKET_CONTEXT_LOOSE_RE.test(q)) {
     return { intent: "market_context", ticker: null };
   }
@@ -652,6 +731,18 @@ export function bieFollowups(intent: BieIntent): string[] {
         "What if it moves the other way?",
         "What's the setup right now?",
         "Which walls are building vs fading?",
+      ];
+    case "cross_check":
+      return [
+        "What's the full SPX desk read?",
+        "Show the Vector desk read for SPX",
+        "Which walls are building vs fading?",
+      ];
+    case "off_topic":
+      return [
+        "What's the SPX setup right now?",
+        "How are today's plays doing?",
+        "What is the gamma flip?",
       ];
   }
 }
