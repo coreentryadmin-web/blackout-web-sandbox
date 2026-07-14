@@ -18,6 +18,7 @@ import {
 import { AnchorGlyph, PanelLabel } from "@/features/thermal/lib/gex-heatmap/primitives";
 import { GEX_KING_COMPACT_LABEL, GEX_KING_DUAL_LABEL, GEX_KING_NODE_HELP, gexKingDualLabel } from "@/lib/gex-king-node-labels";
 import { shiftPercentForStrike } from "@/features/thermal/lib/gex-heatmap/shift-math";
+import { splitExpiryHorizons } from "@/features/thermal/lib/gex-heatmap/expiry-horizons";
 import { createPulseEventSource, type PulseStreamSnapshot } from "@/lib/api";
 import { usePollIntervalMs } from "@/hooks/use-et-market-open";
 import { resetIosViewport } from "@/hooks/useIosKeyboardInset";
@@ -166,6 +167,15 @@ type GexHeatmapResponse = {
   change_pct?: number;
   asof?: string;
   expiries?: string[];
+  /**
+   * The near-term subset of `expiries` the SERVER's Net / `strike_totals` are summed over
+   * (polygon-options-gex.ts `buildMetric` → `nearTermKeep`). AUTHORITATIVE for the near/far
+   * horizon split — it can include a 3rd-Friday standard-monthly expiry (e.g. `2026-07-17`) when
+   * that OpEx is one of the ~8 nearest kept expiries. The client MUST classify near vs monthly
+   * from this set, not from the 3rd-Friday calendar heuristic, or the "Near" aggregate drops a
+   * dominant column and flips sign. Absent on legacy caches / `emptyHeatmap()` → calendar fallback.
+   */
+  near_term_expiries?: string[];
   strikes?: number[];
   max_pain?: number | null;
   gex?: GexBlock;
@@ -341,20 +351,10 @@ function fmtExpiry(ymd: string): string {
   return `${months[m - 1]} ${d}`;
 }
 
-/**
- * True when a YYYY-MM-DD is a standard US monthly options expiration (the THIRD FRIDAY) — the
- * far-dated columns the server now appends (monthly + quarterly OpEx carry the dominant dealer
- * walls). Mirrors the server's thirdFridayYmd calendar math. Used to classify expiries into the
- * "monthly" horizon and to badge the far-dated matrix columns. Tolerant: a malformed date → false.
- */
-function isMonthlyExpiry(ymd: string): boolean {
-  const [y, m, d] = ymd.split("-").map(Number);
-  if (!y || !m || !d) return false;
-  const first = new Date(Date.UTC(y, m - 1, 1));
-  const dow = first.getUTCDay(); // 0=Sun..6=Sat
-  const firstFriday = 1 + ((5 - dow + 7) % 7);
-  return d === firstFriday + 14; // third Friday
-}
+// `isMonthlyExpiry` (3rd-Friday calendar test) and the authoritative near/far split
+// (`splitExpiryHorizons`) live in ./expiry-horizons — the near/monthly membership is derived from
+// the SERVER payload's `near_term_expiries`, NOT this calendar heuristic, so a 3rd-Friday date the
+// server counts as near stays in the near aggregate (the "M" badge is a display overlay only).
 
 type Lens = "gex" | "vex" | "dex" | "charm";
 
@@ -2176,7 +2176,8 @@ function ExpiryScopeBar({
 }: {
   expiries: string[];
   zeroDteExpiry: string | null;
-  /** The far-dated standard-monthly (3rd-Friday) expiries present in the axis (may be empty). */
+  /** The far-dated monthly/quarterly OpEx expiries — the server's FAR set (axis minus
+   *  `near_term_expiries`), which the "Monthly" preset sums and the "M" badge marks (may be empty). */
   monthlyExpiries: string[];
   scope: string;
   onScope: (s: string) => void;
@@ -2188,6 +2189,10 @@ function ExpiryScopeBar({
   const hasMonthly = monthlyExpiries.length > 0;
   const nearCount = expiries.length - monthlyExpiries.length;
   const showHorizon = hasMonthly && nearCount > 0;
+  // Gold-tint an individual expiry chip iff it's in the server's FAR set (same membership the
+  // "Monthly" preset + matrix "M" badge use) — NOT the 3rd-Friday calendar, so a near-counted
+  // monthly reads as a near chip, consistent with which bucket its gamma is summed into.
+  const farExpirySet = new Set(monthlyExpiries);
 
   const chip = (value: string, label: string, title: string, far = false) => {
     const active = scope === value;
@@ -2244,7 +2249,7 @@ function ExpiryScopeBar({
           true
         )}
       {expiries.map((e) =>
-        chip(e, fmtExpiry(e), `${fmtExpiry(e)} positioning only`, isMonthlyExpiry(e))
+        chip(e, fmtExpiry(e), `${fmtExpiry(e)} positioning only`, farExpirySet.has(e))
       )}
       {scoped && (
         <span
@@ -2765,17 +2770,21 @@ export function GexHeatmap({
     return expiries.includes(today) ? today : expiries[0];
   }, [expiries]);
 
-  // Far-dated standard-monthly (3rd-Friday) expiries present in the axis — the OpEx columns the
-  // server now appends. Drives the "Monthly"/"Near" horizon presets + the gold far-dated chips.
-  const monthlyExpiries = useMemo<string[]>(
-    () => expiries.filter((e) => isMonthlyExpiry(e)),
-    [expiries]
+  // Near-term vs far-dated (monthly/quarterly OpEx) split — MEMBERSHIP is taken from the server
+  // payload's `near_term_expiries` (the exact set `gex.total`/`strike_totals` sum over), NOT the
+  // 3rd-Friday calendar heuristic. That set can INCLUDE a 3rd-Friday monthly (e.g. 07-17 when it's
+  // one of the ~8 nearest kept expiries); classifying it as far by calendar would drop that
+  // dominant near OpEx column and FLIP the "Near" aggregate's sign vs the server's Net. Falls back
+  // to the calendar heuristic only for legacy caches predating the field. `monthlyExpiries` = the
+  // far-dated OpEx columns (the ones the "M" badge marks and the "Monthly" preset sums).
+  const { nearExpiries, farExpiries: monthlyExpiries } = useMemo(
+    () => splitExpiryHorizons(expiries, data?.near_term_expiries),
+    [expiries, data?.near_term_expiries]
   );
-  // Near-term = everything that isn't a far-dated monthly OpEx column.
-  const nearExpiries = useMemo<string[]>(
-    () => expiries.filter((e) => !isMonthlyExpiry(e)),
-    [expiries]
-  );
+  // Fast membership test for the per-column "M" badge / gold chip tint — a column is "monthly
+  // OpEx" (far-dated) iff it's in the server's FAR set, so a near-counted 3rd-Friday is never
+  // badged as excluded-from-Net (kept consistent with the near aggregate above).
+  const farExpirySet = useMemo(() => new Set(monthlyExpiries), [monthlyExpiries]);
 
   // The expiries the profile + curve sum over. null ⇒ "All" (use server near-term totals).
   // "near"/"monthly" are HORIZON presets summing the near-term vs far-dated OpEx columns; a bare
@@ -3642,7 +3651,10 @@ export function GexHeatmap({
                   Strike
                 </th>
                 {expiries.map((e) => {
-                  const isMonthly = isMonthlyExpiry(e);
+                  // "M" badge / gold column = the server's FAR set (excluded from near-term Net),
+                  // NOT the calendar heuristic — so a near-counted 3rd-Friday reads as a plain near
+                  // column and the caption "Net sums near-term only" stays factually correct.
+                  const isMonthly = farExpirySet.has(e);
                   return (
                     <th
                       key={e}

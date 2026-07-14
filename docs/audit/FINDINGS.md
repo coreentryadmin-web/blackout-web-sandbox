@@ -1466,3 +1466,64 @@ all call walls → call rows.
 **Tests:** `vector-gex-ladder.test.ts` +3 (override crowns canonical wall / falls back when absent or
 wrong-signed / omitting preserves self-crown) — 15 ladder tests pass; #347 golden values-unchanged snapshot
 intact. Full suite **3669 pass / 0 fail**; tsc + eslint clean; `npm run build` green.
+
+## 2026-07-14 — Thermal / GEX heatmap "Near" expiry preset wrong-sign (RTH sweep) — PR fix/thermal-near-expiry-sign
+
+### P1 — "Near" horizon shows near-term net GEX with the OPPOSITE SIGN (member-facing) (FIXED, tested)
+- **Severity:** P1 — member-facing wrong sign. A member reading "Near" saw net-LONG gamma while
+  dealers were net-SHORT (and vice-versa) — inverted dealer positioning, the single most load-bearing
+  read on the panel.
+- **Live evidence (2026-07-14 RTH, signed-in member path):** the "All" footer and the "Near" footer —
+  both labeled "near-term total" — disagreed in SIGN:
+  - SPY: server/All net **−$1.06B** vs client-**"Near"** **+$234M**; separately All **−$580.1M** vs Near **+$591.5M**.
+  - SPX: server/All net **+$5.78B** vs client-**"Near"** **−$1.44B**.
+  Opposite signs on two footers that claim to sum the same near-term set.
+- **Root cause (client heuristic vs server `near_term_expiries`):** the server's Net / `strike_totals`
+  are summed over `near_term_expiries` (`polygon-options-gex.ts` `buildMetric` → `nearTermKeep`,
+  `heatmap.near_term_expiries = nearKeep`). That authoritative near set INCLUDES the 3rd-Friday
+  standard-monthly `2026-07-17` — it's one of the ~8 nearest kept expiries and carries the dominant
+  near OpEx gamma. But `GexHeatmap.tsx` re-derived the near/monthly split client-side with a pure
+  3rd-Friday CALENDAR heuristic `isMonthlyExpiry()` (old lines ~2770-2778):
+  `nearExpiries = expiries.filter(e => !isMonthlyExpiry(e))`. `isMonthlyExpiry("2026-07-17")` is
+  `true` (verified: 2026-07-17 is the 3rd Friday of July), so the client reclassified 07-17 as a FAR
+  "monthly OpEx" column and dropped it from `nearExpiries`. That one column dominates and is
+  opposite-signed to the small weeklies, so excluding it FLIPS the aggregate sign. The "Near" preset,
+  the profile walls/flip/anchor (recomputed from the wrong subset), the "Monthly" total (double-counts
+  a near expiry), and the matrix "M" badge + caption ("Net sums near-term only") were all wrong for
+  07-17 off the same root cause.
+- **Why it wasn't caught earlier:** `isMonthlyExpiry()` "looks" equivalent to the server split and is
+  correct MOST days (when no 3rd-Friday sits inside the near window). It only diverges in the ~1
+  week/month when a monthly OpEx is one of the nearest expiries — exactly the July OpEx week this was
+  caught in. Same trap `resolveNearTermExpiriesForCrossValidation()` (gex-cross-validation-core.ts)
+  already documents on the levels side ("`slice(0,N)` LOOKS equivalent but is not").
+- **Fix (membership from the server, styling stays a heuristic overlay):** new pure helper
+  `src/features/thermal/lib/gex-heatmap/expiry-horizons.ts` — `splitExpiryHorizons(expiries,
+  near_term_expiries)` classifies an expiry as "near" iff it's in the server's `near_term_expiries`
+  set (falls back to the `isMonthlyExpiry` calendar heuristic ONLY when the field is absent — legacy
+  caches / `emptyHeatmap()`). `GexHeatmap.tsx` now derives `nearExpiries` / `monthlyExpiries` (far set)
+  from that helper instead of the calendar filter, and the added `near_term_expiries?: string[]` field
+  on `GexHeatmapResponse` (already served — `...heatmap` spread through `roundFloats`, which passes
+  strings through untouched). Because `selectedExpiries` → `filteredTotals` → `recomputeLevels` /
+  `anchorStrike` / `filteredTotal` all flow from the corrected `nearExpiries`, the "Near" footer total,
+  the profile walls/flip/anchor, and the "Monthly" total are now consistent with the server's near set.
+- **Blast radius (all fixed here, GexHeatmap scope only):** (1) the per-column matrix "M" badge / gold
+  header and (2) the per-expiry chip gold tint now test membership against the server FAR set
+  (`farExpirySet.has(e)`), not `isMonthlyExpiry(e)` — so a near-counted 3rd-Friday is NOT badged
+  "M"/"monthly OpEx" and the caption "Net column sums near-term expiries only; monthly OpEx columns (M)
+  are additive context" is factually correct. `isMonthlyExpiry` moved into the helper module (only the
+  legacy-fallback path + the badge default use it); no other consumers referenced it. Deliberately
+  UNCHANGED: the server engine, the `strike_totals`/levels math, and the Vector chart's
+  heatmap-behind-candles rail (untouched — this is the Thermal component only).
+- **Fix rationale:** derive display membership from the SAME authoritative set the server's Net is
+  built from, rather than a second, independent client re-derivation that can silently diverge. The
+  calendar heuristic is retained purely as a legacy-cache fallback (payloads predating the field), so
+  old cached responses keep their prior behavior instead of collapsing every column into "near".
+- **Evidence (tests):** `expiry-horizons.test.ts` (7 assertions) — a payload whose
+  `near_term_expiries` includes the 3rd-Friday `2026-07-17` asserts that date STAYS in the near set and
+  is NOT dropped by the monthly heuristic; a companion assertion builds per-expiry nets where the near
+  OpEx dominates negative and proves the server-aligned near sum is net-SHORT while the OLD heuristic
+  subset flips net-LONG (opposite sign) — the exact bug; plus no-double-count into Monthly, the legacy
+  fallback (undefined/null/[]), and order preservation. `npx tsc --noEmit` clean; full `npm test`
+  **3713 pass / 0 fail**; `npm run build` green; eslint 0 errors on changed files.
+- **Status:** FIXED + tested. DRAFT PR open (not merged — user live-validates the sign against the
+  server on the deployed build before merge).
