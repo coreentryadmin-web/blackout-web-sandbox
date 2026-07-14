@@ -112,3 +112,17 @@ evidence / fix / status per the CLAUDE.md policy.)
   serve old+new builds for several minutes; per-navigation results flip). Rule going forward:
   after a trunk push, wait ≥6 min AND confirm a marker (e.g. the toggle testids) before treating
   any UI run as evidence.
+
+## 2026-07-14 — Vector data refresh rate optimization (member-reported, real-time responsiveness)
+
+### P2 — Slow Vector data updates (spot every 3s, GEX ladder every 60s) (FIXED, pending deploy verify)
+- **Root cause:** SWR refresh intervals set conservatively for minimal server load; member reported Vector felt "static" and laggy, not responsive to market moves.
+  - SPX playbook terminal: `refreshInterval: 3_000` (VectorDeskTerminal.tsx:61)
+  - GEX ladder (matrix): `setInterval(load, 60_000)` (VectorGexLadder.tsx:105)
+- **Requirement:** Spot prices should update every ~1 second; grid/matrix data every ~15 seconds (SSE stream provides spot, polling provides structure).
+- **Fix:** 
+  - VectorDeskTerminal.tsx:61: Changed `refreshInterval: liveSession ? 3_000 : 0` → `1_000`
+  - VectorGexLadder.tsx:105: Changed `setInterval(load, 60_000)` → `15_000` + adjusted guard from 55s → 10s
+  - Commit `a3aced5`, branch `claude/three-repos-review-36t217`
+- **Evidence expected:** Post-deploy, spot updates every tick from SSE + every 1s from playbook fetch; ladder structure refreshes every 15s (2-3 updates per 40s window).
+- **Status:** Fixed, awaiting staging deployment verification. Full UI validation requires Cognito authentication (staging endpoint: https://staging.blackouttrades.com/vector)
