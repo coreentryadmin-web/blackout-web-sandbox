@@ -253,7 +253,12 @@ export type ZeroDteGateFailure =
   | "governor_session_stops" // G-5: 3 stops today — halted for the session
   | "governor_reentry_lock" // G-5: same-direction re-entry within 20m of that ticker's stop
   | "correlated_conflict" // G-5/B-3: opposes an OPEN plan on a correlated ticker
-  | "gate_context_unavailable"; // fail-closed: gate inputs (ledger/governor) unreadable
+  | "gate_context_unavailable" // fail-closed: gate inputs (ledger/governor) unreadable
+  // ── Night Hawk Cortex layer (./cortex-gate.ts, NIGHTHAWK-CORTEX-DESIGN.md §2) —
+  // evaluated on gate SURVIVORS only, i.e. only after every hard gate above passed.
+  // The <source> suffix names the Cortex source that vetoed (e.g. "cortex_veto:flow-quality").
+  | `cortex_veto:${string}` // a Cortex source hard-vetoed the entry
+  | "cortex_net_negative"; // no veto, but the evidence score nets < 0 — doesn't print
 
 export type ZeroDteGateRejection = {
   ticker: string;
@@ -664,6 +669,9 @@ import type { IntradayRead } from "./intraday";
 // Type-only (erased at compile time — no runtime cycle with ./gates, which imports
 // only types back from this module).
 import type { ZeroDteGateVerdict } from "./gates";
+// Type-only for the same reason: ./cortex-gate's runtime deps (the Cortex barrel)
+// never enter this module's load graph.
+import type { ZeroDteCortexAssessment } from "./cortex-gate";
 
 /** Structural subset of TickerDossier the enrichment reads (keeps this module
  *  provider-import-free and the merge testable with plain objects). */
@@ -763,6 +771,11 @@ export type EnrichedZeroDteSetup = ZeroDteSetup & {
    *  block is clock-based). Null = not evaluated (already-committed ticker, or the
    *  gate context couldn't be built — persist fails closed on that). */
   gate: ZeroDteGateVerdict | null;
+  /** Night Hawk Cortex assessment (./cortex-gate.ts) — evaluated ONLY for a fresh
+   *  find that survived the hard gate stack. Null = Cortex never ran for this
+   *  setup this cycle (gate-blocked before the Cortex layer, or an
+   *  already-committed refresh ticker) — never a fabricated neutral. */
+  cortex: ZeroDteCortexAssessment | null;
   halted: boolean;
   /** Reports today/next session — a 0DTE into an earnings print is a different trade. */
   earnings: EarningsFlag | null;
@@ -956,6 +969,7 @@ export function enrichSetup(
     fib_note: fibNote,
     plan: null,
     gate: null,
+    cortex: null,
     halted: dossier?.trading_halt === true,
     earnings: extras?.earnings ?? null,
     news_hot: extras?.news_hot ?? null,

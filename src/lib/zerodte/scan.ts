@@ -49,6 +49,7 @@ import {
   type ZeroDteGateRejection,
 } from "./board";
 import { buildZeroDteEntryContext, fetchZeroDteSessionContext } from "./entry-context";
+import { cortexEntryContextFor, cortexGateBlocks, evaluateCortexForCommit } from "./cortex-gate";
 import { persistZeroDteRejections } from "./rejections";
 import { evaluateZeroDteGates, gateRejectionFor, recentNighthawkTake } from "./gates";
 import {
@@ -348,7 +349,31 @@ async function attachGateVerdicts(
       slayerLive,
       nighthawkTake: recentNighthawkTake(nhEcho.get(s.ticker.toUpperCase()) ?? null, today),
     });
-    if (s.gate.verdict === "COMMIT") committedThisCycle.push({ ticker: s.ticker, direction: s.direction });
+    if (s.gate.verdict !== "COMMIT") continue;
+
+    // ── Night Hawk Cortex layer (NIGHTHAWK-CORTEX-DESIGN.md §2, wired by PR-B) ──
+    // Runs on gate SURVIVORS only — the hard gates are the cheap fail-closed floor;
+    // the Cortex is the expensive precision layer on top, so it never spends its
+    // provider budget arguing about a find the gates already killed. The loop stays
+    // sequential ON PURPOSE: a Cortex block must keep this find OUT of
+    // committedThisCycle (it will not print), and later finds' governor verdicts
+    // (concurrency cap, correlated-conflict) depend on that set being accurate.
+    // Latency is bounded: fetchCortexInputs is per-read time-budgeted (2.5s, cache-
+    // first readers) and survivors per cycle are few (the governor caps open risk).
+    // evaluateCortexForCommit never throws — total Cortex outage degrades to an
+    // ABSTAIN (commit proceeds on gates alone; see cortex-gate.ts for the WHY).
+    s.cortex = await evaluateCortexForCommit(s.ticker, s.direction, new Date(nowMs));
+    const cortexBlocks = cortexGateBlocks(s.cortex);
+    if (cortexBlocks.length > 0) {
+      // A Cortex veto / net-negative blocks EXACTLY like a hard-gate block: the
+      // verdict flips to BLOCKED carrying the Cortex blocks, so the SKIP card, the
+      // zerodte_scan_rejections row (code cortex_veto:<source>/cortex_net_negative
+      // + evidence sentences) and the fail-closed persist lane all reuse the
+      // existing gate plumbing untouched. Gate blocks were empty here (COMMIT).
+      s.gate = { ...s.gate, verdict: "BLOCKED", blocks: cortexBlocks };
+      continue;
+    }
+    committedThisCycle.push({ ticker: s.ticker, direction: s.direction });
   }
 }
 
@@ -467,8 +492,14 @@ export async function persistZeroDteScan(setups: EnrichedZeroDteSetup[]): Promis
     // setups carry gate=null and pass null here — the upsert's COALESCE pin keeps
     // the original commit-time verdict untouched either way.
     gate_calibration_json: s.gate ? ({ ...s.gate.calibration } as unknown as Record<string, unknown>) : null,
+    // entry_context.cortex pins the FULL evidence vector (or the honest abstain
+    // record) at commit — the §3.1 calibration loop's raw material. Refresh-lane
+    // setups never ran the Cortex (s.cortex null → blob field null), and the
+    // upsert's COALESCE pin keeps the original commit-time context untouched
+    // either way. Blocked finds never reach this map at all — they went to
+    // zerodte_scan_rejections above and never write entry_context.
     entry_context: buildZeroDteEntryContext(
-      { score: s.score, gamma_regime: s.gamma_regime },
+      { score: s.score, gamma_regime: s.gamma_regime, cortex: cortexEntryContextFor(s.cortex) },
       sessionCtx,
       committedAtMs
     ) as unknown as Record<string, unknown>,
