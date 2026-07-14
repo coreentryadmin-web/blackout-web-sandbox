@@ -98,6 +98,15 @@ export const CRON_JOBS: CronJobDefinition[] = [
     description: "Pre-warm the shared GEX heatmap matrix cache for the ~11 Thermal presets so user GETs are pure cache hits (no cold-build bursts)",
   },
   {
+    key: "platform-warm",
+    name: "Platform Warm",
+    kind: "http",
+    path: "/api/cron/platform-warm",
+    schedule_label: "~Every 5 min (24/7)",
+    stale_after_min: 15,
+    description: "Pre-warm general platform cache (bootstrap bundle) for 24/7 admin/member page loads outside RTH",
+  },
+  {
     key: "desk-warm",
     name: "SPX Desk Warm",
     kind: "http",
