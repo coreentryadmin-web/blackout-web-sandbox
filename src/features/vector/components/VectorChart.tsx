@@ -1479,13 +1479,20 @@ export function VectorChart({
   // Lazy prior-day OHLC fetch: only when a prior-day/pivot level is enabled, and only once per
   // ticker. The PDH/PDL/PDC + floor-pivot lines need the prior session's high/low/close, which the
   // session bars don't carry. On success, repaint so the lines appear without waiting for a tick.
+  // `anchor=sessionYmd` pins "prior day" to the session the chart is DISPLAYING: off-hours the
+  // latest seeded session is (say) Friday while the wall clock says Sat/Sun/Mon-pre-open, and an
+  // unanchored fetch returned Friday's own H/L/C — PDH/PDL drawn on the displayed session's own
+  // extremes, pivots computed from the very session being viewed. During RTH anchor == today.
   useEffect(() => {
     const needsPrior = VECTOR_LEVELS.some((l) => l.needsPriorDay && indicators.has(l.id));
     if (!needsPrior || (priorDayTickerRef.current === ticker && priorDayRef.current)) return;
     let cancelled = false;
     void (async () => {
       try {
-        const res = await fetch(`/api/market/vector/prior-day?ticker=${encodeURIComponent(ticker)}`);
+        const res = await fetch(
+          `/api/market/vector/prior-day?ticker=${encodeURIComponent(ticker)}` +
+            `&anchor=${encodeURIComponent(sessionYmd)}`
+        );
         if (cancelled || !res.ok) return;
         const d = (await res.json()) as { pdh: number | null; pdl: number | null; pdc: number | null };
         if (cancelled) return;
@@ -1502,7 +1509,7 @@ export function VectorChart({
     return () => {
       cancelled = true;
     };
-  }, [indicators, ticker, paintOverlays]);
+  }, [indicators, ticker, sessionYmd, paintOverlays]);
 
   // Lazy options-flow fetch: ONLY when the "Options flow" toggle is enabled (the underlying pull is a
   // bounded Massive/Polygon per-OCC trades fan-out — don't spend it on members who never opt in). Re-

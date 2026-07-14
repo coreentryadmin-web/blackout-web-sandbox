@@ -5,6 +5,7 @@ import { ensureDataSockets } from "@/lib/ws/init-data-sockets";
 import type { VectorBar } from "@/features/vector/components/VectorChart";
 import type { VectorDarkPoolLevel, VectorWalls } from "@/lib/api";
 import { fetchVectorSeedBars } from "@/features/vector/lib/vector-seed-bars";
+import { lastSessionBars } from "@/features/vector/lib/vector-key-levels";
 import {
   getVectorDarkPoolLevels,
   getVectorGammaFlip,
@@ -83,7 +84,13 @@ export async function loadVectorSeedProps(ticker: string): Promise<VectorSeedPro
   // can always tell recorded structure from reconstructed context. Redis-cached per ticker+session;
   // best-effort (a reconstruction failure just leaves the honest gap).
   const firstObserved = combined[0]?.time ?? Number.POSITIVE_INFINITY;
-  const firstBar = bars[0]?.time;
+  // First bar of the LATEST session, not bars[0]: the seed now carries ~3 sessions, so bars[0]
+  // is the OLDEST session's open. Comparing today's first observed rail sample against a
+  // two-days-ago open made the "rail starts late" gap check trivially true on every load,
+  // firing the reconstruction fetch even when the observed rail already covered the session
+  // from its open. The rail, the reconstruction (sessionYmd-scoped), and this gap check must
+  // all describe the SAME (displayed/latest) session.
+  const firstBar = lastSessionBars(bars)[0]?.time;
   const needsPrefix =
     bars.length > 0 && firstBar != null && firstObserved - firstBar > 20 * 60;
   const modeledRail = needsPrefix

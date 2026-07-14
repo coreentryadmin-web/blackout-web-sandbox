@@ -4,9 +4,11 @@
  * chart draws (like the king anchor), NOT a per-bar series. Kept out of the component so the level
  * math is unit-tested directly.
  *
- * Session levels (HOD/LOD, opening range, Fib of the HOD→LOD swing) come from the CURRENT bars
- * alone. Prior-day levels (PDH/PDL/PDC) and floor pivots need the prior session's OHLC, passed in
- * as `priorDay` (fetched once by the chart) — still pure here.
+ * Session levels (HOD/LOD, opening range, Fib of the HOD→LOD swing) are scoped to the LAST
+ * session in the bars (see {@link lastSessionBars}) — the chart seeds MULTIPLE sessions, so "the
+ * session" must mean the newest ET day, never the whole array. Prior-day levels (PDH/PDL/PDC) and
+ * floor pivots need the prior session's OHLC, passed in as `priorDay` (fetched once by the chart)
+ * — still pure here.
  */
 
 import type { VectorLevelId } from "./vector-indicators-config";
@@ -52,12 +54,56 @@ function fibStyle(ratio: number): { color: string; style: LevelLine["style"]; la
   return { color: FIB_KEY_COLOR, style: "dashed", label: `Fib ${(ratio * 100).toFixed(1)}%` };
 }
 
-/** High/low of the whole session, or null when there are no bars. */
+/** ET calendar day of an epoch-seconds bar time — the session boundary. Same rule (and formatter
+ *  pattern) as vwapSeries' multi-session reset in vector-indicators.ts. Reused across calls. */
+const ET_DAY = new Intl.DateTimeFormat("en-CA", {
+  timeZone: "America/New_York",
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+});
+
+function etDayOfBarSec(sec: number): string {
+  return ET_DAY.format(new Date(sec * 1000));
+}
+
+/**
+ * Slice to the LAST session's bars — the trailing run of bars sharing the final bar's ET calendar
+ * day. The chart seeds MULTIPLE sessions (vector-seed-bars TARGET_SEED_SESSIONS = 3), so every
+ * session-anchored computation must scope to the newest ET day first: a min/max over the whole
+ * array is a 3-day extreme, and "the first bar" is the OLDEST seeded session's open — the literal
+ * member-reported bug (Opening Range drawn from FRIDAY's open on Monday). Same class as the
+ * multi-session VWAP reset in vector-indicators.ts (#305).
+ *
+ * Bar times are bar-START epoch seconds, which survive aggregateVectorBars: for intraday intervals
+ * (≤ 4h cap) a bucket start is at most one interval before its first source bar, and the overnight
+ * session gap is far larger, so an aggregated bar's bucket time stays inside its source bars' ET
+ * day — day detection holds on every timeframe. Walks backward from the end, so cost is one
+ * date-format per last-session bar. Non-finite last-bar time (no boundary detectable) keeps the
+ * legacy whole-array behavior.
+ */
+export function lastSessionBars<T extends { time: number }>(bars: readonly T[]): T[] {
+  if (!bars.length) return [];
+  const lastTime = bars[bars.length - 1]!.time;
+  if (!Number.isFinite(lastTime)) return [...bars];
+  const day = etDayOfBarSec(lastTime);
+  let start = bars.length - 1;
+  while (start > 0) {
+    const t = bars[start - 1]!.time;
+    if (!Number.isFinite(t) || etDayOfBarSec(t) !== day) break;
+    start -= 1;
+  }
+  return bars.slice(start);
+}
+
+/** High/low of the LAST session in `bars` (newest ET day only — see lastSessionBars), or null
+ *  when there are no bars. */
 export function sessionHodLod(bars: LevelBar[]): { hod: number; lod: number } | null {
-  if (!bars.length) return null;
+  const session = lastSessionBars(bars);
+  if (!session.length) return null;
   let hod = -Infinity;
   let lod = Infinity;
-  for (const b of bars) {
+  for (const b of session) {
     if (Number.isFinite(b.high) && b.high > hod) hod = b.high;
     if (Number.isFinite(b.low) && b.low < lod) lod = b.low;
   }
@@ -66,20 +112,24 @@ export function sessionHodLod(bars: LevelBar[]): { hod: number; lod: number } | 
 }
 
 /**
- * High/low of the opening range — the first `minutes` of the session, measured from the FIRST
- * bar's time (bars are epoch seconds). Bars exactly at `firstTime + minutes*60` are excluded (the
- * range is half-open), matching how the interval buckets elsewhere. Null when no bar falls in it.
+ * High/low of the opening range — the first `minutes` of the LAST session, measured from that
+ * session's first bar's time (bars are epoch seconds; multi-session inputs are scoped via
+ * lastSessionBars so the range can never anchor to an older seeded day's open). Bars exactly at
+ * `firstTime + minutes*60` are excluded (the range is half-open), matching how the interval
+ * buckets elsewhere. Null when no bar falls in it.
  */
 export function openingRange(
   bars: LevelBar[],
   minutes: number
 ): { high: number; low: number } | null {
-  if (!bars.length || minutes <= 0) return null;
-  const start = bars[0]!.time;
+  if (minutes <= 0) return null;
+  const session = lastSessionBars(bars);
+  if (!session.length) return null;
+  const start = session[0]!.time;
   const end = start + minutes * 60;
   let high = -Infinity;
   let low = Infinity;
-  for (const b of bars) {
+  for (const b of session) {
     if (b.time >= end) break; // bars are ascending by time
     if (Number.isFinite(b.high) && b.high > high) high = b.high;
     if (Number.isFinite(b.low) && b.low < low) low = b.low;
@@ -174,7 +224,10 @@ export function levelLinesFor(
   if (id === "fib-auto") {
     // Auto-swing fib (CTO#1): retrace the DOMINANT swing of the DISPLAYED bars (the largest recent
     // impulse, not the last noise wiggle) — so it re-detects per timeframe — with the 61.8–65%
-    // golden pocket as the marquee zone. A 0.15%-of-price floor means we draw NOTHING until a
+    // golden pocket as the marquee zone. WINDOW-scoped BY DESIGN (deliberately NOT
+    // lastSessionBars): the dominant swing is a structure read over everything on screen, and a
+    // swing that started in a prior seeded session is real multi-day context, unlike the
+    // session-anchored HOD/LOD/OR/fib groups above. A 0.15%-of-price floor means we draw NOTHING until a
     // genuine swing exists rather than a hairline pocket clinging to spot. Every line is labelled
     // by what it IS (swing high/low, the exact fib ratios) so there are no duplicate labels.
     const ref = bars.length ? bars[bars.length - 1]!.close : 0;
