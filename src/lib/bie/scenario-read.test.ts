@@ -223,8 +223,15 @@ mock.module("./gap-log", {
   },
 });
 
-/** Let fire-and-forget (void) microtasks — the gap log — settle before asserting on them. */
-const flush = () => new Promise((r) => setTimeout(r, 10));
+/** Poll until the fire-and-forget (void) gap log has recorded `reason`, or a generous deadline — so
+ *  the assertion never races the un-awaited recordGap microtask (a fixed sleep flaked under load). */
+async function waitForGap(reason: string, timeoutMs = 500): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (gapCalls.some((g) => g.reason === reason)) return;
+    await new Promise((r) => setTimeout(r, 5));
+  }
+}
 
 let mod: typeof import("./scenario-read");
 before(async () => {
@@ -252,8 +259,8 @@ describe("composeScenario (hermetic)", () => {
     const out = await mod.composeScenario("SPY", "if SPY breaks 745", { horizon: "all" });
     assert.match(out.envelope!.headline, /Can't scope/);
     assert.equal(out.envelope!.confidence.level, "insufficient");
-    await flush(); // the gap log is fire-and-forget (void) — let its microtasks settle
-    assert.equal(gapCalls.at(-1)?.reason, "no_live_state");
+    await waitForGap("no_live_state");
+    assert.ok(gapCalls.some((g) => g.reason === "no_live_state"));
   });
 
   test("unparseable shift → honest envelope WITHOUT hitting the data layer", async () => {
@@ -261,7 +268,7 @@ describe("composeScenario (hermetic)", () => {
     const out = await mod.composeScenario("SPX", "what's the SPX setup right now", { horizon: "all" });
     assert.match(out.envelope!.headline, /Can't scope/);
     assert.equal(fetchCalls.length, 0, "must not fetch when there's no shift to scope");
-    await flush();
-    assert.equal(gapCalls.at(-1)?.reason, "unparseable_shift");
+    await waitForGap("unparseable_shift");
+    assert.ok(gapCalls.some((g) => g.reason === "unparseable_shift"));
   });
 });

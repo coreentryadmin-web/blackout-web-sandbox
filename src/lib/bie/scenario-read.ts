@@ -550,7 +550,11 @@ export async function composeScenario(
   }
 
   const { fetchVectorFullState } = await import("./vector-full-state");
-  const { normalizeDteHorizon } = await import("@/features/vector/lib/vector-dte-horizon");
+  // RELATIVE specifier (not the "@/" alias): a "@/…" DYNAMIC import fails to resolve under the CI
+  // tsx ESM loader while the local CJS transformer resolves it — the documented divergence (see the
+  // attachLiveMarkMeta note in zerodte-service.ts). Static "@/" imports at the top of this file are
+  // fine; only dynamic ones must be relative.
+  const { normalizeDteHorizon } = await import("../../features/vector/lib/vector-dte-horizon");
   const horizon = opts?.horizon ?? "all";
   const state = await fetchVectorFullState(t, normalizeDteHorizon(horizon)).catch(() => null);
 
