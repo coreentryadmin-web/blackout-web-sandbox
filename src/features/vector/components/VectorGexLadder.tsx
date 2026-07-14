@@ -98,11 +98,11 @@ export function VectorGexLadder({
     };
 
     void load();
-    // Live: refresh ladder structure every 60s (instead of 15s). Spot updates come from chart SSE every tick.
+    // Live: refresh ladder structure every 15s. Spot updates come from chart SSE every tick.
     // Off-hours: one fetch — the ladder is static. Pre-warm on ticker/horizon change for faster navigation.
     const id =
-      liveSession && (Date.now() - lastFetchTimeRef.current > 55_000)
-        ? setInterval(load, 60_000)
+      liveSession && (Date.now() - lastFetchTimeRef.current > 10_000)
+        ? setInterval(load, 15_000)
         : null;
     return () => {
       cancelled = true;

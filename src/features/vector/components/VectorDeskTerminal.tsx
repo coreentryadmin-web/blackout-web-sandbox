@@ -58,7 +58,7 @@ export function VectorDeskTerminal({
     isSpx && liveSession ? "vector-spx-playbook" : null,
     fetchSpxPlay,
     {
-      refreshInterval: liveSession ? 3_000 : 0,
+      refreshInterval: liveSession ? 1_000 : 0,
       revalidateOnFocus: false,
       revalidateOnReconnect: false,
     }
