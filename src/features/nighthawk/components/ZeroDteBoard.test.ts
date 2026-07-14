@@ -177,6 +177,147 @@ test("mergePlays: hard-gate-BLOCKED fresh find is SKIP even in-range during RTH 
   assert.equal(rows[0]!.committed, false);
 });
 
+test("mergePlays: fresh clean find during RTH is WATCH, never OPEN (P0 pre-commit honesty)", () => {
+  // Regression guard for the live P0 ("OPEN regressed to Watch"): pre-latch, a
+  // clean uncommitted RTH find rendered with the SAME "OPEN" badge a committed
+  // position wears, then flapped to a SKIP/watch card when the next scan build's
+  // re-derived plan (MOVED/illiquid) or gate verdict flipped. Uncommitted finds
+  // are candidates: at most WATCH, and never sorted/rendered as position cards.
+  const rows = mergePlays(
+    [
+      fakeSetup("TSLA", {
+        occ: "T",
+        flow_avg_fill: 4.2,
+        bid: 4,
+        ask: 4.4,
+        mark: 4.2,
+        entry_max: 4.2,
+        vs_flow_pct: 0,
+        entry_status: "IN_RANGE",
+        spread_pct: 5,
+        illiquid: false,
+        stop_premium: 2.1,
+        target_premium: 8.4,
+        time_stop_et: "15:30",
+        underlying_target: null,
+        underlying_invalid: null,
+      }),
+    ],
+    [],
+    "RTH"
+  );
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0]!.status, "WATCH");
+  assert.equal(rows[0]!.committed, false);
+});
+
+test("mergePlays: committed ledger row ALWAYS wins over a conflicting same-ticker fresh find (one-way commit door)", () => {
+  // The P0 latch: a committed ticker usually still ranks in the scan's fresh finds,
+  // and its re-derived gate verdict can flip to BLOCKED *because* the play committed
+  // (governor concurrency cap). That concurrent evaluation must never demote the
+  // ledger presentation — the duplicate find is dropped, the play stays OPEN.
+  const ledgerRow = {
+    ticker: "NVDA",
+    direction: "long" as const,
+    score_max: 80,
+    spike: false,
+    first_flagged_at: new Date().toISOString(),
+    underlying_at_flag: 138,
+    top_strike: 140,
+    expiry: "2026-07-14",
+    conviction: null,
+    entry_premium: 4.2,
+    flow_avg_fill: 4.2,
+    status: "OPEN",
+    last_mark: 4.3,
+    live_pnl_pct: 2.38,
+    move_pct: null,
+    direction_hit: null,
+    plan_outcome: null,
+    plan_pnl_pct: null,
+    graded: false,
+    nighthawk_echo: null,
+  };
+  const blockedFind = fakeSetup("NVDA", {
+    occ: "N",
+    flow_avg_fill: 4.2,
+    bid: 4,
+    ask: 4.4,
+    mark: 4.3,
+    entry_max: 4.2,
+    vs_flow_pct: 2,
+    entry_status: "IN_RANGE",
+    spread_pct: 5,
+    illiquid: false,
+    stop_premium: 2.1,
+    target_premium: 8.4,
+    time_stop_et: "15:30",
+    underlying_target: null,
+    underlying_invalid: null,
+  });
+  blockedFind.gate = {
+    verdict: "BLOCKED",
+    blocks: [
+      {
+        code: "governor_max_concurrent",
+        reason: "3 plans already open — session risk governor caps concurrent plays.",
+        threshold: null,
+        unlock_et: null,
+      },
+    ],
+    calibration: {
+      score_at_commit: 75,
+      market_bias: "up",
+      committed_at_et: "10:15",
+      g4_vix: { day_open_vix: null, tier: "unknown", would_block: false, would_halve_size: false, note: "n/a" },
+      g6_conflict: { conflict: false, against: [], would_block: false, note: "No cross-system conflict." },
+    },
+  };
+  // Both orders of the setups list (the dup at head and behind another find) — the
+  // ledger row must win regardless of where the conflicting find ranks.
+  for (const setups of [
+    [blockedFind, fakeSetup("AMD", null)],
+    [fakeSetup("AMD", null), blockedFind],
+  ]) {
+    const rows = mergePlays(setups, [ledgerRow], "RTH");
+    const nvda = rows.filter((r) => r.ticker.toUpperCase() === "NVDA");
+    assert.equal(nvda.length, 1, "committed ticker presented exactly once");
+    assert.equal(nvda[0]!.status, "OPEN", "ledger status stands — never demoted by the blocked find");
+    assert.equal(nvda[0]!.committed, true);
+    // The dup was dropped, not merged into a second card; the unrelated find still renders.
+    assert.equal(rows.filter((r) => r.ticker === "AMD").length, 1);
+  }
+});
+
+test("mergePlays: committed-ticker dedupe is case-insensitive (a casing drift can't double-present a play)", () => {
+  const ledgerRow = {
+    ticker: "NVDA",
+    direction: "long" as const,
+    score_max: 80,
+    spike: false,
+    first_flagged_at: new Date().toISOString(),
+    underlying_at_flag: 138,
+    top_strike: 140,
+    expiry: null,
+    conviction: null,
+    entry_premium: 4.2,
+    flow_avg_fill: 4.2,
+    status: "HOLD",
+    last_mark: 4.5,
+    live_pnl_pct: 7.14,
+    move_pct: null,
+    direction_hit: null,
+    plan_outcome: null,
+    plan_pnl_pct: null,
+    graded: false,
+    nighthawk_echo: null,
+  };
+  const rows = mergePlays([fakeSetup("nvda", null)], [ledgerRow], "RTH");
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0]!.status, "HOLD");
+  assert.equal(rows[0]!.committed, true);
+});
+
 test("mergePlays: ledger row merges live setup evidence (committed, expiry carried)", () => {
   const setup = fakeSetup("NVDA", null);
   const rows = mergePlays(

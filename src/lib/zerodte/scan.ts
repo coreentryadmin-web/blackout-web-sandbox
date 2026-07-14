@@ -606,10 +606,54 @@ export async function warmZeroDteBoard(): Promise<{ found: number; logged: numbe
   return { found: setups.length, logged };
 }
 
-/** Today's ledger for the board's "flagged today" lane (empty without a database). */
+/** Last successful ledger read this session (per replica) — the presentation half
+ *  of the one-way commit door. See readZeroDteLedgerChecked for WHY. */
+let lastGoodLedger: { date: string; rows: ZeroDteSetupLogRow[] } | null = null;
+
+export type ZeroDteLedgerRead = {
+  rows: ZeroDteSetupLogRow[];
+  /** True when `rows` is a trustworthy committed set for today (a fresh read, or a
+   *  same-session snapshot standing in for one transient failed read). False ONLY
+   *  when the read failed AND this replica has never seen today's ledger — the
+   *  committed set is unknowable, and consumers must fail closed on anything that
+   *  needs to tell "fresh find" apart from "committed play". */
+  committed_known: boolean;
+};
+
+/** Today's ledger with an explicit "could we actually read it?" signal.
+ *
+ *  WHY (P0 — "OPEN regressed to Watch"): the old read swallowed any DB failure
+ *  into an empty array, indistinguishable from "no plays committed today". One
+ *  transient blip made every committed play VANISH from the board payload for a
+ *  cache window — and because committed tickers usually still rank in the scan's
+ *  fresh finds, the member saw their OPEN position card demoted to a fresh-find
+ *  watch card. Commit is a one-way door: a committed row may never be re-presented
+ *  as an uncommitted find, so a failed read (a) falls back to this replica's
+ *  last-good same-session snapshot (slightly stale marks beat vanished positions;
+ *  the 5s board cache already tolerates that staleness), and (b) when no snapshot
+ *  exists, says so via committed_known=false instead of lying "empty". */
+export async function readZeroDteLedgerChecked(): Promise<ZeroDteLedgerRead> {
+  if (!dbConfigured()) return { rows: [], committed_known: true };
+  const today = todayEt();
+  try {
+    const rows = await fetchZeroDteSetupLog(today);
+    lastGoodLedger = { date: today, rows };
+    return { rows, committed_known: true };
+  } catch {
+    if (lastGoodLedger?.date === today) return { rows: lastGoodLedger.rows, committed_known: true };
+    return { rows: [], committed_known: false };
+  }
+}
+
+/** Today's ledger for the board's "flagged today" lane (empty without a database).
+ *  Failure degrades to the last-good same-session snapshot (see the checked read). */
 export async function readZeroDteLedger(): Promise<ZeroDteSetupLogRow[]> {
-  if (!dbConfigured()) return [];
-  return fetchZeroDteSetupLog(todayEt()).catch(() => []);
+  return (await readZeroDteLedgerChecked()).rows;
+}
+
+/** Test-only: reset the last-good ledger latch between cases. */
+export function _resetZeroDteLedgerLatchForTest(): void {
+  lastGoodLedger = null;
 }
 
 /**

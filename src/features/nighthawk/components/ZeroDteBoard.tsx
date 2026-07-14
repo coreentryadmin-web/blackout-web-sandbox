@@ -176,7 +176,11 @@ type PlayRow = {
   direction: "long" | "short";
   strike: number | null;
   expiry: string | null;
-  status: "OPEN" | "HOLD" | "TRIM" | "CLOSED" | "SKIP";
+  /** OPEN/HOLD/TRIM/CLOSED are LEDGER lifecycles (committed:true only). WATCH is a
+   *  fresh, UNCOMMITTED candidate (never rendered as a position); SKIP is a refused
+   *  find. The one-way commit door: a committed ticker is always presented from its
+   *  ledger row, so no row can regress from OPEN back to WATCH/SKIP. */
+  status: "OPEN" | "HOLD" | "TRIM" | "CLOSED" | "SKIP" | "WATCH";
   /** True for ledger-backed rows (a printed plan being managed to its exit);
    *  false for fresh finds the cron hasn't persisted yet. */
   committed: boolean;
@@ -225,7 +229,8 @@ export function overlayLiveMark(
 ): PlayRow {
   const asOfMs = row.mark_as_of ? Date.parse(row.mark_as_of) : 0;
   const baseStale = row.mark_as_of != null ? isZeroDteMarkStale(asOfMs, nowMs) : undefined;
-  if (row.status === "CLOSED" || row.status === "SKIP") return { ...row, mark_stale: false };
+  if (row.status === "CLOSED" || row.status === "SKIP" || row.status === "WATCH")
+    return { ...row, mark_stale: false };
   if (!live || live.mark == null) return { ...row, mark_stale: baseStale };
   const liveAsOfMs = live.mark_as_of ? Date.parse(live.mark_as_of) : 0;
   // Never let an older lane overwrite a fresher board value.
@@ -280,12 +285,17 @@ export function mergePlays(
     mark_as_of: r.mark_as_of ?? null,
     mark_source: r.mark_source ?? null,
   }));
-  const seen = new Set(ledger.map((r) => r.ticker));
+  // One-way commit door: a ticker with a committed ledger row is presented from
+  // that row ONLY — a concurrent fresh-find evaluation of the same ticker (the
+  // scan re-derives gates/plan every build, and a committed name usually still
+  // ranks) is dropped as a duplicate here, never allowed to demote the play back
+  // to a WATCH/SKIP card. Case-insensitive: ledger tickers are stored uppercase.
+  const seen = new Set(ledger.map((r) => r.ticker.toUpperCase()));
   // Fresh finds the cron hasn't persisted yet (≤2 min window) — or MOVED ones we
   // deliberately never open: show them so members see the full picture. After the
   // close they are NOT plays (the scanner refused them past the cutoff) — drop them.
   for (const s of setups) {
-    if (seen.has(s.ticker)) continue;
+    if (seen.has(s.ticker.toUpperCase())) continue;
     if (sessionClosed) continue;
     const moved = s.plan?.entry_status === "MOVED";
     rows.push({
@@ -296,9 +306,11 @@ export function mergePlays(
       // Hard-gate-blocked finds are SKIP regardless of clock/liquidity — the gate
       // stack (src/lib/zerodte/gates.ts) already decided this is not committable.
       // Same rule zeroDtePlaysForLargo applies, so the pane and Largo can never
-      // disagree about whether a blocked find is a play. Otherwise: past the entry
-      // cutoff — or an untradeably wide market — a fresh find is watch-only, never
-      // OPEN (resolveFreshFindStatus, board.ts).
+      // disagree about whether a blocked find is a play. Everything else is at most
+      // WATCH — an uncommitted find NEVER wears OPEN (resolveFreshFindStatus,
+      // board.ts): pre-#latch it did, rendered exactly like a live position, and
+      // visibly "regressed" to a watch card when the next scan tick's re-derived
+      // plan/gate flapped. OPEN is reserved for ledger rows above.
       status:
         s.gate?.verdict === "BLOCKED"
           ? "SKIP"
@@ -320,7 +332,7 @@ export function mergePlays(
       nighthawkEcho: null,
     });
   }
-  const order: Record<PlayRow["status"], number> = { OPEN: 0, TRIM: 1, HOLD: 2, SKIP: 3, CLOSED: 4 };
+  const order: Record<PlayRow["status"], number> = { OPEN: 0, TRIM: 1, HOLD: 2, WATCH: 3, SKIP: 4, CLOSED: 5 };
   return rows.sort((a, b) => order[a.status] - order[b.status] || b.score - a.score);
 }
 
@@ -549,6 +561,12 @@ function StatusBadge({ row }: { row: PlayRow }) {
         HOLD
       </Badge>
     );
+  if (row.status === "WATCH")
+    return (
+      <Badge tone="sky" size="sm">
+        WATCH — NOT COMMITTED
+      </Badge>
+    );
   if (row.status === "SKIP") {
     const ran = row.setup?.plan?.entry_status === "MOVED";
     const gated = row.setup?.gate?.verdict === "BLOCKED";
@@ -607,6 +625,9 @@ const ACTION_TONE: Record<IntelAction, "bull" | "sky" | "accent" | "bear" | "neu
   TRIM: "accent",
   SELL: "neutral",
   PASS: "bear",
+  // Uncommitted candidate (pre-commit honesty) — neutral sky, never the bull tone
+  // an actionable ADD wears.
+  WATCH: "sky",
 };
 
 const NIGHTHAWK_OUTCOME_LABEL: Record<string, string> = {
@@ -1094,7 +1115,20 @@ function SkipCard({ row, nowMs }: { row: PlayRow; nowMs: number }) {
             untradeable market taxes every exit. Watch-only.
           </li>
         )}
-        {blocks.length === 0 && !moved && !illiquid && (
+        {/* WATCH = an uncommitted candidate (nothing blocked it — it just hasn't
+            cleared the desk's commit yet). Rendered here, never as a play card:
+            the one-way commit door means it only becomes an OPEN position if the
+            desk commits it to the ledger, and that presentation can't flap back. */}
+        {row.status === "WATCH" && blocks.length === 0 && !moved && !illiquid && (
+          <li className="text-[11px] leading-snug text-sky-200/75">
+            <span className="mr-2 rounded-md border border-sky-300/25 bg-sky-300/[0.05] px-1.5 py-0.5 font-mono text-[9px] font-bold uppercase tracking-[0.12em] text-sky-300">
+              candidate
+            </span>
+            Fresh find under evaluation — NOT a position. It becomes an OPEN play only after every
+            hard gate and confirmation clears at commit; until then, watch-only.
+          </li>
+        )}
+        {row.status !== "WATCH" && blocks.length === 0 && !moved && !illiquid && (
           <li className="text-[11px] leading-snug text-sky-200/75">
             <span className="mr-2 rounded-md border border-sky-300/25 bg-sky-300/[0.05] px-1.5 py-0.5 font-mono text-[9px] font-bold uppercase tracking-[0.12em] text-sky-300">
               late window
@@ -1136,9 +1170,10 @@ function SkipsSection({ rows, nowMs }: { rows: PlayRow[]; nowMs: number }) {
         rows.map((row) => <SkipCard key={row.ticker} row={row} nowMs={nowMs} />)
       ) : (
         <p className="text-[11px] leading-relaxed text-sky-300/60">
-          {rows.length} setup{rows.length === 1 ? "" : "s"} the scanner saw but refused — blocked by a
-          hard gate (tape alignment, opening window, score floor, session governor, evidence veto) or
-          the chase/liquidity/late rules. Expand to see each block in plain English.
+          {rows.length} setup{rows.length === 1 ? "" : "s"} the scanner saw but did not commit —
+          refused by a hard gate (tape alignment, opening window, score floor, session governor,
+          evidence veto), the chase/liquidity/late rules, or still a watch-only candidate awaiting
+          the desk&apos;s commit. Expand to see each one in plain English.
         </p>
       )}
     </Panel>
@@ -1425,8 +1460,11 @@ export function ZeroDteBoard() {
     overlayLiveMark(r, live.byTicker.get(r.ticker), nowMs || Date.now())
   );
   const covered = data.covered_elsewhere ?? [];
-  const plays = rows.filter((r) => r.status !== "SKIP");
-  const skips = rows.filter((r) => r.status === "SKIP");
+  // "Today's plays" is committed plans only (its own kicker says so): WATCH rows are
+  // uncommitted candidates and live in the skipped-and-watching section below with
+  // an explicit candidate label — never rendered as position cards.
+  const plays = rows.filter((r) => r.status !== "SKIP" && r.status !== "WATCH");
+  const skips = rows.filter((r) => r.status === "SKIP" || r.status === "WATCH");
   const hasLivePlays = plays.some((r) => r.status === "OPEN" || r.status === "HOLD" || r.status === "TRIM");
   const graded = plays.filter((r) => r.plan_outcome && r.plan_outcome !== "ungradeable");
   const wins = graded.filter((r) => (r.plan_pnl_pct ?? 0) > 0).length;
