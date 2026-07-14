@@ -18,6 +18,7 @@
     "validate:deploy": "node scripts/validate-deploy.mjs",
     "validate:vector-push-gate": "node scripts/vector-staging-e2e.mjs",
     "validate:vector-hardcore": "node scripts/vector-hardcore-e2e.mjs",
+    "validate:largo-hardcore": "node scripts/largo-hardcore-e2e.mjs",
     "validate:staging": "node scripts/staging-validate.mjs",
     "validate:staging-rth": "node scripts/staging-rth-check.mjs",
     "validate:staging-live": "node scripts/staging-live-check.mjs",

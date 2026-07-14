@@ -662,3 +662,39 @@ plays show "entirely wrong" pnl/%/premium values, slow to update.
   dead test only to delete it.
 - **Residual:** other `*.test.tsx` files would have the same blind spot (none exist
   today); consider a CI guard that fails on `src/**/*.test.tsx` files.
+
+## 2026-07-14 — Largo HARDCORE suite (PR-L2, branch test/largo-hardcore-suite)
+
+New standing battery: `scripts/largo-hardcore-e2e.mjs` (`npm run validate:largo-hardcore`) — 75
+checks through the REAL member ask path (`POST /api/market/largo/query`), all day-agnostic
+(expectations derived at runtime from the same build's clean JSON APIs). Verified green-with-knowns
+against staging: **68 pass · 0 fail · 4 skip · 3 expected-fail (keyed to #338)**.
+
+### Confirmed FIXED on the deployed build (now hard-asserted by the suite — regressions will gate)
+- **13 desk concepts + terse-concept + compare** resolved to the wrong glossary entry on an
+  earlier build (e.g. "dark pool level" answered with the gamma-flip def; terse "helix"/"vwap" both
+  answered with the King-node def). Fixed per #336 (battery 37/37). All 16 concept checks + the
+  "Thermal has no dark-pool text" regression + terse helix/vwap now PASS; the suite hard-asserts
+  them so a re-break surfaces loudly.
+- **SPX cross-horizon full-state contamination** (a horizon ask served another horizon's cached
+  state through Largo while the JSON APIs re-scoped correctly). Re-verified with an ordered probe
+  (weekly→0dte→weekly→monthly): each now serves its OWN header + flip (0dte 7,512.66 / weekly
+  7,671.32 / monthly 7,746.60). All numeric checks PASS and hard-assert.
+
+### OPEN — honest gaps, EXPECTED-FAIL keyed to #338 (Largo NOW-routing + honest scope/freshness)
+- **MEDIUM — out-of-scope asks topic-swap into a market dump.** "Write me a poem about the ocean."
+  → full SPX-desk + HELIX-tape dump, no scope statement. Root: the staging BIE-only last-resort
+  fallback (`classifyBieStagingFallback` → `market_context`, src/lib/largo-terminal.ts:330) has no
+  off-topic guard. Suite tag: `KNOWN_338`.
+- **MEDIUM — off-hours "right now" answers carry no as-of/staleness marker.** At ~01:40 ET,
+  "What is the market doing right now?" and "On Vector, what's the SPY setup right now?" returned
+  full desk briefs with prices/regime/premium and NO timestamp/"as of"/closed-market marker — a
+  snapshot presented as live. The envelope type has the freshness spine
+  (BieProvenance.asOf/freshness, answer-envelope.ts) but the string-leg briefs don't surface it.
+  Suite tag: `KNOWN_338` (×2). The fixing PR re-runs with `STRICT_KNOWNS=1` to flip these to hard
+  asserts.
+
+### Also observed (not suite-gating)
+- `/api/market/spx/desk` served `vwap: 0` off-hours while the desk brief still narrated a VWAP
+  relation — the suite guards its VWAP-premise case on `vwap > 0` and SKIPs it off-hours;
+  producer-side honesty (null, not 0) worth a look.
