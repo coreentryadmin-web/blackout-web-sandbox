@@ -107,6 +107,17 @@ export const CRON_JOBS: CronJobDefinition[] = [
     description: "Pre-warm general platform cache (bootstrap bundle) for 24/7 admin/member page loads outside RTH",
   },
   {
+    key: "vector-walls-warm",
+    name: "Vector Walls Warm",
+    kind: "http",
+    path: "/api/cron/vector-walls-warm",
+    schedule_label: "~Every 15-30s (market hours)",
+    stale_after_min: 2,
+    weekdays_only: true,
+    market_hours_only: true,
+    description: "Pre-warm Vector GEX/VEX walls cache every 15-30s so SSE stream (1Hz ticks) sees cache hits instead of expensive re-computation; keeps wall updates feeling real-time instead of static",
+  },
+  {
     key: "desk-warm",
     name: "SPX Desk Warm",
     kind: "http",
