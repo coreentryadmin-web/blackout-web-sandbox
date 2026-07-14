@@ -51,14 +51,25 @@ export async function GET() {
     // during a cron outage it's whatever the last successful write ever was, with nothing in
     // the response distinguishing "live" from "last one we ever captured, possibly days old."
     // Confirmed live: a Fri 2026-07-03 (July-4th-observed holiday) capture was still being
-    // served `available: true` on Sun 2026-07-05, ~49h later, full playbook text included
-    // (docs/audit/FINDINGS.md). `stale` is true whenever captured_at's ET calendar date isn't
-    // the current/most-recently-completed trading session — an unparseable/missing timestamp
-    // fails CLOSED (stale) rather than silently claiming freshness.
+    // served `available: true` on Sun 2026-07-05, ~49h later (docs/audit/FINDINGS.md).
+    //
+    // The DATE check alone is not enough: it only catches CROSS-DAY staleness. A same-day cron
+    // outage — the writer dies at 10:00 ET, it's now 15:00, the newest row is 5h old but still
+    // today's ET date — sailed through as `stale:false`. Live audit (2026-07-14) caught the class:
+    // `stale:false` served on a snapshot 148s behind, with `stale` carrying no age signal at all.
+    // So staleness is now the snapshot's ACTUAL AGE vs its refresh window, OR the cross-day/
+    // weekend/holiday date miss, OR an unparseable timestamp (fails CLOSED = stale):
+    //   - REGIME_REFRESH_MS is the cron's 5-min write cadence (railway.market-regime-detector.toml).
+    //   - A snapshot older than 2× that cadence means the writer has missed at least one full beat
+    //     (robust against a single late/slow cron tick — 5-min jitter never trips it), so it's stale.
+    const REGIME_REFRESH_MS = 5 * 60_000;
+    const REGIME_STALE_AFTER_MS = 2 * REGIME_REFRESH_MS;
     const capturedAtMs = regime.captured_at ? new Date(regime.captured_at).getTime() : NaN;
-    const stale = !Number.isFinite(capturedAtMs)
-      ? true
-      : formatEtDate(new Date(capturedAtMs)) !== mostRecentTradingDayEt(now);
+    const ageMs = Number.isFinite(capturedAtMs) ? now.getTime() - capturedAtMs : Infinity;
+    const stale =
+      !Number.isFinite(capturedAtMs) ||
+      ageMs > REGIME_STALE_AFTER_MS ||
+      formatEtDate(new Date(capturedAtMs)) !== mostRecentTradingDayEt(now);
 
     return NextResponse.json({
       available: true,

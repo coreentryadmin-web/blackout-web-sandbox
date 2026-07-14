@@ -23,6 +23,7 @@ import { resolveDeskGap } from "@/lib/providers/gap-proxy";
 import {
   gammaRegime,
   gammaRegimeWithHysteresis,
+  isAboveFlipFromRegime,
   topGexWalls,
   type GexStrikeLevel,
   type GexWall,
@@ -213,13 +214,16 @@ function stickyDeskGexFallback(spot: number): CanonicalDeskGexSnapshot {
     : [];
   const finalWalls = wallsFromLevels.length ? wallsFromLevels : lastGoodGexWalls;
   const gexAgeMs = gexDataAgeMs();
+  // Side-of-flip is derived from the SAME served regime label (isAboveFlipFromRegime), never a raw
+  // spot>flip compare — so the pair can't straddle inside the hysteresis band. See gamma-desk.ts.
+  const effRegime = gRegime !== "unknown" ? gRegime : lastGoodGammaRegime;
   return {
     gex_net: null,
     gex_king: null,
     max_pain: null,
     gamma_flip: flip,
-    above_gamma_flip: flip != null ? spot > flip : false,
-    gamma_regime: gRegime !== "unknown" ? gRegime : lastGoodGammaRegime,
+    above_gamma_flip: isAboveFlipFromRegime(effRegime),
+    gamma_regime: effRegime,
     gex_walls: finalWalls,
     gex_age_ms: gexAgeMs,
     gex_stale: gexAgeMs == null || gexAgeMs > GEX_STALE_MS,
@@ -361,10 +365,12 @@ async function resolveCanonicalDeskGex(spot: number): Promise<CanonicalDeskGexSn
   const levels = strikeTotalsToLevels(hm.gex.strike_totals);
   const king = kingFromStrikeTotals(hm.gex.strike_totals);
   const flip = pos.flip;
-  // Regime + above_gamma_flip (below) are both derived from THIS one (spot, flip) snapshot so they
-  // can't contradict. Intended local spot-vs-flip model — no net-GEX override (see the full-payload
-  // note / FINDINGS: local regime at spot ≠ the aggregate net-GEX sign).
+  // Regime + above_gamma_flip (below) are both derived from THIS one hysteresis regime label so they
+  // can't contradict — above_gamma_flip is NOT a raw spot>flip compare (that straddles the buffer
+  // band). Intended local spot-vs-flip model — no net-GEX override (see the full-payload note /
+  // FINDINGS: local regime at spot ≠ the aggregate net-GEX sign).
   const regime = gammaRegimeWithHysteresis(spot, flip, lastGoodGammaRegime);
+  const effRegime = regime !== "unknown" ? regime : lastGoodGammaRegime;
   const walls = levels.length ? topGexWalls(levels, spot, GEX_WALL_LADDER_LIMIT) : [];
 
   if (levels.length) {
@@ -384,8 +390,8 @@ async function resolveCanonicalDeskGex(spot: number): Promise<CanonicalDeskGexSn
     gex_king: king,
     max_pain: pos.max_pain,
     gamma_flip: flip,
-    above_gamma_flip: flip != null ? spot > flip : false,
-    gamma_regime: regime !== "unknown" ? regime : lastGoodGammaRegime,
+    above_gamma_flip: isAboveFlipFromRegime(effRegime),
+    gamma_regime: effRegime,
     gex_walls: walls.length ? walls : lastGoodGexWalls,
     gex_age_ms: gexAgeMs,
     gex_stale: false,
@@ -1348,13 +1354,13 @@ export async function buildSpxDesk(): Promise<SpxDeskPayload> {
 
   const gammaFlip =
     intel?.gamma_flip ?? canonicalGex.gamma_flip ?? lastGoodGammaFlip ?? null;
-  const aboveFlip = gammaFlip != null ? price > gammaFlip : false;
-  // SINGLE-SNAPSHOT coherence: above_gamma_flip and gamma_regime are derived from the SAME
-  // (price, gammaFlip) pair, so the two desk surfaces can never disagree for the same flip. The bug
-  // (independent of F1's horizon mismatch that #294 fixes): aboveFlip read the live `price` while the
-  // regime — in the non-intel-overlay branch — inherited canonicalGex.gamma_regime, computed against a
-  // canonical-spot snapshot AND possibly a different flip, so the label could point opposite to
-  // aboveFlip. gammaFlip already merges intel/canonical/lastGood, so both now read the identical flip.
+  // SINGLE-SNAPSHOT coherence: above_gamma_flip is derived from gamma_regime (the hysteresis label),
+  // NOT from a raw price>flip compare. The old bug: aboveFlip = `price > gammaFlip` flips the instant
+  // price crosses the flip, but gamma_regime uses `gammaRegimeWithHysteresis` (2pt buffer), so inside
+  // the band the two straddled — side said "above" while the regime label (and the synthesis
+  // narration + confluence signal + /api/market/regime posture that key off it) said short-γ
+  // amplification (below). Keying the side off the SAME label makes the invariant
+  // `above_gamma_flip === (gamma_regime === "mean_revert")` hold for every snapshot the desk serves.
   //
   // The regime stays the INTENDED local spot-vs-flip model (gammaRegimeWithHysteresis) — it does NOT
   // consult the aggregate net-GEX sign. An adversarial review correctly refuted an earlier attempt to
@@ -1367,6 +1373,7 @@ export async function buildSpxDesk(): Promise<SpxDeskPayload> {
       : canonicalGex.gamma_regime !== "unknown"
         ? canonicalGex.gamma_regime
         : lastGoodGammaRegime;
+  const aboveFlip = isAboveFlipFromRegime(gammaRegimeLabel);
   const finalWalls = canonicalGex.gex_walls;
   const gexAgeMs = canonicalGex.gex_age_ms;
   const gexStale = canonicalGex.gex_stale;
@@ -1573,10 +1580,12 @@ function gexSnapshotForPrice(price: number) {
   const walls = topGexWalls(lastGoodStrikeLevels, price, GEX_WALL_LADDER_LIMIT);
   const finalWalls = walls.length ? walls : lastGoodGexWalls;
   const gRegime = gammaRegimeWithHysteresis(price, gammaFlip, lastGoodGammaRegime);
+  const effRegime = gRegime !== "unknown" ? gRegime : lastGoodGammaRegime;
   return {
     gamma_flip: gammaFlip,
-    above_gamma_flip: gammaFlip != null ? price > gammaFlip : false,
-    gamma_regime: gRegime !== "unknown" ? gRegime : lastGoodGammaRegime,
+    // Derived from the served regime label, not a raw price>flip compare (hysteresis coherence).
+    above_gamma_flip: isAboveFlipFromRegime(effRegime),
+    gamma_regime: effRegime,
     gex_walls: finalWalls,
   };
 }

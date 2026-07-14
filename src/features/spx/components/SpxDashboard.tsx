@@ -131,6 +131,20 @@ export function SpxDashboard({ vectorSeed }: SpxDashboardProps) {
   }, [compactPanels, applyFocus]);
   const focusActive = focusMode && !compactPanels;
 
+  // HYDRATION GUARD (React #418 on /dashboard): useMergedDesk seeds `desk` from a SYNCHRONOUS
+  // sessionStorage read (readSessionCache) inside a useRef initializer, which runs during render.
+  // The server has no storage → renders the loading skeleton (deskLoading true, desk undefined); the
+  // client's FIRST render hits the same initializer WITH a cached desk → renders the full desk. That
+  // SSR-vs-first-client divergence is the mismatch. `desk` isn't ours to change (it lives in the hook
+  // an adjacent owner maintains), so we make the first client render reproduce the server's markup:
+  // stay on the skeleton until after mount, then re-render with the cached/live desk. `hydrated` is
+  // false on the server and on the first client render, and flips true only in a post-mount effect —
+  // so SSR and first client render are byte-identical. (The focus-mode read is already effect-guarded.)
+  const [hydrated, setHydrated] = useState(false);
+  useEffect(() => {
+    setHydrated(true);
+  }, []);
+
   if (isLoaded && tier && tier !== "premium" && tier !== "admin") {
     return (
       <div className="flex min-h-[60vh] items-center justify-center px-4">
@@ -164,7 +178,9 @@ export function SpxDashboard({ vectorSeed }: SpxDashboardProps) {
     );
   }
 
-  if (deskLoading && !desk) {
+  // `!hydrated` keeps the first client render on the SAME skeleton the server emitted, even when a
+  // cached desk is already available from sessionStorage — see the hydration-guard note above.
+  if (!hydrated || (deskLoading && !desk)) {
     return (
       <div className="spx-sniper-desk spx-sniper-desk-loading" aria-busy="true">
         <div className="spx-desk-placeholder" />

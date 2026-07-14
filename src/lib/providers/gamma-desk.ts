@@ -130,6 +130,22 @@ export function gammaRegime(spot: number, flip: number | null): string {
   return spot > flip ? "mean_revert" : "amplification";
 }
 
+/** The SINGLE hysteresis-aware "side of flip" truth.
+ *
+ *  `above_gamma_flip` must be derived from the (already debounced) regime LABEL, never from a raw
+ *  `price > flip` compare. Within the `gammaRegimeWithHysteresis` buffer band the two disagree — a
+ *  raw compare flips the instant price crosses the flip, while the label stays sticky until price
+ *  clears by `bufferPts`. That straddle was the root cause of three cross-surface contradictions
+ *  (desk-synthesis narration said "below γflip / short γ" while side said above; the γ-regime
+ *  confluence signal zeroed itself; the /api/market/regime posture disagreed with the desk). By
+ *  keying the side off the same label that `gamma_regime` serves, the pair is coherent by
+ *  construction: `above_gamma_flip === (gamma_regime === "mean_revert")` always holds.
+ *
+ *  mean_revert ⟺ spot above the flip (dealers long γ). amplification / unknown ⟺ not above. */
+export function isAboveFlipFromRegime(regime: string): boolean {
+  return regime === "mean_revert";
+}
+
 /** Debounce flip churn — require spot to clear flip by bufferPts before regime changes.
  *
  *  This is the INTENDED local spot-vs-flip regime model: spot just below the flip is locally

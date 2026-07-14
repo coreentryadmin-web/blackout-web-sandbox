@@ -228,3 +228,41 @@ test("computeSpxConfluence: calling it twice in a row (as the shadow wiring's fi
   const second = computeSpxConfluence(desk);
   assert.deepEqual(JSON.parse(JSON.stringify(first)), JSON.parse(JSON.stringify(second)));
 });
+
+// fix/spx-slayer-desk-coherence — the γ-regime confluence factor now keys off the desk's
+// hysteresis-coherent `above_gamma_flip`, NOT a raw `price > desk.gamma_flip`. The old raw compare
+// straddled the 2pt buffer against `gamma_regime`, so INSIDE the band `regime==="mean_revert" &&
+// aboveFlip` (and the amplification branch) both fell through and the factor SILENTLY ZEROED —
+// dropping ±10 from the score exactly when spot hovers the flip (a high-signal spot). These assert
+// the factor fires at prices inside the band on both sides.
+test("γ-regime factor fires INSIDE the hysteresis band — mean_revert side (was silently zeroed)", (t) => {
+  t.mock.timers.enable({ apis: ["Date"], now: Date.parse("2026-07-04T18:00:00.000Z") });
+  const desk = {
+    ...richDesk(),
+    price: 7499, // 1pt BELOW flip — raw compare would say NOT-above and skip the factor
+    gamma_flip: 7500,
+    above_gamma_flip: true, // regime held mean_revert by hysteresis → desk serves side=above
+    gamma_regime: "mean_revert",
+  } as unknown as SpxDeskPayload;
+  const result = computeSpxConfluence(desk);
+  assert.ok(result);
+  const gamma = result!.factors.find((f) => f.label === "γ regime");
+  assert.ok(gamma, "γ-regime factor must be present inside the band");
+  assert.equal(gamma!.weight, 10, "mean_revert + above fires +10 (not zeroed by the raw-compare bug)");
+});
+
+test("γ-regime factor fires INSIDE the hysteresis band — amplification side", (t) => {
+  t.mock.timers.enable({ apis: ["Date"], now: Date.parse("2026-07-04T18:00:00.000Z") });
+  const desk = {
+    ...richDesk(),
+    price: 7501, // 1pt ABOVE flip — raw compare would say above and skip the amplification branch
+    gamma_flip: 7500,
+    above_gamma_flip: false, // regime held amplification by hysteresis → desk serves side=below
+    gamma_regime: "amplification",
+  } as unknown as SpxDeskPayload;
+  const result = computeSpxConfluence(desk);
+  assert.ok(result);
+  const gamma = result!.factors.find((f) => f.label === "γ regime");
+  assert.ok(gamma, "γ-regime factor must be present inside the band");
+  assert.equal(gamma!.weight, -10, "amplification + below fires -10");
+});
