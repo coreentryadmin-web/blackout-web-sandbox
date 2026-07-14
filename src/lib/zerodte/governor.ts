@@ -217,6 +217,43 @@ export function evaluateZeroDteGovernor(
   return blocks;
 }
 
+// ── Member-facing board summary (additive, PR-D) ──────────────────────────────────
+// The Night Hawk 0DTE pane's governor strip renders session risk state — open plans
+// n/cap, stops n/halt (loud at the halt), re-entry locks with time remaining. The
+// board payload carries this summary so the client never re-derives risk state from
+// ledger rows (and so the caps/lock length are payload numbers, not a second
+// hardcoded copy that could drift from the real gate constants above).
+
+export type ZeroDteGovernorSummary = {
+  open_plans: GovernorOpenPlan[];
+  max_concurrent: number;
+  stops: GovernorStopEvent[];
+  max_session_stops: number;
+  /** stops.length >= max_session_stops — the desk is stood down for the session. */
+  halted: boolean;
+  /** Same-direction re-entry lock length (ms) — the client counts down from each
+   *  stop's at_ms + this; a stop with at_ms null gets no timer (never fabricated). */
+  reentry_lock_ms: number;
+};
+
+/** Pure: the payload's governor block from today's ledger rows + the recorded
+ *  (timestamped) stop events — the exact snapshot evaluateZeroDteGovernor judges. */
+export function summarizeGovernorForBoard(
+  rows: GovernorLedgerRow[],
+  recordedStops: GovernorStopEvent[]
+): ZeroDteGovernorSummary {
+  const snap = deriveGovernorFromLedger(rows);
+  const stops = mergeGovernorStops(snap.stops, recordedStops);
+  return {
+    open_plans: snap.open_plans,
+    max_concurrent: GOVERNOR_MAX_CONCURRENT_PLANS,
+    stops,
+    max_session_stops: GOVERNOR_MAX_SESSION_STOPS,
+    halted: stops.length >= GOVERNOR_MAX_SESSION_STOPS,
+    reentry_lock_ms: GOVERNOR_REENTRY_LOCK_MS,
+  };
+}
+
 // ── Redis-backed stop-event record (shared across replicas) ───────────────────────
 
 const governorStopsKey = (sessionDate: string) => `zerodte:governor:stops:${sessionDate}`;

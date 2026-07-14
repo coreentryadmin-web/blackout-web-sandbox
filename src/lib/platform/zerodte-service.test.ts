@@ -114,4 +114,14 @@ test("livePnlPct: board ledger and Largo plays use identical rounding", async ()
 
   assert.equal(board.ledger[0]!.live_pnl_pct, 10);
   assert.equal(largo.plays[0]!.live_pnl_pct, board.ledger[0]!.live_pnl_pct);
+
+  // PR-D additive fields: the pane's play-card header reads expiry off the ledger
+  // row, and the governor strip reads the payload's own risk summary (real caps,
+  // never a client-side copy). The mocked ledger has one HOLD row → one open plan.
+  assert.equal(board.ledger[0]!.expiry, null);
+  assert.ok(board.governor, "payload carries the governor summary");
+  assert.deepEqual(board.governor!.open_plans, [{ ticker: "NVDA", direction: "long" }]);
+  assert.equal(board.governor!.halted, false);
+  assert.equal(board.governor!.max_concurrent, 3);
+  assert.equal(board.governor!.max_session_stops, 3);
 });

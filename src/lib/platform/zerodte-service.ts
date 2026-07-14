@@ -28,6 +28,11 @@ import {
   type ZeroDteMarkSource,
 } from "@/lib/zerodte/marks-math";
 import { PLAN_RULES } from "@/lib/zerodte/plan";
+import {
+  loadRecordedGovernorStops,
+  summarizeGovernorForBoard,
+  type ZeroDteGovernorSummary,
+} from "@/lib/zerodte/governor";
 import { gradeZeroDteLedger, readZeroDteLedger, scanZeroDteBoard, syncLedgerLiveState } from "@/lib/zerodte/scan";
 
 export type ZeroDteBoardLedgerRow = {
@@ -38,6 +43,9 @@ export type ZeroDteBoardLedgerRow = {
   first_flagged_at: string;
   underlying_at_flag: number | null;
   top_strike: number | null;
+  /** Contract expiry (YYYY-MM-DD) — additive (PR-D): the pane's play-card header
+   *  renders it; null on rows the scanner logged without one. */
+  expiry: string | null;
   conviction: string | null;
   entry_premium: number | null;
   flow_avg_fill: number | null;
@@ -60,6 +68,13 @@ export type ZeroDteBoardLedgerRow = {
   plan_pnl_pct: number | null;
   graded: boolean;
   nighthawk_echo: EcosystemNightHawkTake | null;
+  /** Commit-time Cortex evidence pinned on the row (entry_context.cortex, #318) —
+   *  additive (PR-D): the pane's play card renders the evidence table from this
+   *  all day, not just during the ≤2-min window the fresh find still carries its
+   *  live assessment. Null on pre-wire-in rows / refresh-lane commits — the pane
+   *  shows an honest "gates-only" line, never a fabricated table. Served as an
+   *  opaque blob; the client validates the shape structurally (zerodte/pane.ts). */
+  cortex: Record<string, unknown> | null;
 };
 
 export type ZeroDteBoardPayload = {
@@ -74,6 +89,10 @@ export type ZeroDteBoardPayload = {
   setups: EnrichedZeroDteSetup[];
   ledger: ZeroDteBoardLedgerRow[];
   covered_elsewhere: string[];
+  /** G-5 session risk state for the pane's governor strip — additive (PR-D). Null
+   *  when the state couldn't be read this build (rendered as "unavailable", never
+   *  guessed; the gate stack itself independently fails closed on the same read). */
+  governor: ZeroDteGovernorSummary | null;
 };
 
 const BOARD_TTL_MS = 5_000;
@@ -108,6 +127,7 @@ function mapLedgerRow(
     first_flagged_at: r.first_flagged_at,
     underlying_at_flag: r.underlying_at_flag,
     top_strike: r.top_strike,
+    expiry: r.expiry,
     conviction: r.conviction,
     entry_premium: r.entry_premium,
     flow_avg_fill: r.flow_avg_fill,
@@ -124,6 +144,10 @@ function mapLedgerRow(
     plan_pnl_pct: r.plan_pnl_pct,
     graded: r.graded_at != null,
     nighthawk_echo: nighthawkEcho.get(r.ticker.toUpperCase()) ?? null,
+    cortex:
+      r.entry_context && typeof r.entry_context.cortex === "object"
+        ? ((r.entry_context.cortex as Record<string, unknown> | null) ?? null)
+        : null,
   };
 }
 
@@ -179,9 +203,17 @@ export async function buildZeroDteBoardPayload(): Promise<ZeroDteBoardPayload> {
   ]);
 
   const ledgerRows = await syncLedgerLiveState(rawLedger).catch(() => rawLedger);
-  const [nighthawkEcho, liveMarks] = await Promise.all([
+  const [nighthawkEcho, liveMarks, governor] = await Promise.all([
     fetchNighthawkEchoForTickers(ledgerRows.map((r) => r.ticker)),
     attachLiveMarkMeta(ledgerRows),
+    // PR-D governor strip: same ledger + recorded-stop snapshot the gate stack's
+    // G-5 judges (governor.ts). Best-effort: an unreadable Redis record degrades to
+    // ledger-only stops (untimed but still counted); a hard failure serves null,
+    // which the pane renders as "unavailable" — never fabricated risk state.
+    loadRecordedGovernorStops(today)
+      .catch(() => [])
+      .then((recorded) => summarizeGovernorForBoard(ledgerRows, recorded))
+      .catch((): ZeroDteGovernorSummary | null => null),
   ]);
 
   const nextDay = nextTradingDayEt(today);
@@ -203,6 +235,7 @@ export async function buildZeroDteBoardPayload(): Promise<ZeroDteBoardPayload> {
     setups,
     ledger: ledgerRows.map((r) => mapLedgerRow(r, nighthawkEcho, liveMarks.get(r.ticker.toUpperCase()) ?? null)),
     covered_elsewhere: nighthawk_covered,
+    governor,
   }) as ZeroDteBoardPayload;
 
   // roundFloats() rounds entry_premium/last_mark independently; recompute PnL from the
