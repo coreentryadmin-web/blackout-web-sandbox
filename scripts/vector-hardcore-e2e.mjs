@@ -321,6 +321,57 @@ async function validateTicker(page, ticker, errs) {
     }
   }
 
+  // ---- J. session-scoping VALUE truth (#319 regression guard) ----
+  // Member-reported class: session-anchored key levels computed over the WHOLE multi-session seed
+  // ("Opening Range shows Friday's ranges on Monday"). Layered guard — the client's level MATH is
+  // unit-tested in vector-key-levels.test.ts; what only a live run can prove is the DATA PATH: the
+  // bars API's newest-ET-day slice must be a real single session matching its own sessionYmd at
+  // every aggregation the chart offers, the opening range must anchor to THAT day's first bar, and
+  // the prior-day endpoint (anchored to the displayed session) must return the session STRICTLY
+  // BEFORE it — never the displayed session's own extremes (the off-hours anchor bug, same PR).
+  const jSessionYmd = barsResp?.sessionYmd;
+  if (bars.length && jSessionYmd) {
+    const ET_DAY_FMT = new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York", year: "numeric", month: "2-digit", day: "2-digit" });
+    const etDayOf = (sec) => ET_DAY_FMT.format(new Date(sec * 1000));
+    // Independent aggregation (same bucketing rule as vector-bar-timeframes, coded separately on
+    // purpose): bar-START epoch-second buckets, so a divergence here catches a suite/app split.
+    const aggTo = (src, mins) => { const out = []; let cur = null; for (const bb of src) { const bucket = Math.floor(bb.time / (mins * 60)) * mins * 60; if (!cur || cur.time !== bucket) { cur = { time: bucket, high: bb.high, low: bb.low }; out.push(cur); } else { cur.high = Math.max(cur.high, bb.high); cur.low = Math.min(cur.low, bb.low); } } return out; };
+    const seedDays = new Set(bars.map((bb) => etDayOf(bb.time))).size;
+    rec(`${ticker}: bars seed spans multiple sessions (scoping preconditions live)`, seedDays >= 2, `${seedDays} ET days`);
+    let hod1m = NaN, lod1m = NaN;
+    for (const mins of [1, 5, 15]) {
+      const tfBars = mins === 1 ? bars : aggTo(bars, mins);
+      let i = tfBars.length - 1;
+      const day = etDayOf(tfBars[i].time);
+      while (i > 0 && etDayOf(tfBars[i - 1].time) === day) i--;
+      const sess = tfBars.slice(i);
+      let hod = -Infinity, lod = Infinity;
+      for (const bb of sess) { hod = Math.max(hod, bb.high); lod = Math.min(lod, bb.low); }
+      if (mins === 1) { hod1m = hod; lod1m = lod; }
+      const orEnd = sess[0].time + 15 * 60;
+      let orH = -Infinity, orL = Infinity;
+      for (const bb of sess) if (bb.time < orEnd) { orH = Math.max(orH, bb.high); orL = Math.min(orL, bb.low); }
+      rec(`${ticker} ${mins}m: last-session slice is ONE ET day == sessionYmd`,
+        day === jSessionYmd && sess.every((bb) => etDayOf(bb.time) === jSessionYmd), `day ${day} vs ${jSessionYmd}, ${sess.length} bars`);
+      rec(`${ticker} ${mins}m: OR(15) anchors to the displayed session's open, inside its H/L`,
+        Number.isFinite(orH) && orH <= hod + 0.01 && orL >= lod - 0.01 && etDayOf(sess[0].time) === jSessionYmd,
+        `OR ${orL}–${orH} in [${lod}, ${hod}]`);
+      // Cross-TF invariant: aggregation can never move a session's extremes (max of maxes).
+      rec(`${ticker} ${mins}m: session HOD/LOD identical to 1m truth across aggregation`,
+        near(hod, hod1m, 0.001) && near(lod, lod1m, 0.001), `${mins}m ${lod}/${hod} vs 1m ${lod1m}/${hod1m}`);
+    }
+    const pdJ = await api(page, `/api/market/vector/prior-day?ticker=${ticker}&anchor=${jSessionYmd}`);
+    // Tuple inequality vs the displayed session's own extremes: the exact off-hours symptom was
+    // PDH/PDL == the viewed candles' own H/L. (A penny-perfect legitimate collision on BOTH is
+    // practically impossible; a single-sided match is legal — inside days exist.)
+    rec(`${ticker}: prior-day (anchored) is a coherent PRIOR session, not the displayed one`,
+      Number.isFinite(pdJ?.pdh) && Number.isFinite(pdJ?.pdl) && Number.isFinite(pdJ?.pdc) && pdJ.pdh >= pdJ.pdl &&
+        !(near(pdJ.pdh, hod1m, 0.01) && near(pdJ.pdl, lod1m, 0.01)),
+      `pd ${pdJ?.pdl}–${pdJ?.pdh} c=${pdJ?.pdc} vs displayed ${lod1m}–${hod1m}`);
+  } else {
+    rec(`${ticker}: session-scoping value case ran`, false, `bars=${bars.length} sessionYmd=${jSessionYmd}`);
+  }
+
   // ---- K. RTH-only: live rail actually advances (growth/fade) ----
   if (RTH) {
     // Poll the NARROWED 0DTE rail WITH the session param — `dte=all` (and any missing session)

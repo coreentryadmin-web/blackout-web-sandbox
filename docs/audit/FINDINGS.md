@@ -309,7 +309,11 @@ plays show "entirely wrong" pnl/%/premium values, slow to update.
   level belongs to, and the unit fixtures only ever contained one session of bars. Value-correctness
   checks (ladder/regime/max-pain) covered options surfaces, not the session-level overlays. Action:
   hardcore suite should gain a session-scoping case (OR-H/OR-L within today's price range, HOD ≥
-  session max only of today's bars) — deferred to the staging validation pass.
+  session max only of today's bars) — DONE: `vector-hardcore-e2e.mjs` section J (PR #320) asserts,
+  per ticker at 1m/5m/15m, single-ET-day slice == sessionYmd, OR anchored to the displayed session's
+  open inside its H/L, aggregation-invariant extremes, and anchored prior-day ≠ the displayed
+  session's own extremes. Deployed-build validation 2026-07-14 ~01:57 UTC: 33/33 PASS (values exact
+  to the frozen 7/13 truth; PDH/PDL/PDC == Polygon Friday OHLC; chart axis labels cite the same).
 - **Evidence (live staging seed, read-only probe 2026-07-14 pre-open)**: `/api/market/vector/bars`
   really carries 3 ET sessions (SPX: 1184 bars across 07-09/07-10/07-13; NVDA: 2834). Over that
   exact shape, OLD math vs FIXED: SPX opening range was drawn from THURSDAY's open
