@@ -6,6 +6,7 @@ export const CRON_SERVICE_NAMES = {
   "alert-outcome-sync": "Alert-Outcome-Sync",
   "cron-staleness-watchdog": "Cron-Staleness-Watchdog",
   "db-cleanup": "DB_CLEANUP",
+  "wall-history-retention": "Wall-History-Retention",
   "data-correctness": "Data-Correctness-Cron",
   "data-integrity": "Data-Integrity-Cron",
   "flow-ingest": "Flow-Ingest-Cron",

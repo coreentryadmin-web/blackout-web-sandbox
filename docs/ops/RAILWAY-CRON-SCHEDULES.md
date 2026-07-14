@@ -1,6 +1,13 @@
-# Railway cron schedules (production)
+# Cron schedules (production)
 
-**Important:** Railway stores and displays cron times in **UTC**. The dashboard text
+> **Infra note (2026-07-14):** Railway is **decommissioned** — prod and staging both run on **AWS**,
+> and crons now fire via **AWS EventBridge → Lambda → `GET /api/cron/*`** (with `CRON_SECRET`). The
+> **schedules below (times/cadence) remain authoritative** — they are what EventBridge is configured to
+> match. The "Railway service" column and the `railway.*.toml` files are **historical**: they record
+> the original per-cron trigger names but no longer drive live infra. When adding a cron, register its
+> EventBridge rule with the cadence documented here.
+
+**Important:** cron times are stored and displayed in **UTC** (this was also Railway's convention). The dashboard text
 “11:00 am – 9:59 pm” is **not Eastern Time** — it is UTC hours 11–21.
 
 ## RTH band convention (`11-21 * * 1-5`)
@@ -19,7 +26,7 @@ Most market-hours crons use:
 (`inMarketHours` / `inOptionsMarketHours`) so fires before 9:30 or after 4:00
 are cheap no-ops — the wide UTC band avoids maintaining separate EDT/EST cron lines.
 
-## All 21 cron trigger services
+## All cron trigger services
 
 | Job key | Railway service | Cron (UTC) | Purpose / notes |
 |---------|-----------------|------------|-----------------|
@@ -42,6 +49,7 @@ are cheap no-ops — the wide UTC band avoids maintaining separate EDT/EST cron 
 | spx-signal-weight-optimize | SPX-Signal-Weight-Optimize | `0 22 * * 1-5` | ~6 PM ET post-close |
 | membership-reconcile | Membership-Reconcile | `0 */6 * * *` | Every 6h, 24/7 |
 | db-cleanup | DB_CLEANUP | `0 7 * * *` | Daily 07:00 UTC |
+| wall-history-retention | Wall-History-Retention | `0 8 * * *` | Daily 08:00 UTC — prune `vector_wall_history` older than `WALL_HISTORY_RETENTION_DAYS` (30d staging / 90d prod) |
 | largo-cleanup | Largo-Chat-CleanUp | `0 8 * * 0` | Sunday 08:00 UTC |
 | cron-staleness-watchdog | Cron-Staleness-Watchdog | `*/5 * * * *` | 24/7 staleness monitor |
 

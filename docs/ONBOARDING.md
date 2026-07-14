@@ -7,6 +7,15 @@
 > `blackout-web/` are **stale duplicates, never edit them**).
 > Live site: **https://www.blackouttrades.com**
 
+> **Infra note (2026-07-14):** Railway is **decommissioned** — prod and staging both run on **AWS**
+> (ECS Fargate behind an ALB + Cloudflare, RDS Postgres + RDS Proxy, ElastiCache Redis, Secrets
+> Manager, **EventBridge** crons). Throughout this doc, read every "Railway" reference (hosting,
+> `railway status`/`railway logs`, "Railway auto-deploys `main`", cron *services*, `.railway.internal`,
+> `RAILWAY_TOKEN`, PgBouncer) as its AWS equivalent. The `railway.*.toml` files remain only as the
+> cron **schedule** record (crons fire via EventBridge → `GET /api/cron/*`). Authoritative infra:
+> `docs/ops/AWS-MIGRATION-PLAN.md`, `docs/ops/STAGING-CONNECT.md`, `docs/ops/RAILWAY-CRON-SCHEDULES.md`.
+> The Railway-specific procedural detail below is pending a full rewrite.
+
 ---
 
 ## 0. Read this first — the five rules that override everything

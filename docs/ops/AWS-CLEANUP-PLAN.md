@@ -2,7 +2,7 @@
 
 **Sandbox repo:** `coreentryadmin-web/blackout-web-sandbox` → branch `blackout-web-sandbox`
 
-**Prod repo:** `coreentryadmin-web/blackout-web` → `main` (Railway only — cherry-pick when ready)
+**Prod repo:** `coreentryadmin-web/blackout-web` → `main` (prod, now on **AWS** — cherry-pick when ready)
 
 **Infra repo:** [blackout-infra](https://github.com/coreentryadmin-web/blackout-infra) (Terraform VPC/ECR → RDS/ECS later)
 
@@ -70,7 +70,7 @@ For AWS: `output: "standalone"` + `deploy/Dockerfile` (same Next app, containeri
 
 | Repo / branch | Purpose |
 |---------------|---------|
-| **`blackout-web` → `main`** | Production (Railway). Hotfixes only. |
+| **`blackout-web` → `main`** | Production (AWS ECS). Hotfixes only. |
 | **`blackout-web-sandbox` → `blackout-web-sandbox`** | All AWS/cleanup/refactor work. |
 | **`blackout-infra`** | Terraform only |
 

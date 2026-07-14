@@ -1,4 +1,10 @@
-# PgBouncer on Railway (production)
+# PgBouncer (production) — LEGACY (Railway)
+
+> **Infra note (2026-07-14):** Railway is **decommissioned** — prod and staging run on **AWS**, and
+> Postgres connection pooling is handled by **RDS Proxy** (see `docs/ops/AWS-MIGRATION-PLAN.md` /
+> `docs/ops/STAGING-CONNECT.md`), not a Railway PgBouncer service. This document is retained as a
+> record of the pooling rationale (session-mode, pool sizing) which still informs the RDS Proxy
+> config; the Railway UI steps below no longer apply.
 
 ## Why
 `blackout-web` runs long-lived Node (`next start`) with **5 replicas** and a small app-side pool
