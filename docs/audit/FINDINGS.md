@@ -173,3 +173,37 @@ evidence / fix / status per the CLAUDE.md policy.)
   #77 Bug 1 class). Fix: `isoDateString` exported from db.ts, applied in
   `mapNighthawkEchoRows` + `fetchEcosystemContext`; regression test added.
 - Full analysis: `docs/audit/NIGHTHAWK-VS-SLAYER-0DTE.md` (v1) + `NIGHTHAWK-0DTE-DECISION.md` (v2).
+
+## 2026-07-13/14 night — 0DTE hard entry-gate stack (fix/zerodte-hard-gates, decision doc §2 implemented)
+
+### P1 — 0DTE Command had zero market-state discipline: 8/8 commits, 0 rejections, 1W/7L on a down day (FIXED — gate stack)
+- **Root cause**: the four evidence gates measure flow conviction only; tape alignment was a −6
+  score dent (a 93-score SPY long shrugged it off at 09:55 and stopped), no score floor, no
+  session risk ceiling (7 uncapped stops), nothing persisted or shown for a should-have-skipped.
+- **Fix** (`src/lib/zerodte/gates.ts` + `governor.ts`, wired in `scan.ts`; per-gate commits):
+  - **G-1 tape-alignment BLOCK** — counter-tape commits fail; missing/STALE (>15m) SPY bias fails
+    closed (`no_market_bias`), mirroring the evidence gates' `no_underlying_price` discipline.
+  - **G-2 opening-window BLOCK, 9:30–9:45 ET only (user-directed 2026-07-13)** — overrides the
+    doc's 10:30; applies to BOTH engines ("0DTE" = Slayer + Command): Slayer's BUY unlock moved
+    9:50→9:45 (`spx-play-gates.ts`, scoped exception — the OR env knob still defines technicals).
+    The 9:45–10:30 band stays open knowingly; `committed_at_et` calibration buckets arbitrate it.
+  - **G-3 score floor 65** — the 55–64 band ran 18.8% WR / −24.5% avg (n=16, engine's own
+    calibration), under the 33% breakeven of the −50/+100 payoff. Judged post-edge-layer.
+  - **G-5 session governor** (zerodte-local mirror of Slayer's shape): max 3 concurrent plans;
+    3 stops → halt for the day; 20-min same-direction re-entry lock (Redis-timestamped,
+    `zerodte:governor:stops:{date}`; counts derive from the shared Postgres ledger so a halt never
+    depends on a warm cache); **B-3 correlated-conflict block** — a commit opposing an OPEN plan in
+    the static index/ETF group (SPY QQQ IWM DIA SPX SPXW NDX XSP) is blocked (7/13 ran SPY long +
+    QQQ short simultaneously).
+  - **G-4 VIX throttle + G-6 cross-system conflict — CALIBRATION MODE** (log, never block):
+    verdict pinned per commit in new `zerodte_setup_log.gate_calibration_json` (score, bias,
+    `committed_at_et`, VIX tier + would_block, conflict vs live Slayer play / NH echo take ≤5 days).
+  - Every block = a `zerodte_scan_rejections` row (new `reason` TEXT column: machine code +
+    human sentence) + the setup stays on the board as a WATCH/SKIP card (`setup.gate`), SKIP to
+    Largo. Committed plays are never retro-blocked (refresh lane bypasses gates); unreadable gate
+    context fails NEW commits closed.
+- **Evidence/regression**: `gates-replay-2026-07-13.test.ts` replays the real 8-play ledger →
+  1W/1L (QQQ +76.6% prints, META prints flagged CONFLICT) instead of 1W/7L; all six blocked plays
+  were real losers. 141 zerodte-suite tests green; Slayer gate tests updated for the 9:45 boundary.
+- **Schema/Redis**: `zerodte_scan_rejections.reason` (TEXT), `zerodte_setup_log.
+  gate_calibration_json` (JSONB, COALESCE-pinned), Redis `zerodte:governor:stops:{date}` (24h TTL).
