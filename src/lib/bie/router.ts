@@ -9,6 +9,7 @@
 import { KNOWN_TICKERS } from "@/lib/largo/question-intent";
 import { lookupGlossary } from "./glossary";
 import { namesUnsupportedHorizon } from "./vector-read-fallback";
+import { parseShift } from "./scenario-read";
 
 export type BieIntent =
   | "zerodte_plays"
@@ -28,7 +29,8 @@ export type BieIntent =
   | "compound_lookup"
   | "system_diagnostic"
   | "cortex_read"
-  | "nighthawk_edition";
+  | "nighthawk_edition"
+  | "scenario";
 
 export type BieRoute = {
   intent: BieIntent;
@@ -282,6 +284,22 @@ function nighthawkEditionRoute(q: string): BieRoute | null {
   return null;
 }
 
+// SCENARIO what-if (PR-L4c) — "if SPX drops 1%", "what happens if SPY breaks 745", "if we lose the
+// flip", "SPX at 7450 scenario", "what if QQQ rips 2%". A DOUBLE gate authorizes the route, so it can
+// never steal a static read: (1) an explicit hypothetical TRIGGER (if / what if / suppose / imagine /
+// assume / "scenario" / hypothetical), AND (2) a parseShift() that actually pins down a price move
+// (percent / points / absolute level / structural "the flip"|"the wall"). A definitional "what is the
+// flip" (no trigger, no scopeable shift), a verdict "is SPX 7500 good" (no trigger, "7500" isn't a
+// scoped shift), a cortex "why did we commit X" (no trigger) all fail one gate and keep their homes.
+const SCENARIO_TRIGGER_RE =
+  /\b(if|what\s+if|suppose|imagine|assume|were\s+to|scenario|hypothetical(?:ly)?)\b/i;
+
+function scenarioRoute(q: string): BieRoute | null {
+  if (!SCENARIO_TRIGGER_RE.test(q)) return null;
+  if (parseShift(q) == null) return null; // no scopeable price move → not a scenario
+  return { intent: "scenario", ticker: extractKnownTicker(q) ?? "SPX", horizon: extractHorizon(q) };
+}
+
 /** Vector DTE horizon named in the question, defaulting to "all" (whole-chain view). */
 function extractHorizon(q: string): string {
   if (/\b0\s*dte\b/i.test(q)) return "0dte";
@@ -415,6 +433,17 @@ export function classifyBieIntent(question: string, ledgerTickers: Set<string>):
   // play picked") still routes — the composer answers with the session's decisions.
   if (isCortexQuestion(q)) return { intent: "cortex_read", ticker: extractKnownTicker(q) };
 
+  // "if SPX drops 1%" / "what happens if SPY breaks 745" / "if we lose the flip" / "SPX at 7450
+  // scenario" → the deterministic SCENARIO what-if read (PR-L4c). Placed after concept/diagnostic/
+  // nighthawk/cortex (a definitional/decision question keeps its home) and BEFORE the SPX/vector
+  // structure branches and REASONING_RE (a bare "if" is not in REASONING_RE, but "what if" is — this
+  // must win first so the hypothetical isn't bailed to Claude or answered as a static structure read).
+  // Double-gated (trigger + parseable shift) so it only fires on a real hypothetical price move.
+  {
+    const scenario = scenarioRoute(q);
+    if (scenario) return scenario;
+  }
+
   // An explicitly UNSUPPORTED horizon (LEAP / multi-year / quarterly) can't be scoped by any desk.
   // Route to the Vector composer, which returns an HONEST "unsupported horizon" message rather than
   // letting the SPX desk / Vector "all" answer the whole-chain aggregate as if it were the LEAP.
@@ -523,6 +552,12 @@ export function classifyBieStagingFallback(question: string): BieRoute {
   // Same Cortex decision-read branch as the primary classifier (and same placement:
   // before the verdict/SPX branches so "cortex verdict on X" isn't stolen).
   if (isCortexQuestion(q)) return { intent: "cortex_read", ticker: extractKnownTicker(q) };
+  // Same SCENARIO branch as the primary classifier (same placement: after cortex, before the vector/
+  // SPX structure reads) — a hypothetical price-move question is a scenario, not a static desk dump.
+  {
+    const scenario = scenarioRoute(q);
+    if (scenario) return scenario;
+  }
   if (VECTOR_RE.test(q)) {
     return { intent: "vector_read", ticker: extractKnownTicker(q) ?? "SPX", horizon: extractHorizon(q) };
   }
@@ -612,5 +647,11 @@ export function bieFollowups(intent: BieIntent): string[] {
       return ["Show today's 0DTE plays", "What is a Cortex veto?", "What does Cortex say about SPY?"];
     case "nighthawk_edition":
       return ["Show tonight's playbook", "What is publish context?", "What is the morning confirmation?"];
+    case "scenario":
+      return [
+        "What if it moves the other way?",
+        "What's the setup right now?",
+        "Which walls are building vs fading?",
+      ];
   }
 }

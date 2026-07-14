@@ -41,6 +41,35 @@ evidence / fix / status per the CLAUDE.md policy.)
   claim emits none. `spx-premise.test.ts`.
 - **Status:** FIXED (tsc clean, full suite green).
 
+## 2026-07-14 — Largo gauntlet P1: no scenario/what-if reasoning — PR-L4c
+
+### P1 — Largo can't reason over a hypothetical price move (NEW ENGINE, tested)
+- **Root cause:** COVERAGE GAP, not a bug. The BIE router (`src/lib/bie/router.ts`) had no
+  `scenario` intent. A what-if question ("if SPX drops 1% at tomorrow's open, does the regime flip,
+  which walls become live?") therefore fell to whichever static branch its keywords hit (the SPX
+  structure/desk read) or to Claude — neither of which recomputes structure at a DIFFERENT spot. So
+  every part came back "unavailable — no deterministic read," even though the answer is pure
+  arithmetic over data the desk already holds: the flip, walls, max-pain, expected-move and ladder
+  are all live on the Vector full state; only the ANCHOR (spot) changes.
+- **Evidence (gauntlet):** "If SPX drops 1% at tomorrow's open, what happens to the dealer
+  positioning picture — does the regime flip, and which walls become live?" → all parts
+  "unavailable — no deterministic read."
+- **Fix:** new deterministic scenario composer `src/lib/bie/scenario-read.ts` +
+  `scenario` router intent. `parseShift` reads a move out of the question (percent / points /
+  absolute price / structural "the flip"|"the wall"); `resolveShiftTarget` turns it into a shifted
+  spot against the live state; `buildScenarioEnvelope` recomputes at that spot using the SAME
+  `deriveVectorRegime` the chart renders — regime + whether the shift CROSSES the flip (the key
+  event), which call/put walls the shifted spot now sits between + any wall it PIERCES (role flip),
+  the max-pain pull direction/distance, and a magnitude-honesty read vs the options-implied 1σ
+  (within-1σ wiggle vs tail move). Framed explicitly as dealer STRUCTURE at that price, NOT a
+  forecast or probability. Router double-gates the route (a hypothetical trigger AND a parseable
+  shift) so it never steals concept/cortex/edition/verdict/compare.
+- **Evidence after (fixture render, "if SPX drops 1%"):** "SPX 7,560 → 7,484.4 (−76 pts, −1%) …
+  1.37× 1σ (±0.73%) — beyond 1σ but inside 2σ … **CROSSES the gamma flip 7,520** — regime FLIPS
+  from long gamma to short gamma … PIERCED: put wall 7,500 … max pain 7,550 pulls UP (+66 pts)."
+- **Status:** FIXED (new engine; tsc clean, full suite green — 3487 pass; scenario-read.test.ts +
+  router.test.ts scenario regression table).
+
 ## 2026-07-13 — Vector bead-rail / DTE-coherence audit (member-driven, RTH live)
 
 ### P0 — Bead trails ran full-width from the open; "no new walls all day" (FIXED, live-verified)
