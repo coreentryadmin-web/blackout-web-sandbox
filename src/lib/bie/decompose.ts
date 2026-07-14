@@ -43,13 +43,17 @@ function splitByQuestionMarks(q: string): string[] {
     .filter((s) => s.length >= 2);
 }
 
-/** Long run-on: comma / ";" / "and" clauses. Conservative — long message + ≥3 clauses only. */
+/** Long run-on: comma / ";" / "and" clauses. Conservative — long message + ≥3 clauses only.
+ *  Increased minimum clause size from 8 to 16 chars to prevent over-splitting legitimate single
+ *  questions (e.g. "compare SPY and QQQ which is more bullish" was being split into ["compare SPY",
+ *  "QQQ which is more bullish"]). A 16-char minimum ensures each clause is substantial enough to
+ *  be a real sub-question, not just noise or connector words. */
 function splitRunOn(q: string): string[] {
   if (q.length < 100) return [];
   const parts = q
     .split(/;|,|\band\b/i)
     .map((s) => clean(s))
-    .filter((s) => s.length >= 8);
+    .filter((s) => s.length >= 16);
   return parts.length >= 3 ? parts : [];
 }
 

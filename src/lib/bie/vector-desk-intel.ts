@@ -97,12 +97,22 @@ export function magnetBriefLine(state: VectorFullState): string | null {
 }
 
 /** MAX PAIN — the max-pain strike and its signed distance from spot. */
-export function maxPainBriefLine(state: VectorFullState): string | null {
+export function maxPainBriefLine(state: VectorFullState, spxMaxPain?: number | null): string | null {
   const mp = num(state.maxPain);
   if (mp == null) return null;
   const spot = num(state.spot);
   const dist = spot != null ? ` (${signedPts(mp - spot)})` : "";
-  return `MAX PAIN  ${n(mp)}${dist}`;
+
+  // Flag cross-surface disagreement if SPX desk max pain differs by >1% (e.g., 7525 vs 7400).
+  let disagreementFlag = "";
+  if (spxMaxPain != null && Number.isFinite(spxMaxPain) && mp > 0) {
+    const pctDiff = Math.abs((spxMaxPain - mp) / mp);
+    if (pctDiff > 0.01) {
+      disagreementFlag = ` ⚠ (SPX desk: ${n(spxMaxPain)})`;
+    }
+  }
+
+  return `MAX PAIN  ${n(mp)}${dist}${disagreementFlag}`;
 }
 
 /** EXPECTED MOVE — options-implied ±1σ / ±2σ bands for the horizon. */

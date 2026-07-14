@@ -26,7 +26,8 @@ export type BieIntent =
   | "universal_lookup"
   | "verdict"
   | "compound_lookup"
-  | "system_diagnostic";
+  | "system_diagnostic"
+  | "record_read";
 
 export type BieRoute = {
   intent: BieIntent;
@@ -201,6 +202,20 @@ function isSpxHorizonScopedStructureQuestion(q: string, horizon: string): boolea
   return SPX_HORIZON_STRUCTURE_RE.test(q);
 }
 
+// Track-record / performance questions — "honest record", "track record", "how have the plays performed",
+// "win rate", "P&L on yesterday's plays". Routed to the recordRead composer, which fans out to the
+// published track-record endpoint (/api/track-record/publish). Placed before REASONING_RE so these
+// deterministic reads don't fall through to Claude.
+const RECORD_RE =
+  /\b(honest record|track[- ]?record|performance|track (record |)?on (today'?s|the) plays?|win\s*rate|how (well|good).{0,30}(perform|do)|historical (plays|records?|performance|p&l)|past .{0,30}(record|performance)|p&l.{0,30}(yesterday|today|week))\b/i;
+
+// Out-of-scope queries that should never route through BIE — "write me a poem", "tell me a joke",
+// "explain quantum physics", etc. These return null to trigger the "out of scope" response rather
+// than falling through to Claude or returning a generic answer. Added guard BEFORE REASONING_RE so
+// it catches them before "explain" is tested.
+const OUT_OF_SCOPE_RE =
+  /\b(write me|tell me|make me|create|compose|generate|write a|tell a|make a)\s+(poem|joke|story|song|recipe|code|app|game|essay|article|movie|script)\b|\bexplain\b.{0,40}(quantum|physics|math|relativity|thermodynamics|calculus)\b|\bhow does\b.{0,40}(quantum|physics|relativity)\b/i;
+
 /** Questions with these shapes need REASONING, not lookup — Claude unless a narrower BIE branch matched first. */
 const REASONING_RE =
   /\b(why|explain|compare|versus|vs\.?|should i|would you|what if|predict|forecast|think|opinion|strategy|teach|how do(es)? .{0,20}work)\b/i;
@@ -248,6 +263,11 @@ export function classifyBieIntent(question: string, ledgerTickers: Set<string>):
   // or "why" bails to Claude / the surface gets read as a normal Vector question.
   if (isDiagnosticQuestion(q)) return { intent: "system_diagnostic", ticker: extractKnownTicker(q) };
 
+  // Out-of-scope queries that don't belong in a market-focused engine — "write me a poem",
+  // "explain quantum physics", etc. Return null to trigger the "out of scope" response rather
+  // than falling through to Claude or a generic answer.
+  if (OUT_OF_SCOPE_RE.test(q)) return null;
+
   // An explicitly UNSUPPORTED horizon (LEAP / multi-year / quarterly) can't be scoped by any desk.
   // Route to the Vector composer, which returns an HONEST "unsupported horizon" message rather than
   // letting the SPX desk / Vector "all" answer the whole-chain aggregate as if it were the LEAP.
@@ -292,6 +312,12 @@ export function classifyBieIntent(question: string, ledgerTickers: Set<string>):
     if (ticker && ticker !== "SPX") {
       return { intent: "vector_read", ticker, horizon: extractHorizon(q) };
     }
+  }
+
+  // Track-record / performance questions → the published record-read endpoint. Placed before
+  // REASONING_RE so these deterministic reads don't fall through to Claude.
+  if (RECORD_RE.test(q)) {
+    return { intent: "record_read", ticker: extractKnownTicker(q) };
   }
 
   if (REASONING_RE.test(q)) return null;

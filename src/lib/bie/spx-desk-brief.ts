@@ -513,10 +513,15 @@ export function composeSpxDeskBrief(
 
   const ivRank = desk.uw_iv_rank;
   const size = sizeLabel(grade);
+  // Add off-hours staleness marker if query asked for "right now" data while market is closed.
+  const isOffHours = /\b(after.?hours?|pre.?market|overnight|closed)\b/i.test(sessionPhase);
+  const hasRightNowQuery = question && /\bright now\b/i.test(question);
+  const offHoursStaleness =
+    isOffHours && hasRightNowQuery ? " Right-now values are from last close — market currently offline." : "";
   const staleNote =
     desk.gex_stale || desk.feed_stalled
-      ? " GEX/feed stale — lighter size until refresh."
-      : "";
+      ? ` GEX/feed stale — lighter size until refresh.${offHoursStaleness}`
+      : offHoursStaleness;
   const structure =
     ivRank != null && ivRank > 50
       ? "debit spread (capped risk)"
@@ -627,6 +632,12 @@ export function composeSpxDeskBrief(
         oc.total_closed +
         "}} closed)"
     );
+  }
+
+  // Add temporal disclaimer for forward-looking queries ("tomorrow's plays", "next week's setup").
+  const temporalKeywords = /\b(tomorrow|tomorrow'?s|next\s+(week|day|session)|upcoming)\b/i;
+  if (question && temporalKeywords.test(question)) {
+    bodyLines.push("NOTE  Forward-looking setup — today's market structure may not persist into the next session.");
   }
 
   return {
