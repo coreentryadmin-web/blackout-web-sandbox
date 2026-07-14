@@ -4,6 +4,13 @@
 open or warming up (09:00 ET+). **Do not ask the user** — execute immediately, fix failures,
 commit, push, re-validate until GREEN.
 
+> **Infra note (2026-07-14):** Railway is **decommissioned** — prod and staging both run on **AWS**
+> (ECS Fargate, RDS, EventBridge crons). Where steps below say "Railway SUCCESS / poll Railway /
+> Railway logs," read the equivalent on AWS: deploy status = the ECS service rollout, logs =
+> CloudWatch, cron provisioning = EventBridge rules. The `validate:*` scripts already target the
+> current stack. See `docs/ops/AWS-MIGRATION-PLAN.md` and `docs/ops/STAGING-CONNECT.md`. The
+> Railway wording here is pending a full rewrite — do not treat it as live infra.
+
 ## Trigger (agent self-start)
 
 | Condition | Action |

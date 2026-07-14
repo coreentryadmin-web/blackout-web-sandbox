@@ -1,6 +1,12 @@
 # Postgres PITR restore drill (quarterly)
 
-**Status:** PITR enabled on production Postgres (`Postgres-PITR` bucket, `WAL_ARCHIVE_*` vars).
+> **Infra note (2026-07-14):** Railway is **decommissioned** — production Postgres now runs on
+> **AWS RDS**. The dashboard steps below describe the old **Railway** PITR flow and are **stale**:
+> on RDS, PITR is "Restore to point in time" from the RDS console / `aws rds
+> restore-db-instance-to-point-in-time`, retention set by the automated-backup window. Treat the
+> procedure below as historical until rewritten for RDS. See `docs/ops/AWS-MIGRATION-PLAN.md`.
+
+**Status:** PITR enabled on production Postgres (historically the Railway `Postgres-PITR` bucket + `WAL_ARCHIVE_*` vars; now AWS RDS automated backups).
 
 ## Goal
 

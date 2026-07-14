@@ -151,6 +151,16 @@ export const CRON_JOBS: CronJobDefinition[] = [
     description: "Prune high-volume Postgres tables (telemetry, flow, signal log, cron runs)",
   },
   {
+    key: "wall-history-retention",
+    name: "Wall-History Retention",
+    kind: "http",
+    path: "/api/cron/wall-history-retention",
+    schedule_label: "Daily 08:00 UTC",
+    stale_after_min: 36 * 60,
+    description:
+      "Prune vector_wall_history older than WALL_HISTORY_RETENTION_DAYS (30d staging / 90d prod)",
+  },
+  {
     key: "membership-reconcile",
     name: "Membership Reconcile",
     kind: "http",

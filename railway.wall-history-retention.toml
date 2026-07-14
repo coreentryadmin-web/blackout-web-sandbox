@@ -1,0 +1,21 @@
+# Schedule manifest for the wall-history-retention cron.
+#
+# LEGACY FORMAT: Railway is decommissioned (prod + staging run on AWS). This TOML is retained
+# only as the schedule-of-record that the cron manifest CI (validate-railway-cron-manifest.mjs)
+# aligns against; live crons fire via AWS EventBridge → Lambda → GET /api/cron/*. When wiring
+# the EventBridge rule, match the cronSchedule below. See docs/ops/RAILWAY-CRON-SCHEDULES.md.
+[build]
+builder = "nixpacks"
+buildCommand = "echo 'cron trigger service: no app build needed'"
+watchPatterns = [
+  "scripts/hit-cron.mjs",
+  "railway.wall-history-retention.toml",
+  "nixpacks.toml",
+]
+
+[deploy]
+startCommand = "node scripts/hit-cron.mjs /api/cron/wall-history-retention"
+# Daily 08:00 UTC — after db-cleanup's 07:00 UTC nightly prune.
+cronSchedule = "0 8 * * *"
+restartPolicyType = "never"
+numReplicas = 1

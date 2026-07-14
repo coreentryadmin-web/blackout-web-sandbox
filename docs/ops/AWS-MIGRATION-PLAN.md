@@ -1,6 +1,9 @@
 # AWS migration plan — blackout-web on ECS Fargate
 
-**Status:** Phase 2 (staging stack) Terraform ready in `blackout-infra`. Prod stays on **Railway** until staging ECS is green.
+**Status (2026-07-14): COMPLETE — Railway decommissioned.** Prod and staging both run on **AWS**
+(ECS Fargate, RDS Postgres + RDS Proxy, ElastiCache Redis, Secrets Manager, EventBridge crons). The
+phased plan below is retained as the migration record; the `railway.*.toml` files and `scripts/railway-*.mjs`
+are legacy and no longer drive live infra.
 
 **Infra repo:** [blackout-infra](https://github.com/coreentryadmin-web/blackout-infra) — VPC, ECR, RDS, Redis, ECS, ALB, EventBridge crons
 

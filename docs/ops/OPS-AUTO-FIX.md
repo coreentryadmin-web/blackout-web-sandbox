@@ -2,6 +2,11 @@
 
 **Goal:** Any prod cron/health error becomes a **GitHub issue** (action item) and **dispatches a Cursor Cloud Agent** to fix and re-validate — no user prompt.
 
+> **Infra note (2026-07-14):** Railway is **decommissioned** — prod and staging run on **AWS** (ECS
+> Fargate, EventBridge crons). Where steps say "Railway `configFile` / poll Railway deploy," read
+> the AWS equivalent: config = ECS task definition + Secrets Manager, deploy status = the ECS
+> service rollout. See `docs/ops/AWS-MIGRATION-PLAN.md`.
+
 ## Pipeline
 
 ```
