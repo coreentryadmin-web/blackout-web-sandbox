@@ -5,6 +5,7 @@
  */
 
 import { getVectorGexWalls, getVectorVexWalls } from "./vector-snapshot";
+import { getActiveVectorTickers } from "./vector-stream-hub";
 
 export async function warmVectorWalls(ticker: string): Promise<void> {
   // Force walls computation by calling the read functions.
@@ -14,4 +15,14 @@ export async function warmVectorWalls(ticker: string): Promise<void> {
     Promise.resolve(getVectorGexWalls(ticker)),
     Promise.resolve(getVectorVexWalls(ticker)),
   ]);
+}
+
+/** Get list of all tickers to warm: static allowlist + currently active dynamic tickers. */
+export function getTickersToWarm(allowlist: string[]): string[] {
+  const activeSet = new Set(getActiveVectorTickers());
+  const allowlistSet = new Set(allowlist);
+  // Combine: all allowlist tickers + any active dynamic tickers not already on allowlist
+  return Array.from(
+    new Set([...allowlistSet, ...activeSet])
+  );
 }

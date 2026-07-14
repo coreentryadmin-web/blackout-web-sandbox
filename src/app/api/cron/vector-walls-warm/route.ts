@@ -13,7 +13,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { isCronAuthorized } from "@/lib/market-api-auth";
 import { logCronRun } from "@/lib/cron-run";
 import { vectorUniverseTickers } from "@/lib/heatmap-allowlist";
-import { warmVectorWalls } from "@/features/vector/lib/vector-walls-warm";
+import { warmVectorWalls, getTickersToWarm } from "@/features/vector/lib/vector-walls-warm";
 import { isEtCashRth } from "@/lib/et-market-hours";
 
 export const runtime = "nodejs";
@@ -33,7 +33,8 @@ export async function GET(req: NextRequest) {
     return NextResponse.json(payload);
   }
 
-  const tickers = vectorUniverseTickers();
+  const allowlist = vectorUniverseTickers();
+  const tickers = getTickersToWarm(allowlist);
 
   // Warm all walls in parallel; settle all so one failing underlying can't abort the rest.
   const results = await Promise.allSettled(
@@ -41,25 +42,27 @@ export async function GET(req: NextRequest) {
   );
 
   let warmed = 0;
-  const failed = results.length - warmed;
-
-  for (let i = 0; i < results.length; i++) {
-    const r = results[i];
+  for (const r of results) {
     if (r.status === "fulfilled") {
       warmed += 1;
     }
   }
+  const failed = results.length - warmed;
 
   await logCronRun("vector-walls-warm", started, {
     ok: warmed > 0,
     warmed,
     failed,
+    allowlistCount: allowlist.length,
+    dynamicCount: tickers.length - allowlist.length,
     total: tickers.length,
   });
 
   return NextResponse.json({
     ok: true,
     warmed,
+    allowlistCount: allowlist.length,
+    dynamicCount: tickers.length - allowlist.length,
     total: tickers.length,
   });
 }

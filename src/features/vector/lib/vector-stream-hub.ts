@@ -131,6 +131,13 @@ export function getVectorStreamDeltaFrame(ticker: string): string | null {
   return hubs.get(normalizeVectorTicker(ticker))?.latestDeltaFrame ?? null;
 }
 
+/** Return list of tickers with active subscribers (dynamic on-demand tickers currently being viewed). */
+export function getActiveVectorTickers(): string[] {
+  return Array.from(hubs.entries())
+    .filter(([, hub]) => hub.subscribers > 0)
+    .map(([ticker]) => ticker);
+}
+
 /** Test-only reset. */
 export function _resetVectorStreamHubForTest(): void {
   for (const hub of hubs.values()) {
