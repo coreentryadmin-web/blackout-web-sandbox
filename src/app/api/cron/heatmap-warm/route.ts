@@ -66,12 +66,23 @@ export async function GET(req: NextRequest) {
     warmed += 1;
 
     const ticker = tickers[i];
-    const currentSnapshot = r.value;
+    const gexHeatmap = r.value;
 
     // Skip delta calculation if current snapshot is unavailable
-    if (!currentSnapshot) continue;
+    if (!gexHeatmap) continue;
 
     try {
+      // Adapt GexHeatmap to GexMatrix format for delta calculation
+      // (extract just the fields needed: underlying, spot, strikes, expiries, gex cells, asof)
+      const currentSnapshot: GexMatrix = {
+        underlying: gexHeatmap.underlying,
+        spot: gexHeatmap.spot,
+        strikes: gexHeatmap.strikes,
+        expiries: gexHeatmap.expiries,
+        gex: gexHeatmap.gex.cells,
+        asof: gexHeatmap.asof,
+      };
+
       // Get previous snapshot from cache
       const cacheKey = `gex-matrix-snapshot:${ticker}`;
       let previousSnapshot: GexMatrix | null = null;
