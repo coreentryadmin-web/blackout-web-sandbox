@@ -87,6 +87,27 @@ export function buildIntelNote(input: {
   const toExit = minsTo(15 * 60 + 30);
 
   if (status === "SKIP") {
+    // A hard-gate BLOCK is the real, most-fundamental reason a fresh find was refused,
+    // so narrate the gate's OWN sentence(s) verbatim — the exact copy the board's
+    // SkipCard renders (ZeroDteBoard.tsx) — BEFORE any plan-level (chase/liquidity) or
+    // clock reason. This branch was previously ABSENT: the SKIP path fell straight
+    // through to the unconditional "after the 3:00 ET cutoff" line below, fabricating a
+    // time-cutoff reason for finds actually blocked by the score floor / tape / governor
+    // mid-session. Live 2026-07-14 ~10:15 ET: SPXW 7540P score 43 was correctly BLOCKED
+    // by G-3 (43 < 65 floor) yet Largo narrated it as "Flagged after the 3:00 ET cutoff
+    // … Watch-only." — false on both counts (it was 10 AM; the real block was the score
+    // floor). A fabricated refusal reason is exactly the dishonesty this platform exists
+    // to avoid. The board's SkipCard was unaffected: it reads setup.gate.blocks directly
+    // and only shows the "late window" line when blocks.length === 0 — this makes the
+    // Largo consumer block-aware the same way. (The trade decision is unchanged: a
+    // blocked find stays PASS/refused; only the EXPLANATION becomes honest.)
+    const gateBlocks = setup?.gate?.verdict === "BLOCKED" ? setup.gate.blocks : [];
+    if (gateBlocks.length > 0) {
+      return {
+        action: "PASS",
+        reason: `Not committed — ${gateBlocks.map((b) => b.reason).join(" ")} Watch-only.`,
+      };
+    }
     if (plan?.illiquid) {
       return {
         action: "PASS",
@@ -99,9 +120,24 @@ export function buildIntelNote(input: {
         reason: `Premium already ran ${plan.vs_flow_pct != null ? `+${plan.vs_flow_pct.toFixed(0)}%` : "well"} past the flow's ${prem(plan.flow_avg_fill)} fill — the move happened without you. Chasing here flips the math against the trade.`,
       };
     }
+    // Genuine post-cutoff SKIP: no hard block, not a chase, not illiquid — the only
+    // remaining honest reason a fresh find is refused is the 15:00 ET no-new-entries
+    // cutoff (resolveFreshFindStatus's pastCutoff branch, board.ts, which fires exactly
+    // when the clock is in POWER_HOUR/LATE_SESSION/CLOSED, i.e. ≥ 15:00 ET). Guard on
+    // the live clock so this line can NEVER be emitted before the cutoff — a mislabeled
+    // SKIP mid-session must not invent a 3 PM reason at 10 AM.
+    const CUTOFF_ET_MINUTES = 15 * 60;
+    if (nowEtMinutes != null && nowEtMinutes >= CUTOFF_ET_MINUTES) {
+      return {
+        action: "PASS",
+        reason: "Flagged after the 3:00 ET cutoff — a fresh 0DTE entry this late trades against the clock, not the tape. Watch-only.",
+      };
+    }
+    // No block, not moved/illiquid, and either the clock is unknown or still inside the
+    // entry window — we have no concrete refusal reason, so don't fabricate one.
     return {
       action: "PASS",
-      reason: "Flagged after the 3:00 ET cutoff — a fresh 0DTE entry this late trades against the clock, not the tape. Watch-only.",
+      reason: "Not committed — the desk has not cleared this fresh find for entry. Watch-only.",
     };
   }
 
