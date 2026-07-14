@@ -8758,8 +8758,15 @@ body::before {
        strip spans the whole band instead of hugging one corner. Text pills may
        shrink/truncate as a last resort; metric groups keep their numbers intact. */
     .spx-desk-top-stats--strip {
-      flex-wrap: nowrap;
-      justify-content: space-between;
+      /* OVERFLOW-SAFE (2026-07-14): nowrap+space-between spilled ~111px of overflowing
+         content LEFT over the identity block once the spot pill joined the strip
+         (live-measured: first child x=96 vs container x=207 at 1920). Wrap is the
+         safety valve — with the Session group compacted to 2x2 and the slimmer spot
+         pill the strip fits one line at 1920; if a future addition overflows again it
+         wraps cleanly instead of covering the product title. */
+      flex-wrap: wrap;
+      justify-content: flex-start;
+      column-gap: clamp(0.25rem, 0.35vw, 0.45rem);
     }
 
     .spx-desk-top-stats--strip .spx-hero-stat-pill {
@@ -17875,7 +17882,7 @@ body::before {
 
 /* STRIP SPOT (2026-07-14, user-directed): live SPX price leads the header strip — bigger than
    pill values (it's the desk's anchor number) but pill-height so the one-line strip holds. */
-.spx-strip-spot { min-width: 9.5rem; }
+.spx-strip-spot { min-width: 8rem; }
 .spx-strip-spot .spx-hero-stat-value-row { align-items: baseline; gap: 0.4rem; }
 .spx-strip-spot-price { font-size: clamp(1.05rem, 1vw + 0.5rem, 1.35rem); font-weight: 700; line-height: 1; }
 .spx-strip-spot-pct { font-size: clamp(0.7rem, 0.5vw + 0.4rem, 0.8rem); font-weight: 600; opacity: 0.9; }
@@ -17892,3 +17899,13 @@ body::before {
 .spx-matrix-refresh-btn--spinning { animation: spx-matrix-refresh-spin 0.9s linear infinite; }
 @keyframes spx-matrix-refresh-spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .spx-matrix-refresh-btn--spinning { animation: none; opacity: 0.6; } }
+
+
+  /* Session group as a 2x2 grid inside its pill (HOD/LOD | PDH/PDL) — reclaims ~150px
+     of strip width so the one-line layout fits at 1920 with the spot pill present. */
+  .spx-hero-stat-group-row--grid2 {
+    display: grid;
+    grid-template-columns: auto auto;
+    column-gap: clamp(0.375rem, 0.5vw, 0.625rem);
+    row-gap: 0.0625rem;
+  }

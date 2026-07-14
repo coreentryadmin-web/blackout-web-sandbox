@@ -29,8 +29,15 @@ import assert from "node:assert/strict";
 // (tape alignment), which is exactly the doc's F-3 finding: counter-tape entries,
 // not clock position, are what killed the day.
 
-import { evaluateZeroDteGates, type ZeroDteGateVerdict } from "./gates";
+import { evaluateZeroDteGates, gateRejectionFor, type ZeroDteGateVerdict } from "./gates";
 import type { GovernorOpenPlan } from "./governor";
+// ── Cortex layer (PR-B wire-in) — the same 7/13 session replayed through the FULL
+// stack: hard gates first, then composeCortexEvidence over the design doc's own
+// 7/13 fixtures on the gate survivors (NIGHTHAWK-CORTEX-DESIGN.md §2 wiring).
+import { composeCortexEvidence, type CortexInputs } from "@/lib/nighthawk/cortex";
+import { QQQ_SHORT_2026_07_13 } from "@/lib/nighthawk/cortex/fixtures-2026-07-13";
+import { baseInputs } from "@/lib/nighthawk/cortex/test-helpers";
+import { assessCortexVerdict, cortexEntryContextFor, cortexGateBlocks } from "./cortex-gate";
 
 /** 2026-07-13 is EDT: ET minutes + 4h = UTC. */
 const dayMs = (etMinutes: number) => Date.parse("2026-07-13T04:00:00Z") + etMinutes * 60_000;
@@ -179,4 +186,127 @@ test("7/13 replay: session economics — the gated desk prints 1W/1L instead of 
   assert.equal(qqq.calibration.committed_at_et, "10:20");
   assert.equal(qqq.calibration.market_bias, "down");
   assert.equal(qqq.calibration.score_at_commit, 65);
+});
+
+// ── Full-stack replay: hard gates + the Cortex layer (PR-B wire-in) ────────────────
+// Mirrors attachGateVerdicts' exact sequencing (scan.ts): evaluateZeroDteGates first;
+// on COMMIT, compose the Cortex verdict and fold it via cortexGateBlocks — a
+// non-empty block list flips the verdict to BLOCKED with the gate blocks REPLACED by
+// the Cortex blocks (gate blocks were necessarily empty on a COMMIT).
+function applyCortex(gate: ZeroDteGateVerdict, inputs: CortexInputs) {
+  assert.equal(gate.verdict, "COMMIT", "the Cortex only ever runs on gate survivors");
+  const assessment = assessCortexVerdict(composeCortexEvidence(inputs));
+  const blocks = cortexGateBlocks(assessment);
+  const verdict: ZeroDteGateVerdict = blocks.length > 0 ? { ...gate, verdict: "BLOCKED", blocks } : gate;
+  return { assessment, verdict };
+}
+
+/** The rejection-source fields of the 7/13 QQQ short, for gateRejectionFor. */
+const QQQ_REJECTION_SOURCE = {
+  ticker: "QQQ",
+  direction: "short" as const,
+  gross_premium: 1_250_000,
+  aggression: 0.72,
+  side_dominance: 0.7,
+  otm_pct: 0.4,
+  prints: 5,
+  first_seen: "2026-07-13T14:08:00.000Z",
+  last_seen: "2026-07-13T14:18:00.000Z",
+};
+
+test("7/13 full stack: QQQ short survives BOTH layers — gates COMMIT and the net-supportive fixture PASSES, evidence pinned for the ledger", () => {
+  const gate = replaySession().get("QQQ")!;
+  const { assessment, verdict } = applyCortex(gate, QQQ_SHORT_2026_07_13);
+
+  assert.equal(verdict.verdict, "COMMIT", "the session's one real winner must still print");
+  assert.deepEqual(verdict.blocks, []);
+  assert.equal(assessment.decision, "PASS");
+
+  // The entry_context.cortex blob the committed row would pin: the FULL vector.
+  const blob = cortexEntryContextFor(assessment);
+  assert.ok(blob && !blob.abstained);
+  if (blob && !blob.abstained) {
+    assert.ok(blob.score > 0);
+    assert.equal(blob.conviction, "A");
+    assert.ok(blob.supports.length >= 5);
+    assert.deepEqual(blob.vetoes, []);
+    assert.ok(blob.narrative.length > 0);
+  }
+});
+
+test("7/13 full stack: a gate-passing find dies on a Cortex VETO — blocked exactly like a gate block, rejection row carries cortex_veto:<source> + the evidence sentence", () => {
+  const gate = replaySession().get("QQQ")!;
+  // Same winner, alternate tape: an opposing bullish sweep cluster ($1.3M / 2
+  // prints inside 15 min) crosses flow-quality's veto floor. Everything else
+  // still argues FOR the short — one loud opposing fact kills it anyway (§0).
+  const { assessment, verdict } = applyCortex(gate, {
+    ...QQQ_SHORT_2026_07_13,
+    flow: {
+      asOf: "2026-07-13T14:19:00.000Z",
+      prints: [
+        { premium: 700_000, direction: "bullish", kind: "sweep", at: "2026-07-13T14:10:00.000Z" },
+        { premium: 600_000, direction: "bullish", kind: "sweep", at: "2026-07-13T14:16:00.000Z" },
+      ],
+    },
+  });
+
+  assert.equal(assessment.decision, "VETO");
+  assert.equal(verdict.verdict, "BLOCKED");
+  assert.deepEqual(verdict.blocks.map((b) => b.code), ["cortex_veto:flow-quality"]);
+
+  // The BLOCKED verdict rides the SAME rejection plumbing as a hard-gate block:
+  // persistZeroDteScan routes any non-COMMIT fresh find to zerodte_scan_rejections
+  // (never to the ledger, never an entry_context — the blocked-find invariant).
+  const rejection = gateRejectionFor(QQQ_REJECTION_SOURCE, verdict);
+  assert.equal(rejection.gate_failed, "cortex_veto:flow-quality");
+  assert.match(rejection.reason!, /Cortex veto \[flow-quality\]: opposing bullish sweep\/block cluster \$1\.3M/);
+});
+
+test("7/13 full stack: a gate-passing find dies on NET-NEGATIVE evidence (no veto) — cortex_net_negative", () => {
+  const gate = replaySession().get("QQQ")!;
+  // Only readable evidence opposes the short (positive breadth + positive net VEX,
+  // asOf = now so the raw −0.9 sum survives undecayed); nothing veto-grade.
+  const { assessment, verdict } = applyCortex(gate, baseInputs({
+    ticker: "QQQ",
+    direction: "short",
+    now: QQQ_SHORT_2026_07_13.now,
+    sector: {
+      asOf: QQQ_SHORT_2026_07_13.now,
+      sectorName: null,
+      sectorChangePct: null,
+      breadthTone: "strongly_positive",
+      tickerChangePct: 0.8,
+    },
+    vex: { asOf: QQQ_SHORT_2026_07_13.now, netVex: 900_000_000, kingStrike: null },
+  }));
+
+  assert.equal(assessment.decision, "NET_NEGATIVE");
+  assert.equal(verdict.verdict, "BLOCKED");
+  assert.equal(verdict.blocks.length, 1);
+  assert.equal(verdict.blocks[0]!.code, "cortex_net_negative");
+  assert.equal(verdict.blocks[0]!.threshold, 0);
+  assert.match(verdict.blocks[0]!.reason, /nets -0\.9 against this short/);
+
+  const rejection = gateRejectionFor(QQQ_REJECTION_SOURCE, verdict);
+  assert.equal(rejection.gate_failed, "cortex_net_negative");
+  assert.equal(rejection.threshold, 0);
+});
+
+test("7/13 full stack: a total Cortex outage ABSTAINS — the commit proceeds on gates alone and the abstain is recorded, not hidden", () => {
+  const gate = replaySession().get("QQQ")!;
+  // Every reader down/timed out → every slice null → every source absent.
+  const { assessment, verdict } = applyCortex(
+    gate,
+    baseInputs({ ticker: "QQQ", direction: "short", now: QQQ_SHORT_2026_07_13.now })
+  );
+
+  assert.equal(assessment.decision, "ABSTAIN");
+  assert.equal(verdict.verdict, "COMMIT", "a Cortex outage must never halt the engine — the hard gates are the safety floor");
+  assert.deepEqual(verdict.blocks, []);
+
+  // ...but the row records the blindness honestly (entry_context.cortex).
+  assert.deepEqual(cortexEntryContextFor(assessment), {
+    abstained: true,
+    reason: "no Cortex source produced evidence (8 absent) — commit proceeds on the hard gates alone.",
+  });
 });

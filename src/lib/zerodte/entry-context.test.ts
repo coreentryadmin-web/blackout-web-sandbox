@@ -48,6 +48,60 @@ test("buildZeroDteEntryContext: rounds at the data layer, passes per-name fields
     gamma_regime: "positive",
     score: 68,
     committed_at_et: "2026-07-13 09:55 ET",
+    cortex: null, // pre-wire-in call shape (no cortex arg) → null, never a fabricated blob
+  });
+});
+
+test("buildZeroDteEntryContext: pins the Cortex evidence blob verbatim (commit) and the abstain record (outage)", async () => {
+  const { buildZeroDteEntryContext } = await mod();
+  // Full-vector shape as cortexEntryContextFor emits it for a committed find —
+  // passed through UNCHANGED (the composer already rounded its own numbers).
+  const cortexBlob = {
+    abstained: false as const,
+    decision: "PASS" as const,
+    as_of: "2026-07-13T14:20:00.000Z",
+    score: 3.1,
+    conviction: "A" as const,
+    vetoes: [],
+    supports: [
+      {
+        source: "wall-trend" as const,
+        stance: "supports" as const,
+        weight: 0.75,
+        halfLifeSec: 600,
+        asOf: "2026-07-13T14:19:00.000Z",
+        detail: "opposing put wall 606 faded 24% -> 13% over 44 min.",
+      },
+    ],
+    opposes: [],
+    absent: ["catalyst-news: no market catalyst"],
+    narrative: ["CORTEX QQQ short: net score +3.1, conviction A."],
+  };
+  const committed = buildZeroDteEntryContext(
+    { score: 65, gamma_regime: null, cortex: cortexBlob },
+    { vix_open: 16.32, spy_bias: "down" },
+    FLAG_MS
+  );
+  assert.deepEqual(committed.cortex, cortexBlob);
+
+  // Cortex outage: the honest abstain record rides the row (fail-soft rule: a
+  // Cortex outage must never silently halt the engine — but it must be VISIBLE
+  // per play, so the calibration loop can price the blind commits).
+  const abstained = buildZeroDteEntryContext(
+    {
+      score: 65,
+      gamma_regime: null,
+      cortex: {
+        abstained: true,
+        reason: "no Cortex source produced evidence (8 absent) — commit proceeds on the hard gates alone.",
+      },
+    },
+    null,
+    FLAG_MS
+  );
+  assert.deepEqual(abstained.cortex, {
+    abstained: true,
+    reason: "no Cortex source produced evidence (8 absent) — commit proceeds on the hard gates alone.",
   });
 });
 
@@ -60,6 +114,7 @@ test("buildZeroDteEntryContext: null session context never blocks a commit blob"
     gamma_regime: null,
     score: null,
     committed_at_et: "2026-07-13 09:55 ET",
+    cortex: null,
   });
 });
 

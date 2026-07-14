@@ -17,6 +17,9 @@ import { todayEt } from "@/features/nighthawk/lib/session";
 import { fetchAggBars } from "@/lib/providers/polygon-largo";
 import { withServerCache } from "@/lib/server-cache";
 import { computeIntradayRead, marketBias, type MarketBias } from "./intraday";
+// Type-only (erased): keeps this module import-light — ./cortex-gate's runtime
+// deps (the Cortex barrel) never enter this module's load graph.
+import type { ZeroDteCortexEntryContext } from "./cortex-gate";
 
 /** Await `p` for at most `ms`, else null — same semantics as scan.ts's within();
  *  duplicated (7 lines) rather than imported because scan.ts imports THIS module
@@ -67,6 +70,12 @@ export type ZeroDteEntryContext = {
    *  already stores the exact TIMESTAMPTZ; this is the self-contained ET rendering
    *  so a context blob read in isolation still answers "when, desk time?". */
   committed_at_et: string;
+  /** Night Hawk Cortex evidence vector at commit (NIGHTHAWK-CORTEX-DESIGN.md §3.1 —
+   *  the calibration loop's raw material), or the honest {abstained, reason} record
+   *  when the Cortex could not see. Null on rows committed before the wire-in and
+   *  on refresh-lane setups (the Cortex only runs on fresh gate survivors); the
+   *  upsert's COALESCE pin keeps the commit-time value either way. */
+  cortex: ZeroDteCortexEntryContext | null;
 };
 
 /** "YYYY-MM-DD HH:mm ET" for an epoch-ms instant. en-CA date + en-GB 24h time give
@@ -86,7 +95,14 @@ export function formatEtStamp(epochMs: number): string {
 /** Pure assembly of the persisted blob — session half + the play's own fields.
  *  Numbers are rounded HERE (data layer), per the repo's malformed-float rule. */
 export function buildZeroDteEntryContext(
-  play: { score: number | null; gamma_regime: string | null },
+  play: {
+    score: number | null;
+    gamma_regime: string | null;
+    /** Cortex context blob (cortexEntryContextFor, ./cortex-gate.ts). Optional so
+     *  pre-wire-in callers/tests are untouched; passed through verbatim — the
+     *  Cortex composer already rounds its own weights/score at emission. */
+    cortex?: ZeroDteCortexEntryContext | null;
+  },
   session: ZeroDteSessionContext | null,
   nowMs: number
 ): ZeroDteEntryContext {
@@ -97,6 +113,7 @@ export function buildZeroDteEntryContext(
     gamma_regime: play.gamma_regime ?? null,
     score: play.score != null && Number.isFinite(play.score) ? Math.round(play.score) : null,
     committed_at_et: formatEtStamp(nowMs),
+    cortex: play.cortex ?? null,
   };
 }
 
