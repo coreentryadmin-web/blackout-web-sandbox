@@ -4,6 +4,7 @@ import type { SpxDeskPayload } from "@/features/spx/lib/spx-desk";
 import type { PlayTechnicals } from "@/features/spx/lib/spx-play-technicals";
 import type { SpxPlayDirection } from "@/features/spx/lib/spx-signals";
 import { buildLottoOptionTicket } from "@/features/spx/lib/spx-lotto-options";
+import { quoteSpxOdteContract, type OdteContractQuote } from "@/features/spx/lib/spx-play-options";
 import { todayEt } from "@/lib/et-date";
 import { round5 } from "@/lib/round5";
 import { computeSpxConfluence } from "@/features/spx/lib/spx-signals";
@@ -72,6 +73,9 @@ export type LottoPlayPayload = {
   sizing_note: string;
   spread_pct: number | null;
   open_anchor_price: number | null;
+  option_bid: number | null;
+  option_ask: number | null;
+  option_mid: number | null;
 };
 
 /** Lotto target: minimum ±25 SPX pts, extended to the next structure level when farther. */
@@ -153,14 +157,15 @@ function flowSummary(catalysts: string[]): string | null {
   return flow ?? null;
 }
 
-function recordToPayload(rec: LottoRecord): LottoPlayPayload {
+function recordToPayload(rec: LottoRecord, quote?: OdteContractQuote | null): LottoPlayPayload {
+  const premium = quote?.premium_display ?? rec.premium_estimate;
   return {
     phase: rec.phase,
     status_label: phaseLabel(rec.phase, rec.is_reversal),
     direction: rec.direction,
     strike: rec.strike,
     contract_label: rec.contract_label,
-    premium_estimate: rec.premium_estimate,
+    premium_estimate: premium,
     entry_zone: rec.entry_zone,
     entry_trigger: rec.entry_trigger,
     target_price: rec.target_price,
@@ -177,9 +182,26 @@ function recordToPayload(rec: LottoRecord): LottoPlayPayload {
     footnote: rec.status_message,
     flow_summary: flowSummary(rec.catalysts),
     sizing_note: LOTTO_SIZING_NOTE,
-    spread_pct: rec.spread_pct,
+    spread_pct: quote?.spread_pct ?? rec.spread_pct,
     open_anchor_price: rec.open_anchor_price,
+    option_bid: quote?.bid ?? null,
+    option_ask: quote?.ask ?? null,
+    option_mid: quote?.mid ?? null,
   };
+}
+
+async function liveQuoteForLotto(rec: LottoRecord): Promise<OdteContractQuote | null> {
+  if (!rec.strike || !rec.direction) return null;
+  if (rec.phase !== "HOLD" && rec.phase !== "WATCH" && rec.phase !== "BUY") return null;
+  try {
+    return await quoteSpxOdteContract(rec.strike, rec.direction === "long" ? "call" : "put");
+  } catch {
+    return null;
+  }
+}
+
+async function recordToPayloadAsync(rec: LottoRecord): Promise<LottoPlayPayload> {
+  return recordToPayload(rec, await liveQuoteForLotto(rec));
 }
 
 function nonePayload(reason: LottoNoneReason): LottoPlayPayload {
@@ -209,6 +231,9 @@ function nonePayload(reason: LottoNoneReason): LottoPlayPayload {
     sizing_note: LOTTO_SIZING_NOTE,
     spread_pct: null,
     open_anchor_price: null,
+    option_bid: null,
+    option_ask: null,
+    option_mid: null,
   };
 }
 
@@ -492,7 +517,7 @@ export async function evaluateSpxLotto(
         if (followUp) {
           await saveLottoRecord(followUp);
           void logLottoWatch(followUp);
-          return recordToPayload(followUp);
+          return recordToPayloadAsync(followUp);
         }
         await saveLottoRecord(buildPickSlotAwaitingRecord(prev));
         return nonePayload("no_qualify");
@@ -504,7 +529,7 @@ export async function evaluateSpxLotto(
         status_message: lottoWinStatusMessage(rec.target_pts),
       };
       await saveLottoRecord(rec);
-      return recordToPayload(rec);
+      return recordToPayloadAsync(rec);
     }
     if (exit === "stop") {
       // L-6: await SELL log so outcome is durable. Still clear state even if logging fails.
@@ -528,7 +553,7 @@ export async function evaluateSpxLotto(
       await clearLottoRecord();
       return nonePayload("stopped");
     }
-    return recordToPayload(rec);
+    return recordToPayloadAsync(rec);
   }
 
   if (rec?.phase === "WATCH" && afterCash) {
@@ -571,7 +596,7 @@ export async function evaluateSpxLotto(
           headline: `🎰 LOTTO BUY: ${rec.contract_label} @ ~${rec.premium_estimate ?? "—"}`,
           price: desk.price,
         });
-        return recordToPayload(rec);
+        return recordToPayloadAsync(rec);
       }
 
       if (openInvalidate(rec, desk, technicals)) {
@@ -584,16 +609,16 @@ export async function evaluateSpxLotto(
         if (!reversal) return nonePayload("invalidated_no_reversal");
         await saveLottoRecord(reversal);
         void logLottoWatch(reversal);
-        return recordToPayload(reversal);
+        return recordToPayloadAsync(reversal);
       }
 
-      return recordToPayload(rec);
+      return recordToPayloadAsync(rec);
     }
     // Opening WATCH expired → rec is now NONE → fall through to NONE scan below.
   }
 
   if (rec?.phase === "WATCH" && premarket) {
-    return recordToPayload(rec);
+    return recordToPayloadAsync(rec);
   }
 
   if (rec?.phase === "NONE" && afterCash && !premarket) {
@@ -609,7 +634,7 @@ export async function evaluateSpxLotto(
     }
     await saveLottoRecord(candidate);
     void logLottoWatch(candidate);
-    return recordToPayload(candidate);
+    return recordToPayloadAsync(candidate);
   }
 
   if (!rec || rec.phase === "INVALID" || rec.phase === "SELL") {
@@ -626,10 +651,10 @@ export async function evaluateSpxLotto(
     }
     await saveLottoRecord(candidate);
     void logLottoWatch(candidate);
-    return recordToPayload(candidate);
+    return recordToPayloadAsync(candidate);
   }
 
-  return rec ? recordToPayload(rec) : nonePayload("no_qualify");
+  return rec ? recordToPayloadAsync(rec) : nonePayload("no_qualify");
 }
 
 /**
@@ -658,7 +683,7 @@ export async function readSpxLottoSnapshot(): Promise<LottoPlayPayload> {
   // NONE record through recordToPayload — it falls through to a scan/nonePayload).
   if (rec.phase === "INVALID" || rec.phase === "NONE") return nonePayload("no_qualify");
   // HOLD, active WATCH, or premarket WATCH → render the stored record verbatim.
-  return recordToPayload(rec);
+  return recordToPayloadAsync(rec);
 }
 
 /** @deprecated Lotto is independent — no-op for main BUY path. */

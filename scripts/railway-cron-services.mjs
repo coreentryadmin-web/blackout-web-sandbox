@@ -28,7 +28,9 @@ export const CRON_SERVICE_NAMES = {
   "spx-signal-weight-optimize": "SPX-Signal-Weight-Optimize",
   "uw-cache-refresh": "UW-Cache-Refresh-New",
   "vector-universe-snapshot": "Vector-Universe-Snapshot",
+  "vector-full-state-snapshot": "Vector-Full-State-Snapshot",
   "vector-dark-pool-warm": "Vector-Dark-Pool-Warm",
+  "bie-full-state-snapshot": "BIE-Full-State-Snapshot",
   "coaching-alerts": "Coaching-Alerts",
   "platform-warm": "Platform-Warm",
 };

@@ -143,7 +143,15 @@ export const UW_KEYS = {
   marketTide:          ()                => 'market_tide',
   sectorTide:          (sector: string)  => `sector_tide:${sector}`,
   etfTide:             (etf: string)     => `etf_tide:${etf}`,
-  darkPoolTicker:      (ticker: string)  => `dark_pool:${ticker}`,
+  // opts is part of the identity: callers use divergent {limit, min_premium}
+  // shapes (uw-cache-refresh defaults, gex-heatmap limit:50, dark-pool route
+  // limit:30, Vector's limit:30+min_premium:500k). A key that ignored opts let
+  // whichever caller fetched first poison every other consumer for the TTL —
+  // Vector's "institutional ≥$500k" filter was effectively dead for the
+  // cron-warmed index tickers, while smaller tickers leaked Vector's filtered
+  // view into the unfiltered heatmap/route reads.
+  darkPoolTicker:      (ticker: string, opts?: { limit?: number; min_premium?: number }) =>
+    `dark_pool:${ticker}:l${opts?.limit ?? 20}:p${opts?.min_premium ?? 0}`,
   darkPoolRecent:      ()                => 'dark_pool_recent',
   nope:                (ticker: string)  => `nope:${ticker}`,
   netPremTicks:        (ticker: string)  => `net_prem_ticks:${ticker}`,

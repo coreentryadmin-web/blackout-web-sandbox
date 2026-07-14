@@ -98,6 +98,26 @@ export const CRON_JOBS: CronJobDefinition[] = [
     description: "Pre-warm the shared GEX heatmap matrix cache every 30-45s + broadcast strike-level deltas via SSE for real-time matrix updates (was 5min cron, now hybrid cron+delta for ~10-15s perceived latency)",
   },
   {
+    key: "platform-warm",
+    name: "Platform Warm",
+    kind: "http",
+    path: "/api/cron/platform-warm",
+    schedule_label: "~Every 5 min (24/7)",
+    stale_after_min: 15,
+    description: "Pre-warm general platform cache (bootstrap bundle) for 24/7 admin/member page loads outside RTH",
+  },
+  {
+    key: "vector-walls-warm",
+    name: "Vector Walls Warm",
+    kind: "http",
+    path: "/api/cron/vector-walls-warm",
+    schedule_label: "~Every 15-30s (market hours)",
+    stale_after_min: 2,
+    weekdays_only: true,
+    market_hours_only: true,
+    description: "Pre-warm Vector GEX/VEX walls cache every 15-30s so SSE stream (1Hz ticks) sees cache hits instead of expensive re-computation; keeps wall updates feeling real-time instead of static",
+  },
+  {
     key: "desk-warm",
     name: "SPX Desk Warm",
     kind: "http",
@@ -293,6 +313,30 @@ export const CRON_JOBS: CronJobDefinition[] = [
     market_hours_only: true,
     description:
       "Batch-build compact GEX wall summary rows for the Vector scanner (~21 liquid tickers) into Redis — keeps market-wide Vector reads cache-only",
+  },
+  {
+    key: "vector-full-state-snapshot",
+    name: "Vector Full-State Snapshot",
+    kind: "http",
+    path: "/api/cron/vector-full-state-snapshot",
+    schedule_label: "~Every 5 min (market hours)",
+    stale_after_min: 15,
+    weekdays_only: true,
+    market_hours_only: true,
+    description:
+      "Snapshot the COMPLETE Vector desk state (regime/walls/flip/magnet/max-pain/expected-move/ladder/heatmap/flow/beads/VEX/dark-pool/technicals/play) per universe ticker × DTE horizon into Redis, so Largo-BIE serves current Vector state for any stock/horizon cache-only without a per-query fan-out",
+  },
+  {
+    key: "bie-full-state-snapshot",
+    name: "BIE Full-State Snapshot",
+    kind: "http",
+    path: "/api/cron/bie-full-state-snapshot",
+    schedule_label: "~Every 5 min (market hours)",
+    stale_after_min: 15,
+    weekdays_only: true,
+    market_hours_only: true,
+    description:
+      "Assemble the broad cross-product platform snapshot (SPX desk + flow tape + Night Hawk + market-regime intel + Vector universe wall summary + market-wide dark pool + hot tickers) into Redis bie:full-state so BIE reads current whole-platform state instantly — the 24/7 'brain of BlackOut' feed",
   },
   {
     key: "vector-dark-pool-warm",

@@ -10,6 +10,10 @@ import { fetchRecentSpxSnapshots } from "@/features/spx/lib/spx-signal-log";
 import { computeFlowStrikeStacks } from "@/lib/largo/flow-strike-stacks";
 import { readSpxPlaySnapshot } from "@/features/spx/lib/spx-evaluator";
 import { buildPlayTechnicals } from "@/features/spx/lib/spx-play-technicals";
+import { resolveGuardedPlaybookMatch } from "@/features/spx/lib/playbook-match-resolver";
+import { buildPlaybookShadowPanel } from "@/features/spx/lib/playbook-shadow-panel";
+import { refreshOrBreakMemory } from "@/features/spx/lib/playbook-break-memory-store";
+import { maybeLogPlaybookShadowMatch } from "@/features/spx/lib/playbook-shadow-log";
 import { playMemberReadCacheSec } from "@/features/spx/lib/spx-play-config";
 import { todayEtYmd } from "@/lib/providers/spx-session";
 import { withServerCache } from "@/lib/server-cache";
@@ -83,7 +87,53 @@ async function evaluateSpxPlayState() {
     hod: merged.hod,
     lod: merged.lod,
   });
-  return readSpxPlaySnapshot(merged, technicals);
+  const sessionDate = todayEtYmd();
+  const orBreakMemory = await refreshOrBreakMemory(sessionDate, merged, technicals, true);
+  const playbookMatch = technicals.available
+    ? await resolveGuardedPlaybookMatch(sessionDate, merged, technicals, {
+        or_break_memory: orBreakMemory,
+      })
+    : null;
+  const play = await readSpxPlaySnapshot(merged, technicals, {
+    or_break_memory: orBreakMemory,
+    playbook_resolved: playbookMatch,
+  });
+  const playbook_shadow = buildPlaybookShadowPanel(merged, technicals, {
+    or_break_memory: orBreakMemory,
+    match: playbookMatch,
+  });
+  const primaryVerdict = playbook_shadow?.verdicts.find((v) => v.primary && v.trigger_fired);
+  void maybeLogPlaybookShadowMatch(
+    merged,
+    playbook_shadow,
+    {
+      action: play.action,
+      score: play.score,
+    },
+    {
+      technicals,
+      resolved: playbookMatch,
+      persist_instances: false,
+      gate_blocks: play.gates.blocks,
+      first_block_category: play.gates.first_block_category,
+      primary_playbook_id: playbook_shadow?.primary_playbook_id ?? null,
+      primary_direction:
+        primaryVerdict?.direction === "long" || primaryVerdict?.direction === "short"
+          ? primaryVerdict.direction
+          : null,
+      opened_direction:
+        play.phase === "OPEN" && play.open_play?.direction
+          ? play.open_play.direction
+          : null,
+      option_contract_candidate: play.option_ticket ?? null,
+    }
+  ).catch((err) => {
+    console.warn("[spx-playbook-shadow]", err instanceof Error ? err.message : err);
+  });
+  return {
+    ...play,
+    playbook_shadow,
+  };
 }
 
 /**

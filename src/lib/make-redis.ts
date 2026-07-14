@@ -49,12 +49,8 @@ export async function makeRedis(
     maxRetriesPerRequest: opts.maxRetriesPerRequest,
     lazyConnect: true,
     connectTimeout: opts.connectTimeoutMs ?? 2_000,
-    // family: 0 → resolve BOTH A (IPv4) and AAAA (IPv6) records. ioredis defaults to family 4
-    // (IPv4-only), but Railway private-networking hosts (*.railway.internal) publish ONLY an AAAA
-    // record — so the default silently can't reach Redis (`connect ETIMEDOUT` at boot), which
-    // cascades EVERY limiter/cache/gate into fail-open (audit Risk #1, observed live 2026-06-24).
-    // 0 is safe everywhere: a public IPv4 URL still resolves its A record; this just additionally
-    // supports Railway's IPv6 internal DNS. Can be overridden by a ?family= in the URL if ever needed.
+    // family: 0 → resolve BOTH A (IPv4) and AAAA (IPv6) records for compatibility with managed
+    // Redis services. ioredis defaults to family 4 (IPv4-only). Can be overridden via ?family= in URL.
     family: 0,
     // READONLY failover: if Redis is ever moved to a replicated/managed tier (ElastiCache, a
     // promoted replica), a write hitting a read-only node returns a READONLY error. Returning 2

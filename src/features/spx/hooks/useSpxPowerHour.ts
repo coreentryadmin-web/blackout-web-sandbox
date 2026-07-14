@@ -3,9 +3,10 @@
 import useSWR from "swr";
 import { fetchSpxPowerHour } from "@/lib/api";
 import { isPowerHourWindow } from "@/features/spx/lib/spx-play-session-guards";
+import { SPX_POWER_HOUR_OFF_POLL_MS, SPX_POWER_HOUR_POLL_MS } from "@/features/spx/lib/spx-desk-poll-ms";
 
-const PH_POLL_MS = 10_000;
-const PH_OFF_POLL_MS = 60_000;
+const PH_POLL_MS = SPX_POWER_HOUR_POLL_MS;
+const PH_OFF_POLL_MS = SPX_POWER_HOUR_OFF_POLL_MS;
 
 /** Poll faster during the 2:45–3:15 PM ET window; slower pre/post for honest state. */
 export function powerHourPollIntervalMs(): number {

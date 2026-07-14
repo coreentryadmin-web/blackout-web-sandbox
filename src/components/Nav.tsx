@@ -4,7 +4,8 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
-import { UserButton, useAuth } from "@clerk/nextjs";
+import { AuthUserMenu } from "@/components/auth/AuthUserMenu";
+import { useAppAuth } from "@/lib/auth-client";
 import { clsx } from "clsx";
 import { ProductMark, NAV_TO_MARK } from "@/components/marks/ProductMark";
 import { toolKeyForHref, type ToolKey } from "@/lib/tool-access";
@@ -97,7 +98,7 @@ function FeatureCards({
 export function Nav({ lockedTools = [] }: { lockedTools?: ToolKey[] }) {
   const path = usePathname();
   const isHome = path === "/";
-  const { isSignedIn, isLoaded, userId } = useAuth();
+  const { isSignedIn, isLoaded, userId } = useAppAuth();
   const reduced = useReducedMotion();
 
   const [isAdmin, setIsAdmin] = useState(false);
@@ -366,7 +367,7 @@ export function Nav({ lockedTools = [] }: { lockedTools?: ToolKey[] }) {
               <span className="nav-push-slot">
                 <PushNotificationToggle compact />
               </span>
-              <UserButton appearance={CLERK_APPEARANCE} userProfileUrl="/account" />
+              <AuthUserMenu />
             </div>
           )}
         </div>
@@ -460,7 +461,7 @@ export function Nav({ lockedTools = [] }: { lockedTools?: ToolKey[] }) {
                 {isLoaded && isSignedIn && (
                   <div className="flex items-center gap-2">
                     <PushNotificationToggle compact />
-                    <UserButton appearance={CLERK_APPEARANCE} userProfileUrl="/account" />
+                    <AuthUserMenu />
                   </div>
                 )}
               </div>

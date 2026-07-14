@@ -2,6 +2,7 @@
 
 import { clsx } from "clsx";
 import { motion, AnimatePresence } from "framer-motion";
+import { Square } from "lucide-react";
 import { useIosKeyboardInset } from "@/hooks/useIosKeyboardInset";
 import {
   LARGO_SUGGESTIONS,
@@ -11,6 +12,9 @@ import {
 import { Panel, PanelHeader, FreshnessChip, Button } from "@/components/ui";
 import { LargoThinkingState } from "./LargoThinkingState";
 import { LargoMessageBody } from "./LargoMessageBody";
+import { LargoAnswerMessage } from "./LargoAnswerMessage";
+import { LargoTerminalToolbar } from "./LargoTerminalToolbar";
+import { LargoEmptyState } from "./LargoEmptyState";
 
 const INPUT_PLACEHOLDER = "Ask the desk — SPX levels, a ticker, flow, news…";
 const INPUT_PLACEHOLDER_BUSY = "Pulling live data…";
@@ -18,10 +22,17 @@ const INPUT_PLACEHOLDER_BUSY = "Pulling live data…";
 export function LargoTerminal({
   fullPage = false,
   nativeShell = false,
+  onToggleFullscreen,
+  isFullscreen = false,
+  fullscreenSupported = false,
 }: {
   fullPage?: boolean;
   /** Passed from LargoPageShell when iOS native chrome is active. */
   nativeShell?: boolean;
+  /** Full-screen controls, owned by LargoPageShell (which holds the shell ref). */
+  onToggleFullscreen?: () => void;
+  isFullscreen?: boolean;
+  fullscreenSupported?: boolean;
 }) {
   const {
     messages,
@@ -32,8 +43,15 @@ export function LargoTerminal({
     hydrated,
     followups,
     activeTools,
+    conversations,
+    activeSessionId,
+    canRegenerate,
     bottomRef,
     runQuery,
+    cancel,
+    regenerate,
+    newConversation,
+    switchConversation,
     isFresh,
   } = useLargoChat();
 
@@ -70,6 +88,20 @@ export function LargoTerminal({
       bodyClassName="flex flex-1 flex-col min-h-0 !p-0 desk-panel-body-bare"
     >
       <div className="flex-1 flex flex-col min-h-0 largo-chat-container">
+        {fullPage && (
+          <LargoTerminalToolbar
+            conversations={conversations}
+            activeSessionId={activeSessionId}
+            onSwitch={(id) => void switchConversation(id)}
+            onNew={newConversation}
+            onRegenerate={regenerate}
+            canRegenerate={canRegenerate}
+            loading={loading}
+            onToggleFullscreen={onToggleFullscreen ?? (() => {})}
+            isFullscreen={isFullscreen}
+            fullscreenSupported={fullscreenSupported}
+          />
+        )}
         <div
           role="log"
           aria-live="polite"
@@ -81,7 +113,7 @@ export function LargoTerminal({
           )}
         >
           <AnimatePresence initial={false}>
-            {messages.map((msg) => (
+            {messages.map((msg, idx) => (
               <motion.div
                 key={msg.id}
                 initial={
@@ -101,10 +133,24 @@ export function LargoTerminal({
                   {msg.role === "user" ? "You" : "Largo"}
                 </p>
                 {msg.role === "assistant" ? (
-                  <LargoMessageBody
-                    content={msg.content}
-                    className={fullPage ? "text-sm md:text-[15px] lg:text-base" : "text-sm"}
-                  />
+                  msg.id === "welcome" ? (
+                    // Welcome intro stays plain — nothing to structure.
+                    <LargoMessageBody
+                      content={msg.content}
+                      className={fullPage ? "text-sm md:text-[15px] lg:text-base" : "text-sm"}
+                    />
+                  ) : (
+                    // Rich structured rendering; streams as markdown then swaps to the
+                    // structured card once the full answer is in (idx === last & loading).
+                    <LargoAnswerMessage
+                      content={msg.content}
+                      envelope={msg.envelope}
+                      streaming={
+                        loading && idx === messages.length - 1 && msg.role === "assistant"
+                      }
+                      className={fullPage ? "text-sm md:text-[15px] lg:text-base" : "text-sm"}
+                    />
+                  )
                 ) : (
                   <p
                     className={clsx(
@@ -128,7 +174,11 @@ export function LargoTerminal({
             ))}
           </AnimatePresence>
 
-          {isFresh && !loading && hydrated && (
+          {isFresh && !loading && hydrated && fullPage && (
+            <LargoEmptyState onPick={(prompt) => void runQuery(prompt)} />
+          )}
+
+          {isFresh && !loading && hydrated && !fullPage && (
             <motion.div
               className="largo-suggestions"
               initial={{ opacity: 0, y: 10 }}
@@ -218,6 +268,17 @@ export function LargoTerminal({
               </span>
             )}
           </div>
+          {loading && (
+            <button
+              type="button"
+              onClick={cancel}
+              aria-label="Stop generating"
+              className="largo-stop-btn"
+            >
+              <Square size={13} aria-hidden fill="currentColor" />
+              <span className="largo-stop-btn-label">Stop</span>
+            </button>
+          )}
           <Button
             type="submit"
             variant="ghost"

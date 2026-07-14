@@ -1,7 +1,7 @@
 "use client";
 
 import { clsx } from "clsx";
-import { PageShell, PageHeader } from "@/components/ui";
+import { PageShell } from "@/components/ui";
 import { ProductMark } from "@/components/marks/ProductMark";
 import { FlowFeed } from "@/features/helix/components/FlowFeed";
 import { FlowAnomalyBanner } from "@/components/FlowAnomalyBanner";
@@ -16,28 +16,36 @@ export function HelixPageShell() {
     <PageShell
       fullBleed
       className={clsx(
-        "ios-native-page ios-native-page-helix helix-page-shell",
+        "ios-native-page ios-native-page-helix helix-page-shell helix-pro-shell",
         nativeShell && "helix-page-shell-native"
       )}
       contentClassName={clsx(nativeShell ? "helix-page-content-native !py-0" : undefined)}
     >
       {!nativeShell && (
-        <div className="content-rail">
-          <PageHeader
-            kicker="Institutional flow"
-            title="HELIX"
-            subtitle="Whale and dark-pool alerts on a single live tape."
-            badge={<ProductMark product="helix" size={44} animated={false} />}
-          />
-          <div className="mt-3">
-            <HelixTideBar />
+        // Header shares the SAME full-bleed rail (content-rail max-w-none) as the
+        // tape below it, so the "HELIX" title's left edge aligns with the table's
+        // left edge. Previously the header was a plain .content-rail (capped at
+        // --content-max / 80rem, centered) while the tape was max-w-none full-bleed —
+        // on wide screens the title floated ~320px inset from the full-width content,
+        // reading as an un-framed, misaligned page.
+        <div className="content-rail max-w-none helix-pro-header">
+          <div className="helix-pro-header-copy">
+            <p className="helix-pro-kicker">Institutional flow intelligence</p>
+            <div className="helix-pro-title-row">
+              <ProductMark product="helix" size={44} animated={false} />
+              <h1 className="helix-pro-title">HELIX</h1>
+            </div>
+            <p className="helix-pro-subtitle">
+              Live options tape, contract drilldown, and flow analytics on one desk.
+            </p>
           </div>
+          <HelixTideBar className="helix-pro-tide lg:mb-1" />
         </div>
       )}
       <div
         className={clsx(
           "content-rail max-w-none ios-native-content-rail",
-          nativeShell ? "helix-page-inner-native" : "mt-4"
+          nativeShell ? "helix-page-inner-native" : "mt-5 helix-page-inner"
         )}
       >
         {nativeShell && (

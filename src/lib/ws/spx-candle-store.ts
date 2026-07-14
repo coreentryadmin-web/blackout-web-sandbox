@@ -136,6 +136,14 @@ export function recordSpxTick(price: number, atMs: number = Date.now()): void {
     state.current.low = Math.min(state.current.low, price);
     state.current.close = price;
   } else {
+    // Out-of-order guard: a late tick stamped with a PREVIOUS minute must not
+    // rotate the forming bar. Without this, one late tick from minute M after
+    // M+1 opened pushed the M+1 bar to history, made `current` an M-stamped
+    // bar, and the next M+1 tick opened a FRESH M+1 bar whose open/high/low
+    // were all that tick's price — silently erasing the true open and wicks
+    // already printed for the forming minute on every connected client (the
+    // client accepts equal-time candles as updates, so the rebuilt bar wins).
+    if (state.current && barTime < state.current.time) return;
     if (state.current) {
       state.bars.push(state.current);
       if (state.bars.length > MAX_BARS) state.bars.splice(0, state.bars.length - MAX_BARS);

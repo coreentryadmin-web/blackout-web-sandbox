@@ -9,11 +9,17 @@ import { readSessionCache, writeSessionCache } from "@/lib/session-cache";
 import { todayEtYmd } from "@/lib/providers/spx-session";
 import { usePulseStream } from "@/hooks/usePulseStream";
 import { isClientDeskSessionOpen, isDeskSessionLiveFromPulse, resolveDeskLive, resolveDeskSessionActive, shouldDiscardStaleClosedDeskCache } from "@/features/spx/lib/spx-desk-session-client";
+import {
+  SPX_FLOW_POLL_MS,
+  SPX_FULL_DESK_POLL_MS,
+  SPX_PULSE_REST_POLL_MS,
+  SPX_PULSE_REST_SSE_POLL_MS,
+} from "@/features/spx/lib/spx-desk-poll-ms";
 
-const PULSE_REST_MS = 1_000;
-const PULSE_REST_SSE_MS = 10_000;
-const FLOW_MS = 2_000;
-const FULL_DESK_MS = 10_000;
+const PULSE_REST_MS = SPX_PULSE_REST_POLL_MS;
+const PULSE_REST_SSE_MS = SPX_PULSE_REST_SSE_POLL_MS;
+const FLOW_MS = SPX_FLOW_POLL_MS;
+const FULL_DESK_MS = SPX_FULL_DESK_POLL_MS;
 const DESK_CACHE_KEY = "spx-merged-desk";
 /** Keep cached desk for the trading day across refresh/navigation. */
 const DESK_CACHE_MAX_AGE_MS = 12 * 60 * 60 * 1000;
@@ -155,6 +161,7 @@ export function useMergedDesk() {
 
   const {
     data: desk,
+    error: deskFetchError,
     isLoading: deskLoading,
     isValidating: deskValidating,
   } = useSWR(heavyLanesActive ? "spx-desk-full" : null, fetchSpxDesk, {
@@ -270,12 +277,14 @@ export function useMergedDesk() {
   // Keep skeleton until merged desk OR session cache exists — pulseRest alone must not
   // flip deskLoading false (that rendered OFFLINE/MARKET CLOSED while heavy lanes still load).
   const initialLoading = !merged && !deskStable.current;
+  const deskLaneFailed = Boolean(deskFetchError) && !desk && bootstrapSettled;
 
   return {
     desk: merged,
     live,
     refreshing,
     deskLoading: initialLoading,
+    deskLaneFailed,
     sessionActive,
     marketLabel: pulse?.market_label ?? merged?.market_label,
   };

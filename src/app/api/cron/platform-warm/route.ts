@@ -1,17 +1,18 @@
-// Cron: 24/7 cache warming for platform snapshots and cross-surface coherence.
-// Schedule: Every 5 minutes (registered in cron-registry.ts as "platform-warm";
-// Railway wires the actual fire via railway.platform-warm.toml).
+// Cron: pre-warm general platform caches available 24/7.
+// Schedule: every 5 minutes, 24 hours/day.
 //
-// THE POINT: pre-warm platform snapshots and shared cross-surface caches to reduce
-// cold-start latency on Largo/Vector/Night Hawk reads. No market-hour gating.
+// THE POINT: The platform bootstrap bundle (loaded by many admin/member pages outside market
+// hours) is UW-bound (~2–5s cold). This cron keeps the bootstrap cache warm so off-hours
+// page loads (night Hawk edge, early BIE lookups) don't block on expensive rebuilds.
 
 import { NextRequest, NextResponse } from "next/server";
 import { isCronAuthorized } from "@/lib/market-api-auth";
 import { logCronRun } from "@/lib/cron-run";
+import { loadBootstrapBundle } from "@/features/spx/lib/spx-desk-loader";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-export const maxDuration = 60;
+export const maxDuration = 120;
 
 export async function GET(req: NextRequest) {
   const started = Date.now();
@@ -19,21 +20,25 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  try {
-    const payload = {
-      ok: true,
-      skipped: false,
-      warmed: "platform-snapshots",
-    };
-    await logCronRun("platform-warm", started, payload);
-    return NextResponse.json(payload);
-  } catch (e) {
-    const error = e instanceof Error ? e.message : String(e);
-    const payload = {
-      ok: false,
-      error,
-    };
-    await logCronRun("platform-warm", started, payload);
-    return NextResponse.json(payload, { status: 500 });
+  const bootstrapResult = await Promise.allSettled([loadBootstrapBundle()]);
+
+  const bootstrapOk = bootstrapResult[0].status === "fulfilled";
+
+  if (!bootstrapOk) {
+    console.warn(
+      "[cron/platform-warm] loadBootstrapBundle failed:",
+      bootstrapResult[0].status === "rejected" ? bootstrapResult[0].reason : "unknown"
+    );
   }
+
+  await logCronRun("platform-warm", started, {
+    ok: bootstrapOk,
+    bootstrap: bootstrapOk,
+    ...(bootstrapOk ? {} : { error: "bootstrap warm failed" }),
+  });
+
+  return NextResponse.json({
+    ok: bootstrapOk,
+    bootstrap: bootstrapOk,
+  });
 }

@@ -217,3 +217,28 @@ test("recordSpxTick: throttles the cross-replica Redis write instead of writing 
 
   assert.equal(sharedCache.setCalls, 1);
 });
+
+test("recordSpxTick: a late tick from a PREVIOUS minute cannot rotate the forming bar", async () => {
+  const { recordSpxTick, getCurrentSpxCandle, _resetSpxCandleStoreForTest } = await mod();
+  _resetSpxCandleStoreForTest();
+  const m0 = Date.parse("2026-07-08T14:05:00.000Z");
+  const m1 = Date.parse("2026-07-08T14:06:00.000Z");
+
+  recordSpxTick(6500, m0 + 1_000); // minute M forms
+  recordSpxTick(6510, m1 + 1_000); // minute M+1 opens at 6510
+  recordSpxTick(6505, m1 + 2_000); // wick down
+  recordSpxTick(6499, m0 + 59_000); // LATE tick from minute M — must be dropped
+
+  const snap = getCurrentSpxCandle();
+  assert.equal(snap.current?.time, Math.floor(m1 / 60_000) * 60, "forming bar stays on M+1");
+  assert.equal(snap.current?.open, 6510, "true open survives the late tick");
+  assert.equal(snap.current?.low, 6505, "wick survives — bar was not rebuilt from scratch");
+
+  // next in-order tick keeps updating the SAME bar (pre-fix it opened a fresh
+  // M+1 bar whose open/high/low were all this tick's price)
+  recordSpxTick(6512, m1 + 3_000);
+  const after = getCurrentSpxCandle();
+  assert.equal(after.current?.open, 6510);
+  assert.equal(after.current?.high, 6512);
+  assert.equal(after.current?.low, 6505);
+});

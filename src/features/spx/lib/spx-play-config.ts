@@ -1,4 +1,11 @@
 /** Play engine thresholds — quality over quantity. */
+import type { PlaybookId } from "@/features/spx/lib/playbook-registry";
+import { playbookDef } from "@/features/spx/lib/playbook-registry";
+import {
+  PLAYBOOK_PAPER_EXECUTABLE_DEFAULT,
+  executionModeMeets,
+} from "@/features/spx/lib/playbook-execution-mode";
+import { isStagingDeploy } from "@/lib/clerk-env";
 
 function num(env: string | undefined, fallback: number): number {
   const n = Number(env?.trim());
@@ -76,10 +83,11 @@ export function playGexStaleMaxSec(): number {
 }
 
 export function playClaudeGateEnabled(): boolean {
-  // Require explicit SPX_CLAUDE_GATE=1 to enable the Claude gate.
-  // Defaulting to true when ANTHROPIC_API_KEY is set surprised operators who
-  // configured Anthropic only for commentary. The gate is now opt-in.
-  return process.env.SPX_CLAUDE_GATE === "1";
+  const raw = process.env.SPX_CLAUDE_GATE?.trim().toLowerCase();
+  if (raw === "0" || raw === "false") return false;
+  if (raw === "1" || raw === "true") return true;
+  // Staging exercises the full BIE precedent path; production stays opt-in unless set.
+  return isStagingDeploy();
 }
 
 export function playClaudeCacheSec(): number {
@@ -390,9 +398,105 @@ export function playTechnicalsCacheSec(): number {
   return num(process.env.SPX_PLAY_TECHNICALS_CACHE_SEC, 30);
 }
 
+/**
+ * Staging-only playbook lab — relaxed starter entries when a primary playbook fires
+ * and direction aligns. Always on when `isStagingDeploy()` (staging URL baked at build).
+ * Not env-toggleable: staging exists to exercise playbook-gated BUY before prod.
+ */
+export function playbookStagingLabEnabled(): boolean {
+  return isStagingDeploy();
+}
+
+/**
+ * Phase 3 playbook live gate — when true, BUY requires `primary_playbook_id` from the matcher.
+ * Always on staging (via playbook lab). Prod: set `PLAYBOOK_LIVE_GATE=1` explicitly.
+ */
+export function playbookLiveGateEnabled(): boolean {
+  if (playbookStagingLabEnabled()) return true;
+  return flag(process.env.PLAYBOOK_LIVE_GATE, false);
+}
+
+/** Default staging paper-executable set — high-fidelity only (PB-04 mvp stays shadow). */
+export const PLAYBOOK_LIVE_ALLOWLIST_DEFAULT_STAGING: readonly PlaybookId[] =
+  PLAYBOOK_PAPER_EXECUTABLE_DEFAULT;
+
+const VALID_PLAYBOOK_IDS = new Set<PlaybookId>([
+  "PB-01",
+  "PB-02",
+  "PB-03",
+  "PB-04",
+  "PB-05",
+  "PB-06",
+  "PB-07",
+  "PB-08",
+  "PB-09",
+  "PB-10",
+  "PB-11",
+  "PB-12",
+  "PB-13",
+  "PB-14",
+]);
+
+/**
+ * Parse `PLAYBOOK_LIVE_ALLOWLIST` (comma-separated PB ids).
+ * - `*` or `all` → null (no filter — escape hatch for research)
+ * - unset on staging → PB-01…04 default
+ * - unset on prod → null until explicitly configured
+ */
+export function parsePlaybookLiveAllowlist(
+  raw: string | undefined,
+  stagingDeploy: boolean
+): ReadonlySet<PlaybookId> | null {
+  const trimmed = raw?.trim();
+  if (trimmed) {
+    if (trimmed === "*" || trimmed.toLowerCase() === "all") return null;
+    const ids = trimmed
+      .split(",")
+      .map((s) => s.trim().toUpperCase())
+      .filter((id): id is PlaybookId => VALID_PLAYBOOK_IDS.has(id as PlaybookId));
+    return ids.length ? new Set(ids) : null;
+  }
+  if (stagingDeploy) return new Set(PLAYBOOK_LIVE_ALLOWLIST_DEFAULT_STAGING);
+  return null;
+}
+
+/** All registered playbook ids — the STAGING full-enablement set. */
+const ALL_PLAYBOOK_IDS: readonly PlaybookId[] = [...VALID_PLAYBOOK_IDS];
+
+/** When non-null, gate A17 only permits BUY for these primary playbook ids. */
+export function playbookLiveAllowlist(): ReadonlySet<PlaybookId> | null {
+  // STAGING FULL-ENABLEMENT (user directive): on staging every playbook (PB-01..PB-14) is allowlisted
+  // so the WHOLE SPX Slayer engine runs live to test + measure. An explicit env override still wins
+  // (research escape hatch). PROD IS UNCHANGED — prod keeps the env/high-fidelity default below.
+  if (isStagingDeploy() && !process.env.PLAYBOOK_LIVE_ALLOWLIST?.trim()) {
+    return new Set(ALL_PLAYBOOK_IDS);
+  }
+  return parsePlaybookLiveAllowlist(process.env.PLAYBOOK_LIVE_ALLOWLIST, isStagingDeploy());
+}
+
+export function isPlaybookLiveAllowlisted(id: PlaybookId | null | undefined): boolean {
+  if (!id) return false;
+  // STAGING FULL-ENABLEMENT: every playbook is paper-executable on staging (test bed), so the
+  // execution-mode gate (which keeps mvp matchers shadow-only on prod) is lifted here. PROD UNCHANGED.
+  if (isStagingDeploy() && !process.env.PLAYBOOK_LIVE_ALLOWLIST?.trim()) {
+    return VALID_PLAYBOOK_IDS.has(id);
+  }
+  const def = playbookDef(id);
+  const allowlist = playbookLiveAllowlist();
+  if (allowlist == null) {
+    return executionModeMeets(def.execution_mode, "paper_executable");
+  }
+  return allowlist.has(id) && executionModeMeets(def.execution_mode, "paper_executable");
+}
+
+/** Minimum |0DTE net flow| for playbook trigger materiality (PB-02 v2). */
+export function playbookFlowMaterialityMin(): number {
+  return num(process.env.PLAYBOOK_FLOW_MATERIALITY_MIN, 100_000);
+}
+
 /** Shared cache for GET /api/market/spx/play — collapses member polls into one eval per window. */
 export function playMemberReadCacheSec(): number {
-  return num(process.env.SPX_PLAY_MEMBER_READ_CACHE_SEC, 3);
+  return num(process.env.SPX_PLAY_MEMBER_READ_CACHE_SEC, 2);
 }
 
 export function gradeRank(grade: string): number {

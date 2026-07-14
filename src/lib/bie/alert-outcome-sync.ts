@@ -134,11 +134,19 @@ async function resolveOrigin(
       const outcome = mapNighthawkOutcome(origin.outcome);
       return outcome ? { outcome } : { unresolved: true };
     }
-    case "spx_claude_play": {
-      const direction = row.source_key.direction != null ? String(row.source_key.direction) : "";
+    case "spx_claude_play":
+    case "spx_bie_play": {
+      const direction =
+        row.direction ??
+        (row.source_key.direction != null ? String(row.source_key.direction) : "");
       const price = Number(row.source_key.price);
       if (!direction || !Number.isFinite(price)) return { no_match: true };
-      const origin = await fetchSpxClaudePlayOutcomeForAudit(direction, price, row.fired_at);
+      const origin = await fetchSpxClaudePlayOutcomeForAudit(
+        direction,
+        price,
+        row.fired_at,
+        row.confidence_label
+      );
       if (!origin) return { no_match: true };
       const outcome = mapSpxPlayOutcome(origin.outcome);
       return outcome ? { outcome } : { unresolved: true };

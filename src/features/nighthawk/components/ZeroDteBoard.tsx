@@ -20,6 +20,7 @@ import {
 import { resolveFreshFindStatus, type EnrichedZeroDteSetup, type SessionHeat } from "@/lib/zerodte/board";
 import { buildIntelNote, type IntelAction } from "@/lib/zerodte/intel";
 import { etMinutesOf } from "@/lib/zerodte/plan";
+import { shortMonthDay } from "@/lib/relative-time";
 
 // ── Response shape (structural mirror of /api/market/zerodte/board) ──────────────
 
@@ -331,13 +332,10 @@ const NIGHTHAWK_OUTCOME_LABEL: Record<string, string> = {
   unfilled: "never filled",
 };
 
-function fmtEditionDate(ymd: string): string {
-  try {
-    const [y, m, d] = ymd.split("-").map(Number);
-    return new Date(y, m - 1, d).toLocaleDateString("en-US", { month: "numeric", day: "numeric" });
-  } catch {
-    return ymd;
-  }
+// Guarded via the shared shortMonthDay: a null/empty/malformed edition_for previously rendered
+// "Invalid Date" in the "Night Hawk had this …" echo row. Now it degrades to "—".
+function fmtEditionDate(ymd: string | null | undefined): string {
+  return shortMonthDay(ymd);
 }
 
 /** BIE cross-instrument annotation: Night Hawk already has a take on this name

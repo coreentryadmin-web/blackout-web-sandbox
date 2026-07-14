@@ -1,7 +1,6 @@
 ﻿"use client";
 
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
-import { motion, AnimatePresence } from "framer-motion";
 import { clsx } from "clsx";
 import {
   fetchFlows, fetchEarningsCalendar, fetchDarkPoolPrints,
@@ -10,7 +9,15 @@ import {
 } from "@/lib/api";
 import { computeFlowStrikeStacks } from "@/lib/largo/flow-strike-stacks";
 import { getSector } from "@/lib/sector-map";
-import { FlowAlertStream } from "@/features/helix/components/FlowAlertStream";
+import { HelixFlowTable } from "@/features/helix/components/HelixFlowTable";
+import { HelixCommandBar } from "@/features/helix/components/HelixCommandBar";
+import {
+  HELIX_INDEX_TICKERS,
+  matchesDteFilter,
+  type HelixDteFilter,
+  type HelixTableDensity,
+} from "@/features/helix/lib/helix-table-columns";
+import { daysToExpiry } from "@/features/helix/lib/helix-flow-format";
 import { FlowBrief } from "@/features/helix/components/FlowBrief";
 import { NetPremiumLeaderboard } from "@/features/helix/components/NetPremiumLeaderboard";
 import { StrikeStackDetector } from "@/features/helix/components/StrikeStackDetector";
@@ -25,6 +32,7 @@ const FlowMomentumChart = dynamic(
 );
 import { DarkPoolPanel } from "@/features/helix/components/DarkPoolPanel";
 import { TickerDrawer } from "@/features/helix/components/TickerDrawer";
+import { ContractDrilldownDrawer } from "@/features/helix/components/ContractDrilldownDrawer";
 import { SplitFlowRadar, type SplitFlowEntry } from "@/features/helix/components/SplitFlowRadar";
 import { VelocityRadar, type VelocityEntry } from "@/features/helix/components/VelocityRadar";
 import { SectorFlowPanel, type SectorFlowEntry } from "@/features/helix/components/SectorFlowPanel";
@@ -44,6 +52,7 @@ const PREMIUM_PRESETS = [200_000, 500_000, 1_000_000, 20_000_000] as const;
 // row below $200K is ever persisted, so requesting them returned nothing. Keep this
 // in sync with UW_FLOW_MIN_PREMIUM if that env is lowered server-side.
 const FLOOR_PREMIUM = 200_000;
+const WHALE_PREMIUM = 1_000_000;
 type TypeFilter = "ALL" | "CALL" | "PUT";
 const FLOW_POLL_MS   = 30_000;
 const REPLAY_TICK_MS = 450;
@@ -89,9 +98,9 @@ function playWhaleBeep() {
 
 function exportCSV(alerts: FlowAlert[]) {
   try {
-    const header = "Ticker,Type,Strike,Expiry,Premium,DTE,Score,Route,Alert Rule,Alerted At\n";
+    const header = "Ticker,Type,Strike,Expiry,Premium,Fill,DTE,Score,Route,Alert Rule,Alerted At\n";
     const rows = alerts.map((a) =>
-      [a.ticker, a.option_type, a.strike, a.expiry, a.premium,
+      [a.ticker, a.option_type, a.strike, a.expiry, a.premium, a.fill_price ?? "",
        a.dte ?? "", a.score ?? "", a.route ?? "", a.alert_rule ?? "", a.alerted_at].join(",")
     ).join("\n");
     const blob = new Blob([header + rows], { type: "text/csv;charset=utf-8;" });
@@ -118,9 +127,18 @@ export function FlowFeed() {
   // Filters
   const [minPremium, setMinPremium]       = useState(200_000);
   const [typeFilter, setTypeFilter]       = useState<TypeFilter>("ALL");
+  const [whalesOnly, setWhalesOnly]         = useState(false);
+  const [dteFilter, setDteFilter]           = useState<HelixDteFilter>("all");
+  const [indicesOnly, setIndicesOnly]       = useState(false);
+  const [density, setDensity]               = useState<HelixTableDensity>("standard");
+  const [analyticsOpen, setAnalyticsOpen] = useState(false);
   const [tickerFilter, setTickerFilter]   = useState("");
   // UI
   const [selectedTicker, setSelectedTicker] = useState<string | null>(null);
+  // Store the FULL clicked print, not just ticker/strike/expiry — the drilldown window
+  // renders that print's own real payload (premium, fill, spot-at-fill, OI/IV/OTM/DTE,
+  // rule tags, gamma-wall proximity), then fetches aggregate contract activity on top.
+  const [selectedContract, setSelectedContract] = useState<FlowAlert | null>(null);
   // P2: saved-tickers watchlist (localStorage-backed, client-only)
   const watchlist = useWatchlist();
   const [watchlistOnly, setWatchlistOnly] = useState(false);
@@ -189,15 +207,47 @@ export function FlowFeed() {
   // full filter() scans, and one memo recompute per SSE message instead of two.
   // (Both still depend on `alerts`; a new alert legitimately changes the counts,
   // so they must recompute — but we do it once, in O(n), not twice.)
-  // Filter-scoped counts for CALL/PUT/ALL pills — match the active tape filters.
-  const countSource = useMemo(() => {
-    let base = alerts;
-    if (tickerFilter) base = base.filter((a) => a.ticker === tickerFilter.toUpperCase());
-    if (watchlistOnly && watchlist.watchlistSet.size > 0) {
-      base = base.filter((a) => watchlist.watchlistSet.has(a.ticker));
-    }
-    return base;
-  }, [alerts, tickerFilter, watchlistOnly, watchlist.watchlistSet]);
+  const applyTapeFilters = useCallback(
+    (base: FlowAlert[], { includeType = true }: { includeType?: boolean } = {}) => {
+      let rows = base.filter((a) => a.premium >= Math.max(FLOOR_PREMIUM, minPremium));
+      if (tickerFilter) rows = rows.filter((a) => a.ticker === tickerFilter.toUpperCase());
+      if (watchlistOnly && watchlist.watchlistSet.size > 0) {
+        rows = rows.filter((a) => watchlist.watchlistSet.has(a.ticker));
+      }
+      if (whalesOnly) rows = rows.filter((a) => a.premium >= WHALE_PREMIUM);
+      if (indicesOnly) {
+        rows = rows.filter((a) =>
+          (HELIX_INDEX_TICKERS as readonly string[]).includes(a.ticker)
+        );
+      }
+      if (dteFilter !== "all") {
+        rows = rows.filter((a) => {
+          const dte = a.dte ?? daysToExpiry(a.expiry);
+          return matchesDteFilter(dte, dteFilter);
+        });
+      }
+      if (includeType && typeFilter !== "ALL") {
+        rows = rows.filter((a) => a.option_type === typeFilter);
+      }
+      return rows;
+    },
+    [
+      minPremium,
+      tickerFilter,
+      watchlistOnly,
+      watchlist.watchlistSet,
+      whalesOnly,
+      indicesOnly,
+      dteFilter,
+      typeFilter,
+    ]
+  );
+
+  // Filter-scoped counts for CALL/PUT/ALL pills — match active tape filters except side.
+  const countSource = useMemo(
+    () => applyTapeFilters(replayMode ? replayAlerts : alerts, { includeType: false }),
+    [applyTapeFilters, replayMode, replayAlerts, alerts]
+  );
 
   const { callCount, putCount, allCount } = useMemo(() => {
     let call = 0, put = 0;
@@ -503,17 +553,9 @@ export function FlowFeed() {
   useEffect(() => () => { if (replayTimerRef.current) clearInterval(replayTimerRef.current); }, []);
 
   const displayAlerts = useMemo(() => {
-    let base = replayMode ? replayAlerts : alerts;
-    base = base.filter((a) => a.premium >= Math.max(FLOOR_PREMIUM, minPremium));
-    if (tickerFilter) base = base.filter((a) => a.ticker === tickerFilter.toUpperCase());
-    if (watchlistOnly && watchlist.watchlistSet.size > 0) base = base.filter((a) => watchlist.watchlistSet.has(a.ticker));
-    if (typeFilter !== "ALL") base = base.filter((a) => a.option_type === typeFilter);
-    // Real-time tape → newest first. (Largest-by-premium ranking belongs in the
-    // NET PREMIUM / STRIKE STACKS panels; sorting the TAPE by premium pinned old
-    // whale prints to row 0 so a "REAL-TIME TAPE" looked frozen — HELIX flow audit.)
-    // Gap #6: rows with no trustworthy alerted_at (UW gave no time) sort LAST instead
-    // of polluting row 0 with a NaN compare — they must never define "newest".
-    return [...base].sort((a, b) => {
+    const base = replayMode ? replayAlerts : alerts;
+    const filtered = applyTapeFilters(base);
+    return [...filtered].sort((a, b) => {
       const am = alertedAtMs(a);
       const bm = alertedAtMs(b);
       if (am == null && bm == null) return 0;
@@ -521,7 +563,7 @@ export function FlowFeed() {
       if (bm == null) return -1;
       return bm - am;
     });
-  }, [replayMode, replayAlerts, alerts, tickerFilter, minPremium, typeFilter, watchlistOnly, watchlist.watchlistSet]);
+  }, [replayMode, replayAlerts, alerts, applyTapeFilters]);
 
   // Tape freshness — newest print age drives an honest LIVE/STALE badge.
   // Connection success alone is NOT data freshness: a stale tape over a weekend
@@ -556,7 +598,7 @@ export function FlowFeed() {
   );
   const dataStale = dataAgeMs != null && dataAgeMs > 5 * 60_000;
   const newestAgeLabel =
-    dataAgeMs == null
+    dataAgeMs == null || !Number.isFinite(dataAgeMs)
       ? "—"
       : dataAgeMs < 60_000
         ? `${Math.round(dataAgeMs / 1000)}s ago`
@@ -564,10 +606,72 @@ export function FlowFeed() {
           ? `${Math.round(dataAgeMs / 60_000)}m ago`
           : `${Math.round(dataAgeMs / 3_600_000)}h ago`;
 
+  const flowTapeProps = {
+    flows: displayAlerts,
+    live,
+    loading,
+    density,
+    typeFilter,
+    tickerFilter,
+    hasData: alerts.length > 0,
+    filteredCount: displayAlerts.length,
+    compoundTickers,
+    onTickerClick: setSelectedTicker,
+    onContractClick: (flow: FlowAlert) => setSelectedContract(flow),
+    replayMode,
+    splitFlowTickers,
+    earningsDays,
+    velocitySpikeTickers,
+    coordinatedTickers,
+    hawkTickers,
+    watchlistTickers: watchlist.watchlistSet,
+    onToggleStar: watchlist.toggle,
+  };
+
+  const analyticsRail = (
+    <>
+      {nativeShell ? (
+        <IosSectionHeader
+          label="Analytics"
+          action={{
+            label: showMorePanels ? "Fewer panels" : "More panels",
+            onClick: () => setShowMorePanels((v) => !v),
+          }}
+        />
+      ) : (
+        <div className="flex items-center justify-between gap-2">
+          <span className="helix-pro-rail-section-label">Analytics</span>
+          <button
+            type="button"
+            onClick={() => setShowMorePanels((v) => !v)}
+            className="helix-pro-tool-btn"
+          >
+            {showMorePanels ? "Fewer panels" : "More panels"}
+          </button>
+        </div>
+      )}
+      <NetPremiumLeaderboard alerts={alerts} loading={loading} />
+      <StrikeStackDetector alerts={alerts} onSelectTicker={setSelectedTicker} />
+      <DarkPoolPanel />
+      {showMorePanels && (
+        <>
+          <VelocityRadar entries={velocityEntries} onTickerClick={setSelectedTicker} />
+          <NightHawkFlowPanel
+            plays={nighthawkPlaysWithFlow}
+            editionFor={nighthawkEdition?.edition_for}
+            onTickerClick={setSelectedTicker}
+          />
+          <SplitFlowRadar entries={splitFlowEntries} onTickerClick={setSelectedTicker} />
+          <SectorFlowPanel entries={sectorFlowEntries} />
+          <FlowMomentumChart alerts={alerts} />
+        </>
+      )}
+    </>
+  );
+
   return (
-    <div className="desk-layout helix-desk flex flex-col gap-4">
-      {/* ── AI Brief ────────────────────────────────────────────────────── */}
-      {!nativeShell && <FlowBrief />}
+    <div className="desk-layout helix-desk helix-pro-desk helix-desk-terminal">
+      {nativeShell && <FlowBrief />}
 
       {/* ── Watchlist rail (P2) ─────────────────────────────────────────── */}
       {!nativeShell && (
@@ -732,281 +836,76 @@ export function FlowFeed() {
           ) : null}
         </div>
       ) : (
-      <div className={clsx("helix-ios-toolbar flex flex-wrap items-center gap-2", nativeShell && iosView !== "tape" && "ios-native-panel-hidden")}>
-        {/* Premium presets */}
-        <span className="font-mono text-[10px] tracking-[0.3em] uppercase font-bold text-bull hidden sm:block">MIN</span>
-        <div className="flow-seg-group">
-          {PREMIUM_PRESETS.map((v) => (
-            <button
-              key={v}
-              type="button"
-              onClick={() => setMinPremium(v)}
-              className={clsx("flow-seg-btn", minPremium === v && "flow-seg-btn-active-all")}
-            >
-              {v >= 1_000_000 ? `$${v / 1_000_000}M+` : `$${v / 1000}K+`}
-            </button>
-          ))}
-        </div>
-
-        {/* Type filter */}
-        <div className="flow-seg-group">
-          {(["ALL", "CALL", "PUT"] as TypeFilter[]).map((t) => (
-            <button
-              key={t}
-              type="button"
-              onClick={() => setTypeFilter(t)}
-              className={clsx(
-                "flow-seg-btn",
-                typeFilter === t && (
-                  t === "CALL" ? "flow-seg-btn-active-call" :
-                  t === "PUT"  ? "flow-seg-btn-active-put"  :
-                                 "flow-seg-btn-active-all"
-                )
-              )}
-            >
-              {t}
-              {t === "CALL" && <span className="flow-count-pill">{callCount}</span>}
-              {t === "PUT"  && <span className="flow-count-pill">{putCount}</span>}
-              {t === "ALL"  && <span className="flow-count-pill">{allCount}</span>}
-            </button>
-          ))}
-        </div>
-
-        {/* Bug 18: ticker input — sanitized to uppercase letters only, max 6 chars */}
-        <div className="relative">
-          <input
-            value={tickerFilter}
-            onChange={(e) => {
-              const val = e.target.value.toUpperCase().replace(/[^A-Z]/g, "").slice(0, 6);
-              setTickerFilter(val);
-            }}
-            placeholder="TICKER"
-            aria-label="Search ticker"
-            maxLength={6}
-            className={clsx(
-              "font-mono text-[13px] font-bold px-4 py-2 rounded-lg border bg-[rgba(8,9,14,0.85)] outline-none w-32 tracking-widest uppercase",
-              "border-[rgba(0,230,118,0.35)] text-[#00e676] placeholder:text-[rgba(0,230,118,0.35)]",
-              "focus:border-[rgba(0,230,118,0.8)] focus:ring-2 focus:ring-[rgba(0,230,118,0.15)] transition-all"
-            )}
-          />
-          <AnimatePresence>
-            {tickerFilter && (
-              <motion.button
-                initial={{ opacity: 0, scale: 0.8 }}
-                animate={{ opacity: 1, scale: 1 }}
-                exit={{ opacity: 0, scale: 0.8 }}
-                type="button"
-                onClick={() => setTickerFilter("")}
-                aria-label="Close"
-                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-cyan-400 hover:text-sky-200 font-mono text-sm font-bold"
-              >
-                ×
-              </motion.button>
-            )}
-          </AnimatePresence>
-        </div>
-
-        {/* Replay button */}
-        <button
-          type="button"
-          onClick={replayMode ? stopReplay : startReplay}
-          disabled={!replayMode && alerts.length === 0}
-          className={clsx(
-            "font-mono text-[10px] font-semibold px-3 py-[5px] rounded-lg border transition-all",
-            replayMode
-              ? "border-gold/70 text-gold bg-gold/15 hover:bg-gold/25"
-              : "border-[rgba(0,230,118,0.3)] text-[#00e676] hover:text-[#34d399] hover:border-[rgba(0,230,118,0.6)] disabled:opacity-30 disabled:cursor-not-allowed"
-          )}
-        >
-          {replayMode ? "■ Stop" : "▶ Replay"}
-        </button>
-
-        {/* Bug 12: replay speed control — only visible during replay */}
-        <AnimatePresence>
-          {replayMode && (
-            <motion.div
-              initial={{ opacity: 0, width: 0 }}
-              animate={{ opacity: 1, width: "auto" }}
-              exit={{ opacity: 0, width: 0 }}
-              className="flex gap-0.5 overflow-hidden"
-            >
-              {[0.5, 1, 2].map((s) => (
-                <button
-                  key={s}
-                  type="button"
-                  onClick={() => setReplaySpeed(s)}
-                  className={clsx(
-                    "font-mono text-[10px] px-1.5 py-[3px] rounded transition-colors whitespace-nowrap",
-                    replaySpeed === s
-                      ? "bg-gold/20 text-gold border border-gold/60"
-                      : "text-cyan-400 hover:text-sky-300 bg-white/[0.04] border border-white/10"
-                  )}
-                >
-                  {s}×
-                </button>
-              ))}
-            </motion.div>
-          )}
-        </AnimatePresence>
-
-        {/* Bug 14: audio alert toggle */}
-        <button
-          type="button"
-          onClick={() => setAudioEnabled((v) => !v)}
-          title="Toggle audio alert for whale prints (>$1M)"
-          className={clsx(
-            "font-mono text-[10px] font-semibold px-2 py-[5px] rounded-lg border transition-all",
-            audioEnabled
-              ? "border-purple/60 text-purple-light bg-purple/15"
-              : "border-white/10 text-cyan-400 hover:text-sky-300 hover:border-white/20"
-          )}
-        >
-          {audioEnabled ? "AUDIO ON" : "AUDIO"}
-        </button>
-
-        {/* P2: watchlist-only filter toggle */}
-        <button
-          type="button"
-          onClick={() => setWatchlistOnly((v) => !v)}
-          disabled={watchlist.watchlist.length === 0}
-          title="Show only starred (watchlist) tickers"
-          className={clsx(
-            "font-mono text-[10px] font-semibold px-2 py-[5px] rounded-lg border transition-all disabled:opacity-30 disabled:cursor-not-allowed",
-            watchlistOnly
-              ? "border-gold/70 text-gold bg-gold/15"
-              : "border-cyan-800/40 text-cyan-400 hover:text-white hover:border-cyan-600/60"
-          )}
-        >
-          ★ {watchlist.watchlist.length > 0 ? watchlist.watchlist.length : "WATCH"}
-        </button>
-
-        {/* Bug 15: CSV export */}
-        <button
-          type="button"
-          onClick={() => exportCSV(displayAlerts)}
-          disabled={displayAlerts.length === 0}
-          className="font-mono text-[10px] font-semibold px-2 py-[5px] rounded-lg border border-white/10 text-cyan-400 hover:text-sky-300 hover:border-white/20 transition-all disabled:opacity-30 disabled:cursor-not-allowed"
-          title="Export current tape to CSV"
-        >
-          CSV
-        </button>
-
-        {/* Right: stats + live indicator */}
-        <div className="ml-auto flex items-center gap-4">
-          <AnimatePresence mode="wait">
-            <motion.span
-              key={`${alerts.length}-${loading}`}
-              initial={{ opacity: 0, y: 4 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -4 }}
-              transition={{ duration: 0.2 }}
-              className="font-mono text-[10px] text-sky-200 hidden sm:block"
-            >
-              {loading ? "Scanning…" : `${displayAlerts.length} alerts · newest ${newestAgeLabel}`}
-            </motion.span>
-          </AnimatePresence>
-
-          {/* Live indicator — green only when connected AND data is fresh; amber
-              "Stale" when the newest print is >5 min old so a frozen tape can't
-              masquerade as live. */}
-          <div className="flex items-center gap-2">
-            <div className="flow-live-dot">
-              <span className={clsx(
-                "w-1.5 h-1.5 rounded-full block relative z-10",
-                !live ? "bg-sky-300/40" : dataStale ? "bg-gold" : "bg-bull"
-              )} />
-            </div>
-            <span className={clsx(
-              "font-mono text-[10px] tracking-widest uppercase",
-              !live ? "text-cyan-500" : dataStale ? "text-gold" : "text-bull"
-            )}>
-              {!live ? "Offline" : dataStale ? `Stale ${newestAgeLabel}` : "Live"}
-            </span>
-          </div>
-        </div>
-      </div>
+        <HelixCommandBar
+          minPremium={minPremium}
+          onMinPremiumChange={setMinPremium}
+          typeFilter={typeFilter}
+          onTypeFilterChange={setTypeFilter}
+          callCount={callCount}
+          putCount={putCount}
+          allCount={allCount}
+          tickerFilter={tickerFilter}
+          onTickerFilterChange={setTickerFilter}
+          whalesOnly={whalesOnly}
+          onWhalesOnlyChange={setWhalesOnly}
+          dteFilter={dteFilter}
+          onDteFilterChange={setDteFilter}
+          indicesOnly={indicesOnly}
+          onIndicesOnlyChange={setIndicesOnly}
+          watchlistOnly={watchlistOnly}
+          onWatchlistOnlyChange={setWatchlistOnly}
+          watchlistCount={watchlist.watchlist.length}
+          density={density}
+          onDensityChange={setDensity}
+          analyticsOpen={analyticsOpen}
+          onAnalyticsOpenChange={setAnalyticsOpen}
+          replayMode={replayMode}
+          onReplayToggle={replayMode ? stopReplay : startReplay}
+          replaySpeed={replaySpeed}
+          onReplaySpeedChange={setReplaySpeed}
+          audioEnabled={audioEnabled}
+          onAudioToggle={() => setAudioEnabled((v) => !v)}
+          onExportCsv={() => exportCSV(displayAlerts)}
+          exportDisabled={displayAlerts.length === 0}
+          loading={loading}
+          live={live}
+          dataStale={dataStale}
+          displayCount={displayAlerts.length}
+          newestAgeLabel={newestAgeLabel}
+          replayDisabled={!replayMode && alerts.length === 0}
+        />
       )}
 
-      {/* ── Main grid ───────────────────────────────────────────────────── */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
-        {/* Flow tape — 8 cols */}
+      {/* ── Main grid — table-first; analytics optional ─────────────────── */}
+      <div
+        className={clsx(
+          "helix-desk-terminal-grid",
+          !analyticsOpen && !nativeShell && "helix-desk-terminal-grid--tape-max",
+          nativeShell && iosView !== "tape" && "ios-native-panel-hidden",
+          nativeShell && iosView === "tape" && "ios-native-panel-visible"
+        )}
+      >
         <div
           key={nativeShell ? iosView : "tape"}
-          className={clsx(
-            "lg:col-span-8 xl:col-span-8 helix-ios-tape-col",
-            nativeShell && iosView !== "tape" && "ios-native-panel-hidden",
-            nativeShell && iosView === "tape" && "ios-native-panel-visible"
-          )}
+          className="helix-desk-tape-col helix-ios-tape-col"
         >
-          <FlowAlertStream
-            flows={displayAlerts}
-            live={live}
-            loading={loading}
-            typeFilter={typeFilter}
-            tickerFilter={tickerFilter}
-            hasData={alerts.length > 0}
-            compoundTickers={compoundTickers}
-            onTickerClick={setSelectedTicker}
-            replayMode={replayMode}
-            splitFlowTickers={splitFlowTickers}
-            earningsDays={earningsDays}
-            velocitySpikeTickers={velocitySpikeTickers}
-            coordinatedTickers={coordinatedTickers}
-            hawkTickers={hawkTickers}
-            watchlistTickers={watchlist.watchlistSet}
-            onToggleStar={watchlist.toggle}
-          />
+          <HelixFlowTable {...flowTapeProps} />
         </div>
-
-        {/* Right column — primary analytics; expand for full desk */}
-        <div
-          key={nativeShell ? iosView : "analytics"}
-          className={clsx(
-            "lg:col-span-4 xl:col-span-4 flex flex-col gap-3 helix-ios-analytics-col",
-            nativeShell && iosView !== "analytics" && "ios-native-panel-hidden",
-            nativeShell && iosView === "analytics" && "ios-native-panel-visible"
-          )}
-        >
-          {nativeShell ? (
-            <IosSectionHeader
-              label="Analytics"
-              action={{
-                label: showMorePanels ? "Fewer panels" : "More panels",
-                onClick: () => setShowMorePanels((v) => !v),
-              }}
-            />
-          ) : (
-          <div className="flex items-center justify-between gap-2 px-1">
-            <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-mute">Analytics</span>
-            <button
-              type="button"
-              onClick={() => setShowMorePanels((v) => !v)}
-              className="font-mono text-[10px] font-semibold text-secondary transition-colors hover:text-white"
-            >
-              {showMorePanels ? "Fewer panels" : "More panels"}
-            </button>
+        {(analyticsOpen || (nativeShell && iosView === "analytics")) && (
+          <div
+            key={nativeShell ? iosView : "analytics"}
+            className={clsx(
+              "helix-desk-analytics-rail helix-ios-analytics-col helix-pro-rail",
+              nativeShell && iosView !== "analytics" && "ios-native-panel-hidden",
+              nativeShell && iosView === "analytics" && "ios-native-panel-visible"
+            )}
+          >
+            {analyticsRail}
           </div>
-          )}
-          <NetPremiumLeaderboard alerts={alerts} loading={loading} />
-          <StrikeStackDetector alerts={alerts} onSelectTicker={setSelectedTicker} />
-          <DarkPoolPanel />
-          {showMorePanels && (
-            <>
-              <VelocityRadar entries={velocityEntries} onTickerClick={setSelectedTicker} />
-              <NightHawkFlowPanel
-                plays={nighthawkPlaysWithFlow}
-                editionFor={nighthawkEdition?.edition_for}
-                onTickerClick={setSelectedTicker}
-              />
-              <SplitFlowRadar entries={splitFlowEntries} onTickerClick={setSelectedTicker} />
-              <SectorFlowPanel entries={sectorFlowEntries} />
-              <FlowMomentumChart alerts={alerts} />
-            </>
-          )}
-        </div>
+        )}
       </div>
 
-      {/* Ticker drawer — Bug 13: typeFilter passed so drawer matches tape */}
+      {/* Ticker drawer — all prints for symbol */}
       <TickerDrawer
         ticker={selectedTicker}
         typeFilter={typeFilter}
@@ -1015,8 +914,18 @@ export function FlowFeed() {
         onToggleStar={watchlist.toggle}
       />
 
+      {/* Contract drilldown — per-leg volume/OI/fill history (FLOWCHECKER-style) */}
+      <ContractDrilldownDrawer
+        flow={selectedContract}
+        onClose={() => setSelectedContract(null)}
+        onViewTicker={(t) => {
+          setSelectedContract(null);
+          setSelectedTicker(t);
+        }}
+      />
+
       {/* Persistent compliance disclaimer (matches SPX / GEX wording) */}
-      <p className="font-mono text-[10px] text-sky-300/60 text-center pt-1">
+      <p className="helix-pro-disclaimer">
         Educational. Not advice. You decide.
       </p>
     </div>

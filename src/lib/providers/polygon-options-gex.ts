@@ -40,7 +40,7 @@ export type ChainContract = {
   open_interest?: number;
   last_quote?: { bid?: number; ask?: number };
   last_trade?: { price?: number };
-  day?: { close?: number };
+  day?: { close?: number; volume?: number };
   underlying_asset?: { price?: number };
 };
 
@@ -1254,17 +1254,49 @@ export function resolveHeatmapPageGuard(envValue: string | undefined): number {
 }
 const HEATMAP_PAGE_GUARD = resolveHeatmapPageGuard(process.env.OPTIONS_HEATMAP_PAGE_GUARD);
 
-/** Strike band around spot for the shared heatmap chain pull. Default ±6% for all presets. */
+/**
+ * Page backstop for the per-expiry banded chain pull (`fetchChainBand`). A single expiry within a
+ * ~±1.5% band is normally 1–2 pages, but `strikeHints` can widen the band to cover deep ITM/OTM
+ * held legs, pushing past the old bare `guard < 8` cap — which truncated the chain and only WARNED,
+ * silently understating OI/walls for that (underlying, expiry). Like the heatmap guard this is a
+ * runaway-loop backstop, not the stop condition (that's `!next_url`); floored at the OLD cap of 8
+ * so a blank/misconfigured env can never sink below what already shipped, default 40 (~5× headroom).
+ */
+export function resolveChainBandPageGuard(envValue: string | undefined): number {
+  return Math.max(8, Number(envValue) || 40);
+}
+const CHAIN_BAND_PAGE_GUARD = resolveChainBandPageGuard(process.env.OPTIONS_CHAIN_BAND_PAGE_GUARD);
+
+/**
+ * SPX default strike band: ±6%. SPX's chain is DENSE (5-pt strikes → ~180 strikes/expiry inside
+ * ±6% at a 7500 spot), so a tight band already yields a rich ladder AND keeps the hot, cron-warmed
+ * SPX payload small. Widening SPX would balloon its contract count with no wall-count benefit.
+ */
+const SPX_HEATMAP_BAND_PCT = 0.06;
+
+/**
+ * Default strike band for every OTHER ticker: ±12%. WHY WIDER: ±6% is measured in PERCENT, but a
+ * ticker's wall structure lives in STRIKES, and low-priced / wide-strike-spacing names have very
+ * few strikes inside ±6%. Live proof (ASTS @ $73.32, nearest 8 expiries): ±6% captured only 10
+ * strikes → just 2 net-positive (call) strikes, so ASTS could NEVER show more than 2 call walls at
+ * any timeframe, and its real call walls (90/100/125) sit far outside ±6% and were never even
+ * fetched — the "only 1 call / 1 put wall" bug. ±12% captures 22 strikes (4 call / 18 put walls),
+ * and matches the Vector chart's own reveal caps (NEAREST_WALL_VIEW_MAX_PCT 0.12 / BEAD_VIEW_MAX_PCT
+ * 0.20) so we no longer fetch a NARROWER window than the chart is willing to draw. Env-overridable.
+ */
+const DEFAULT_HEATMAP_BAND_PCT = 0.12;
+
+/** Strike band around spot for the shared heatmap chain pull. SPX stays tight (dense); everything
+ *  else uses the wider default so sparse long-tail names (e.g. ASTS) still surface multiple walls. */
 function heatmapBandPct(root: string): number {
   const clamp = (n: number) => (Number.isFinite(n) && n > 0 && n <= 0.25 ? n : null);
   if (root === "SPX") {
-    const spx = clamp(Number(process.env.SPX_GEX_HEATMAP_BAND_PCT));
-    if (spx != null) return spx;
+    return clamp(Number(process.env.SPX_GEX_HEATMAP_BAND_PCT)) ?? SPX_HEATMAP_BAND_PCT;
   }
-  const global = clamp(Number(process.env.GEX_HEATMAP_BAND_PCT));
-  if (global != null) return global;
-  return 0.06;
+  return clamp(Number(process.env.GEX_HEATMAP_BAND_PCT)) ?? DEFAULT_HEATMAP_BAND_PCT;
 }
+
+export const __test_heatmapBandPct = heatmapBandPct;
 
 async function fetchHeatmapBand(
   underlying: string,
@@ -2732,7 +2764,10 @@ async function fetchChainBand(
   let page = await polygonFetchUrl(`/v3/snapshot/options/${underlying}?${params}`);
   let guard = 0;
 
-  while (page && guard < 8) {
+  // Follow next_url to completion; the guard is a runaway-loop backstop, NOT the expected stop
+  // condition (that's !next_url). The old bare `guard < 8` silently truncated a strikeHints-widened
+  // band — deep ITM/OTM legs pushed past ~2k contracts — and only WARNED, understating OI/walls.
+  while (page && guard < CHAIN_BAND_PAGE_GUARD) {
     out.push(...(page.results ?? []));
     if (!page.next_url) break;
     page = await polygonFetchUrl(page.next_url);

@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
-import { useAuth } from "@clerk/nextjs";
+import { useAppAuth } from "@/lib/auth-client";
 import { isIosAppShell } from "@/lib/ios-app-shell";
 import { getIosRouteKey, isIosNativeShellRoute } from "@/lib/ios-tool-routes";
 import type { ToolKey } from "@/lib/tool-access";
@@ -15,7 +15,7 @@ import { IosNativeMenu } from "./IosNativeMenu";
  */
 export function IosAppChrome({ lockedTools = [] }: { lockedTools?: ToolKey[] }) {
   const path = usePathname();
-  const { isSignedIn, isLoaded, userId } = useAuth();
+  const { isSignedIn, isLoaded, userId } = useAppAuth();
   const [iosApp, setIosApp] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);

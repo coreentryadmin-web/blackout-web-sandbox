@@ -3,7 +3,7 @@
 import React, { Suspense, useState } from "react";
 import dynamic from "next/dynamic";
 import { clsx } from "clsx";
-import { useUser } from "@clerk/nextjs";
+import { useAppAuth } from "@/lib/auth-client";
 import { useMergedDesk } from "@/features/spx/hooks/useMergedDesk";
 import { useIosNativeShell } from "@/hooks/useIosNativeShell";
 import { useCompactDeskPanels } from "@/hooks/useCompactDeskPanels";
@@ -13,30 +13,27 @@ import { shouldShowHaltDegradedBanner } from "@/features/spx/lib/spx-halt-banner
 
 const SpxSniperHeader = dynamic(
   () => import("./SpxSniperHeader").then((m) => ({ default: m.SpxSniperHeader })),
-  {
-    loading: () => <div className="spx-desk-skeleton min-h-[72px]" aria-busy="true" />,
-  }
+  { loading: () => null }
 );
 
 const SpxGexMatrixHeatmap = dynamic(
   () => import("./SpxGexMatrixHeatmap").then((m) => ({ default: m.SpxGexMatrixHeatmap })),
-  {
-    loading: () => <div className="spx-desk-skeleton min-h-[320px]" aria-busy="true" />,
-  }
+  { loading: () => null }
 );
 
 const SpxTradeAlerts = dynamic(
   () => import("./SpxTradeAlerts").then((m) => ({ default: m.SpxTradeAlerts })),
-  {
-    loading: () => <div className="spx-desk-skeleton min-h-[200px]" aria-busy="true" />,
-  }
+  { loading: () => null }
 );
 
 const SpxCommentaryRail = dynamic(
   () => import("./SpxCommentaryRail").then((m) => ({ default: m.SpxCommentaryRail })),
-  {
-    loading: () => <div className="spx-desk-skeleton min-h-[240px]" aria-busy="true" />,
-  }
+  { loading: () => null }
+);
+
+const SpxLiveSpotPrice = dynamic(
+  () => import("./SpxLiveSpotPrice").then((m) => ({ default: m.SpxLiveSpotPrice })),
+  { loading: () => null }
 );
 
 class SpxPanelErrorBoundary extends React.Component<
@@ -59,9 +56,8 @@ class SpxPanelErrorBoundary extends React.Component<
 }
 
 export function SpxDashboard() {
-  const { isLoaded, user } = useUser();
-  const tier = (user?.publicMetadata as { tier?: string } | undefined)?.tier;
-  const { desk, live, refreshing, deskLoading, sessionActive } = useMergedDesk();
+  const { isLoaded, tier } = useAppAuth();
+  const { desk, live, refreshing, deskLoading, deskLaneFailed, sessionActive } = useMergedDesk();
   const nativeShell = useIosNativeShell();
   const compactPanels = useCompactDeskPanels(nativeShell);
   const [iosPanel, setIosPanel] = useState<"plays" | "matrix" | "intel">("plays");
@@ -73,9 +69,6 @@ export function SpxDashboard() {
           title="Premium membership required"
           description={
             <>
-              {/* App Store guideline 3.1.1 — no purchase-flow language inside the iOS app.
-                  Both spans render on the server (no hydration mismatch); CSS picks one based
-                  on the `ios-app` <html> class set by layout.tsx's user-agent check. */}
               <span className="hide-in-ios-app">
                 This account does not have an active Premium membership. Upgrade to access the
                 live desk.
@@ -105,17 +98,13 @@ export function SpxDashboard() {
   if (deskLoading && !desk) {
     return (
       <div className="spx-sniper-desk spx-sniper-desk-loading" aria-busy="true">
-        <div className="spx-desk-skeleton" />
+        <div className="spx-desk-placeholder" />
       </div>
     );
   }
 
   const activeHalts = desk?.active_halts ?? [];
   const haltChannelStale = desk?.halt_channel_stale ?? false;
-  // The play gate (spx-play-gates.ts) fails OPEN on a stale channel -- it only
-  // warns, never blocks -- so this banner must never claim entries are
-  // blocked. Also gated on sessionActive: the channel is event-only and reads
-  // "stale" off-hours/holidays by design, which is not a real degradation.
   const showHaltDegradedBanner = shouldShowHaltDegradedBanner({
     sessionActive,
     haltChannelStale,
@@ -123,20 +112,36 @@ export function SpxDashboard() {
   });
 
   return (
-    <div className="spx-sniper-desk">
+    <div className="spx-sniper-desk spx-sniper-desk-fill">
+      {deskLaneFailed && (
+        <div
+          className="flex items-center gap-2 rounded border border-amber-500/40 bg-amber-500/10 px-4 py-2 text-xs font-mono text-amber-200"
+          role="alert"
+        >
+          Desk rebuild failed — showing last cached snapshot. Retrying in the background.
+        </div>
+      )}
       {activeHalts.length > 0 && (
-        <div className="flex items-center gap-2 rounded border border-bear/40 bg-bear/10 px-4 py-2 text-xs font-mono text-bear" role="alert">
+        <div
+          className="flex items-center gap-2 rounded border border-bear/40 bg-bear/10 px-4 py-2 text-xs font-mono text-bear"
+          role="alert"
+        >
           <span className="font-bold">TRADING HALT</span>
           {activeHalts.map((h) => (
             <span key={h.symbol}>
-              {h.symbol}{h.halt_type ? ` · ${h.halt_type}` : ""}{h.reason ? ` — ${h.reason}` : ""}
+              {h.symbol}
+              {h.halt_type ? ` · ${h.halt_type}` : ""}
+              {h.reason ? ` — ${h.reason}` : ""}
             </span>
           ))}
         </div>
       )}
       {showHaltDegradedBanner && (
-        <div className="flex items-center gap-2 rounded border border-amber-400/40 bg-amber-400/10 px-4 py-2 text-xs font-mono text-amber-400" role="alert">
-          <span>Halt feed degraded — proceeding fail-open; verify no active halts before entering</span>
+        <div
+          className="flex items-center gap-2 rounded border border-amber-400/40 bg-amber-400/10 px-4 py-2 text-xs font-mono text-amber-400"
+          role="alert"
+        >
+          <span>Halt feed degraded — restricted entry mode; verify no active halts before entering</span>
         </div>
       )}
       <SpxPanelErrorBoundary>
@@ -158,20 +163,42 @@ export function SpxDashboard() {
         />
       )}
 
-      {/* Left rail: GEX matrix only — no Benzinga scroll, live tape, or interval-flow stack. */}
+      {/*
+        Four grid slots: Largo | Matrix | Plays (kanban) | Terminal.
+        SpxTradeAlerts returns a Fragment (plays + terminal) so both become real
+        grid children — avoid display:contents wrappers (unreliable with grid-areas).
+      */}
       <div
-        className="spx-sniper-triple"
+        className="spx-sniper-triple spx-sniper-triple--desk-v2"
         data-ios-panel={compactPanels ? iosPanel : undefined}
       >
         <SpxPanelErrorBoundary>
+          <Suspense fallback={null}>
+            <aside
+              className={clsx(
+                "spx-sniper-intel-col spx-left-commentary",
+                compactPanels && iosPanel !== "intel" && "ios-native-panel-hidden",
+                compactPanels && iosPanel === "intel" && "ios-native-panel-visible"
+              )}
+            >
+              <SpxCommentaryRail desk={desk} live={live} />
+            </aside>
+          </Suspense>
+        </SpxPanelErrorBoundary>
+
+        <SpxPanelErrorBoundary>
           <aside
-            key={compactPanels ? iosPanel : "matrix"}
             className={clsx(
               "spx-sniper-left-rail spx-left-matrix",
               compactPanels && iosPanel !== "matrix" && "ios-native-panel-hidden",
               compactPanels && iosPanel === "matrix" && "ios-native-panel-visible"
             )}
           >
+            {(!compactPanels || iosPanel === "matrix") && (
+              <div className="spx-matrix-column-spot shrink-0" aria-label="SPX live spot">
+                <SpxLiveSpotPrice desk={desk} live={live} size="panel" />
+              </div>
+            )}
             <SpxGexMatrixHeatmap
               live={live}
               sessionActive={sessionActive}
@@ -189,36 +216,13 @@ export function SpxDashboard() {
         </SpxPanelErrorBoundary>
 
         <SpxPanelErrorBoundary>
-          <div
-            key={compactPanels ? iosPanel : "plays"}
-            className={clsx(
-              "spx-sniper-chart-col spx-center-stack",
-              compactPanels && iosPanel !== "plays" && "ios-native-panel-hidden",
-              compactPanels && iosPanel === "plays" && "ios-native-panel-visible"
-            )}
-          >
-            <SpxTradeAlerts
-              desk={desk}
-              live={live}
-              refreshing={refreshing}
-              sessionActive={sessionActive}
-              compactLayout={compactPanels}
-            />
-          </div>
-        </SpxPanelErrorBoundary>
-
-        <SpxPanelErrorBoundary>
-          <Suspense fallback={<div className="spx-desk-skeleton min-h-[240px]" aria-busy="true" />}>
-            <div
-              key={compactPanels ? iosPanel : "intel"}
-              className={clsx(
-                compactPanels && iosPanel !== "intel" && "ios-native-panel-hidden",
-                compactPanels && iosPanel === "intel" && "ios-native-panel-visible"
-              )}
-            >
-              <SpxCommentaryRail desk={desk} live={live} />
-            </div>
-          </Suspense>
+          <SpxTradeAlerts
+            desk={desk}
+            live={live}
+            refreshing={refreshing}
+            sessionActive={sessionActive}
+            iosHidden={Boolean(compactPanels && iosPanel !== "plays")}
+          />
         </SpxPanelErrorBoundary>
       </div>
     </div>

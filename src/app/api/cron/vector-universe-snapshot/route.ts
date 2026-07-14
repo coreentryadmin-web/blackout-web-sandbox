@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { isCronAuthorized } from "@/lib/market-api-auth";
 import { logCronRun } from "@/lib/cron-run";
-import { refreshVectorUniverseSnapshot } from "@/features/vector";
+import { refreshVectorUniverseSnapshot, loadSessionWallHistory } from "@/features/vector";
 import { isEtCashRth } from "@/lib/et-market-hours";
+import { todayEt } from "@/features/nighthawk/lib/session";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -22,8 +23,44 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    const snap = await refreshVectorUniverseSnapshot();
-    const payload = { ok: true, rows: snap.rows.length, updatedAt: snap.updatedAt };
+    // Record wall-history samples for the whole universe on every RTH run — the
+    // server-side source for the chart's bead rails, so they persist after-hours
+    // and exist for every covered ticker (not just ones with a live viewer).
+    // Only this RTH-gated cron records; inline scanner polls must not.
+    const sessionYmd = todayEt();
+    const snap = await refreshVectorUniverseSnapshot({
+      recordWallHistory: true,
+      sessionYmd,
+    });
+    // Read-back verification of the flagship rail. The recorder persists to Redis as
+    // a side effect, but a green {ok, rows} said nothing about whether the wall-history
+    // rail actually grew — a session-long persistence gap (empty off-hours SPX rail)
+    // hid behind a passing cron for hours. Reading SPX's rail straight back after the
+    // build turns durability into an observable number: force-run twice and railLen
+    // must increment; if it stays flat while rows=21, the write path (not the fetch)
+    // is the problem. Best-effort — a read hiccup must not fail the recording run.
+    const spxRailLen = await loadSessionWallHistory(sessionYmd, "SPX")
+      .then((h) => h.length)
+      .catch(() => -1);
+    // Per-horizon read-back: the "all" spxRailLen said nothing about the NARROWED rails, which is
+    // exactly where the frozen-0DTE gap hid (the per-expiry SPXW reconstruction empties out on most
+    // ticks). Surfacing spx0dteRailLen / spxWeeklyRailLen / spxMonthlyRailLen makes a chronic
+    // narrowed-rail gap an observable number in the cron log instead of an invisible silent skip.
+    const [spx0dteRailLen, spxWeeklyRailLen, spxMonthlyRailLen] = await Promise.all([
+      loadSessionWallHistory(sessionYmd, "SPX", "0dte").then((h) => h.length).catch(() => -1),
+      loadSessionWallHistory(sessionYmd, "SPX", "weekly").then((h) => h.length).catch(() => -1),
+      loadSessionWallHistory(sessionYmd, "SPX", "monthly").then((h) => h.length).catch(() => -1),
+    ]);
+    const payload = {
+      ok: true,
+      rows: snap.rows.length,
+      spxRailLen,
+      spx0dteRailLen,
+      spxWeeklyRailLen,
+      spxMonthlyRailLen,
+      sessionYmd,
+      updatedAt: snap.updatedAt,
+    };
     await logCronRun("vector-universe-snapshot", started, payload);
     return NextResponse.json(payload);
   } catch (error) {

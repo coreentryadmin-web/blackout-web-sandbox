@@ -1,5 +1,5 @@
 /**
- * Signal Observer cron — runs every minute during RTH.
+ * Signal Observer cron — runs every 5 minutes during RTH (Railway schedule).
  * Captures a complete snapshot of all confluence signals at the current moment:
  * factor weights, raw market values, engine action, session window.
  * Also fills in 30-minute outcomes for earlier observations (did SPX move in

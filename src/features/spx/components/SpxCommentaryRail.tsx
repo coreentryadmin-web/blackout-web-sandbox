@@ -1,13 +1,15 @@
 ﻿"use client";
 
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { clsx } from "clsx";
+import { renderEmphasis } from "@/features/spx/lib/spx-emphasis";
 
 const BODY_PREVIEW_LINES = 12;
 import type { SpxCommentaryResult, SpxDeskPayload } from "@/lib/api";
 import { requestSpxCommentary } from "@/lib/api";
 import { readSessionCache, writeSessionCache } from "@/lib/session-cache";
+import { largoEnabled } from "@/lib/largo-env";
+import { isStagingDeploy } from "@/lib/clerk-env";
 import {
   commentaryOfflineTone,
   pickCommentaryOfflineCopy,
@@ -47,28 +49,6 @@ function shouldRefresh(desk: SpxDeskPayload, prev: Partial<SpxDeskPayload> | nul
   if (nextStacks && prevStacks !== nextStacks) return true;
 
   return Date.now() - lastAt >= MIN_INTERVAL_MS * 2;
-}
-
-/** Render {{...}} white-emphasis markup: numbers + verbatim news render WHITE, the rest
- *  stays neon-yellow (the .spx-commentary-body color). The model wraps every number and
- *  every literal headline in {{ }} so the renderer never has to guess. */
-function renderEmphasis(text: string): ReactNode[] {
-  const out: ReactNode[] = [];
-  const re = /\{\{([^}]*)\}\}/g;
-  let last = 0;
-  let m: RegExpExecArray | null;
-  let k = 0;
-  while ((m = re.exec(text)) !== null) {
-    if (m.index > last) out.push(text.slice(last, m.index));
-    out.push(
-      <span key={k++} className="spx-ai-key">
-        {m[1]}
-      </span>
-    );
-    last = m.index + m[0].length;
-  }
-  if (last < text.length) out.push(text.slice(last));
-  return out;
 }
 
 /** One commentary line: peel a leading UPPERCASE label (followed by 2+ spaces) into a
@@ -142,7 +122,7 @@ export function SpxCommentaryRail({
   // array (which would write up to 50KB on every 15-30s state update).
 
   const pullCommentary = useCallback(async (force = false) => {
-    if (!live || !desk?.available || inFlightRef.current) return;
+    if (!largoEnabled() || !live || !desk?.available || inFlightRef.current) return;
 
     const prev = prevRef.current;
     if (!force && !shouldRefresh(desk, prev, lastFetchRef.current)) return;
@@ -181,6 +161,12 @@ export function SpxCommentaryRail({
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Commentary unavailable";
       nextRefreshMsRef.current = null;
+      // Advance the throttle clock on FAILURE too. It previously only advanced on
+      // success, so while the server was erroring, every desk tick re-entered
+      // shouldRefresh with a stale lastFetchRef and fired another POST — a
+      // sub-second retry storm per client (2026-07-10 incident). With the clock
+      // advanced, retries are bounded by MIN_INTERVAL_MS + the 30s error schedule.
+      lastFetchRef.current = Date.now();
       setError(msg);
     } finally {
       setLoading(false);
@@ -203,7 +189,7 @@ export function SpxCommentaryRail({
   }, [live, entries.length]);
 
   useEffect(() => {
-    if (!desk?.available || !live) return;
+    if (!largoEnabled() || !desk?.available || !live) return;
     if (hydratedRef.current && entries.length > 0) {
       pullCommentary(false);
       return;
@@ -212,7 +198,7 @@ export function SpxCommentaryRail({
   }, [live, desk?.available, desk?.price, desk?.gamma_flip, desk?.gex_king, desk?.regime]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
-    if (!desk?.available || !live) return;
+    if (!largoEnabled() || !desk?.available || !live) return;
 
     cancelledRef.current = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -252,14 +238,19 @@ export function SpxCommentaryRail({
       )}
     >
       <div className="spx-commentary-header">
-        <span className={clsx("badge-live-dot", live && "animate-pulse")} />
+        <span className={clsx("badge-live-dot", live && "opacity-100")} />
         <div className="min-w-0">
           <p className="t-kicker text-purple-light/80 mb-0.5">
             {live ? "Live commentary" : "Commentary standby"}
           </p>
           <span className="font-syne text-base tracking-[0.12em] text-purple-light block font-bold">
-            {live ? "Largo" : "Largo · offline"}
+            Largo
           </span>
+          {isStagingDeploy() && (
+            <span className="font-mono text-[9px] uppercase tracking-[0.14em] text-cyan-400/90">
+              BlackOut Intelligence
+            </span>
+          )}
         </div>
         {live && (
           <button
@@ -276,7 +267,7 @@ export function SpxCommentaryRail({
           </button>
         )}
         {loading && (
-          <span className="ml-auto font-mono text-[10px] text-cyan-400 animate-pulse">
+          <span className="ml-auto font-mono text-[10px] text-cyan-400">
             Reading…
           </span>
         )}
@@ -300,19 +291,16 @@ export function SpxCommentaryRail({
             {error.includes("ANTHROPIC") ? "Intel feed offline — reconnecting" : error}
           </p>
         ) : entries.length === 0 ? (
-          <p className="font-mono text-[10px] text-cyan-400 p-4 text-center animate-pulse">
+          <p className="font-mono text-[10px] text-cyan-400 p-4 text-center">
             Largo, standing by for live tape…
           </p>
         ) : (
           <div className="spx-commentary-feed">
-            <AnimatePresence initial={false}>
-              {entries.map((entry, idx) => (
-                <motion.article
-                  key={entry.id}
-                  initial={{ opacity: 0, y: -12 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  className={clsx("spx-commentary-card", idx === 0 && "spx-commentary-card-featured")}
-                >
+            {entries.map((entry, idx) => (
+              <article
+                key={entry.id}
+                className={clsx("spx-commentary-card", idx === 0 && "spx-commentary-card-featured")}
+              >
                   <div className="flex items-start justify-between gap-2 mb-2">
                     <span
                       className={clsx(
@@ -345,7 +333,8 @@ export function SpxCommentaryRail({
                   {entry.changed.length > 0 && (
                     <ul className="spx-commentary-changed mb-2">
                       {entry.changed.map((c) => (
-                        <li key={c}>{c}</li>
+                        // Strip {{}} like the headline/body — the desk brief wraps numbers in {{ }}.
+                        <li key={c}>{renderEmphasis(c)}</li>
                       ))}
                     </ul>
                   )}
@@ -357,14 +346,15 @@ export function SpxCommentaryRail({
                       </p>
                       <ul className="spx-commentary-watch">
                         {entry.watch.map((w) => (
-                          <li key={w}>{w}</li>
+                          // The live leak: watch strings carry {{…}} (e.g. "γflip {{7,543}}") and
+                          // were rendered raw, bypassing renderEmphasis — strip them here too.
+                          <li key={w}>{renderEmphasis(w)}</li>
                         ))}
                       </ul>
                     </div>
                   )}
-                </motion.article>
+                </article>
               ))}
-            </AnimatePresence>
           </div>
         )}
       </div>

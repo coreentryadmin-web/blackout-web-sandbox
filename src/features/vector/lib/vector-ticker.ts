@@ -9,26 +9,45 @@ export const VECTOR_ORACLE_TICKERS = new Set(["SPX", "SPY", "QQQ"]);
 
 const TICKER_RE = /^[A-Z0-9.\-]{1,8}$/;
 
-/** Normalize and validate a user-facing Vector ticker key. Falls back to SPX on junk input. */
+/** Normalize and validate a user-facing Vector ticker key. Falls back to SPX on junk input.
+ *  Accepts Polygon-style index keys ("I:SPX" → "SPX") so deep links survive. */
 export function normalizeVectorTicker(raw: string | null | undefined): string {
-  const t = String(raw ?? VECTOR_DEFAULT_TICKER).trim().toUpperCase();
+  let t = String(raw ?? VECTOR_DEFAULT_TICKER).trim().toUpperCase();
+  if (t.startsWith("I:")) t = t.slice(2);
   if (!TICKER_RE.test(t)) return VECTOR_DEFAULT_TICKER;
   return t;
 }
 
+/**
+ * True when a raw symbol is a well-formed ticker Vector will serve on demand.
+ *
+ * Vector is deliberately NOT restricted to the preset universe — any optionable
+ * symbol works (the GEX/bars providers return honest-empty structure for
+ * non-optionable ones, and the chart states that rather than erroring). The
+ * preset list is only the quick-pick set and the server-recorded-rail set; it is
+ * not an allowlist. This gate exists purely to reject junk/injection before the
+ * value reaches the providers — a syntactically valid symbol (post-index-prefix
+ * strip, matching TICKER_RE) is accepted; anything else (empty, spaces, control
+ * chars, over length) is refused with a clean 400 instead of silently serving SPX.
+ */
+export function isVectorTickerAllowed(raw: string | null | undefined): boolean {
+  let t = String(raw ?? "").trim().toUpperCase();
+  if (t.startsWith("I:")) t = t.slice(2);
+  return TICKER_RE.test(t);
+}
+
 export function isVectorIndexTicker(ticker: string): boolean {
-  const t = normalizeVectorTicker(ticker);
-  return VECTOR_INDEX_TICKERS.has(t) || t.startsWith("I:");
+  // normalizeVectorTicker strips any "I:" prefix, so the set lookup is total.
+  return VECTOR_INDEX_TICKERS.has(normalizeVectorTicker(ticker));
 }
 
 /** Polygon aggregates symbol for minute-bar seed + live refresh. */
 export function vectorPolygonMinuteSymbol(ticker: string): string {
   const t = normalizeVectorTicker(ticker);
-  if (t === "SPX") return "I:SPX";
-  if (t === "NDX") return "I:NDX";
-  if (t === "RUT") return "I:RUT";
-  if (t === "VIX") return "I:VIX";
-  if (t.startsWith("I:")) return t;
+  // Every VECTOR_INDEX_TICKERS member maps to its Polygon I: key — DJI was
+  // missing, so ?ticker=DJI burned the 12-day walk-back with a bare "DJI"
+  // symbol Polygon's index endpoint doesn't recognize and seeded nothing.
+  if (VECTOR_INDEX_TICKERS.has(t)) return `I:${t}`;
   return t;
 }
 

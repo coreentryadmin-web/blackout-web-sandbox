@@ -1,16 +1,31 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { queryLargoStream, fetchLargoSession } from "@/lib/api";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { queryLargoStream, fetchLargoSession, LargoStreamAborted } from "@/lib/api";
 import { LARGO_SESSION_KEY } from "@/lib/session-cache";
 import { isIosAppShell } from "@/lib/ios-app-shell";
 import { largoStreamErrorMessage } from "@/lib/largo-stream-errors";
+import type { BieAnswerEnvelope } from "@/lib/bie/answer-envelope";
+import {
+  conversationTitle,
+  loadConversations,
+  removeConversation,
+  saveConversations,
+  upsertConversation,
+  type LargoConversation,
+} from "@/features/largo/conversation-history";
 
 export type LargoMessage = {
   id: string;
   role: "user" | "assistant";
   content: string;
   tools?: string[];
+  /**
+   * Populated structured answer from synthesis (#59), when the query API returns
+   * one. Preferred over the markdown shim by LargoAnswerMessage; absent on trivial
+   * answers, historical (rehydrated) turns, and until the server PR deploys.
+   */
+  envelope?: BieAnswerEnvelope | null;
 };
 
 const TOOL_LABEL: Record<string, string> = {
@@ -65,6 +80,19 @@ export const LARGO_SUGGESTIONS = [
   "Give me today's market structure in 3 lines",
 ] as const;
 
+/**
+ * Curated empty-state showcase prompts (BIE Master Spec §6 — example prompts).
+ * These span the intent range the engine must handle — a terse directional read,
+ * a cross-tool setup verdict, and a self-diagnosis question — so a first-time
+ * member immediately sees the terminal is more than a search box.
+ */
+export const LARGO_EXAMPLE_PROMPTS: { label: string; hint: string }[] = [
+  { label: "SPX trend?", hint: "Fast directional read + key levels + invalidation" },
+  { label: "Is 7500 0DTE good today?", hint: "Cross-tool setup verdict, graded" },
+  { label: "Why isn't MSFT forming?", hint: "Self-diagnosis from real ops signals" },
+  { label: "Where are dealers trapped on the gamma map?", hint: "GEX + dealer positioning" },
+];
+
 function upsertAssistantMessage(
   messages: LargoMessage[],
   assistantId: string,
@@ -77,6 +105,14 @@ function upsertAssistantMessage(
   return messages.map((msg) => (msg.id === assistantId ? { ...msg, ...patch } : msg));
 }
 
+function firstUserQuestion(messages: LargoMessage[]): string {
+  return messages.find((m) => m.role === "user")?.content ?? "";
+}
+
+function newSessionId(): string {
+  return `web-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+}
+
 /** Shared Largo chat session + streaming (web desk + native mobile). */
 export function useLargoChat() {
   const [messages, setMessages] = useState<LargoMessage[]>([LARGO_WELCOME]);
@@ -86,29 +122,50 @@ export function useLargoChat() {
   const [hydrated, setHydrated] = useState(false);
   const [followups, setFollowups] = useState<string[]>([]);
   const [activeTools, setActiveTools] = useState<string[]>([]);
+  const [conversations, setConversations] = useState<LargoConversation[]>([]);
+  const [activeSessionId, setActiveSessionId] = useState("");
+  const [canRegenerate, setCanRegenerate] = useState(false);
   const sessionId = useRef("");
   const bottomRef = useRef<HTMLDivElement>(null);
   const msgId = useRef(1);
   const streamBufRef = useRef("");
   const streamFlushRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
+  // First question of the active thread — the stable label for the history index.
+  const threadTitleRef = useRef("");
+  // Last user question, replayed by regenerate().
+  const lastQueryRef = useRef("");
+
+  const setSession = useCallback((id: string) => {
+    sessionId.current = id;
+    setActiveSessionId(id);
+    if (typeof window !== "undefined") sessionStorage.setItem(LARGO_SESSION_KEY, id);
+  }, []);
+
+  useEffect(() => {
+    setConversations(loadConversations());
+  }, []);
 
   useEffect(() => {
     const stored =
       typeof window !== "undefined" ? sessionStorage.getItem(LARGO_SESSION_KEY) : null;
-    sessionId.current = stored || `web-${Date.now()}`;
+    const initial = stored || newSessionId();
+    setSession(initial);
 
-    fetchLargoSession(sessionId.current)
+    fetchLargoSession(initial)
       .then((data) => {
-        if (data.session_id) sessionId.current = data.session_id;
-        sessionStorage.setItem(LARGO_SESSION_KEY, sessionId.current);
+        if (data.session_id) setSession(data.session_id);
         if (data.messages?.length) {
-          setMessages(
-            data.messages.map((m) => ({
-              id: `m-${m.id}`,
-              role: m.role,
-              content: m.content,
-              tools: m.tools_used?.length ? m.tools_used : undefined,
-            }))
+          const hydratedMsgs = data.messages.map((m) => ({
+            id: `m-${m.id}`,
+            role: m.role,
+            content: m.content,
+            tools: m.tools_used?.length ? m.tools_used : undefined,
+          }));
+          setMessages(hydratedMsgs);
+          threadTitleRef.current = firstUserQuestion(hydratedMsgs);
+          setCanRegenerate(
+            hydratedMsgs.some((m) => m.role === "assistant" && m.id !== "welcome")
           );
         }
       })
@@ -116,7 +173,7 @@ export function useLargoChat() {
         /* keep welcome */
       })
       .finally(() => setHydrated(true));
-  }, []);
+  }, [setSession]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -128,70 +185,188 @@ export function useLargoChat() {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, loading, activeTools]);
 
-  async function runQuery(rawQ: string) {
-    const q = rawQ.trim();
-    if (!q || loading || !hydrated) return;
-
-    setInput("");
-    setFollowups([]);
-    setActiveTools([]);
-    const userId = `u-${++msgId.current}`;
-    setMessages((m) => [...m.filter((x) => x.id !== "welcome"), { id: userId, role: "user", content: q }]);
-    setLoading(true);
-    setStreaming(false);
-
-    const assistantId = `a-${++msgId.current}`;
-
-    streamBufRef.current = "";
-    if (streamFlushRef.current) {
-      clearTimeout(streamFlushRef.current);
-      streamFlushRef.current = null;
-    }
-
-    try {
-      const res = await queryLargoStream(
-        q,
-        sessionId.current,
-        (token) => {
-          streamBufRef.current += token;
-          setStreaming(true);
-          if (!streamFlushRef.current) {
-            streamFlushRef.current = setTimeout(() => {
-              streamFlushRef.current = null;
-              const content = streamBufRef.current;
-              setMessages((m) => upsertAssistantMessage(m, assistantId, { content }));
-            }, 50);
-          }
-        },
-        (toolName) => {
-          const label = largoToolLabel(toolName);
-          setActiveTools((prev) => (prev.includes(label) ? prev : [...prev, label]));
-        }
-      );
-      sessionId.current = res.session_id;
-      sessionStorage.setItem(LARGO_SESSION_KEY, sessionId.current);
-      setMessages((m) =>
-        upsertAssistantMessage(m, assistantId, {
-          content: res.answer,
-          tools: res.tools_used,
-        })
-      );
-      setFollowups(Array.isArray(res.followups) ? res.followups.slice(0, 3) : []);
-    } catch (err) {
-      const content = largoStreamErrorMessage(err instanceof Error ? err.message : "", {
-        ios: isIosAppShell(),
+  const recordConversation = useCallback((id: string, title: string, drop?: string) => {
+    setConversations((prev) => {
+      let next = prev;
+      // A provisional id may differ from the server's authoritative session_id;
+      // drop the stale provisional entry so the thread appears once.
+      if (drop && drop !== id) next = removeConversation(next, drop);
+      next = upsertConversation(next, {
+        id,
+        title: conversationTitle(title),
+        updatedAt: Date.now(),
       });
-      setMessages((m) => upsertAssistantMessage(m, assistantId, { content }));
-    } finally {
+      saveConversations(next);
+      return next;
+    });
+  }, []);
+
+  const runQuery = useCallback(
+    async (rawQ: string, opts?: { regenerate?: boolean }) => {
+      const q = rawQ.trim();
+      if (!q || loading || !hydrated) return;
+
+      const regenerate = opts?.regenerate ?? false;
+      setInput("");
+      setFollowups([]);
+      setActiveTools([]);
+      setCanRegenerate(false);
+      lastQueryRef.current = q;
+
+      if (!threadTitleRef.current) threadTitleRef.current = q;
+
+      if (!regenerate) {
+        const userId = `u-${++msgId.current}`;
+        setMessages((m) => [
+          ...m.filter((x) => x.id !== "welcome"),
+          { id: userId, role: "user", content: q },
+        ]);
+      } else {
+        // Replace the previous answer in place: drop the trailing assistant turn.
+        setMessages((m) => {
+          const lastAssistant = [...m].reverse().find((x) => x.role === "assistant");
+          return lastAssistant ? m.filter((x) => x.id !== lastAssistant.id) : m;
+        });
+      }
+
+      setLoading(true);
+      setStreaming(false);
+
+      const assistantId = `a-${++msgId.current}`;
+      const provisionalSid = sessionId.current;
+
+      streamBufRef.current = "";
       if (streamFlushRef.current) {
         clearTimeout(streamFlushRef.current);
         streamFlushRef.current = null;
       }
-      setLoading(false);
-      setStreaming(false);
-      setActiveTools([]);
-    }
-  }
+
+      const controller = new AbortController();
+      abortRef.current = controller;
+
+      try {
+        const res = await queryLargoStream(
+          q,
+          sessionId.current,
+          (token) => {
+            streamBufRef.current += token;
+            setStreaming(true);
+            if (!streamFlushRef.current) {
+              streamFlushRef.current = setTimeout(() => {
+                streamFlushRef.current = null;
+                const content = streamBufRef.current;
+                setMessages((m) => upsertAssistantMessage(m, assistantId, { content }));
+              }, 50);
+            }
+          },
+          (toolName) => {
+            const label = largoToolLabel(toolName);
+            setActiveTools((prev) => (prev.includes(label) ? prev : [...prev, label]));
+          },
+          controller.signal
+        );
+        setSession(res.session_id);
+        setMessages((m) =>
+          upsertAssistantMessage(m, assistantId, {
+            content: res.answer,
+            tools: res.tools_used,
+            // Prefer the real structured envelope when synthesis (#59) returns one;
+            // null keeps LargoAnswerMessage on the markdown shim (no regression).
+            envelope: res.envelope ?? null,
+          })
+        );
+        setFollowups(Array.isArray(res.followups) ? res.followups.slice(0, 3) : []);
+        setCanRegenerate(true);
+        recordConversation(res.session_id, threadTitleRef.current || q, provisionalSid);
+      } catch (err) {
+        if (err instanceof LargoStreamAborted) {
+          // User pressed Stop. Keep whatever streamed so far; if nothing did,
+          // drop the empty assistant bubble rather than showing an error.
+          const partial = streamBufRef.current;
+          if (partial.trim()) {
+            setMessages((m) =>
+              upsertAssistantMessage(m, assistantId, {
+                content: `${partial}\n\n_Stopped._`,
+              })
+            );
+            setCanRegenerate(true);
+          } else {
+            setMessages((m) => m.filter((x) => x.id !== assistantId));
+          }
+        } else {
+          const content = largoStreamErrorMessage(err instanceof Error ? err.message : "", {
+            ios: isIosAppShell(),
+          });
+          setMessages((m) => upsertAssistantMessage(m, assistantId, { content }));
+          setCanRegenerate(true);
+        }
+      } finally {
+        if (streamFlushRef.current) {
+          clearTimeout(streamFlushRef.current);
+          streamFlushRef.current = null;
+        }
+        abortRef.current = null;
+        setLoading(false);
+        setStreaming(false);
+        setActiveTools([]);
+      }
+    },
+    [loading, hydrated, setSession, recordConversation]
+  );
+
+  /** Abort the in-flight turn; partial streamed content is preserved. */
+  const cancel = useCallback(() => {
+    abortRef.current?.abort();
+  }, []);
+
+  /** Re-run the last question, replacing the previous answer in place. */
+  const regenerate = useCallback(() => {
+    if (loading || !lastQueryRef.current) return;
+    void runQuery(lastQueryRef.current, { regenerate: true });
+  }, [loading, runQuery]);
+
+  /** Start a fresh thread (new server session on the next question). */
+  const newConversation = useCallback(() => {
+    if (loading) return;
+    setSession(newSessionId());
+    setMessages([LARGO_WELCOME]);
+    setFollowups([]);
+    setInput("");
+    setCanRegenerate(false);
+    threadTitleRef.current = "";
+    lastQueryRef.current = "";
+  }, [loading, setSession]);
+
+  /** Re-open a stored conversation by session id. */
+  const switchConversation = useCallback(
+    async (id: string) => {
+      if (loading || id === sessionId.current) return;
+      setSession(id);
+      setFollowups([]);
+      setInput("");
+      setHydrated(false);
+      try {
+        const data = await fetchLargoSession(id);
+        if (data.session_id) setSession(data.session_id);
+        const msgs: LargoMessage[] = data.messages?.length
+          ? data.messages.map((m) => ({
+              id: `m-${m.id}`,
+              role: m.role,
+              content: m.content,
+              tools: m.tools_used?.length ? m.tools_used : undefined,
+            }))
+          : [LARGO_WELCOME];
+        setMessages(msgs);
+        threadTitleRef.current = firstUserQuestion(msgs);
+        setCanRegenerate(msgs.some((m) => m.role === "assistant" && m.id !== "welcome"));
+      } catch {
+        setMessages([LARGO_WELCOME]);
+      } finally {
+        setHydrated(true);
+      }
+    },
+    [loading, setSession]
+  );
 
   const isFresh = messages.length === 1 && messages[0]?.id === "welcome";
 
@@ -204,8 +379,15 @@ export function useLargoChat() {
     hydrated,
     followups,
     activeTools,
+    conversations,
+    activeSessionId,
+    canRegenerate,
     bottomRef,
     runQuery,
+    cancel,
+    regenerate,
+    newConversation,
+    switchConversation,
     isFresh,
   };
 }

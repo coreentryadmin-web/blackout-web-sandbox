@@ -1,5 +1,29 @@
 import { before, test, mock } from "node:test";
 import assert from "node:assert/strict";
+import { makeEnvelope, envelopeFromMarkdown } from "@/lib/bie/answer-envelope";
+
+// A genuinely RICH synthesis envelope (multi-section + evidence + scenarios) — the shape the verdict
+// composer produces. Must be attached to the query response as `envelope`.
+const RICH_ENVELOPE = makeEnvelope({
+  headline: "SPX verdict 7500: long-γ range, neutral — moderate confidence",
+  bias: "neutral",
+  intent: "verdict",
+  sections: [
+    { title: "Dealer positioning", body: "Spot 7500 · γflip 7480", bias: "neutral", provenance: { source: "Vector GEX", freshness: "live" } },
+    { title: "Options flow", body: "120 prints · call-led" },
+  ],
+  evidence: [{ kind: "fact", text: "spot 7500 vs γflip 7480", provenance: { source: "GEX" } }],
+  confidence: { level: "moderate", why: "two live surfaces" },
+  scenarios: [{ kind: "bull", thesis: "holds 7480" }],
+  levels: [{ label: "gamma flip", price: 7480 }],
+});
+
+// The transition SHIM composeBieAnswer wraps a plain-string leg in — one bare "Read" section, no
+// evidence/levels/scenarios. Must NOT be attached (the client renders the markdown instead).
+const SHIM_ENVELOPE = envelopeFromMarkdown("**Command board:** NVDA long is live at 142.5c, +50%.", {
+  headline: "0DTE plays",
+  intent: "zerodte_plays",
+});
 
 // Task #103 — persist tools_used + intent_bucket into bie_interactions so #112's
 // self-eval loop can eventually know what ACTUALLY happened on a Largo turn (which
@@ -54,6 +78,7 @@ let appended: AppendedCall[] = [];
 
 let runLargoQuery: typeof import("./largo-terminal").runLargoQuery;
 let runLargoQueryStream: typeof import("./largo-terminal").runLargoQueryStream;
+let isRichBieEnvelope: typeof import("./largo-terminal").isRichBieEnvelope;
 
 // logBie() (largo-terminal.ts) fires the DB write as a detached
 // `void import("./db").then((m) => m.insertBieInteraction(row))` — deliberately
@@ -172,15 +197,26 @@ before(async () => {
       // enough to exercise both logBie branches without wiring up every composer.
       composeBieAnswer: async (route: { intent: string }) => {
         if (route.intent === "zerodte_plays") {
+          // Carries a SHIM envelope (as production composeBieAnswer now always does for a string
+          // leg) — used below to prove the API gate DROPS a non-rich envelope.
           return {
             answer: "**Command board:** NVDA long is live at 142.5c, +50%.",
             context: { live_pnl_pct: 50 },
+            envelope: SHIM_ENVELOPE,
           };
         }
         if (route.intent === "market_context") {
           return {
             answer: "**Market context:** SPX grinding higher, VIX pinned low.",
             context: { vix: 12.5 },
+          };
+        }
+        if (route.intent === "verdict") {
+          // The rich synthesis path — its populated envelope MUST reach the response.
+          return {
+            answer: RICH_ENVELOPE.markdown,
+            context: { verdict: true },
+            envelope: RICH_ENVELOPE,
           };
         }
         return null;
@@ -203,7 +239,7 @@ before(async () => {
   // Imported dynamically, AFTER every mock above is registered — a static
   // top-level import would be hoisted ahead of this before() hook and load the
   // real modules first (same ordering requirement run-tool.test.ts documents).
-  ({ runLargoQuery, runLargoQueryStream } = await import("./largo-terminal"));
+  ({ runLargoQuery, runLargoQueryStream, isRichBieEnvelope } = await import("./largo-terminal"));
 });
 
 test("runLargoQuery: a deterministic router turn persists intent_bucket = the real intent, tools_used = [blackout_intelligence]", async () => {
@@ -368,4 +404,69 @@ test("runLargoQueryStream: a thrown tool-loop error still emits an 'error' SSE e
   } finally {
     toolLoopError = null;
   }
+});
+
+// ── Envelope-through-API (task #64) ─────────────────────────────────────────
+// Thread the composed BieAnswerEnvelope through tryBieRoute → the query response as `envelope`, but
+// ONLY when it's a genuinely rich synthesis — a trivial string leg's shim envelope is dropped so the
+// client falls back to `answer` markdown. `answer`/source/tools_used stay unchanged (back-compat).
+
+test("isRichBieEnvelope: rich synthesis → true; string-leg shim → false; nullish → false", () => {
+  assert.equal(isRichBieEnvelope(RICH_ENVELOPE), true);
+  assert.equal(isRichBieEnvelope(SHIM_ENVELOPE), false);
+  assert.equal(isRichBieEnvelope(null), false);
+  assert.equal(isRichBieEnvelope(undefined), false);
+});
+
+test("runLargoQuery: a rich verdict synthesis attaches the structured envelope to the response", async () => {
+  inserted = [];
+  appended = [];
+  const result = await runLargoQuery("is SPX 7500 0DTE good today", "", "user-env-1");
+
+  assert.equal(result.source, "blackout-intelligence");
+  // The rich envelope is threaded through verbatim…
+  assert.ok(result.envelope, "a rich verdict answer must carry an envelope");
+  assert.equal(result.envelope?.headline, RICH_ENVELOPE.headline);
+  assert.equal(result.envelope?.sections.length, 2);
+  assert.equal(result.envelope?.scenarios?.length, 1);
+  // …while `answer` (markdown) is unchanged for back-compat.
+  assert.equal(result.answer, RICH_ENVELOPE.markdown);
+});
+
+test("runLargoQuery: a trivial string leg (shim envelope) does NOT attach an envelope — client uses markdown", async () => {
+  inserted = [];
+  appended = [];
+  const result = await runLargoQuery("How are today's plays doing?", "", "user-env-2");
+
+  assert.equal(result.source, "blackout-intelligence");
+  assert.equal(result.envelope, undefined, "a shim envelope must be gated out of the response");
+  // The string answer is still delivered as before.
+  assert.match(result.answer, /Command board/);
+});
+
+test("runLargoQueryStream: the done event carries the rich envelope on a verdict synthesis", async () => {
+  inserted = [];
+  appended = [];
+  const events: unknown[] = [];
+  await runLargoQueryStream("is SPX 7500 0DTE good today", "", "user-env-3", (e) => events.push(e));
+
+  const done = events.find((e) => (e as { type?: string }).type === "done") as
+    | { type: string; envelope?: { headline?: string; sections?: unknown[] } }
+    | undefined;
+  assert.ok(done, "expected a done event");
+  assert.ok(done?.envelope, "the streaming done event must carry the rich envelope");
+  assert.equal(done?.envelope?.headline, RICH_ENVELOPE.headline);
+});
+
+test("runLargoQueryStream: the done event omits the envelope for a trivial string leg", async () => {
+  inserted = [];
+  appended = [];
+  const events: unknown[] = [];
+  await runLargoQueryStream("What's the market doing?", "", "user-env-4", (e) => events.push(e));
+
+  const done = events.find((e) => (e as { type?: string }).type === "done") as
+    | { type: string; envelope?: unknown }
+    | undefined;
+  assert.ok(done, "expected a done event");
+  assert.equal(done?.envelope, undefined, "market_context has no envelope → done event omits it");
 });

@@ -8,6 +8,10 @@ function firePlayTelemetry(label: string, work: () => Promise<unknown>) {
     console.error(`[spx-play-engine] ${label}:`, err instanceof Error ? err.message : err);
   });
 }
+
+function spxPlayDebug(...args: unknown[]) {
+  if (process.env.SPX_PLAY_DEBUG === "1") console.log(...args);
+}
 import {
   computeSpxConfluence,
   type SpxConfluence,
@@ -16,6 +20,12 @@ import {
   type SpxSignalFactor,
 } from "@/features/spx/lib/spx-signals";
 import { evaluatePlayGates, GATE_BLOCK, type PlayGateResult } from "@/features/spx/lib/spx-play-gates";
+import {
+  categorizeGateBlocks,
+  emptyCategorizedGateBlocks,
+  firstGateBlockCategory,
+} from "@/features/spx/lib/playbook-gate-categories";
+import type { PlaybookId } from "@/features/spx/lib/playbook-registry";
 import { forceExitCutoffLabel, isPastForceExitCutoff, isBeforeCashOpen, isPremarketPlanningWindow } from "@/features/spx/lib/spx-play-session-guards";
 import type { LottoPlayPayload } from "@/features/spx/lib/spx-play-lotto";
 import type { PowerHourPlayPayload } from "@/features/spx/lib/spx-power-hour-engine";
@@ -25,6 +35,7 @@ import type { PlayConfirmationResult } from "@/features/spx/lib/spx-play-confirm
 import { evaluateClaudePlayApproval, type ClaudePlayVerdict } from "@/features/spx/lib/spx-play-claude";
 import { pickIdleMessage, watchMessage } from "@/features/spx/lib/spx-play-idle";
 import { buildPlayIdeaIntel, humanizeGateBlock, humanizeGateBlocks } from "@/features/spx/lib/spx-play-intel";
+import { playbookExitProfile } from "@/features/spx/lib/playbook-verdict-guard";
 import {
   gradeRank,
   playDynamicTrailWindowPts,
@@ -33,12 +44,16 @@ import {
   playIdealTargetPts,
   playOptionChainRequired,
   playGexStaleMaxSec,
+  playThesisBreakDropPts,
+  playThesisBreakScore,
   playTrimProgressPct,
   playWatchMinScore,
   playPromoteMinScore,
   playTrailingStopBreakevenMfePts,
   playTrailingStopTrailMfePts,
   playTrailingStopTrailWindowPts,
+  playBuyCooldownAplusBypass,
+  playbookStagingLabEnabled,
 } from "@/features/spx/lib/spx-play-config";
 import { evaluateOpenThesisBreak } from "@/features/spx/lib/spx-play-thesis";
 import { enrichPlayPayload } from "@/features/spx/lib/spx-play-context";
@@ -72,8 +87,35 @@ import {
   recordWatch,
   watchSetupKey,
 } from "@/features/spx/lib/spx-play-watch";
-import { buildOptionTicket, type OptionTicket } from "@/features/spx/lib/spx-play-options";
+import { buildOptionTicket, quoteSpxOdteContract, type OptionTicket } from "@/features/spx/lib/spx-play-options";
+import { buildOptionExecutionSim } from "@/features/spx/lib/playbook-option-sim";
+import {
+  buildGreeksSnapshot,
+  estimateOptionPnl,
+  parseOptionPremiumMid,
+} from "@/features/spx/lib/playbook-option-pnl";
+import { mergeTradeGovernorWithOptionOverlay } from "@/features/spx/lib/trade-governor";
+import {
+  evaluatePlaybookExitPlan,
+  strongestPlaybookExitSignal,
+} from "@/features/spx/lib/playbook-exit-engines";
+import { buildVolatilityContext } from "@/features/spx/lib/playbook-volatility-context";
+import {
+  commitPlaybookInstanceCancelled,
+  commitPlaybookInstanceClosed,
+  commitPlaybookInstanceEntryPending,
+  commitPlaybookInstanceExitPending,
+  commitPlaybookInstanceManaging,
+  commitPlaybookInstanceOpen,
+  resolveActivePlaybookInstanceId,
+} from "@/features/spx/lib/playbook-fsm-sync";
+import { resolveGuardedPlaybookMatch } from "@/features/spx/lib/playbook-match-resolver";
+import { refreshOrBreakMemory } from "@/features/spx/lib/playbook-break-memory-store";
+import type { OrBreakMemory } from "@/features/spx/lib/playbook-break-memory";
+import type { ResolvedPlaybookMatch } from "@/features/spx/lib/playbook-match-resolver";
+import { parseSpxContractLabel } from "@/features/spx/lib/spx-play-contract-label";
 import type { PlayExitAction } from "@/features/spx/lib/spx-play-outcomes";
+import { playCloseWasLoss } from "@/features/spx/lib/spx-play-outcomes";
 import {
   effectiveFullMinScore,
   effectivePromoteMinScore,
@@ -96,7 +138,13 @@ import {
   technicalsSummary,
 } from "@/features/spx/lib/spx-play-payload";
 
-export type EvaluateSpxPlayOptions = { mutate?: boolean };
+export type EvaluateSpxPlayOptions = {
+  mutate?: boolean;
+  /** Shared OR memory from caller — avoids split-brain vs playbook panel on member reads. */
+  or_break_memory?: OrBreakMemory | null;
+  /** Pre-resolved playbook match — skips redundant resolver when set. */
+  playbook_resolved?: ResolvedPlaybookMatch | null;
+};
 
 /**
  * Read the most recent Night Hawk edition and extract a signed confluence bonus
@@ -192,61 +240,120 @@ async function evaluateOpenPlay(
   let headline = `${row.grade} ${dir === "long" ? "CALL" : "PUT"} working`;
   let thesis = `Managing open ${dir} from ${row.entry_price.toFixed(2)} — thesis intact.`;
 
+  const sessionDateFsm = todayEt();
+  const entryScore = row.entry_score ?? confluence.score;
+  const forceExit = isPastForceExitCutoff();
+  const volCtx = buildVolatilityContext(desk, technicals);
+
+  const pbId = (row.playbook_id as PlaybookId | null | undefined) ?? null;
+  const exitPlan = pbId
+    ? evaluatePlaybookExitPlan({
+        playbook_id: pbId,
+        desk,
+        technicals,
+        row,
+        direction: dir,
+        price,
+        confluence_score: confluence.score,
+        entry_score: entryScore,
+        mfe_pts: mfe,
+        vol_ctx: volCtx,
+        desk_stale: deskStale,
+        force_exit: forceExit,
+      })
+    : null;
+
+  const pbExitSignal = exitPlan ? strongestPlaybookExitSignal(exitPlan) : null;
+
   const stop = row.stop;
   const target = row.target;
 
-  // When the desk is stale, neutralize all price-driven exit triggers (stop/target/trail/
-  // trim) so management HOLDs instead of acting on an untrustworthy quote. Time/session
-  // based exits (force-exit theta cutoff, session close) are evaluated independently below.
-  const stopHit = !deskStale && stop != null && (dir === "long" ? price <= stop : price >= stop);
-  const targetHit = !deskStale && target != null && (dir === "long" ? price >= target : price <= target);
+  let stopHit = !deskStale && stop != null && (dir === "long" ? price <= stop : price >= stop);
+  let targetHit = !deskStale && target != null && (dir === "long" ? price >= target : price <= target);
+  let thesisBreak = exitPlan?.thesis_break ?? false;
+  let trimZone = exitPlan?.trim_zone ?? false;
+  let trailingStop = exitPlan?.trailing_stop ?? null;
+  let trailingStopHit =
+    !deskStale &&
+    trailingStop !== null &&
+    (dir === "long" ? price <= trailingStop : price >= trailingStop);
 
-  const entryScore = row.entry_score ?? confluence.score;
-  const thesisEval = evaluateOpenThesisBreak(dir, confluence.score, entryScore, {
-    mfePts: mfe,
-    openedAtMs: new Date(row.opened_at).getTime(),
-  });
-  const thesisBreak = thesisEval.broken;
+  if (!pbId) {
+    const exitProf = playbookExitProfile(pbId);
+    const thesisEval = evaluateOpenThesisBreak(dir, confluence.score, entryScore, {
+      mfePts: mfe,
+      openedAtMs: new Date(row.opened_at).getTime(),
+    }, {
+      dropPts: playThesisBreakDropPts() * exitProf.thesis_break_mult,
+      floor: playThesisBreakScore() * exitProf.thesis_break_mult,
+    });
+    thesisBreak = thesisEval.broken;
+    const totalRun = target != null ? Math.abs(target - row.entry_price) : 0;
+    const progress =
+      totalRun > 0
+        ? dir === "long"
+          ? (price - row.entry_price) / totalRun
+          : (row.entry_price - price) / totalRun
+        : 0;
+    trimZone =
+      !deskStale &&
+      !row.trim_done &&
+      mfe >= playDynamicTrimMfePts(desk.vix) * exitProf.trim_mfe_mult &&
+      target != null &&
+      progress >= playTrimProgressPct();
+    const trailWindowPts =
+      (playDynamicTrailWindowPts(desk.vix) ?? playTrailingStopTrailWindowPts()) *
+      exitProf.trail_window_mult;
+    trailingStop = null;
+    if (mfe >= playTrailingStopTrailMfePts()) {
+      const peakPrice = dir === "long" ? row.entry_price + mfe : row.entry_price - mfe;
+      trailingStop = dir === "long" ? peakPrice - trailWindowPts : peakPrice + trailWindowPts;
+    } else if (mfe >= playTrailingStopBreakevenMfePts()) {
+      trailingStop = row.entry_price;
+    }
+    trailingStopHit =
+      !deskStale && !targetHit && trailingStop !== null &&
+      (dir === "long" ? price <= trailingStop : price >= trailingStop);
+  } else if (pbExitSignal?.action === "SELL" && pbExitSignal.priority >= 85) {
+    stopHit = pbExitSignal.reason.includes("Stop");
+    targetHit = pbExitSignal.reason.includes("Target");
+    thesisBreak = pbExitSignal.reason.includes("Thesis") || pbExitSignal.reason.includes("VWAP");
+  }
 
-  const totalRun =
-    target != null ? Math.abs(target - row.entry_price) : 0;
+  const totalRun = target != null ? Math.abs(target - row.entry_price) : 0;
   const progress =
     totalRun > 0
       ? dir === "long"
         ? (price - row.entry_price) / totalRun
         : (row.entry_price - price) / totalRun
       : 0;
-  const trimZone =
-    !deskStale &&
-    !row.trim_done &&
-    mfe >= playDynamicTrimMfePts(desk.vix) &&
-    target != null &&
-    progress >= playTrimProgressPct();
 
-  const forceExit = isPastForceExitCutoff();
-
-  // Trailing stop — mfe is the rolling peak MFE (Math.max of row.mfe_pts and current move),
-  // so it naturally tracks the best point the trade reached since entry.
-  // Priority: breakeven lock first (at +8 pts), then price-trail (at +15 pts, 7 pts window).
-  // Pairs with the trim mechanism: trim fires at MFE >=12 at 70% progress; trail protects the runner.
-  const trailBreakevenMfe = playTrailingStopBreakevenMfePts();
-  const trailActiveMfe = playTrailingStopTrailMfePts();
-  // VIX-indexed trail window: scales with the day's range so normal retracements on
-  // volatile days don't stop out a healthy runner. Falls back to the static config when
-  // the env override is set (SPX_TRAILING_STOP_TRAIL_WINDOW).
-  const trailWindowPts = playDynamicTrailWindowPts(desk.vix) ?? playTrailingStopTrailWindowPts();
-  let trailingStop: number | null = null;
-  if (mfe >= trailActiveMfe) {
-    // Trail at (peak price - trailWindowPts) to lock in most of the run
-    const peakPrice = dir === "long" ? row.entry_price + mfe : row.entry_price - mfe;
-    trailingStop = dir === "long" ? peakPrice - trailWindowPts : peakPrice + trailWindowPts;
-  } else if (mfe >= trailBreakevenMfe) {
-    // Lock to entry price — worst case is a scratch, not a loss
-    trailingStop = row.entry_price;
-  }
-  const trailingStopHit = !deskStale && !targetHit && trailingStop !== null && (
-    dir === "long" ? price <= trailingStop : price >= trailingStop
-  );
+  const fsmOnClose = async (
+    exitReason: string,
+    exitAction: string,
+    setupInvalidated = false
+  ) => {
+    if (!mutate || !pbId) return;
+    if (setupInvalidated) {
+      await commitPlaybookInstanceExitPending({
+        session_date: sessionDateFsm,
+        playbook_id: pbId,
+        direction: dir,
+        desk,
+        technicals,
+        reason: exitReason,
+      });
+    }
+    await commitPlaybookInstanceClosed({
+      session_date: sessionDateFsm,
+      playbook_id: pbId,
+      direction: dir,
+      desk,
+      technicals,
+      exit_reason: exitReason,
+      exit_action: exitAction,
+    });
+  };
 
   const closeSnapshot = (exitAction: PlayExitAction, wasLoss: boolean, trimDone: boolean) => ({
     exit_price: price,
@@ -263,13 +370,14 @@ async function evaluateOpenPlay(
     action = "SELL";
     headline = `THETA FLAT — ${forceExitCutoffLabel()} cutoff`;
     thesis = "0DTE theta window — flatten open runners before illiquid close.";
-    const thetaLoss = pnlPts(dir, row.entry_price, price) < 0;
+    const thetaLoss = playCloseWasLoss(pnlPts(dir, row.entry_price, price));
     if (mutate) {
       await closeOpenPlay(row.id, {
         was_loss: thetaLoss,
         direction: dir,
         close: closeSnapshot("THETA", thetaLoss, row.trim_done),
       });
+      await fsmOnClose("theta cutoff", "THETA");
       firePlayTelemetry("maybeLogSpxPlay:SELL", () =>
         maybeLogSpxPlay(
         { price: desk.price, market_open: desk.market_open },
@@ -311,6 +419,7 @@ async function evaluateOpenPlay(
         direction: dir,
         close: closeSnapshot("TARGET", false, row.trim_done),
       });
+      await fsmOnClose("target hit", "TARGET");
       firePlayTelemetry("maybeLogSpxPlay:TARGET", () =>
         maybeLogSpxPlay(
         { price: desk.price, market_open: desk.market_open },
@@ -356,6 +465,7 @@ async function evaluateOpenPlay(
         direction: dir,
         close: closeSnapshot("TRAIL", false, row.trim_done),
       });
+      await fsmOnClose("trailing stop", "TRAIL");
       firePlayTelemetry("maybeLogSpxPlay:TRAIL", () =>
         maybeLogSpxPlay(
           { price: desk.price, market_open: desk.market_open },
@@ -401,15 +511,11 @@ async function evaluateOpenPlay(
     thesis = stopHit
       ? `Price ${price.toFixed(2)} through stop ${stop?.toFixed(0)}. Flatten.`
       : thesisBreak
-        ? `Thesis break (${thesisEval.trigger ?? "or"}) — score ${confluence.score} vs ${thesisEval.trigger === "floor" ? "±" : ""}${Math.abs(thesisEval.threshold).toFixed(0)} threshold (entry ${entryScore}).`
+        ? pbExitSignal?.reason ?? `Thesis break — score ${confluence.score} vs entry ${entryScore}.`
         : "Cash session closed — flatten runners.";
-    // C4: was_loss is true for stop hits and thesis breaks regardless of market state.
-    // SESSION-only closes (theta/time, no stop or thesis break) use actual PnL so a
-    // losing session close correctly triggers the same-direction re-entry lock.
-    const wasLoss =
-      stopHit ||
-      thesisBreak ||
-      (!stopHit && !thesisBreak && pnlPts(dir, row.entry_price, price) < 0);
+    // C4: was_loss uses playCloseWasLoss so scratch exits in (-1,0] grade breakeven, not loss.
+    const exitPnl = pnlPts(dir, row.entry_price, price);
+    const wasLoss = playCloseWasLoss(exitPnl);
     const exitAction = stopHit ? "STOP" : !desk.market_open ? "SESSION" : "THESIS";
     if (mutate) {
       await closeOpenPlay(row.id, {
@@ -417,6 +523,7 @@ async function evaluateOpenPlay(
         direction: dir,
         close: closeSnapshot(exitAction, wasLoss, row.trim_done),
       });
+      await fsmOnClose(headline, exitAction, thesisBreak);
       firePlayTelemetry("maybeLogSpxPlay:SELL", () =>
         maybeLogSpxPlay(
         { price: desk.price, market_open: desk.market_open },
@@ -447,12 +554,71 @@ async function evaluateOpenPlay(
         score: confluence.score,
       });
     }
+  } else if (
+    pbExitSignal?.action === "SELL" &&
+    pbExitSignal.priority >= 82 &&
+    !targetHit &&
+    !stopHit &&
+    !trailingStopHit
+  ) {
+    action = "SELL";
+    headline = pbExitSignal.reason;
+    thesis = pbExitSignal.reason;
+    const wasLoss = playCloseWasLoss(pnlPts(dir, row.entry_price, price));
+    if (mutate) {
+      await closeOpenPlay(row.id, {
+        was_loss: wasLoss,
+        direction: dir,
+        close: closeSnapshot("THESIS", wasLoss, row.trim_done),
+      });
+      await fsmOnClose(pbExitSignal.reason, "THESIS", true);
+      firePlayTelemetry("maybeLogSpxPlay:SELL", () =>
+        maybeLogSpxPlay(
+          { price: desk.price, market_open: desk.market_open },
+          {
+            action: "SELL",
+            direction: dir,
+            grade: row.grade,
+            score: confluence.score,
+            confidence: confluence.confidence,
+            headline,
+            thesis,
+            factors: confluence.factors,
+            levels: {
+              entry: row.entry_price,
+              stop: row.stop,
+              target: row.target,
+              invalidation: confluence.levels.invalidation,
+            },
+          }
+        )
+      );
+      void notifyPlayDiscord({
+        action: "SELL",
+        direction: dir,
+        headline,
+        thesis,
+        price: desk.price,
+        grade: row.grade,
+        score: confluence.score,
+      });
+    }
   } else if (trimZone) {
     action = "TRIM";
     headline = "TRIM — bank partial, trail runner";
     thesis = `+${mfe.toFixed(1)} pts MFE · ${Math.round(progress * 100)}% to target — trim ~50%, trail runner.`;
     if (mutate) {
       await updateOpenPlay(row.id, { trim_done: true });
+      if (pbId) {
+        await commitPlaybookInstanceManaging({
+          session_date: sessionDateFsm,
+          playbook_id: pbId,
+          direction: dir,
+          desk,
+          technicals,
+          detail: headline,
+        });
+      }
       firePlayTelemetry("maybeLogSpxPlay:TRIM", () =>
         maybeLogSpxPlay(
         { price: desk.price, market_open: desk.market_open },
@@ -486,8 +652,97 @@ async function evaluateOpenPlay(
   }
 
   const optionLabel = row.option_label;
-  if (optionLabel && row.option_premium) {
-    thesis = `${optionLabel} @ ${row.option_premium} · ${thesis}`;
+  let optionPremium = row.option_premium;
+  let liveTicket: OptionTicket | null = null;
+
+  if (action !== "SELL" && optionLabel) {
+    const parsed = parseSpxContractLabel(optionLabel);
+    const strike = row.option_strike ?? parsed?.strike;
+    const optType: "call" | "put" =
+      row.option_type === "put"
+        ? "put"
+        : row.option_type === "call"
+          ? "call"
+          : dir === "short"
+            ? "put"
+            : "call";
+    if (strike) {
+      try {
+        const q = await quoteSpxOdteContract(strike, optType);
+        if (q) {
+          optionPremium = q.premium_display;
+          liveTicket = {
+            underlying: "SPXW",
+            strike: q.strike,
+            option_type: q.option_type,
+            contract_label: optionLabel,
+            ticker: null,
+            bid: q.bid,
+            ask: q.ask,
+            mid: q.mid,
+            spread_pct: q.spread_pct,
+            delta: q.delta,
+            open_interest: null,
+            premium_range: q.premium_display,
+            blocked: false,
+            block_reason: null,
+          };
+        }
+      } catch {
+        /* chain quote is best-effort — fall back to stored premium */
+      }
+    }
+  }
+
+  if (optionLabel && optionPremium) {
+    thesis = `${optionLabel} @ ${optionPremium} · ${thesis}`;
+  }
+
+  const storedTicket: OptionTicket | null = optionLabel
+    ? {
+        underlying: "SPXW",
+        strike: row.option_strike ?? 0,
+        option_type: row.option_type === "put" ? "put" : "call",
+        contract_label: optionLabel,
+        ticker: null,
+        bid: null,
+        ask: null,
+        mid: null,
+        spread_pct: null,
+        delta: null,
+        open_interest: null,
+        premium_range: optionPremium ?? row.option_premium ?? "—",
+        blocked: false,
+        block_reason: null,
+      }
+    : null;
+
+  let optionPnlEst = null;
+  const entryPremiumMid =
+    parseOptionPremiumMid(row.option_premium) ?? liveTicket?.mid ?? storedTicket?.mid ?? null;
+  if (entryPremiumMid != null) {
+    const minutesHeld = Math.max(
+      0,
+      (Date.now() - new Date(row.opened_at).getTime()) / 60_000
+    );
+    const greeks = buildGreeksSnapshot({
+      direction: dir,
+      entry_spot: row.entry_price,
+      option_mid: entryPremiumMid,
+      delta: liveTicket?.delta ?? storedTicket?.delta ?? null,
+    });
+    optionPnlEst = estimateOptionPnl({
+      greeks,
+      current_spot: price,
+      minutes_held: minutesHeld,
+      round_trip_cost_pts:
+        liveTicket?.spread_pct != null
+          ? (liveTicket.spread_pct / 100) * entryPremiumMid
+          : null,
+    });
+    if (action === "HOLD") {
+      thesis = `${thesis} · est Δ$${optionPnlEst.net_premium_pnl.toFixed(2)}`;
+    }
   }
 
   return {
@@ -508,7 +763,15 @@ async function evaluateOpenPlay(
       target: row.target,
       invalidation: confluence.levels.invalidation,
     },
-    gates: { passed: false, blocks: [], warnings: [], entry_mode: "none", play_idea: null },
+    gates: {
+      passed: false,
+      blocks: [],
+      blocks_by_category: emptyCategorizedGateBlocks(),
+      first_block_category: null,
+      warnings: [],
+      entry_mode: "none",
+      play_idea: null,
+    },
     claude: null,
     open_play:
       action === "SELL"
@@ -524,29 +787,13 @@ async function evaluateOpenPlay(
             mfe_pts: mfe,
             trim_done: row.trim_done || action === "TRIM",
             option_label: row.option_label,
-            option_premium: row.option_premium,
+            option_premium: optionPremium ?? row.option_premium,
+            option_pnl_est: optionPnlEst,
           },
     confirmations,
     technicals: technicalsSummary(technicals, mtf),
     mtf,
-    option_ticket: optionLabel
-      ? {
-          underlying: "SPXW",
-          strike: row.option_strike ?? 0,
-          option_type: row.option_type === "put" ? "put" : "call",
-          contract_label: optionLabel,
-          ticker: null,
-          bid: null,
-          ask: null,
-          mid: null,
-          spread_pct: null,
-          delta: null,
-          open_interest: null,
-          premium_range: row.option_premium ?? "—",
-          blocked: false,
-          block_reason: null,
-        }
-      : null,
+    option_ticket: liveTicket ?? storedTicket,
     watch: null,
     telemetry,
     lotto_play: null,
@@ -566,7 +813,8 @@ async function evaluateFlatPlay(
   confluence: SpxConfluence,
   technicals: PlayTechnicals,
   confirmations: PlayConfirmationResult,
-  mutate = false
+  mutate = false,
+  playbookOpts?: Pick<EvaluateSpxPlayOptions, "or_break_memory" | "playbook_resolved">
 ): Promise<SpxPlayPayload> {
   const session = await loadPlaySessionMeta();
   const adaptive = await loadAdaptivePlayGates();
@@ -583,9 +831,38 @@ async function evaluateFlatPlay(
       ? evaluateMtfHybrid(direction, keyLevel, technicals, confluence.grade, confluence.score)
       : null;
 
+  const sessionDate = todayEt();
+  const orBreakMemory =
+    playbookOpts?.or_break_memory != null
+      ? playbookOpts.or_break_memory
+      : await refreshOrBreakMemory(sessionDate, desk, technicals, mutate);
+
+  const playbookResolved =
+    playbookOpts?.playbook_resolved ??
+    (await resolveGuardedPlaybookMatch(sessionDate, desk, technicals, {
+      or_break_memory: orBreakMemory,
+    }));
+  const playbookMatch = playbookResolved;
+  const playbookPrimaryId: PlaybookId | null = playbookMatch.primary_playbook_id;
+  const primaryVerdict = playbookPrimaryId
+    ? playbookMatch.verdicts.find((v) => v.playbook_id === playbookPrimaryId)
+    : null;
+  const playbookPrimaryDirection = primaryVerdict?.direction ?? null;
+  const playbookLabActive =
+    playbookStagingLabEnabled() &&
+    playbookPrimaryId != null &&
+    playbookPrimaryDirection != null &&
+    direction === playbookPrimaryDirection;
+  const gatePlaybookOpts = {
+    playbook_primary_id: playbookPrimaryId,
+    playbook_primary_direction: playbookPrimaryDirection,
+    triggers_today_by_pb: playbookResolved.triggers_today_by_pb,
+  };
+
   const gatesWatch = evaluatePlayGates(desk, confluence, session, confirmations, {
     min_score_boost: adaptive.global_min_score_boost,
     entry_intent: "watch",
+    ...gatePlaybookOpts,
   });
   const gatesView = intelGates(desk, confluence, gatesWatch);
   const abs = Math.abs(confluence.score);
@@ -595,7 +872,7 @@ async function evaluateFlatPlay(
   if (mutate && watchRec && direction != null && watchRec.direction !== direction) {
     // Direction flipped mid-session (e.g. long watch → market turns bearish).
     // Log it so Railway/Vercel logs record the flip timestamp and the old setup key.
-    console.log(
+    spxPlayDebug(
       `[spx-play-engine] direction flip: ${watchRec.direction} → ${direction}` +
       ` — clearing watch ${watchRec.setup_key ?? "(no key)"} at ${new Date().toISOString()}`
     );
@@ -631,10 +908,16 @@ async function evaluateFlatPlay(
     }
   }
 
+  const buyCooldownBypass =
+    promoteEligible ||
+    (playBuyCooldownAplusBypass() && gradeRank(confluence.grade) >= gradeRank("A+"));
+
   const gatesBuy = evaluatePlayGates(desk, confluence, session, confirmations, {
     min_score_boost: adaptive.global_min_score_boost,
     entry_intent: "buy",
-    cold_buy_path: !promoteEligible,
+    cold_buy_path: !promoteEligible && !playbookLabActive,
+    bypass_buy_cooldown: buyCooldownBypass,
+    ...gatePlaybookOpts,
   });
 
   const watchState = {
@@ -736,7 +1019,7 @@ async function evaluateFlatPlay(
   const sessionExtras = { session_phase: currentSessionPhase(desk) };
 
   if (!entryGatesRaw.passed) {
-    console.log('[spx-play-engine] entry gates blocked:', {
+    spxPlayDebug('[spx-play-engine] entry gates blocked:', {
       grade: confluence.grade,
       score: confluence.score,
       direction: confluence.direction,
@@ -791,7 +1074,7 @@ async function evaluateFlatPlay(
   }
 
   if (!claude.approved || !confluence.direction) {
-    console.log('[spx-play-engine] Claude blocked play:', {
+    spxPlayDebug('[spx-play-engine] Claude blocked play:', {
       verdict: claude.verdict,
       source: claude.source,
       approved: claude.approved,
@@ -824,9 +1107,67 @@ async function evaluateFlatPlay(
   }
 
   const dir = confluence.direction;
-  const optionTicket = await buildOptionTicket(desk.price, dir, confluence.grade);
+  const optionTicketRaw = await buildOptionTicket(desk.price, dir, confluence.grade);
+  const executionSim = buildOptionExecutionSim(optionTicketRaw, dir, desk.price, desk);
+  const optionTicket: OptionTicket = executionSim
+    ? {
+        ...optionTicketRaw,
+        execution_sim: {
+          ...executionSim,
+          greeks_snapshot: buildGreeksSnapshot({
+            direction: dir,
+            entry_spot: desk.price,
+            option_mid: optionTicketRaw.mid ?? 0,
+            delta: optionTicketRaw.delta,
+            execution_sim: executionSim,
+          }),
+        },
+      }
+    : optionTicketRaw;
 
-  console.log('[spx-play-engine] optionTicket check:', {
+  const sessionGovernor = entryGatesRaw.trade_governor ?? {
+    blocks: [],
+    warnings: [],
+    size_multiplier: 1,
+    tier: "normal" as const,
+    emergency_shutdown: false,
+  };
+  const optionGovernor = mergeTradeGovernorWithOptionOverlay(sessionGovernor, {
+    mid: optionTicket.mid,
+    spread_pct: optionTicket.spread_pct,
+    blocked: optionTicket.blocked,
+    block_reason: optionTicket.block_reason,
+  });
+  if (optionGovernor.blocks.length) {
+    if (mutate && playbookLabActive && playbookPrimaryId && dir) {
+      await commitPlaybookInstanceCancelled({
+        session_date: sessionDate,
+        playbook_id: playbookPrimaryId,
+        direction: dir,
+        desk,
+        technicals,
+        reason: optionGovernor.blocks.join("; "),
+      });
+    }
+    return {
+      ...scanningPayload(desk, confluence, pickIdleMessage(), {
+        passed: false,
+        blocks: optionGovernor.blocks,
+        blocks_by_category: categorizeGateBlocks(optionGovernor.blocks),
+        warnings: [...entryGatesRaw.warnings, ...optionGovernor.warnings],
+        entry_mode: "none",
+        play_idea: entryGatesView.play_idea,
+      }, sessionExtras),
+      confirmations: null,
+      technicals: techSum,
+      mtf,
+      option_ticket: optionTicket,
+      watch: watchState,
+      telemetry,
+    };
+  }
+
+  spxPlayDebug('[spx-play-engine] optionTicket check:', {
     blocked: optionTicket.blocked,
     reason: optionTicket.block_reason,
     ticker: optionTicket.ticker,
@@ -838,10 +1179,23 @@ async function evaluateFlatPlay(
   });
 
   if (optionTicket.blocked && playOptionChainRequired()) {
+    if (mutate && playbookLabActive && playbookPrimaryId && dir) {
+      await commitPlaybookInstanceCancelled({
+        session_date: sessionDate,
+        playbook_id: playbookPrimaryId,
+        direction: dir,
+        desk,
+        technicals,
+        reason: optionTicket.block_reason ?? "Option chain unavailable",
+      });
+    }
     return {
       ...scanningPayload(desk, confluence, pickIdleMessage(), {
         passed: false,
         blocks: [optionTicket.block_reason ?? "Option chain unavailable"],
+        blocks_by_category: categorizeGateBlocks([
+          optionTicket.block_reason ?? "Option chain unavailable",
+        ]),
         warnings: entryGatesRaw.warnings,
         entry_mode: "none",
         play_idea: entryGatesView.play_idea,
@@ -869,10 +1223,8 @@ async function evaluateFlatPlay(
     );
   }
 
-  const sessionDate = todayEt();
-
-  const entryPath = promoteEligible ? "watch_promote" : "cold_buy";
-  const promotePrefix = promoteEligible ? "WATCH→ENTRY · " : "";
+  const entryPath = promoteEligible ? "watch_promote" : playbookLabActive ? "playbook_lab" : "cold_buy";
+  const promotePrefix = promoteEligible ? "WATCH→ENTRY · " : playbookLabActive ? `${playbookPrimaryId} · ` : "";
   const contractHeadline = optionTicket.contract_label
     ? `${promotePrefix}Buy ${optionTicket.contract_label} @ ${optionTicket.premium_range}`
     : `${promotePrefix}${claude.headline}`;
@@ -911,7 +1263,7 @@ async function evaluateFlatPlay(
     };
   }
 
-  console.log('[spx-play-engine] ALL GATES PASSED — opening play:', {
+  spxPlayDebug('[spx-play-engine] ALL GATES PASSED — opening play:', {
     grade: confluence.grade,
     score: confluence.score,
     direction: dir,
@@ -924,6 +1276,31 @@ async function evaluateFlatPlay(
   });
 
   const openedAt = new Date().toISOString();
+  let playbookInstanceId: string | null = null;
+  if (playbookPrimaryId) {
+    await commitPlaybookInstanceEntryPending({
+      session_date: sessionDate,
+      playbook_id: playbookPrimaryId,
+      direction: dir,
+      desk,
+      technicals,
+      detail: `ticket ${optionTicket.contract_label ?? "generated"}`,
+    });
+    await commitPlaybookInstanceOpen({
+      session_date: sessionDate,
+      playbook_id: playbookPrimaryId,
+      direction: dir,
+      desk,
+      technicals,
+      detail: `openPlay ${entryPath}`,
+    });
+    playbookInstanceId = await resolveActivePlaybookInstanceId(
+      sessionDate,
+      playbookPrimaryId,
+      dir
+    );
+  }
+
   const { row: opened, created } = await openPlay(
     {
       session_date: sessionDate,
@@ -939,6 +1316,7 @@ async function evaluateFlatPlay(
       option_type: optionTicket.option_type,
       option_label: optionTicket.contract_label,
       option_premium: optionTicket.premium_range,
+      playbook_id: playbookPrimaryId,
     },
     {
       session_date: sessionDate,
@@ -957,6 +1335,8 @@ async function evaluateFlatPlay(
       claude,
       option_ticket: optionTicket,
       opened_at: openedAt,
+      playbook_id: playbookPrimaryId,
+      playbook_instance_id: playbookInstanceId,
     }
   );
 
@@ -1036,6 +1416,8 @@ async function evaluateFlatPlay(
     gates: {
       passed: true,
       blocks: [],
+      blocks_by_category: emptyCategorizedGateBlocks(),
+      first_block_category: null,
       warnings: entryGatesRaw.warnings,
       entry_mode: entryGatesRaw.entry_mode,
       play_idea: entryGatesView.play_idea,
@@ -1089,7 +1471,7 @@ async function evaluateFlatPlay(
 export async function evaluateSpxPlay(
   desk: SpxDeskPayload,
   prefetchedTechnicals?: PlayTechnicals | null,
-  options?: { mutate?: boolean }
+  options?: EvaluateSpxPlayOptions
 ): Promise<SpxPlayPayload> {
   const payload = await evaluateSpxPlayCore(desk, prefetchedTechnicals, options);
   if (options?.mutate === true) {
@@ -1113,7 +1495,7 @@ export async function evaluateSpxPlay(
 async function evaluateSpxPlayCore(
   desk: SpxDeskPayload,
   prefetchedTechnicals?: PlayTechnicals | null,
-  options?: { mutate?: boolean }
+  options?: EvaluateSpxPlayOptions
 ): Promise<SpxPlayPayload> {
   const mutate = options?.mutate === true;
   const premarket = isPremarketPlanningWindow();
@@ -1158,6 +1540,8 @@ async function evaluateSpxPlayCore(
       gates: {
         passed: false,
         blocks: ["Session closed"],
+        blocks_by_category: categorizeGateBlocks(["Session closed"]),
+        first_block_category: firstGateBlockCategory(["Session closed"]),
         warnings: [],
         entry_mode: "none",
         play_idea: playIdea,
@@ -1295,5 +1679,8 @@ async function evaluateSpxPlayCore(
     return evaluateOpenPlay(desk, confluence, open, technicals, confirmations, mtf, telemetry, mutate);
   }
 
-  return evaluateFlatPlay(desk, confluence, technicals, confirmations, mutate);
+  return evaluateFlatPlay(desk, confluence, technicals, confirmations, mutate, {
+    or_break_memory: options?.or_break_memory,
+    playbook_resolved: options?.playbook_resolved,
+  });
 }

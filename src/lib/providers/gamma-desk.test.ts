@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 // gamma-desk.ts has ZERO imports (no @/, no Next, no Redis) -> resolves cleanly
 // under tsx --test. Both functions are pure/deterministic.
-import { analyzeStrikeGexRows, computeGammaFlip, topGexWalls } from "./gamma-desk";
+import { analyzeStrikeGexRows, computeGammaFlip, gammaRegime, gammaRegimeWithHysteresis, topGexWalls } from "./gamma-desk";
 import type { GexStrikeLevel } from "./gamma-desk";
 
 test("balanced net-0 strike (callG=-putG) SURVIVES the filter", () => {
@@ -147,7 +147,36 @@ test("ladder is sorted descending by strike (calls above, puts below)", () => {
   }
 });
 
+test("topGexWalls: respects small limit even when both anchors exist", () => {
+  const spot = 5000;
+  const walls = topGexWalls(
+    [lvl(5100, 400), lvl(5050, 200), lvl(4950, -300), lvl(4900, -600)],
+    spot,
+    1
+  );
+  assert.equal(walls.length, 1);
+});
+
 test("empty levels or spot<=0 returns []", () => {
   assert.deepEqual(topGexWalls([], 5000, 10), []);
   assert.deepEqual(topGexWalls([lvl(5000, 100)], 0, 10), []);
+});
+
+test("gammaRegimeWithHysteresis: holds prior regime until buffer cleared", () => {
+  const flip = 6000;
+  assert.equal(gammaRegime(6001, flip), "mean_revert");
+  assert.equal(gammaRegimeWithHysteresis(6001, flip, "amplification"), "amplification");
+  assert.equal(gammaRegimeWithHysteresis(6003, flip, "amplification"), "mean_revert");
+  assert.equal(gammaRegimeWithHysteresis(5999, flip, "mean_revert"), "mean_revert");
+  assert.equal(gammaRegimeWithHysteresis(5997, flip, "mean_revert"), "amplification");
+});
+
+test("gammaRegimeWithHysteresis: stays a pure spot-vs-flip model — no aggregate net-GEX override", () => {
+  const flip = 6000;
+  // Spot just BELOW the flip is LOCALLY short-gamma (amplification) regardless of the total-book net
+  // GEX sign — the local regime at spot and the aggregate net sign measure different things, so the
+  // label must NOT flip to mean_revert just because the book is net long. (Adversarial-refuted
+  // override; see FINDINGS.) The function takes no netGex arg by design.
+  assert.equal(gammaRegimeWithHysteresis(5999, flip, "amplification"), "amplification");
+  assert.equal(gammaRegimeWithHysteresis(6001, flip, "mean_revert"), "mean_revert");
 });

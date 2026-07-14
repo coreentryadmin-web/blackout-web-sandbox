@@ -6,7 +6,7 @@ import type { MtfHybrid } from "@/features/spx/lib/spx-play-mtf";
 import type { OptionTicket } from "@/features/spx/lib/spx-play-options";
 import type { SpxPlayDirection, SpxSignalFactor } from "@/features/spx/lib/spx-signals";
 
-export type PlayEntryPath = "cold_buy" | "watch_promote";
+export type PlayEntryPath = "cold_buy" | "watch_promote" | "playbook_lab";
 
 export type PlayEntrySnapshot = {
   open_play_id: number;
@@ -26,6 +26,8 @@ export type PlayEntrySnapshot = {
   claude: ClaudePlayVerdict | null;
   option_ticket: OptionTicket | null;
   opened_at: string;
+  playbook_id?: string | null;
+  playbook_instance_id?: string | null;
 };
 
 export type PlayExitAction = "STOP" | "TARGET" | "THESIS" | "SESSION" | "THETA" | "TRAIL" | "UNKNOWN";
@@ -168,40 +170,21 @@ export async function readPlayWriteFailures(): Promise<PlayWriteFailureState> {
 }
 
 export function classifyOutcome(close: PlayCloseSnapshot): "win" | "loss" | "breakeven" {
-  // Time/thesis/session exits are graded by REALIZED P&L, not by the reason for exiting.
-  // A green close is a win even when the trigger was a thesis break or the cash session
-  // ending. (Bug fix: THESIS was previously hard-coded to "loss" alongside was_loss, which
-  // mislabeled profitable exits — e.g. +2.84 / +7.30 pt closes — as losses and zeroed the
-  // public win rate. THETA/SESSION already graded by P&L sign; THESIS now matches them.)
-  if (
-    close.exit_action === "THETA" ||
-    close.exit_action === "SESSION" ||
-    close.exit_action === "THESIS"
-  ) {
-    // Any negative PnL is a loss — the old -1 floor was classifying -0.5 pt exits
-    // (−$50/contract) as "breakeven," inflating win-rate statistics.
-    if (close.pnl_pts < 0) return "loss";
-    if (close.pnl_pts > 0) return "win";
-    return "breakeven";
-  }
-  // A STOP is by construction below entry (long) / above (short) → always a realized loss.
-  if (close.exit_action === "STOP") {
-    return "loss";
-  }
-  // TRAIL = protected exit (breakeven lock or price-trail). A scratch or better is a
-  // managed win — count it toward win rate. Only classify as loss if slippage put us
-  // below entry despite the trail (should not happen in normal flow).
-  if (close.exit_action === "TRAIL") {
-    if (close.pnl_pts >= 0) return "win";
-    if (close.pnl_pts <= -1) return "loss";
-    return "breakeven";
-  }
-  // TARGET, or an UNKNOWN exit: grade by P&L. was_loss stays as the catch-all loss signal
-  // for an UNKNOWN action whose small negative PnL wouldn't trip the -1 floor (it is NOT
-  // consulted for THESIS/THETA/SESSION above, so a green thesis break is no longer a loss).
-  if (close.exit_action === "TARGET" || close.pnl_pts >= 2) return "win";
-  if (close.was_loss || close.pnl_pts <= -1) return "loss";
+  const pnl = close.pnl_pts;
+
+  if (pnl > 0) return "win";
+  if (pnl < -1) return "loss";
+  if (pnl < 0 && close.was_loss) return "loss";
+  if (pnl < 0) return "breakeven";
   return "breakeven";
+}
+
+/**
+ * Whether a closed play counts as a session loss for re-entry lock / cooldown.
+ * Scratch exits in (-1, 0] pts are not losses — must match classifyOutcome breakeven zone.
+ */
+export function playCloseWasLoss(pnl_pts: number): boolean {
+  return pnl_pts <= -1;
 }
 
 export async function recordPlayEntry(snapshot: PlayEntrySnapshot): Promise<number | null> {
@@ -253,6 +236,7 @@ export async function recordPlayEntry(snapshot: PlayEntrySnapshot): Promise<numb
       claude: snapshot.claude,
       option_ticket: snapshot.option_ticket,
       opened_at: snapshot.opened_at,
+      playbook_instance_id: snapshot.playbook_instance_id ?? null,
     });
     // insertPlayOutcomeEntry uses ON CONFLICT (open_play_id) WHERE outcome='open'
     // DO NOTHING — a 0 return means an 'open' outcome row for this play already

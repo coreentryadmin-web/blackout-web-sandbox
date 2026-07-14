@@ -58,6 +58,24 @@ function loadRailwayVars() {
   }
 }
 
+function resolveCronSecret() {
+  const fromEnv = process.env.CRON_SECRET?.trim();
+  if (fromEnv) return fromEnv;
+  if (IS_STAGING) {
+    try {
+      const raw = sh(
+        'aws secretsmanager get-secret-value --secret-id blackout-staging/app/env --query SecretString --output text'
+      );
+      const secret = JSON.parse(raw);
+      return secret.CRON_SECRET?.trim() ?? "";
+    } catch {
+      return "";
+    }
+  }
+  const vars = loadRailwayVars();
+  return vars.CRON_SECRET?.trim() ?? "";
+}
+
 /** Parse numeric project id from SENTRY_DSN (no secrets returned). */
 function dsnProjectId(dsn) {
   const m = String(dsn ?? "").match(/@[^/]+\/(\d+)/);
@@ -199,7 +217,7 @@ for (const c of checks) {
 
 // ── 2b. Desk cache warm (post-deploy cold-path guard) ───────────────────────
 console.log("\n2b. Cache warmers");
-const cronSecret = process.env.CRON_SECRET?.trim() ?? "";
+const cronSecret = resolveCronSecret();
 const warmPaths = IS_STAGING
   ? ["/api/cron/desk-warm?force=1", "/api/cron/heatmap-warm?force=1", "/api/cron/zerodte-warm?force=1"]
   : ["/api/cron/desk-warm?force=1"];
@@ -415,7 +433,7 @@ if (skipRailway) {
   // Live probe beats log tail: multi-replica clusters + off-hours standdown leave stale
   // 1006 lines in the last 30 log rows even when options.ok is true.
   let socketHealthOk = false;
-  const cron = process.env.CRON_SECRET?.trim() ?? "";
+  const cron = resolveCronSecret();
   if (cron) {
     try {
       const { status, body } = await fetchJson("/api/cron/socket-health", {

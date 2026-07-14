@@ -11,8 +11,9 @@ import {
   writeSessionCache,
 } from "@/lib/session-cache";
 import { shouldPersistPlayPayload } from "@/features/spx/hooks/useStablePlayConfirmations";
+import { SPX_PLAY_POLL_MS } from "@/features/spx/lib/spx-desk-poll-ms";
 
-const PLAY_MS = 3_000;
+const PLAY_MS = SPX_PLAY_POLL_MS;
 const PLAY_CACHE_KEY = "spx-play";
 const PLAY_CACHE_MAX_AGE_MS = 12 * 60 * 60 * 1000;
 
@@ -94,7 +95,7 @@ export function useSpxPlay(sessionActive = true) {
       revalidateOnFocus: false,
       revalidateOnReconnect: true,
       keepPreviousData: true,
-      dedupingInterval: 1_500,
+      dedupingInterval: Math.max(800, PLAY_MS - 500),
       fallbackData: sessionActive
         ? readSessionCache<SpxPlayPayload>(PLAY_CACHE_KEY, PLAY_CACHE_MAX_AGE_MS)
         : undefined,

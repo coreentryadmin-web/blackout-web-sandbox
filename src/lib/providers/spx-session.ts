@@ -45,14 +45,19 @@ export function sessionStatsFromMinuteBars(bars: AggBar[]): {
   hod: number | null;
   vwap: number | null;
   open: number | null;
+  /** False when index bars have zero volume — VWAP is equal-weight typical price, not true VWAP. */
+  vwap_volume_weighted: boolean;
 } {
   const rth = filterRthBars(bars);
-  if (!rth.length) return { lod: null, hod: null, vwap: null, open: null };
+  if (!rth.length) {
+    return { lod: null, hod: null, vwap: null, open: null, vwap_volume_weighted: false };
+  }
 
   let lod = Infinity;
   let hod = -Infinity;
   let pv = 0;
   let vol = 0;
+  let sawRealVolume = false;
 
   for (const b of rth) {
     lod = Math.min(lod, b.l);
@@ -60,7 +65,9 @@ export function sessionStatsFromMinuteBars(bars: AggBar[]): {
     const typical = (b.h + b.l + b.c) / 3;
     // ISSUE-16: Polygon index bars often have v=0; fallback to v=1 makes this an
     // equal-weight typical price average rather than a true volume-weighted mean.
-    const v = b.v && b.v > 0 ? b.v : 1;
+    const hasVol = (b.v ?? 0) > 0;
+    if (hasVol) sawRealVolume = true;
+    const v = hasVol ? b.v! : 1;
     pv += typical * v;
     vol += v;
   }
@@ -72,7 +79,28 @@ export function sessionStatsFromMinuteBars(bars: AggBar[]): {
     hod: Number.isFinite(hod) ? hod : null,
     vwap: vol > 0 ? pv / vol : null,
     open: rth[0]?.o ?? null,
+    vwap_volume_weighted: sawRealVolume,
   };
+}
+
+/**
+ * Merge external per-minute share volume (keyed by bar-start SECONDS) into index minute bars that lack
+ * native volume, so {@link sessionStatsFromMinuteBars} yields a TRUE volume-weighted VWAP. SPX index
+ * bars carry v=0 (ISSUE-16); SPY 1-minute volume is the standard proxy (the same one the Vector chart
+ * uses). Bars that already have real volume are left untouched, and a bar with no matching proxy volume
+ * is left as-is (weights to 1 downstream). PURE — the caller fetches the volume map.
+ */
+export function mergeVolumeIntoBars(
+  bars: AggBar[],
+  volumeByBarSec: Map<number, number>
+): AggBar[] {
+  if (!volumeByBarSec.size) return bars;
+  return bars.map((b) => {
+    if ((b.v ?? 0) > 0) return b;
+    if (b.t == null || !Number.isFinite(b.t)) return b;
+    const vol = volumeByBarSec.get(Math.floor(b.t / 1000));
+    return vol != null && Number.isFinite(vol) && vol > 0 ? { ...b, v: vol } : b;
+  });
 }
 
 /** Calendar date (YYYY-MM-DD) of a bar timestamp in US Eastern (exchange) time. */
@@ -103,14 +131,14 @@ export function priorDayFromDailyBars(
   // one full session stale — corrupting PDH/PDL/PDC and every derived level (the R1/R2/
   // S1/S2 pivots, PDH/PDL breakouts). This supersedes the old ISSUE-34 length<2 guard.
   if (bars.length === 0) return { pdh: null, pdl: null, pdc: null };
-  if (bars.every((b) => b.t != null)) {
-    for (let i = bars.length - 1; i >= 0; i -= 1) {
-      const b = bars[i];
+  const dated = bars.filter((b) => b.t != null);
+  if (dated.length > 0) {
+    for (let i = dated.length - 1; i >= 0; i -= 1) {
+      const b = dated[i]!;
       if (b.t != null && etYmdFromMs(b.t) < todayYmd) {
         return { pdh: b.h, pdl: b.l, pdc: b.c };
       }
     }
-    // Every bar is dated today (only a partial bar so far) — no completed prior session.
     return { pdh: null, pdl: null, pdc: null };
   }
   // Timestamps unavailable: fall back to the conservative assumption that the last bar

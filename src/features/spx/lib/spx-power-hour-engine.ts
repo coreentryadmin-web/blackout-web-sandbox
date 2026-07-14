@@ -30,6 +30,7 @@ import { polygonTrackedFetch } from "@/lib/providers/polygon-rate-limiter";
 import { polygonRestApiKey, polygonRestBase } from "@/lib/providers/polygon";
 import { todayEtYmd } from "@/lib/providers/spx-session";
 import { round5 } from "@/lib/round5";
+import { quoteSpxOdteContract, type OdteContractQuote } from "@/features/spx/lib/spx-play-options";
 import { notifyPlayDiscord } from "@/features/spx/lib/spx-play-notify";
 import { isPastPowerHourWindow, isPowerHourWindow } from "@/features/spx/lib/spx-play-session-guards";
 import { etClock, etMinutes } from "@/features/spx/lib/spx-play-session-time";
@@ -79,6 +80,9 @@ export type PowerHourPlayPayload = {
   status_message: string;
   sizing_note: string;
   window_closes_at: string;
+  option_bid: number | null;
+  option_ask: number | null;
+  option_mid: number | null;
 };
 
 // ---------------------------------------------------------------------------
@@ -270,10 +274,27 @@ function nonePayload(
     status_message: msgs[reason],
     sizing_note: POWER_HOUR_SIZING_NOTE,
     window_closes_at: windowCloseLabel(),
+    option_bid: null,
+    option_ask: null,
+    option_mid: null,
   };
 }
 
-function recordToPayload(rec: PowerHourRecord, currentPrice?: number): PowerHourPlayPayload {
+async function liveQuoteForPower(rec: PowerHourRecord): Promise<OdteContractQuote | null> {
+  if (!rec.strike || (rec.phase !== "HOLD" && rec.phase !== "WATCH")) return null;
+  try {
+    return await quoteSpxOdteContract(rec.strike, rec.direction === "long" ? "call" : "put");
+  } catch {
+    return null;
+  }
+}
+
+function recordToPayload(
+  rec: PowerHourRecord,
+  currentPrice?: number,
+  quote?: OdteContractQuote | null
+): PowerHourPlayPayload {
+  const premium = quote?.premium_display ?? rec.premium_estimate;
   const pnl =
     rec.entry_price != null && currentPrice != null
       ? pnlPts(rec.direction, rec.entry_price, currentPrice)
@@ -291,7 +312,7 @@ function recordToPayload(rec: PowerHourRecord, currentPrice?: number): PowerHour
     direction: rec.direction,
     strike: rec.strike,
     contract_label: rec.contract_label,
-    premium_estimate: rec.premium_estimate,
+    premium_estimate: premium,
     entry_price: rec.entry_price,
     anchor_price: rec.anchor_price,
     target_pts: rec.target_pts,
@@ -306,6 +327,9 @@ function recordToPayload(rec: PowerHourRecord, currentPrice?: number): PowerHour
     status_message: phaseMsg[rec.phase],
     sizing_note: POWER_HOUR_SIZING_NOTE,
     window_closes_at: windowCloseLabel(),
+    option_bid: quote?.bid ?? null,
+    option_ask: quote?.ask ?? null,
+    option_mid: quote?.mid ?? null,
   };
 }
 
@@ -392,7 +416,7 @@ export async function evaluateSpxPowerHour(
     // Still in play
     const updated = { ...rec, peak_pnl_pts: peakPnl };
     await savePowerHourRecord(updated);
-    return recordToPayload(updated, price);
+    return recordToPayload(updated, price, await liveQuoteForPower(updated));
   }
 
   // ---- WATCH branch ----
@@ -447,7 +471,7 @@ export async function evaluateSpxPowerHour(
         grade: "B",
         score: rec.confidence,
       });
-      return recordToPayload(entered, price);
+      return recordToPayload(entered, price, await liveQuoteForPower(entered));
     }
 
     if (invalidated) {
@@ -455,7 +479,7 @@ export async function evaluateSpxPowerHour(
       return nonePayload("invalidated");
     }
 
-    return recordToPayload(rec, price);
+    return recordToPayload(rec, price, await liveQuoteForPower(rec));
   }
 
   // ---- NONE — scan for a new play ----
@@ -517,7 +541,7 @@ export async function evaluateSpxPowerHour(
     score: abs,
   });
 
-  return recordToPayload(watch, price);
+  return recordToPayload(watch, price, await liveQuoteForPower(watch));
 }
 
 /**
@@ -539,14 +563,16 @@ export async function readSpxPowerHourSnapshot(desk: SpxDeskPayload): Promise<Po
 
   if (!isPowerHourWindow(now)) {
     // Past-window open HOLD: render it truthfully — the cron force-exits at the cutoff.
-    if (isPastPowerHourWindow(now) && rec?.phase === "HOLD") return recordToPayload(rec, price);
+    if (isPastPowerHourWindow(now) && rec?.phase === "HOLD") {
+      return recordToPayload(rec, price, await liveQuoteForPower(rec));
+    }
     return nonePayload("off_hours");
   }
 
-  if (rec?.phase === "HOLD") return recordToPayload(rec, price);
+  if (rec?.phase === "HOLD") return recordToPayload(rec, price, await liveQuoteForPower(rec));
   if (rec?.phase === "WATCH") {
     if (isWatchExpired(now)) return nonePayload("expired");
-    return recordToPayload(rec, price);
+    return recordToPayload(rec, price, await liveQuoteForPower(rec));
   }
   // No record / NONE — read-only can't scan for a new setup; show no_setup (or expired).
   if (isWatchExpired(now)) return nonePayload("expired");

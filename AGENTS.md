@@ -3,6 +3,14 @@
 ## Cursor Cloud specific instructions
 
 **This repo (`blackout-web-sandbox`, branch `blackout-web-sandbox`) is the AWS staging app.**
+
+### Branch policy (standing — user 2026-07-10)
+
+**Never touch `main`.** Do not push, merge, open PRs to, checkout for commits, or deploy from
+`main` in this repo or `coreentryadmin-web/blackout-web`. All agent work lands on
+**`blackout-web-sandbox`** only → ECS staging. Prod/Railway `main` changes require an explicit
+user request in that session.
+
 Do not merge staging experiments to `coreentryadmin-web/blackout-web` `main` (Railway prod) unless
 explicitly requested. Staging deploys via `.github/workflows/ecr-push-staging.yml` → ECR `:staging` →
 ECS `blackout-staging-web` at `https://staging.blackouttrades.com`.
@@ -13,9 +21,22 @@ The ~20 `railway.*.toml` files at the repo root are production cron *trigger* se
 `/api/cron/*`; they are not separate apps and are not needed locally. Commands live in `package.json`
 (`dev`, `build`, `start`, `test`, `lint`, `lint:brand`, `lint:css`) and CI is `.github/workflows/ci.yml`.
 
+### BIE Live Desk AI (replaces Claude on `/api/market/spx/commentary`)
+
+- **Deterministic brief** via `composeSpxDeskBrief()` — SIGNALS, DEALERS (GEX/VEX/DEX/CHARM), WALLS, CHART, NIGHT HAWK, cross-tool ENGINE/LOTTO/POWER HOUR, material **INTEL edges** (same `spx-odte-intel-feed` as Playbook terminal), Voyage precedent, UW **CROSSCHK**.
+- **Unified data plane** `loadBiePlatformContext()` (`src/lib/bie/platform-context.ts`) — one parallel fan-out across SPX desk, matrix intel, Night Hawk (RDS), HELIX tape, market-regime snapshot, play-engine cross-state, and `bie_knowledge` retrieval (Voyage embeddings in RDS). BIE does **not** open raw Redis/SQL; it uses the same platform service readers dashboards and Largo tools use (those readers already sit on ElastiCache + RDS).
+- **Intel loader** `loadSpxBriefIntel()` reads shared `getGexPositioning("SPX")` + heatmap cache + NH edition diffs (zero extra UW RPS). Commentary cache stores `positioning` + `heatmapSlice` + `nighthawk` per 5-min window for matrix/NH diffs.
+- **Staging:** `claudeEnabled()` false on `staging.*` unless `STAGING_CLAUDE=1` — Largo routes SPX asks through BIE first. `classifyBieStagingFallback()` + market-context last resort so Largo never hard-errors on staging.
+- **Kill Claude spend path:** SPX commentary + play approval + flow-brief + GEX explain + Largo router hits are BIE-first. Remaining Claude: Largo fallback (non-SPX reasoning), NH edition synthesis, play critic/explainer, Haiku follow-ups.
+- **Staging proof:** `npm run validate:staging-bie` — probes commentary (THESIS), flow-brief, gex-explain, Largo (`source=blackout-intelligence`); does not touch prod.
+- **Synthesis layer** `synthesizeSpxDeskIntel()` — THESIS, MECHANIC (γ/vanna/δ/charm), ALIGNMENT (engine/NH/lotto vs read), FRICTION (opposing factors), watch triggers. SPX-scoped "why" questions route to `spx_desk_read` instead of Claude.
+- **Latency:** `getCachedBiePlatformContext()` (8s desk / 20s market SWR) + Largo answer cache (12s) + commentary 5-min shared window. Cold path parallelizes desk/matrix/cross; Voyage precedent capped at 1.5s (optional).
+
 ### Running / building
 - Dev server: `npm run dev` → http://localhost:3000 (Next.js dev, hot reload). This is the only service.
 - **SPX Slayer left rail:** `SpxGexMatrixHeatmap` — SPX **0DTE matrix** from `/api/market/gex-heatmap?ticker=SPX`, **GEX/VEX lens toggles**, live spot row in the ladder. Poll **8s RTH / 20s off-hours**; server cache **`SPX_GEX_HEATMAP_CACHE_SEC`** default **8** (other tickers stay `GEX_HEATMAP_CACHE_SEC` **20**). Bootstrap seeds matrix SWR via `/api/market/spx/bootstrap`.
+- **Live Desk AI + play approval (BIE, no Claude):** `POST /api/market/spx/commentary` composes via `src/lib/bie/spx-desk-brief.ts` (desk + `computeSpxConfluence`, optional Voyage precedents). Right-rail play gate uses `findSimilarPrecedents` in `spx-play-claude.ts` — **zero Anthropic** on these SPX paths; Largo Terminal remains the only Claude surface.
+- **Staging = BIE-only by default:** `src/lib/ai-env.ts` — when `NEXT_PUBLIC_SITE_URL` contains `staging.`, `claudeEnabled()` is false and `anthropicText` / `anthropicToolLoop` no-op. Largo still works via BIE router (`spx_desk_read`, `spx_structure`, `market_context`, etc.). Override with `STAGING_CLAUDE=1` for A/B tests.
 - **BlackOut Thermal (`/heatmap`):** full `GexHeatmap.tsx` matrix shares **`src/lib/gex-heatmap-display.ts`** cell format/color scale with the SPX rail (GEX/VEX/DEX/CHARM lenses). Both surfaces read `cross_validation` from `/api/market/gex-heatmap` when preset tickers diverge from UW.
 - The WebSocket market-data managers are **not** a separate process — they boot lazily inside the Node
   server on the first `/api/market/*` request (`src/lib/ws/init-data-sockets.ts`).
@@ -144,13 +165,20 @@ The ~20 `railway.*.toml` files at the repo root are production cron *trigger* se
 | Command | When |
 |---------|------|
 | `npm run validate:staging` | Full harness (warm, deploy, latency) |
+| `npm run validate:staging-bie` | BIE-only intelligence layer (commentary, Largo, flow-brief, gex-explain) |
 | `npm run validate:staging-rth` | Weekday RTH — sockets, flow-ingest, spx/play |
-| `npm run validate:staging-live` | Cron + Clerk admin/member probes |
+| `npm run validate:staging-live` | Cron + Cognito admin/member probes |
+| `npm run validate:staging-playbook` | Playbook shadow panel on `/api/market/spx/play` |
 | `npm run validate:latency-compare` | Staging vs prod latency |
 | `npm run ops:collect:staging` | Staging ops action items (no Railway) |
 | `npm run validate:staging-vector-e2e` | Vector Playwright against staging |
 
 Set `STAGING_VALIDATE_BROWSER=1` on `validate:staging` to include browser paint checks. GHA: `staging-validate.yml`, `staging-rth-check.yml` (weekdays).
+
+**Staging access (AWS CLI profile, Cognito Hosted UI, Secrets Manager, session minting):** `docs/ops/STAGING-CONNECT.md`
+
+After `ecr-push-staging.yml` merges to `blackout-web-sandbox`, roll ECS so tasks pick up `:staging`:
+`aws ecs update-service --cluster blackout-staging-cluster --service blackout-staging-web --force-new-deployment`
 
 ### Postgres (optional, for persistence testing)
 - The app runs fine without a DB (`/api/health` returns `db: "skipped"`). Postgres is only needed to
@@ -163,19 +191,19 @@ Set `STAGING_VALIDATE_BROWSER=1` on `validate:staging` to include browser paint 
     `DATABASE_SSL=0` (SSL auto-disables for localhost anyway). The `blackout` DB and `postgres`
     password were created during setup.
 
-### Merge policy (standing — confirmed 2026-07-06)
+### Merge policy (standing — user 2026-07-10)
 
-**Auto-merge every verified PR into `main`** once local checks and required CI (`verify`) are green.
-Do not ask the user for merge approval. Workflow:
+**Never merge to `main`.** Open PRs only to **`blackout-web-sandbox`**. After CI is green, auto-merge
+into `blackout-web-sandbox` (not `main`). Workflow:
 
-1. Branch (`fix/*` or `cursor/*`) → commit → push → open PR to `main`
+1. Branch (`fix/*` or `cursor/*`) → commit → push → open PR to **`blackout-web-sandbox`**
 2. Run local verification (tsc/test as applicable)
-3. Enable auto-merge: `gh pr merge <n> --auto --squash --delete-branch` (or wait for
-   `.github/workflows/automerge.yml` on `cursor/*` branches)
-4. Poll Railway deploy → `npm run validate:deploy`
+3. Enable auto-merge into `blackout-web-sandbox`: `gh pr merge <n> --auto --squash --delete-branch`
+4. Poll ECS staging deploy → `npm run validate:staging` (or `validate:staging-bie`)
 
-Full policy + exceptions: **`CLAUDE.md`** § Merge authorization. `FINDINGS.md` entries merge with
-their fix PR in the same session.
+Do not ask the user for merge approval on staging. Do **not** enable auto-merge to `main`.
+
+Full policy + exceptions: **`CLAUDE.md`** § Merge authorization (staging-only unless user overrides).
 
 ### Autonomous RTH resume (Cloud Agent — do NOT wait for user)
 
@@ -185,11 +213,13 @@ On **every weekday** Cloud Agent session when **America/New_York ≥ 09:00**:
 
 1. Read and execute `docs/ops/RTH-OPEN-RUNBOOK.md` **before** other work.
 2. Run `npm run validate:rth-open` (wraps `validate:deploy` + RTH session checks).
-3. If anything fails → fix → branch → PR → **auto-merge to `main` once CI is green** → poll Railway deploy → re-run until GREEN.
+3. If anything fails → fix → branch → PR → **auto-merge to `blackout-web-sandbox` once CI is green**
+   → poll ECS staging deploy → re-run until GREEN. **Do not merge or push to `main`.**
 4. After **09:35 ET**, confirm `spx-evaluate` cron + options-socket `authenticated` in Railway logs.
 
 **Cursor scheduled task (recommended):** Mon–Fri **09:32 AM ET** — prompt: *Run RTH-OPEN-RUNBOOK autonomously; npm run validate:rth-open; fix failures; do not ask me.*
 
 **SPX all-day agent (matrix + trade alerts + every button + cross-tool):** see **`docs/ops/SPX-RTH-ALL-DAY-AGENT.md`**. Auto-starts **6:30 AM PT** weekdays. Runs **`npm run validate:spx-rth`** + **`npm run validate:spx-e2e`**. Post-close fix **~1:05 PM PT**. Workflow: **`.github/workflows/spx-rth-all-day-agent.yml`**.
 
-Off-hours / weekends: RTH script skips automatically; still run `npm run validate:deploy` after pushes to `main`.
+Off-hours / weekends: RTH script skips automatically; still run `npm run validate:staging` after
+pushes to `blackout-web-sandbox` (not `main`).

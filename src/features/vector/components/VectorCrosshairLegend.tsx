@@ -15,13 +15,16 @@ export type VectorCrosshairState = {
 
 type Props = {
   state: VectorCrosshairState | null;
+  /** The active ticker — the price readout was hardcoded to "SPX", so every other
+   *  ticker (RKLB, SNOW, …) mislabeled its own spot as SPX. */
+  ticker: string;
 };
 
 function fmtStrike(n: number): string {
   return Math.round(n).toLocaleString("en-US");
 }
 
-export function VectorCrosshairLegend({ state }: Props) {
+export function VectorCrosshairLegend({ state, ticker }: Props) {
   if (!state) return null;
 
   const isVex = state.lens === "vex";
@@ -41,7 +44,7 @@ export function VectorCrosshairLegend({ state }: Props) {
         <span className="uppercase tracking-wider text-cyan-400">{state.lens}</span>
         {state.close != null && (
           <span>
-            SPX <span className="text-cyan-400">{fmtStrike(state.close)}</span>
+            {ticker} <span className="text-cyan-400">{fmtStrike(state.close)}</span>
           </span>
         )}
         {state.flip != null && (
@@ -69,7 +72,7 @@ export function VectorCrosshairLegend({ state }: Props) {
         </div>
       )}
       {state.darkPoolLevels.length > 0 && (
-        <div className="text-[#00d4ff]">
+        <div className="text-[#ff8a3d]">
           DP{" "}
           {state.darkPoolLevels
             .slice(0, 3)

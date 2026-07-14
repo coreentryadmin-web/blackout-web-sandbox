@@ -163,6 +163,17 @@ async function uwGet<T>(path: string, params: Record<string, string | number> = 
   });
 }
 
+/**
+ * Governed raw READ passthrough for BIE's get_uw tool — a thin exported wrapper over the private
+ * uwGet so BIE can read arbitrary (allowlisted) UW data endpoints WITHOUT bypassing the circuit
+ * breaker / request-coalescer / rate limiter that live inside uwGet. Read-only by construction (GET
+ * only). The path allowlist is enforced by the caller (provider-read-guard.ts); this keeps the
+ * limiter+cache in the path. Never call this with an unvalidated path.
+ */
+export async function uwReadRaw<T>(path: string, params: Record<string, string | number> = {}): Promise<T> {
+  return uwGet<T>(path, params);
+}
+
 function extractRows(payload: unknown, depth = 0): Record<string, unknown>[] {
   if (Array.isArray(payload)) return payload.filter((r) => r && typeof r === "object") as Record<string, unknown>[];
   if (payload && typeof payload === "object") {
@@ -840,7 +851,7 @@ export async function fetchUwDarkPool(
   opts?: { limit?: number; min_premium?: number }
 ): Promise<DarkPoolSnapshot | null> {
   const redis = await getUwCacheRedis();
-  return uwCacheGet(redis, UW_KEYS.darkPoolTicker(ticker), UW_CACHE_TTL.darkPoolTicker, async () => {
+  return uwCacheGet(redis, UW_KEYS.darkPoolTicker(ticker, opts), UW_CACHE_TTL.darkPoolTicker, async () => {
     const params: Record<string, string | number> = {
       limit: Math.min(opts?.limit ?? 20, 100),
     };
@@ -1461,7 +1472,7 @@ export async function fetchUwShortFloat(ticker: string) {
 export async function fetchUwShortScreener(limit = 15) {
   const redis = await getUwCacheRedis();
   return uwCacheGet(redis, UW_KEYS.shortScreener(), UW_CACHE_TTL.shortScreener, async () => {
-    const data = await uwGetSafe<unknown>("/api/shorts/screener", { limit: Math.min(limit, 50) });
+    const data = await uwGetSafe<unknown>("/api/short_screener", { limit: Math.min(limit, 50) });
     return extractRows(data).slice(0, limit);
   });
 }
@@ -1551,21 +1562,25 @@ export async function fetchUwOptionsVolume(ticker: string, limit = 20) {
 }
 
 export async function fetchUwEtfInOutflow(etf: string) {
-  return uwGetSafe<unknown>(`/api/etf/${safeTicker(etf)}/in-outflow`, {});
+  return uwGetSafe<unknown>(`/api/etfs/${safeTicker(etf)}/in-outflow`, {});
 }
 
 export async function fetchUwEtfTide(etf: string) {
   const redis = await getUwCacheRedis();
   return uwCacheGet(redis, UW_KEYS.etfTide(etf), UW_CACHE_TTL.etfTide, () =>
-    uwGetSafe<unknown>(`/api/etf/${safeTicker(etf)}/tide`, {})
+    uwGetSafe<unknown>(`/api/market/${safeTicker(etf)}/etf-tide`, {})
   );
 }
 
 export async function fetchUwLitFlow(ticker: string, limit = 20) {
   const redis = await getUwCacheRedis();
   return uwCacheGet(redis, UW_KEYS.litFlow(ticker), UW_CACHE_TTL.litFlow, async () => {
-    const data = await uwGetSafe<unknown>("/api/lit-flow/ticker", {
-      ticker: ticker.toUpperCase(),
+    // `ticker` is a PATH param, not a query param. The old call requested the
+    // literal route `/api/lit-flow/ticker` (the word "ticker") with the real
+    // symbol tacked on as a query — UW returns 200-empty for that bogus path, so
+    // the mistake surfaced as "no lit-flow data" rather than an error. Catalog
+    // ground truth: `/api/lit-flow/{ticker}`.
+    const data = await uwGetSafe<unknown>(`/api/lit-flow/${safeTicker(ticker)}`, {
       limit: Math.min(limit, 50),
     });
     return extractRows(data).slice(0, limit);
@@ -1575,7 +1590,7 @@ export async function fetchUwLitFlow(ticker: string, limit = 20) {
 export async function fetchUwScreenerContracts(limit = 20) {
   const redis = await getUwCacheRedis();
   return uwCacheGet(redis, UW_KEYS.screenerContracts(), UW_CACHE_TTL.screenerContracts, async () => {
-    const data = await uwGetSafe<unknown>("/api/screener/contracts", { limit: Math.min(limit, 100) });
+    const data = await uwGetSafe<unknown>("/api/screener/option-contracts", { limit: Math.min(limit, 100) });
     return extractRows(data).slice(0, limit);
   });
 }

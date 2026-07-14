@@ -55,6 +55,17 @@ export function computeGexWalls(
 }
 
 /**
+ * True when a wall set carries at least one node on either side. `computeGexWalls` returns
+ * `{ callWalls: [], putWalls: [] }` (not null) for a cold/empty ladder, so a `walls != null`
+ * check alone can't tell "no data" from "real walls" — callers deciding whether to fall back to
+ * a slower fetch-backed source need this emptiness test, not a null check. Used by the Vector
+ * DTE "all" horizon read to detect a cold-task synchronous miss and re-derive from the heatmap.
+ */
+export function wallsHaveNodes(walls: GexWalls | null | undefined): boolean {
+  return !!walls && (walls.callWalls.length > 0 || walls.putWalls.length > 0);
+}
+
+/**
  * Convert a `{strike: netGex}` record (e.g. GexHeatmap.gex.strike_totals, already scoped
  * server-side to the near-term expiries — see fetchGexHeatmap) into the Map shape
  * computeGexWalls() expects, so the same wall-picking/sizing logic can run over either the

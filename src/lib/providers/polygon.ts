@@ -37,6 +37,17 @@ async function polygonGet<T>(path: string, params: Record<string, string> = {}):
   return res.json() as Promise<T>;
 }
 
+/**
+ * Governed raw READ passthrough for BIE's get_polygon tool — a thin exported wrapper over the
+ * private polygonGet so BIE can read arbitrary (allowlisted) Polygon/Massive data endpoints WITHOUT
+ * bypassing polygonTrackedFetch (the rate limiter + tracking). Read-only by construction (GET only).
+ * The path allowlist is enforced by the caller (provider-read-guard.ts). Never call with an
+ * unvalidated path.
+ */
+export async function polygonReadRaw<T>(path: string, params: Record<string, string> = {}): Promise<T> {
+  return polygonGet<T>(path, params);
+}
+
 const LEADER_STOCKS = [
   { name: "Apple", ticker: "AAPL" },
   { name: "NVIDIA", ticker: "NVDA" },

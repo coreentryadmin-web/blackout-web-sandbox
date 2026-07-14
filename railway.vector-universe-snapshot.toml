@@ -10,6 +10,6 @@ watchPatterns = [
 
 [deploy]
 startCommand = "node scripts/hit-cron.mjs /api/cron/vector-universe-snapshot"
-cronSchedule = "*/5 11-21 * * 1-5"
+cronSchedule = "1-59/5 11-21 * * 1-5"
 restartPolicyType = "never"
 numReplicas = 1

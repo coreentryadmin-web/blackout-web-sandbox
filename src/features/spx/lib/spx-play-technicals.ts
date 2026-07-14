@@ -1,9 +1,53 @@
 import { polygonConfigured } from "@/lib/providers/config";
-import { fetchIndexEma, fetchIndexMinuteBars, fetchIndexRsi } from "@/lib/providers/polygon";
+import { fetchIndexMinuteBars, fetchIndexRsi } from "@/lib/providers/polygon";
 import { todayEtYmd } from "@/lib/providers/spx-session";
-import { playMtfBufferPts, playTechnicalsCacheSec } from "@/features/spx/lib/spx-play-config";
+import {
+  playMtfBufferPts,
+  playOpeningRangeMinutes,
+  playTechnicalsCacheSec,
+} from "@/features/spx/lib/spx-play-config";
+import { etClock, etMinutes } from "@/features/spx/lib/spx-play-session-time";
 
 type Bar = { t: number; o: number; h: number; l: number; c: number; v?: number };
+
+/** Bar-derived fields for playbook matcher fidelity (OR / VWAP streaks / EMA9). */
+export type PlaybookBarMetrics = {
+  /** Frozen opening-range high once OR window completes; null while collecting. */
+  or_high: number | null;
+  or_low: number | null;
+  /** True once ET time ≥ 9:30 + or_minutes and OR bars exist. */
+  or_defined: boolean;
+  /** Minutes used to define OR (from playOpeningRangeMinutes). */
+  or_minutes: number;
+  /** Trailing m1 closes strictly below VWAP. */
+  minutes_below_vwap: number;
+  minutes_above_vwap: number;
+  /** Trailing m3 closes at/above VWAP (+ buffer). */
+  m3_consecutive_closes_above_vwap: number;
+  m3_consecutive_closes_below_vwap: number;
+  /** 1m EMA9 from today's minute closes. */
+  m1_ema9: number | null;
+  /** |ema9 − vwap| shrinking vs ~3 m3 bars ago. */
+  ema9_curling_toward_vwap: boolean | null;
+  /** Trailing 30m high/low from m1 bars (PB-11); null when insufficient bars. */
+  rolling_30m_high: number | null;
+  rolling_30m_low: number | null;
+};
+
+export const EMPTY_PLAYBOOK_BAR_METRICS: PlaybookBarMetrics = {
+  or_high: null,
+  or_low: null,
+  or_defined: false,
+  or_minutes: 20,
+  minutes_below_vwap: 0,
+  minutes_above_vwap: 0,
+  m3_consecutive_closes_above_vwap: 0,
+  m3_consecutive_closes_below_vwap: 0,
+  m1_ema9: null,
+  ema9_curling_toward_vwap: null,
+  rolling_30m_high: null,
+  rolling_30m_low: null,
+};
 
 export type PlayTechnicals = {
   available: boolean;
@@ -32,7 +76,7 @@ export type PlayTechnicals = {
     m5_confirms_long: boolean;
     m5_confirms_short: boolean;
   };
-};
+} & PlaybookBarMetrics;
 
 const SPX = "I:SPX";
 let cached: { at: number; data: PlayTechnicals } | null = null;
@@ -81,19 +125,141 @@ function rsi(bars: Bar[], period = 14): number | null {
     avgLoss = (avgLoss * (period - 1) + loss) / period;
   }
 
-  if (avgLoss === 0) return 100;
+  if (avgLoss === 0) return avgGain === 0 ? null : 100;
   const rs = avgGain / avgLoss;
   return 100 - 100 / (1 + rs);
 }
 
-function emaFromCloses(closes: number[], period: number): number | null {
-  if (closes.length < period) return null;
-  const k = 2 / (period + 1);
-  let val = closes.slice(0, period).reduce((a, b) => a + b, 0) / period;
-  for (let i = period; i < closes.length; i++) {
-    val = closes[i] * k + val * (1 - k);
+import { emaFromCloses } from "@/lib/providers/ma-math";
+
+/** Trailing N-minute range from m1 bars (PB-11 chop scalp). */
+export function rollingRangeFromBars(
+  bars: Bar[],
+  windowMinutes: number
+): Pick<PlaybookBarMetrics, "rolling_30m_high" | "rolling_30m_low"> {
+  if (!bars.length || windowMinutes <= 0) {
+    return { rolling_30m_high: null, rolling_30m_low: null };
   }
-  return val;
+  const lastT = bars[bars.length - 1].t;
+  const cutoff = lastT - windowMinutes * 60_000;
+  const window = bars.filter((b) => b.t >= cutoff);
+  if (window.length < 3) {
+    return { rolling_30m_high: null, rolling_30m_low: null };
+  }
+  return {
+    rolling_30m_high: Math.max(...window.map((b) => b.h)),
+    rolling_30m_low: Math.min(...window.map((b) => b.l)),
+  };
+}
+
+/** Pure — exported for unit tests. */
+export function openingRangeFromBars(
+  bars: Bar[],
+  orMinutes: number,
+  nowEtMins: number
+): Pick<PlaybookBarMetrics, "or_high" | "or_low" | "or_defined" | "or_minutes"> {
+  const orStart = etClock(9, 30);
+  const orEnd = orStart + orMinutes;
+  const orBars = bars.filter((b) => {
+    const m = etMinutes(new Date(b.t));
+    return m >= orStart && m < orEnd;
+  });
+  const defined = nowEtMins >= orEnd && orBars.length > 0;
+  if (!defined) {
+    return { or_high: null, or_low: null, or_defined: false, or_minutes: orMinutes };
+  }
+  return {
+    or_high: Math.max(...orBars.map((b) => b.h)),
+    or_low: Math.min(...orBars.map((b) => b.l)),
+    or_defined: true,
+    or_minutes: orMinutes,
+  };
+}
+
+/** Pure trailing streak of m1 closes on one side of VWAP. */
+export function vwapSideStreaks(
+  bars: Bar[],
+  vwap: number | null
+): Pick<PlaybookBarMetrics, "minutes_below_vwap" | "minutes_above_vwap"> {
+  if (vwap == null || !bars.length) return { minutes_below_vwap: 0, minutes_above_vwap: 0 };
+  let below = 0;
+  let above = 0;
+  for (let i = bars.length - 1; i >= 0; i--) {
+    if (bars[i].c < vwap) below++;
+    else break;
+  }
+  for (let i = bars.length - 1; i >= 0; i--) {
+    if (bars[i].c > vwap) above++;
+    else break;
+  }
+  return { minutes_below_vwap: below, minutes_above_vwap: above };
+}
+
+export function consecutiveClosesVsLevel(
+  bars: Bar[],
+  level: number | null,
+  side: "above" | "below",
+  buf = 0
+): number {
+  if (level == null || !bars.length) return 0;
+  let n = 0;
+  for (let i = bars.length - 1; i >= 0; i--) {
+    const ok = side === "above" ? bars[i].c >= level + buf : bars[i].c <= level - buf;
+    if (ok) n++;
+    else break;
+  }
+  return n;
+}
+
+function ema9CurlingTowardVwap(m3: Bar[], vwap: number | null, ema9Now: number | null): boolean | null {
+  if (vwap == null || ema9Now == null || m3.length < 4) return null;
+  const lookback = m3.slice(0, -3);
+  if (lookback.length < 9) return null;
+  const ema9Then = emaFromCloses(
+    lookback.map((b) => b.c),
+    9
+  );
+  if (ema9Then == null) return null;
+  const distNow = Math.abs(ema9Now - vwap);
+  const distThen = Math.abs(ema9Then - vwap);
+  return distNow < distThen - 0.05;
+}
+
+/**
+ * Session HOD/LOD for breakout detection — from completed minute bars only.
+ * Desk HOD/LOD are widened with live spot for display (`widenSessionExtremesWithSpot`);
+ * using those for breakout makes `price > hod` unsatisfiable. Exclude the forming last bar
+ * so a live tick above the prior session extreme can fire `hod_break`/`lod_break`.
+ */
+export function sessionBreakoutExtremesFromBars(bars: Bar[]): { hod: number | null; lod: number | null } {
+  if (!bars.length) return { hod: null, lod: null };
+  const completed = bars.length > 1 ? bars.slice(0, -1) : [];
+  if (!completed.length) {
+    const open = bars[0]!.o;
+    const ref = Number.isFinite(open) ? open : null;
+    return { hod: ref, lod: ref };
+  }
+  let hod = -Infinity;
+  let lod = Infinity;
+  for (const b of completed) {
+    if (Number.isFinite(b.h)) hod = Math.max(hod, b.h);
+    if (Number.isFinite(b.l)) lod = Math.min(lod, b.l);
+  }
+  return {
+    hod: hod > -Infinity ? hod : null,
+    lod: lod < Infinity ? lod : null,
+  };
+}
+
+export function hodLodBreakoutFlags(
+  price: number,
+  extremes: { hod: number | null; lod: number | null },
+  buf: number
+): { hod_break: boolean; lod_break: boolean } {
+  return {
+    hod_break: extremes.hod != null && price > extremes.hod + buf,
+    lod_break: extremes.lod != null && price < extremes.lod - buf,
+  };
 }
 
 export async function buildPlayTechnicals(
@@ -106,6 +272,7 @@ export async function buildPlayTechnicals(
     lod: number | null;
   }
 ): Promise<PlayTechnicals> {
+  const orMinutes = playOpeningRangeMinutes();
   const empty: PlayTechnicals = {
     available: false,
     price,
@@ -131,6 +298,8 @@ export async function buildPlayTechnicals(
       m5_confirms_long: false,
       m5_confirms_short: false,
     },
+    ...EMPTY_PLAYBOOK_BAR_METRICS,
+    or_minutes: orMinutes,
   };
 
   if (!polygonConfigured() || price <= 0) return empty;
@@ -140,20 +309,25 @@ export async function buildPlayTechnicals(
   // 1.5-pt price step is tight enough to catch gap-open moves (which can gap 10+ pts
   // between minutes) while avoiding needless Polygon refetches on sub-tick noise.
   if (cached && now - cached.at < cacheMs && Math.abs(cached.data.price - price) < 1.5) {
-    return cached.data;
+    return { ...cached.data, price };
   }
 
   const today = todayEtYmd();
-  const [bars, ema5m, indexRsi] = await Promise.all([
+  const [bars, indexRsi] = await Promise.all([
     fetchIndexMinuteBars(SPX, today, today),
-    fetchIndexEma(SPX, 20, "minute"),
     fetchIndexRsi(SPX, 14, "minute"),
   ]);
 
   if (!bars.length) return empty;
 
   const norm: Bar[] = bars
-    .filter((b) => b.t != null && Number.isFinite(b.c))
+    .filter(
+      (b) =>
+        b.t != null &&
+        Number.isFinite(b.c) &&
+        Number.isFinite(b.h) &&
+        Number.isFinite(b.l)
+    )
     .map((b) => ({ t: b.t!, o: b.o, h: b.h, l: b.l, c: b.c, v: b.v }));
 
   const m3 = resampleBars(norm, 3);
@@ -161,11 +335,22 @@ export async function buildPlayTechnicals(
   const m3Close = m3.length ? m3[m3.length - 1].c : null;
   const m5Close = m5.length ? m5[m5.length - 1].c : null;
   const m5Closes = m5.map((b) => b.c);
-  const m5Ema20 = ema5m ?? emaFromCloses(m5Closes, 20);
-  const m5Rsi = indexRsi ?? rsi(m5, 14);
+  const m5Ema20 = emaFromCloses(m5Closes, 20);
+  const m5Rsi = rsi(m5, 14);
 
   const buf = playMtfBufferPts();
   const vwap = ctx.vwap;
+  const nowEtMins = etMinutes(new Date(now));
+  const or = openingRangeFromBars(norm, orMinutes, nowEtMins);
+  const streaks = vwapSideStreaks(norm, vwap);
+  const rolling30 = rollingRangeFromBars(norm, 30);
+  const m3Above = consecutiveClosesVsLevel(m3, vwap, "above", buf);
+  const m3Below = consecutiveClosesVsLevel(m3, vwap, "below", buf);
+  const m1Ema9 = emaFromCloses(
+    norm.map((b) => b.c),
+    9
+  );
+  const ema9Curl = ema9CurlingTowardVwap(m3, vwap, m1Ema9);
 
   let m5Trend: PlayTechnicals["m5_trend"] = "flat";
   if (m5Close != null && m5Ema20 != null) {
@@ -175,11 +360,13 @@ export async function buildPlayTechnicals(
 
   const m3AboveVwap = m3Close != null && vwap != null ? m3Close >= vwap : null;
 
+  const sessionExtremes = sessionBreakoutExtremesFromBars(norm);
+  const hodLodBreak = hodLodBreakoutFlags(price, sessionExtremes, buf);
   const breakout = {
     pdh_break: ctx.pdh != null && price > ctx.pdh + buf,
     pdl_break: ctx.pdl != null && price < ctx.pdl - buf,
-    hod_break: ctx.hod != null && price > ctx.hod + buf,
-    lod_break: ctx.lod != null && price < ctx.lod - buf,
+    hod_break: hodLodBreak.hod_break,
+    lod_break: hodLodBreak.lod_break,
     vwap_reclaim: vwap != null && m3Close != null && m3Close >= vwap + buf && price >= vwap,
     vwap_lost: vwap != null && m3Close != null && m3Close <= vwap - buf && price <= vwap,
   };
@@ -197,7 +384,9 @@ export async function buildPlayTechnicals(
       ? `5m RSI ${m5Rsi.toFixed(0)} overbought — momentum extended (not blocking)`
       : m5Rsi != null && m5Rsi <= 28
         ? `5m RSI ${m5Rsi.toFixed(0)} oversold — downside extended (not blocking)`
-        : null;
+        : indexRsi != null && m5Rsi != null && Math.abs(indexRsi - m5Rsi) > 8
+          ? `5m RSI ${m5Rsi.toFixed(0)} (1m API ${indexRsi.toFixed(0)} diverged — using 5m resample)`
+          : null;
 
   const result: PlayTechnicals = {
     available: true,
@@ -217,6 +406,13 @@ export async function buildPlayTechnicals(
       m5_confirms_long: m5Long,
       m5_confirms_short: m5Short,
     },
+    ...or,
+    ...streaks,
+    m3_consecutive_closes_above_vwap: m3Above,
+    m3_consecutive_closes_below_vwap: m3Below,
+    m1_ema9: m1Ema9,
+    ema9_curling_toward_vwap: ema9Curl,
+    ...rolling30,
   };
 
   cached = { at: now, data: result };

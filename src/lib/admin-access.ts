@@ -1,20 +1,15 @@
-import { auth, clerkClient } from "@clerk/nextjs/server";
 import { redirect } from "next/navigation";
 import { requireAuth } from "@/lib/auth-access";
+import { isAdminEmail } from "@/lib/admin-emails";
+import { auth } from "@/lib/auth-server";
+import { isCognitoAuth } from "@/lib/auth-provider";
+import { getUserProfile, isUserAdmin } from "@/lib/user-directory";
 
-function adminEmailAllowlist(): string[] {
-  return (process.env.ADMIN_EMAILS ?? "")
-    .split(",")
-    .map((s) => s.trim().toLowerCase())
-    .filter(Boolean);
-}
-
-export function isAdminEmail(email: string | null | undefined): boolean {
-  if (!email) return false;
-  return adminEmailAllowlist().includes(email.toLowerCase());
-}
+export { isAdminEmail } from "@/lib/admin-emails";
 
 export async function isAdminUser(userId: string): Promise<boolean> {
+  if (isCognitoAuth()) return isUserAdmin(userId);
+  const { clerkClient } = await import("@clerk/nextjs/server");
   const user = await (await clerkClient()).users.getUser(userId);
   const role = String(user.publicMetadata?.role ?? "").toLowerCase();
   if (role === "admin") return true;
@@ -24,9 +19,8 @@ export async function isAdminUser(userId: string): Promise<boolean> {
 
 export async function requireAdmin(): Promise<{ userId: string; email: string | null }> {
   const userId = await requireAuth();
-  const user = await (await clerkClient()).users.getUser(userId);
-  const email =
-    user.emailAddresses.find((e) => e.id === user.primaryEmailAddressId)?.emailAddress ?? null;
+  const profile = await getUserProfile(userId);
+  const email = profile?.email ?? null;
 
   if (!(await isAdminUser(userId))) {
     redirect("/dashboard");
@@ -38,22 +32,12 @@ export async function requireAdmin(): Promise<{ userId: string; email: string | 
 export async function getAdminStatus(): Promise<{ admin: boolean; email: string | null }> {
   const { userId } = await auth();
   if (!userId) return { admin: false, email: null };
-  // Single getUser: compute the admin flag from the user we already fetched instead of
-  // calling isAdminUser() (which would fetch the SAME user a second time). Logic mirrors
-  // isAdminUser() exactly. Halves the Clerk Backend round-trips behind /admin + /api/admin/me.
-  const user = await (await clerkClient()).users.getUser(userId);
-  const email =
-    user.emailAddresses.find((e) => e.id === user.primaryEmailAddressId)?.emailAddress ?? null;
-  const role = String(user.publicMetadata?.role ?? "").toLowerCase();
-  const admin = role === "admin" || isAdminEmail(email);
-  return { admin, email };
+  const profile = await getUserProfile(userId);
+  if (!profile) return { admin: false, email: null };
+  const admin = await isAdminUser(userId);
+  return { admin, email: profile.email };
 }
 
-/** Single source of truth for admin-API gating. Performs at most ONE
- * clerkClient.users.getUser() call and returns BOTH the resolved actor (or null
- * when denied) and the canonical deny Response (or null when allowed). 401 when
- * unauthenticated, 403 when authenticated-but-not-admin — identical to the prior
- * requireAdminApi behavior. */
 export async function resolveAdminApi(): Promise<{
   actor: { userId: string; email: string | null } | null;
   denied: Response | null;
@@ -69,14 +53,9 @@ export async function resolveAdminApi(): Promise<{
     };
   }
 
-  // Single getUser covers BOTH the admin role/email gate and the actor email,
-  // replacing the previous isAdminUser()+getUser() double fetch. Logic mirrors
-  // isAdminUser() exactly so authorization is unchanged.
-  const user = await (await clerkClient()).users.getUser(userId);
-  const role = String(user.publicMetadata?.role ?? "").toLowerCase();
-  const email =
-    user.emailAddresses.find((e) => e.id === user.primaryEmailAddressId)?.emailAddress ?? null;
-  const isAdmin = role === "admin" || isAdminEmail(email);
+  const profile = await getUserProfile(userId);
+  const email = profile?.email ?? null;
+  const isAdmin = await isAdminUser(userId);
 
   if (!isAdmin) {
     return {
@@ -91,13 +70,11 @@ export async function resolveAdminApi(): Promise<{
   return { actor: { userId, email }, denied: null };
 }
 
-/** For API routes — returns 403/401 response or null if allowed. */
 export async function requireAdminApi(): Promise<Response | null> {
   const { denied } = await resolveAdminApi();
   return denied;
 }
 
-/** Returns admin actor for audit logging, or null if denied. */
 export async function getAdminApiActor(): Promise<{ userId: string; email: string | null } | null> {
   const { actor } = await resolveAdminApi();
   return actor;
