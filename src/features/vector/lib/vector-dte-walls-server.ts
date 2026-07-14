@@ -92,7 +92,7 @@ export async function getHorizonStrikeTotals(
     if (scoped.size === 0) return null;
     const filtered = contracts.filter((c) => scoped.has(c.expiry));
     if (!filtered.length) return null;
-    const ladder = gexLadderAtSpot(filtered, spot, today);
+    const ladder = gexLadderAtSpot(filtered, spot, today, { volumeAdjusted: true });
     if (ladder.size === 0) return null;
     const strikeTotals: Record<string, number> = {};
     for (const [strike, gex] of ladder) strikeTotals[String(strike)] = gex;
