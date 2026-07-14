@@ -37,6 +37,9 @@ const nhRow = (overrides: Partial<NighthawkPlayOutcomeRow>): NighthawkPlayOutcom
   hit_stop: false,
   outcome: "target",
   created_at: "2026-06-30T09:00:00Z",
+  // PR-N2: current-methodology by default — legacy-tagged grades are quarantined out
+  // of every surface behind isNighthawkOutcomeScoreable, including signal accuracy.
+  grade_methodology: "v2_fillability",
   ...overrides,
 });
 

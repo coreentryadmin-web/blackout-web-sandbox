@@ -1,6 +1,16 @@
 import { fetchNighthawkFunnelStats, fetchNighthawkOutcomeAnalytics, type NighthawkPlayOutcomeRow } from "@/lib/db";
 import { entryRangeMid } from "@/features/nighthawk/lib/entry-range";
 import { REJECTION_TRIGGER_REASON, type NighthawkRejectionDetail } from "@/features/nighthawk/lib/play-outcomes";
+import {
+  GRADE_METHODOLOGY_CURRENT,
+  GRADE_METHODOLOGY_LEGACY,
+  gradeMethodologyLabel,
+  isCurrentGradeMethodology,
+} from "@/features/nighthawk/lib/grade-methodology";
+// The one LOW-N disclosure threshold for the whole platform (zerodte/record.ts) — the
+// 0DTE record section already badges every n<5 bucket; Night Hawk cuts now carry the
+// same flag so no 2-sample bucket can read like a track record on any surface.
+import { LOW_N_THRESHOLD } from "@/lib/zerodte/record";
 
 // Task #145: funnel/rejection-rate stats. Reverse-indexes REJECTION_TRIGGER_REASON (the single
 // source of truth for the 5 rejection-stage strings, play-outcomes.ts) by its TEXT value so a
@@ -79,10 +89,45 @@ export function buildNighthawkFunnel(
   };
 }
 
+/** PR-N2: one grading-rule-set's slice of the record. The two segments (current/legacy)
+ *  are reported side by side and NEVER aggregated — a single WR over rows graded under
+ *  different rule sets is not a record (§2.1: the blended 42.9% headline vs 11.1% under
+ *  current rules on the same history). */
+export type NighthawkRecordSegment = {
+  /** grade-methodology.ts tag, e.g. "v2_fillability". */
+  methodology: string;
+  /** Human-readable description of what the rule set graded. */
+  label: string;
+  /** All resolved rows in this segment (including unfilled/pulled/stop-data-unavailable). */
+  resolved: number;
+  /** Rows entering the WR denominator (excl. unfilled, pulled, stop-data-unavailable). */
+  scoreable: number;
+  wins: number;
+  losses: number;
+  opens: number;
+  ambiguous: number;
+  unfilled: number;
+  pulled: number;
+  stop_data_unavailable: number;
+  /** null (not a fake 0%) when nothing is scoreable. */
+  win_rate: number | null;
+  avg_return_pct: number | null;
+  /** scoreable < LOW_N_THRESHOLD — UIs must badge this; the record must not be read. */
+  low_n: boolean;
+};
+
+/** A grouped cut over CURRENT-methodology scoreable rows only (never blended), with the
+ *  shared LOW-N flag so every surface badges thin evidence identically. */
+export type NighthawkRecordCut = { n: number; win_rate: number; avg_return_pct: number; low_n: boolean };
+
 export type NighthawkMetrics = {
   window_days: number;
+  /** ALL resolved rows in the window, both methodology segments — a raw count, never a
+   *  ratio input. Every ratio below is computed from segments.current.scoreable only. */
   total_resolved: number;
   pending_count: number;
+  /** PR-N2: headline = CURRENT-methodology scoreable rows ONLY. Legacy-graded rows are
+   *  quarantined in segments.legacy and can never move this number. */
   win_rate: number;
   /** Close vs entry mid — positive P&L regardless of target/stop tags. */
   profitable_rate: number;
@@ -104,11 +149,15 @@ export type NighthawkMetrics = {
    *  Their grades are counterfactual-only — excluded from every ratio/bucket above,
    *  surfaced here so the record can say "N pulled" instead of silently shrinking. */
   pulled_count: number;
-  by_conviction: Array<{ conviction: string; n: number; win_rate: number; avg_return_pct: number }>;
-  by_direction: Array<{ direction: "LONG" | "SHORT"; n: number; win_rate: number; avg_return_pct: number }>;
-  by_sector: Array<{ sector: string; n: number; win_rate: number; avg_return_pct: number }>;
-  by_score_bucket: Array<{ bucket: string; n: number; win_rate: number }>;
-  by_edition: Array<{ edition_for: string; n: number; win_rate: number; avg_return_pct: number }>;
+  /** PR-N2: the methodology tag the headline is computed under (= segments.current.methodology). */
+  methodology: string;
+  /** PR-N2: per-rule-set record slices, reported separately — the anti-blend contract. */
+  segments: { current: NighthawkRecordSegment; legacy: NighthawkRecordSegment };
+  by_conviction: Array<{ conviction: string } & NighthawkRecordCut>;
+  by_direction: Array<{ direction: "LONG" | "SHORT" } & NighthawkRecordCut>;
+  by_sector: Array<{ sector: string } & NighthawkRecordCut>;
+  by_score_bucket: Array<{ bucket: string; n: number; win_rate: number; low_n: boolean }>;
+  by_edition: Array<{ edition_for: string } & NighthawkRecordCut>;
   /** Task #145: synthesis funnel — candidates considered vs. published vs. rejected (by stage),
    *  over the same window_days. Independent of total_resolved/pending_count above: those are
    *  POST-publish outcome grading, this is the PRE-publish publish/reject decision itself. */
@@ -170,13 +219,65 @@ function scoreBucket(score: number | null): string | null {
   return null;
 }
 
-function groupWithReturn(
-  rows: NighthawkPlayOutcomeRow[]
-): { n: number; win_rate: number; avg_return_pct: number } {
+function groupWithReturn(rows: NighthawkPlayOutcomeRow[]): NighthawkRecordCut {
   return {
     n: rows.length,
     win_rate: winRate(rows),
     avg_return_pct: avgReturn(rows),
+    // Shared platform threshold (zerodte/record.ts): a cut below it must be badged by
+    // every consumer — its ratio is noise, not a record.
+    low_n: rows.length < LOW_N_THRESHOLD,
+  };
+}
+
+/** PR-N2: the segmentation itself, exported so tests can pin the anti-blend rule.
+ *  `current` admits ONLY rows explicitly stamped with the current methodology tag;
+ *  everything else resolved — legacy tags, unknown tags, NULL — quarantines to
+ *  `legacy`. Unprovable provenance degrades away from the headline, never toward it. */
+export function partitionByMethodology(rows: NighthawkPlayOutcomeRow[]): {
+  current: NighthawkPlayOutcomeRow[];
+  legacy: NighthawkPlayOutcomeRow[];
+} {
+  const current: NighthawkPlayOutcomeRow[] = [];
+  const legacy: NighthawkPlayOutcomeRow[] = [];
+  for (const row of rows) {
+    (isCurrentGradeMethodology(row.grade_methodology) ? current : legacy).push(row);
+  }
+  return { current, legacy };
+}
+
+/** One rule set's record slice. Scoreability inside a segment follows the same
+ *  exclusion discipline as the headline always has (unfilled / pulled /
+ *  stop-data-unavailable never enter the denominator but are always surfaced). */
+export function buildRecordSegment(
+  methodology: string,
+  rows: NighthawkPlayOutcomeRow[]
+): NighthawkRecordSegment {
+  const unfilled = rows.filter((r) => r.outcome === "unfilled");
+  const pulled = rows.filter((r) => r.pulled === true);
+  const stopDataUnavailable = rows.filter(isStopDataUnavailable);
+  const scoreable = rows.filter(
+    (r) => !isStopDataUnavailable(r) && r.outcome !== "unfilled" && r.pulled !== true
+  );
+  const wins = scoreable.filter((r) => r.outcome === "target").length;
+  const losses = scoreable.filter((r) => r.outcome === "stop").length;
+  const opens = scoreable.filter((r) => r.outcome === "open").length;
+  const ambiguous = scoreable.filter((r) => r.outcome === "ambiguous").length;
+  return {
+    methodology,
+    label: gradeMethodologyLabel(methodology),
+    resolved: rows.length,
+    scoreable: scoreable.length,
+    wins,
+    losses,
+    opens,
+    ambiguous,
+    unfilled: unfilled.length,
+    pulled: pulled.length,
+    stop_data_unavailable: stopDataUnavailable.length,
+    win_rate: scoreable.length > 0 ? wins / scoreable.length : null,
+    avg_return_pct: scoreable.length > 0 ? avgReturn(scoreable) : null,
+    low_n: scoreable.length < LOW_N_THRESHOLD,
   };
 }
 
@@ -198,19 +299,26 @@ function emptyMetrics(windowDays: number): NighthawkMetrics {
       n: 0,
       win_rate: 0,
       avg_return_pct: 0,
+      low_n: true,
     })),
     by_direction: (["LONG", "SHORT"] as const).map((direction) => ({
       direction,
       n: 0,
       win_rate: 0,
       avg_return_pct: 0,
+      low_n: true,
     })),
     by_sector: [],
-    by_score_bucket: SCORE_BUCKETS.map((bucket) => ({ bucket, n: 0, win_rate: 0 })),
+    by_score_bucket: SCORE_BUCKETS.map((bucket) => ({ bucket, n: 0, win_rate: 0, low_n: true })),
     by_edition: [],
     stop_data_unavailable_count: 0,
     unfilled_count: 0,
     pulled_count: 0,
+    methodology: GRADE_METHODOLOGY_CURRENT,
+    segments: {
+      current: buildRecordSegment(GRADE_METHODOLOGY_CURRENT, []),
+      legacy: buildRecordSegment(GRADE_METHODOLOGY_LEGACY, []),
+    },
     funnel: buildNighthawkFunnel(windowDays, 0, []),
   };
 }
@@ -238,21 +346,23 @@ export async function getNighthawkMetrics(windowDays = 30): Promise<NighthawkMet
   }
 
   const total = rows.length;
-  // Exclude plays where a stop is defined but intraday data is unavailable —
-  // stop outcomes cannot be reliably determined for these rows, so including
-  // them would silently count unevaluable stops as wins/opens and inflate
-  // the reported win rate.
-  const stopDataUnavailable = rows.filter(isStopDataUnavailable);
-  // 'unfilled' = the session never traded back into the entry band (gap-away) —
-  // there was no fill to win or lose. Excluded from ratio denominators exactly
-  // like stop_data_unavailable; surfaced via unfilled_count.
-  const unfilled = rows.filter((r) => r.outcome === "unfilled");
-  // PR-N4: pulled = INVALIDATED pre-open and withdrawn from the actionable surface —
-  // the grade on the row is a COUNTERFACTUAL, tagged for calibration, never headline.
-  // Same exclusion discipline as unfilled/stop_data_unavailable (and the same rule as
-  // track-record-page.ts's isNighthawkOutcomeScoreable — keep the two in lockstep).
-  const pulled = rows.filter((r) => r.pulled === true);
-  const scoreable = rows.filter(
+  // PR-N2: segment by grading methodology FIRST — everything headline-facing below is
+  // computed over the CURRENT-methodology segment only. Legacy-graded rows (pre-
+  // fillability "level touch" grades, incl. the phantom gap-away wins) live in
+  // segments.legacy, reported side by side, never aggregated: on the measured history
+  // the blend read 42.9% WR while the same plays under current rules read 11.1%.
+  const { current: currentRows, legacy: legacyRows } = partitionByMethodology(rows);
+  const segments = {
+    current: buildRecordSegment(GRADE_METHODOLOGY_CURRENT, currentRows),
+    legacy: buildRecordSegment(GRADE_METHODOLOGY_LEGACY, legacyRows),
+  };
+  // Exclusion discipline, unchanged (audit MEDIUM / PR-N4) but now applied within the
+  // current segment: stop-data-unavailable (unevaluable stops), 'unfilled' (gap-away —
+  // no fill existed to win or lose), and pulled (INVALIDATED pre-open, one-way latch;
+  // grade is counterfactual-only) never enter a ratio denominator and are surfaced as
+  // counts. Same rule as track-record-page.ts's isNighthawkOutcomeScoreable — keep the
+  // two in lockstep.
+  const scoreable = currentRows.filter(
     (r) => !isStopDataUnavailable(r) && r.outcome !== "unfilled" && r.pulled !== true
   );
 
@@ -285,7 +395,7 @@ export async function getNighthawkMetrics(windowDays = 30): Promise<NighthawkMet
 
   const by_score_bucket = SCORE_BUCKETS.map((bucket) => {
     const group = scoreable.filter((r) => scoreBucket(r.score) === bucket);
-    return { bucket, n: group.length, win_rate: winRate(group) };
+    return { bucket, n: group.length, win_rate: winRate(group), low_n: group.length < LOW_N_THRESHOLD };
   });
 
   const editionMap = new Map<string, NighthawkPlayOutcomeRow[]>();
@@ -303,9 +413,13 @@ export async function getNighthawkMetrics(windowDays = 30): Promise<NighthawkMet
     window_days: windowDays,
     total_resolved: total,
     pending_count,
-    stop_data_unavailable_count: stopDataUnavailable.length,
-    unfilled_count: unfilled.length,
-    pulled_count: pulled.length,
+    // Exclusion counts mirror the headline's segment (current) so the numbers displayed
+    // next to the win rate explain ITS denominator; the legacy segment carries its own.
+    stop_data_unavailable_count: segments.current.stop_data_unavailable,
+    unfilled_count: segments.current.unfilled,
+    pulled_count: segments.current.pulled,
+    methodology: GRADE_METHODOLOGY_CURRENT,
+    segments,
     win_rate: scoreableTotal > 0 ? winners.length / scoreableTotal : 0,
     profitable_rate: profitableRate(scoreable),
     loss_rate: scoreableTotal > 0 ? losers.length / scoreableTotal : 0,
