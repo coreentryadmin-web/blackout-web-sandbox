@@ -30,6 +30,7 @@ export const CRON_SERVICE_NAMES = {
   "vector-universe-snapshot": "Vector-Universe-Snapshot",
   "vector-dark-pool-warm": "Vector-Dark-Pool-Warm",
   "coaching-alerts": "Coaching-Alerts",
+  "platform-warm": "Platform-Warm",
 };
 
 /** All cron job keys that have a railway.<key>.toml in the repo. */
