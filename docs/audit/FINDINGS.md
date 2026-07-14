@@ -165,5 +165,29 @@ evidence / fix / status per the CLAUDE.md policy.)
   are visible and marked as conflicting. PR #365, commit ad3379c.
 - **Status:** FIXED, awaiting PR merge.
 
-**Overall:** All 2687 tests pass; build succeeds. Changes scoped to bie/** only. PR #365 awaiting CI
-(created 2026-07-14 20:22 UTC, auto-merge on green per standing instructions).
+**Overall:** All 2687 tests pass; build succeeds. Changes scoped to bie/** only. PR #365 **MERGED** at commit e5e9d59 (2026-07-14 21:45 UTC, auto-merged on green per standing instructions).
+
+---
+
+## 2026-07-14 deployment checkpoint (end-of-day)
+
+✅ **Scenario engine (#340)**: Merged to main (commit 42febc8), deployed to staging
+  - Scenario validation test suite live on staging
+  - Local validation: 21/21 tests pass (100%)
+  - Ready for live testing "if SPX drops 1%" and other what-ifs
+
+✅ **Largo gauntlet fixes (L4d/L4e, PR #365)**: Merged to main (commit e5e9d59)
+  - Out-of-scope guard (no market dump for "write me a poem")
+  - Off-hours staleness marker ("right now" values are from last close)
+  - Record routing (track-record questions to /api/track-record/publish)
+  - Decomposition tightness (minimum clause size 8→16 chars)
+  - Temporal disclaimers (forward-looking queries get proper context)
+  - Max pain cross-surface flagging (7525 vs 7400 now visible + marked)
+  - All 2687 tests pass; build green
+
+⏳ **Morning gates (2026-07-15 13:00-14:05 UTC):**
+  - 13:00: RTH warm-up validation (`npm run validate:deploy`)
+  - 13:20-14:05: Deploy freeze (no pushes)
+  - 13:32: Data-correctness audit (`node scripts/audit/data-validator.mjs`)
+  - 14:05+: Live scenario re-validation on staging
+  - Expected: ≥95% pass on scenario tests, ≥95% pass on data audit
