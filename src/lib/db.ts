@@ -816,12 +816,12 @@ async function runMigrations(): Promise<void> {
     CREATE INDEX IF NOT EXISTS idx_admin_audit_log_created
     ON admin_audit_log(created_at DESC);
   `);
-  await p.query(`
-    ALTER TABLE nighthawk_play_outcomes DROP CONSTRAINT IF EXISTS nighthawk_play_outcomes_outcome_check;
-  `);
-  await p.query(`
-    ALTER TABLE nighthawk_play_outcomes ADD CONSTRAINT nighthawk_play_outcomes_outcome_check CHECK (outcome IN ('target', 'stop', 'open', 'ambiguous', 'pending'));
-  `);
+  // PR-N1 (P0): a stale pre-'unfilled' copy of the nighthawk_play_outcomes_outcome_check
+  // DROP+ADD used to live HERE — running later in ensureSchema than the correct re-issue
+  // above (see the 'unfilled' block near the table's CREATE), it clobbered the constraint
+  // back to the 5-value set on every boot, so every `outcome = 'unfilled'` grade write threw
+  // and 12 rows sat "pending" forever. The outcome CHECK must be issued exactly ONCE in this
+  // function (db.test.ts pins this) — never re-add a second copy.
   await p.query(`
     DO $$
     BEGIN
