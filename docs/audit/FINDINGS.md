@@ -1238,3 +1238,47 @@ Three new PURE, deterministic, LLM-free modules + additive wiring (no existing p
 - The governed read-only ops-awareness tools (cron_runs / provider-health / cache-probe) were the
   explicit STRETCH item, gated behind 1+2 landing solid. Left OUT of this PR to keep it cohesive and
   single-purpose (verdict rigor); no half-built surface shipped. Tracked for a follow-up.
+## 2026-07-14 — FLOW-GEX LENS: second GEX signing mode (Skylit parity) as a member toggle — feat/flow-gex-lens
+
+### Feature — flow-based dealer-positioning lens alongside canonical OI GEX (BUILT, tested)
+- **Severity:** feature (product owner's headline ask; member-facing). NOT a bug fix — the canonical
+  OI GEX is correct and stays the DEFAULT, untouched. This ADDS a second lens.
+- **Motivation (docs skylit-model-findings reverse-engineering, 5/6 sign match to Skylit's $FIG):**
+  members compare our GEX to flow-based tools (Skylit) and see sign flips on individual strikes. Root
+  of the difference: our canonical signs each strike statically by option type (call+/put−) weighted
+  by **open interest** ("what's positioned"); Skylit signs by **today's directional traded flow**
+  ("which way trading pushed dealers"). Neither is wrong — they answer different questions. This lens
+  reproduces the flow view so members can see both.
+- **Model (confirmed):** flow-signed dealer gamma per strike = `Σ(call_gamma_bid + call_gamma_ask +
+  put_gamma_bid + put_gamma_ask)` from UW `spot-exposures/strike` (UW already signs bid + / ask −:
+  customer sold at bid → dealer LONG γ; customer bought at ask → dealer SHORT γ). All-expiry
+  aggregate. Reproduces Skylit's $FIG SIGN pattern on 5/6 published strikes (22.5 is the single miss —
+  EOD-vs-intraday snapshot timing on a 2-week IPO) and NAILS the dominant −GEX peak at strike 28 to
+  −1.0% (fit −8032.5 vs Skylit −8110.9).
+- **Build:**
+  - `src/features/vector/lib/vector-flow-gex.ts` — pure `computeFlowGexLadder(rows)` → SAME
+    `{strike: netGex}` shape `buildGexLadder` consumes, so the dense ladder rendering (kings, markers,
+    ordering, banding) is SHARED with the OI path; only the per-strike sign + magnitude source differs.
+  - `src/features/vector/lib/vector-flow-gex-server.ts` — server shell; reuses the EXISTING
+    `fetchUwSpotExposuresByStrike` provider fetch (no new provider path), spot from `getGexPositioning`
+    with the snapshot `price` fallback. Best-effort null on any gap.
+  - `src/app/api/market/vector/gex-ladder/route.ts` — `?mode=oi|flow` (default `oi`). `oi` path is
+    byte-identical (only an additive `mode` echo added to the JSON). `flow` → flow map → `buildGexLadder`.
+  - `VectorGexLadder.tsx` — compact **Positioning (OI) | Flow (today)** toggle (default OI) + a plain-
+    English ⓘ explainer popover of the two lenses. Switching refetches `?mode=flow` and re-renders.
+- **Evidence (tests, `vector-flow-gex.test.ts`, 5 new):** FIG fixture (the sim's REAL numbers) →
+  flow mode reproduces 26/27/28 negative + 25/30 positive + 22.5 the documented single miss = 5/6 vs
+  Skylit, dominant strike 28 (largest |GEX|), strike-28 magnitude fit within 2%; flow ≠ oi (strike 28
+  flips call→put between lenses; every OI strike stays positive/call because static call+ on call-heavy
+  OI can't go negative); a GOLDEN snapshot of the OI ladder pins the DEFAULT lens rendering unchanged;
+  empty/malformed input degrades to an empty ladder. tsc clean; full `npm test` green (3574 pass);
+  `npm run build` compiles; eslint clean on changed files.
+- **Blast radius:** the toggle lives on `VectorGexLadder`, whose ONLY consumer is the Vector page
+  ladder rail (`VectorPageShell`). The SPX desk terminal / other terminals render walls from the
+  separate `/walls` route, NOT this ladder component/API, so they do not inherit the toggle (and per
+  the canonical-stays-default policy, walls remain OI). BIE/Largo full-state
+  (`src/lib/bie/vector-full-state.ts`) calls `buildGexLadder` on the OI map only — NOT touched
+  (read-only per scope). Canonical `oi` values are byte-identical (golden test + additive-only route change).
+- **Status:** BUILT + tested. DRAFT PR (member-facing; post-deploy check: toggle to Flow on a liquid
+  name, confirm signs flip on net-bought strikes + zero console errors; owner runs vector-hardcore).
+  NOT merged.

@@ -9992,6 +9992,106 @@ body::before {
     color: rgba(148, 163, 184, 0.55);
   }
 
+  /* Lens toggle row: OI (canonical) | Flow (today), plus the ⓘ explainer. */
+  .vector-gex-ladder-lens {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 0.3rem 0.7rem 0.4rem;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+    flex: 0 0 auto;
+  }
+
+  .vector-gex-ladder-lens-toggle {
+    display: inline-flex;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 0.45rem;
+    overflow: hidden;
+  }
+
+  .vector-gex-ladder-lens-btn {
+    appearance: none;
+    border: 0;
+    background: transparent;
+    color: rgba(148, 163, 184, 0.85);
+    font-size: 0.62rem;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    padding: 0.2rem 0.5rem;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: background 0.12s ease, color 0.12s ease;
+  }
+
+  .vector-gex-ladder-lens-btn + .vector-gex-ladder-lens-btn {
+    border-left: 1px solid rgba(255, 255, 255, 0.12);
+  }
+
+  .vector-gex-ladder-lens-btn:hover {
+    color: rgba(226, 232, 240, 0.95);
+  }
+
+  .vector-gex-ladder-lens-btn.is-active {
+    background: rgba(255, 214, 10, 0.16);
+    color: #ffd60a;
+  }
+
+  .vector-gex-ladder-lens-info {
+    appearance: none;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    background: transparent;
+    color: rgba(148, 163, 184, 0.8);
+    font-size: 0.62rem;
+    line-height: 1;
+    width: 1.1rem;
+    height: 1.1rem;
+    border-radius: 999px;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .vector-gex-ladder-lens-info:hover {
+    color: rgba(226, 232, 240, 0.95);
+    border-color: rgba(255, 255, 255, 0.25);
+  }
+
+  .vector-gex-ladder-lens-pop {
+    position: absolute;
+    top: calc(100% + 0.3rem);
+    left: 0.7rem;
+    right: 0.7rem;
+    z-index: 30;
+    padding: 0.6rem 0.7rem;
+    border-radius: 0.6rem;
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    background: #0b0b12;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.55);
+    font-size: 0.66rem;
+    line-height: 1.35;
+    color: rgba(203, 213, 225, 0.9);
+  }
+
+  .vector-gex-ladder-lens-pop p {
+    margin: 0 0 0.5rem;
+  }
+
+  .vector-gex-ladder-lens-pop p:last-child {
+    margin-bottom: 0;
+  }
+
+  .vector-gex-ladder-lens-pop strong {
+    color: rgba(255, 255, 255, 0.95);
+  }
+
+  .vector-gex-ladder-lens-eg {
+    color: rgba(148, 163, 184, 0.9);
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+    padding-top: 0.45rem;
+  }
+
   .vector-gex-ladder-empty {
     padding: 1.25rem 0.7rem;
     font-size: 0.72rem;
