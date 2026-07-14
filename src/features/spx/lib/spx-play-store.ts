@@ -349,6 +349,31 @@ export async function openPlay(
   }
 
   const { insertOpenSpxPlay } = await import("@/lib/db");
+  // Context-at-entry (C-2, decision doc §2), mirrored from the 0DTE ledger's write
+  // path: capture day-open VIX + SPY session bias + ET stamp on the outcome row at
+  // entry, because the strongest factor split in the 7/13 forensics (VIX 15-17 →
+  // 69% WR vs 17-20 → 25%) was only derivable day-level after the fact. Fetched
+  // HERE in the store (cached 3-min, soft-deadlined, never throws) rather than
+  // threaded from the engine so the engine's core stays untouched; the engine's
+  // own desk gamma regime is therefore NOT captured on Slayer rows yet (score and
+  // grade are already first-class columns on spx_play_outcomes).
+  const entryContext = outcome
+    ? await (async () => {
+        try {
+          const { buildZeroDteEntryContext, fetchZeroDteSessionContext } = await import(
+            "@/lib/zerodte/entry-context"
+          );
+          const sessionCtx = await fetchZeroDteSessionContext();
+          return buildZeroDteEntryContext(
+            { score: outcome.score, gamma_regime: null },
+            sessionCtx,
+            Date.now()
+          ) as unknown as Record<string, unknown>;
+        } catch {
+          return null; // context is best-effort — never block a play open on it
+        }
+      })()
+    : null;
   const outcomePayload = outcome
     ? {
         entry_path: outcome.entry_path,
@@ -361,6 +386,7 @@ export async function openPlay(
         option_ticket: outcome.option_ticket,
         playbook_id: outcome.playbook_id ?? null,
         playbook_instance_id: outcome.playbook_instance_id ?? null,
+        entry_context: entryContext,
       }
     : undefined;
   const { id, created } = await insertOpenSpxPlay(full, outcomePayload);

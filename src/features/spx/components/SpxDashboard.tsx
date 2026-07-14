@@ -1,6 +1,6 @@
 "use client";
 
-import React, { Suspense, useState } from "react";
+import React, { Suspense, useCallback, useEffect, useState } from "react";
 import dynamic from "next/dynamic";
 import { clsx } from "clsx";
 import { useAppAuth } from "@/lib/auth-client";
@@ -10,8 +10,15 @@ import { useCompactDeskPanels } from "@/hooks/useCompactDeskPanels";
 import { IosNativeSegment } from "@/components/ios/IosNativeSegment";
 import { EmptyState, Button } from "@/components/ui";
 import { shouldShowHaltDegradedBanner } from "@/features/spx/lib/spx-halt-banner";
+import {
+  SPX_DESK_FOCUS_STORAGE_KEY,
+  focusHotkeyAction,
+  nextFocusState,
+} from "@/features/spx/lib/spx-desk-focus";
 // Type-only: VectorSeedProps comes from a server-only module; the type import is erased at build.
 import type { VectorSeedProps } from "@/features/vector";
+// Type-only: the shared-price-axis map the embedded chart emits (see vector-price-scale-map.ts).
+import type { VectorPriceScaleMap } from "@/features/vector/lib/vector-price-scale-map";
 
 const SpxSniperHeader = dynamic(
   () => import("./SpxSniperHeader").then((m) => ({ default: m.SpxSniperHeader })),
@@ -44,6 +51,11 @@ const SpxCommentaryRail = dynamic(
 
 const SpxLiveSpotPrice = dynamic(
   () => import("./SpxLiveSpotPrice").then((m) => ({ default: m.SpxLiveSpotPrice })),
+  { loading: () => null }
+);
+
+const SpxSessionTimeBar = dynamic(
+  () => import("./SpxSessionTimeBar").then((m) => ({ default: m.SpxSessionTimeBar })),
   { loading: () => null }
 );
 
@@ -82,6 +94,52 @@ export function SpxDashboard({ vectorSeed }: SpxDashboardProps) {
   const nativeShell = useIosNativeShell();
   const compactPanels = useCompactDeskPanels(nativeShell);
   const [iosPanel, setIosPanel] = useState<"vector" | "matrix" | "intel">("vector");
+
+  // SHARED PRICE AXIS (2026-07-13): the embedded Vector chart reports its live y-mapping
+  // through the VectorPageShell seam; the matrix column's ladder view consumes it so bars
+  // and the spot line land at the SAME pixel heights as the chart.
+  const [priceScaleMap, setPriceScaleMap] = useState<VectorPriceScaleMap | null>(null);
+
+  // FOCUS MODE (2026-07-13): `F` toggles / `Esc` exits (ignored while typing), persisted
+  // per device. Hydrated after mount so SSR markup is deterministic. Compact/iOS shells
+  // keep the segmented layout — focus is a desktop-grid concept.
+  const [focusMode, setFocusMode] = useState(false);
+  useEffect(() => {
+    try {
+      setFocusMode(window.localStorage.getItem(SPX_DESK_FOCUS_STORAGE_KEY) === "1");
+    } catch {
+      /* storage unavailable — default expanded */
+    }
+  }, []);
+  const applyFocus = useCallback((updater: (cur: boolean) => boolean) => {
+    setFocusMode((cur) => {
+      const next = updater(cur);
+      if (next !== cur) {
+        try {
+          window.localStorage.setItem(SPX_DESK_FOCUS_STORAGE_KEY, next ? "1" : "0");
+        } catch {
+          /* best-effort persistence */
+        }
+      }
+      return next;
+    });
+  }, []);
+  const toggleFocus = useCallback(() => applyFocus((cur) => !cur), [applyFocus]);
+  useEffect(() => {
+    if (compactPanels) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      const target = e.target instanceof HTMLElement ? e.target : null;
+      // setFocusMode's functional form reads the CURRENT value, but the Escape decision
+      // needs it BEFORE the reducer runs — resolve the action inside the updater instead.
+      applyFocus((cur) => {
+        const action = focusHotkeyAction(e, target, cur);
+        return nextFocusState(cur, action);
+      });
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [compactPanels, applyFocus]);
+  const focusActive = focusMode && !compactPanels;
 
   if (isLoaded && tier && tier !== "premium" && tier !== "admin") {
     return (
@@ -169,6 +227,18 @@ export function SpxDashboard({ vectorSeed }: SpxDashboardProps) {
         <SpxSniperHeader desk={desk} live={live} nativeShell={nativeShell} />
       </SpxPanelErrorBoundary>
 
+      {/* SESSION TIME BAR (2026-07-13): thin RTH timeline — playbook windows, macro blocks,
+          Largo event dots, now-cursor — plus the focus-mode toggle at its right edge. */}
+      <SpxPanelErrorBoundary>
+        <SpxSessionTimeBar
+          macroEvents={desk?.macro_events}
+          live={live}
+          focus={focusActive}
+          onToggleFocus={toggleFocus}
+          showFocusToggle={!compactPanels}
+        />
+      </SpxPanelErrorBoundary>
+
       {compactPanels && (
         <IosNativeSegment
           value={iosPanel}
@@ -193,7 +263,10 @@ export function SpxDashboard({ vectorSeed }: SpxDashboardProps) {
       {/* --desk-v2 keeps the shared rail styling (gap, borders, Largo/matrix columns);
           --desk-v3 swaps the grid template from four rails to three and adds the vector column. */}
       <div
-        className="spx-sniper-triple spx-sniper-triple--desk-v2 spx-sniper-triple--desk-v3"
+        className={clsx(
+          "spx-sniper-triple spx-sniper-triple--desk-v2 spx-sniper-triple--desk-v3",
+          focusActive && "spx-sniper-triple--focus"
+        )}
         data-ios-panel={compactPanels ? iosPanel : undefined}
       >
         <SpxPanelErrorBoundary>
@@ -205,7 +278,7 @@ export function SpxDashboard({ vectorSeed }: SpxDashboardProps) {
                 compactPanels && iosPanel === "intel" && "ios-native-panel-visible"
               )}
             >
-              <SpxCommentaryRail desk={desk} live={live} />
+              <SpxCommentaryRail desk={desk} live={live} focus={focusActive} />
             </aside>
           </Suspense>
         </SpxPanelErrorBoundary>
@@ -218,7 +291,7 @@ export function SpxDashboard({ vectorSeed }: SpxDashboardProps) {
               compactPanels && iosPanel === "matrix" && "ios-native-panel-visible"
             )}
           >
-            {(!compactPanels || iosPanel === "matrix") && (
+            {(!compactPanels || iosPanel === "matrix") && !focusActive && (
               <div className="spx-matrix-column-spot shrink-0" aria-label="SPX live spot">
                 <SpxLiveSpotPrice desk={desk} live={live} size="panel" />
               </div>
@@ -235,6 +308,8 @@ export function SpxDashboard({ vectorSeed }: SpxDashboardProps) {
               flow0dteNet={desk?.flow_0dte_net}
               flow0dteCallPrem={desk?.flow_0dte_call_premium}
               flow0dtePutPrem={desk?.flow_0dte_put_premium}
+              priceScaleMap={priceScaleMap}
+              focus={focusActive}
             />
           </aside>
         </SpxPanelErrorBoundary>
@@ -257,6 +332,7 @@ export function SpxDashboard({ vectorSeed }: SpxDashboardProps) {
                 embed="chart-only"
                 defaultDteHorizon="0dte"
                 defaultTimeframe={3}
+                onPriceScaleRender={setPriceScaleMap}
               />
             ) : (
               <EmptyState

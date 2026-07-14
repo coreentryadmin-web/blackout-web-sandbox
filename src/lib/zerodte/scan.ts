@@ -48,6 +48,7 @@ import {
   type SetupDossierView,
   type ZeroDteGateRejection,
 } from "./board";
+import { buildZeroDteEntryContext, fetchZeroDteSessionContext } from "./entry-context";
 import { persistZeroDteRejections } from "./rejections";
 import { evaluateZeroDteGates, gateRejectionFor, recentNighthawkTake } from "./gates";
 import {
@@ -434,6 +435,16 @@ export async function persistZeroDteScan(setups: EnrichedZeroDteSetup[]): Promis
 
   const eligible = [...committedFresh, ...refresh];
   if (eligible.length === 0) return 0;
+
+  // Context-at-entry (C-2): one cached session read per scan (day-open VIX + SPY
+  // bias), merged per-row with the name's own gamma regime + committed score. The
+  // upsert pins it at FIRST flag, so refresh ticks sending fresh context never
+  // re-stamp an existing row. Best-effort: null context never blocks a commit.
+  // MERGE NOTE (gate lanes × entry_context): this runs on the post-gate `eligible`
+  // set only — a hard-gate-BLOCKED fresh find goes to zerodte_scan_rejections and
+  // never writes a ledger row, so it never receives an entry_context either.
+  const sessionCtx = await fetchZeroDteSessionContext().catch(() => null);
+  const committedAtMs = Date.now();
   const rows: ZeroDteSetupLogUpsert[] = eligible.map((s) => ({
     session_date: today,
     ticker: s.ticker,
@@ -456,6 +467,11 @@ export async function persistZeroDteScan(setups: EnrichedZeroDteSetup[]): Promis
     // setups carry gate=null and pass null here — the upsert's COALESCE pin keeps
     // the original commit-time verdict untouched either way.
     gate_calibration_json: s.gate ? ({ ...s.gate.calibration } as unknown as Record<string, unknown>) : null,
+    entry_context: buildZeroDteEntryContext(
+      { score: s.score, gamma_regime: s.gamma_regime },
+      sessionCtx,
+      committedAtMs
+    ) as unknown as Record<string, unknown>,
     flags_json: {
       ...(s.earnings ? { earnings: s.earnings } : {}),
       ...(s.news_hot ? { news_hot: s.news_hot.title } : {}),
