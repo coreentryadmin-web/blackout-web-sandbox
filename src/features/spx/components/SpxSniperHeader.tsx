@@ -122,6 +122,7 @@ function DeskTopStatsRow({
         <InlineMetricGroup
           title="Session"
           tone="bull"
+          grid2
           tip={METRIC_TIPS.session}
           spot={spot}
           items={[
@@ -267,12 +268,16 @@ function InlineMetricGroup({
   tip,
   items,
   spot,
+  grid2 = false,
 }: {
   title: string;
   tone?: string;
   tip?: string;
   items: InlineMetric[];
   spot: number | null;
+  /** 2x2 grid layout inside the pill (Session group) — reclaims strip width so the
+   *  one-line header fits at 1920 with the spot pill present (2026-07-14). */
+  grid2?: boolean;
 }) {
   return (
     <div
@@ -280,7 +285,7 @@ function InlineMetricGroup({
       title={tip}
     >
       <p className="spx-hero-stat-label">{title}</p>
-      <div className="spx-hero-stat-group-row">
+      <div className={clsx("spx-hero-stat-group-row", grid2 && "spx-hero-stat-group-row--grid2")}>
         {items.map((it) => (
           <span key={it.label} className="spx-hero-stat-group-item" title={it.tip}>
             <span className="spx-hero-metric-row-label">{it.label}</span>

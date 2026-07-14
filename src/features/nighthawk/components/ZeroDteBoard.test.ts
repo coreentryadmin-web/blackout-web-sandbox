@@ -165,3 +165,98 @@ test("mergePlays: ledger row merges live setup evidence", () => {
   assert.equal(rows[0]!.status, "HOLD");
   assert.equal(rows[0]!.setup?.ticker, "NVDA");
 });
+
+// ── B-9 live-marks overlay (overlayLiveMark) ───────────────────────────────────────
+
+import { overlayLiveMark } from "./ZeroDteBoard";
+import type { ZeroDteLiveMarkRow } from "@/lib/zerodte/live-marks";
+
+function playRow(over: Partial<Parameters<typeof overlayLiveMark>[0]>): Parameters<typeof overlayLiveMark>[0] {
+  return {
+    ticker: "NVDA",
+    direction: "long",
+    strike: 140,
+    status: "HOLD",
+    entry_premium: 4.2,
+    flow_avg_fill: 4.2,
+    last_mark: 4.4,
+    live_pnl_pct: 4.76,
+    plan_outcome: null,
+    plan_pnl_pct: null,
+    first_flagged_at: new Date().toISOString(),
+    score: 80,
+    spike: false,
+    setup: null,
+    nighthawkEcho: null,
+    ...over,
+  };
+}
+
+function liveRow(over: Partial<ZeroDteLiveMarkRow>): ZeroDteLiveMarkRow {
+  return {
+    ticker: "NVDA",
+    occ: "O:NVDA260714C00140000",
+    direction: "long",
+    strike: 140,
+    status: "HOLD",
+    entry_premium: 4.2,
+    bid: 4.6,
+    ask: 4.64,
+    mid: 4.62,
+    last: 4.6,
+    mark: 4.62,
+    source: "mid",
+    mark_as_of: new Date().toISOString(),
+    mark_age_ms: 100,
+    stale: false,
+    live_pnl_pct: 10,
+    ...over,
+  };
+}
+
+test("overlayLiveMark: fresh pushed mark replaces the board mark; P&L is the PUSHED value, never recomputed", () => {
+  const now = Date.now();
+  const out = overlayLiveMark(playRow({}), liveRow({ mark_as_of: new Date(now - 500).toISOString() }), now);
+  assert.equal(out.last_mark, 4.62);
+  assert.equal(out.live_pnl_pct, 10); // exactly what the server pushed (single derivation)
+  assert.equal(out.mark_source, "mid");
+  assert.equal(out.mark_stale, false);
+});
+
+test("overlayLiveMark: a mark older than the 5s honesty bar renders STALE (dim), never as live", () => {
+  const now = Date.now();
+  const out = overlayLiveMark(playRow({}), liveRow({ mark_as_of: new Date(now - 8_000).toISOString() }), now);
+  assert.equal(out.last_mark, 4.62); // still the freshest number we have…
+  assert.equal(out.mark_stale, true); // …but flagged, not impersonating live
+});
+
+test("overlayLiveMark: CLOSED and SKIP rows are frozen — the live lane never rewrites them", () => {
+  const now = Date.now();
+  const closed = overlayLiveMark(playRow({ status: "CLOSED", last_mark: 2.6, live_pnl_pct: -50 }), liveRow({}), now);
+  assert.equal(closed.last_mark, 2.6);
+  assert.equal(closed.live_pnl_pct, -50);
+  assert.equal(closed.mark_stale, false); // frozen result, no staleness claim
+  const skip = overlayLiveMark(playRow({ status: "SKIP" }), liveRow({}), now);
+  assert.equal(skip.last_mark, 4.4);
+});
+
+test("overlayLiveMark: no pushed row → board values stand, staleness judged from the board's own asOf", () => {
+  const now = Date.now();
+  const fresh = overlayLiveMark(playRow({ mark_as_of: new Date(now - 1_000).toISOString() }), undefined, now);
+  assert.equal(fresh.mark_stale, false);
+  const old = overlayLiveMark(playRow({ mark_as_of: new Date(now - 20_000).toISOString() }), undefined, now);
+  assert.equal(old.mark_stale, true);
+  // Legacy lane (no per-quote timestamp anywhere): no staleness claim either way.
+  const unknown = overlayLiveMark(playRow({}), undefined, now);
+  assert.equal(unknown.mark_stale, undefined);
+});
+
+test("overlayLiveMark: an OLDER pushed mark never overwrites a fresher board mark", () => {
+  const now = Date.now();
+  const out = overlayLiveMark(
+    playRow({ mark_as_of: new Date(now - 1_000).toISOString(), last_mark: 4.7 }),
+    liveRow({ mark_as_of: new Date(now - 4_000).toISOString(), mark: 4.1 }),
+    now
+  );
+  assert.equal(out.last_mark, 4.7);
+});
