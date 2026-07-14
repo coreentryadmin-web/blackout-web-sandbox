@@ -1,7 +1,10 @@
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 import { requireDatabaseInProduction } from "@/lib/db";
-import { resolvePendingNighthawkOutcomes } from "@/features/nighthawk/lib/play-outcomes";
+import {
+  nighthawkOutcomesRunHealth,
+  resolvePendingNighthawkOutcomes,
+} from "@/features/nighthawk/lib/play-outcomes";
 import { inEtWindow } from "@/features/nighthawk/lib/et-window";
 import { logCronRun } from "@/lib/cron-run";
 import { isCronAuthorized } from "@/lib/market-api-auth";
@@ -47,14 +50,21 @@ export async function GET(req: NextRequest) {
     const rawDays = Number(req.nextUrl.searchParams.get("days") ?? "7");
     const lookbackDays = Number.isFinite(rawDays) && rawDays > 0 ? rawDays : 7;
     const result = await resolvePendingNighthawkOutcomes({ lookbackDays });
-    const payload = { ok: true, ...result };
+    // Cron honesty (PR-N1): per-row grade-write failures used to be tucked into
+    // meta.errors under an unconditional ok:true — the H-1 constraint clobber failed
+    // 12 grades for four straight days while cron-health stayed green. errors with
+    // content ⇒ the run FAILED (health record + ops ping via logCronRun) and the HTTP
+    // status says so too.
+    const health = nighthawkOutcomesRunHealth(result);
+    const payload = { ok: health.ok, ...result };
     await logCronRun("nighthawk-outcomes", started, {
-      ok: true,
+      ok: health.ok,
+      error: health.error,
       resolved: result.resolved,
       skipped_count: result.skipped,
       errors: result.errors,
     });
-    return NextResponse.json(payload);
+    return NextResponse.json(payload, health.ok ? undefined : { status: 500 });
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);
     console.error("[cron/nighthawk-outcomes]", error);

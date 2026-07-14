@@ -625,3 +625,26 @@ export async function resolvePendingNighthawkOutcomes(opts?: {
 
   return { resolved, skipped, errors };
 }
+
+/** Cron honesty (PR-N1): the run's health verdict from its per-row error ledger.
+ *
+ *  Before this, the outcomes cron logged `ok: true` unconditionally on the happy
+ *  path — the 12 H-1 constraint-violation failures sat in `meta.errors` while
+ *  cron-health showed green for four straight days (a red loop that never paged
+ *  anyone; see docs/audit/NIGHTHAWK-OVERNIGHT-DECISION.md §0.1). Rule: errors with
+ *  content ⇒ the run is NOT ok. logCronRun maps `ok: false` to status `failed`,
+ *  which also fires the ops-Discord ping — exactly the paging this class of bug
+ *  needed. Pure so it's unit-testable without the route harness. */
+export function nighthawkOutcomesRunHealth(result: {
+  resolved: number;
+  skipped: number;
+  errors: string[];
+}): { ok: boolean; error?: string } {
+  if (result.errors.length === 0) return { ok: true };
+  const shown = result.errors.slice(0, 3).join("; ");
+  const more = result.errors.length > 3 ? ` (+${result.errors.length - 3} more)` : "";
+  return {
+    ok: false,
+    error: `${result.errors.length} grade write(s) failed: ${shown}${more}`,
+  };
+}

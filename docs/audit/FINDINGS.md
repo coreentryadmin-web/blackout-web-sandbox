@@ -407,3 +407,58 @@ plays show "entirely wrong" pnl/%/premium values, slow to update.
   (Largo dedupe both orders; WATCH intel; unknowable-ledger fail-closed),
   `scan.test.ts` (last-good latch; committed_known:false), `db.test.ts` (SQL CASE
   ladder). tsc clean, full `npm test` green.
+
+## 2026-07-14 — Night Hawk OVERNIGHT grading (PR-N1, branch fix/nighthawk-grading-constraint)
+
+### P0 — Stale outcome-CHECK re-add broke every 'unfilled' grade; 12 rows permanently "pending" (FIXED)
+- **Severity:** P0 — 12 of 26 all-time published plays (46%) invisible to the public
+  track record, silently and permanently.
+- **Root cause:** `ensureSchema()` (`src/lib/db.ts`) issued the
+  `nighthawk_play_outcomes_outcome_check` CHECK **twice**: the correct DROP+ADD right
+  after the table DDL (`db.ts:547-551`, allowed set WITH `'unfilled'` — the
+  grading-honesty fix), then a stale pre-fix copy at `db.ts:820-823` (after the
+  `admin_audit_log` DDL) that re-issued it WITHOUT `'unfilled'`. Running later, the
+  stale copy won on every boot, so every `UPDATE … SET outcome = 'unfilled'` threw a
+  check-constraint violation and the row stayed `pending` forever. Not caught earlier
+  because the outcomes cron swallowed per-row failures into `meta.errors` while logging
+  `last_status: ok` (green cron-health, no ops ping), and the resolver's 7-day lookback
+  (`play-outcomes.ts`, `resolvePendingNighthawkOutcomes`) silently stopped revisiting
+  the failed rows once they aged out — while `pending_count` is unwindowed, so the UI
+  honestly showed "12 pending" with no path to ever resolve them.
+- **Evidence:** cron-health meta for `nighthawk-outcomes` lists exactly the 12 stuck
+  rows — AAPL/CSX/MAGS@2026-07-06, AMZN/BAC/TSLA@2026-07-07, AMD/DELL/WFC@2026-07-08,
+  PG@2026-07-09, META/PANW@2026-07-10 — and the arithmetic closes exactly: 26 plays
+  published all-time − 14 app-resolved = 12 stuck. Under current `resolveOutcome()`
+  rules all 12 grade `unfilled` (the constraint-rejected verdict). Full forensics:
+  `docs/audit/NIGHTHAWK-OVERNIGHT-DECISION.md` §0.1/§1.3 (H-1/H-2).
+- **Fix (PR-N1):**
+  1. Deleted the stale re-add block (`db.ts:819-824` pre-fix numbering); the correct
+     6-value CHECK re-issue now runs exactly once. Grepped `ensureSchema` for the same
+     duplicate-constraint idiom on other tables: **none** — the three FK `ADD
+     CONSTRAINT`s are all `IF NOT EXISTS`-guarded with unique names; only the
+     play-outcome CHECK was duplicated.
+  2. Historical repair: `regradeStuckNighthawkOutcomes()`
+     (`src/features/nighthawk/lib/regrade-stuck.ts`) + admin route
+     `POST /api/admin/nighthawk/regrade-stuck-outcomes` (mirrors
+     `admin/zerodte/regrade-index-roots`) — selects rows still `pending` beyond the
+     resolver's lookback and re-runs the cron's own resolution path. Bounded
+     (limit ≤ 200), idempotent (`WHERE outcome='pending'` guard + pending-only fetch),
+     dry-runnable, audit-logged to `admin_audit_log`.
+  3. Cron honesty: `nighthawkOutcomesRunHealth()` — `meta.errors` with content ⇒ the
+     run records `failed` (not `ok`) in cron-health, fires the ops-Discord ping via
+     `logCronRun`, and the route returns 500.
+- **Deliberately unchanged (→ N2):** the resolver's 7-day lookback vs the unwindowed
+  `pending_count` (H-2), and the full historical re-grade of the 14 already-resolved
+  rows under current rules (the N-2 methodology blend). The regrade endpoint repairs
+  the stuck class only; widening the lookback silently would hide the window-mismatch
+  design question PR-N2 owns.
+- **Tests:** `db.test.ts` (source contract: outcome CHECK ADDed exactly once, paired
+  DROP, allowed set includes all 6 outcomes incl. `'unfilled'`),
+  `regrade-stuck.test.ts` (stuck fixture regrades to unfilled/target/stop under
+  current rules; dry-run persists nothing; idempotent second run; limit bound;
+  no-bar skip stays honest; in-window rows left to the cron; per-row failure doesn't
+  abort the batch), `play-outcomes.test.ts` (errors non-empty ⇒ not ok; route wiring
+  pin). tsc clean, full `npm test` green (3209/3209).
+- **Post-merge action:** run the regrade endpoint against prod (dry-run first) once
+  deployed — expect matched=12, all `unfilled` — then confirm the record strip shows
+  26 resolved and `pending_count` equals the live edition's play count only.

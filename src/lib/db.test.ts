@@ -120,3 +120,37 @@ test("updateZeroDteLiveState: SQL status CASE is monotonic — CLOSED terminal, 
   assert.match(body, /GREATEST\(COALESCE\(peak_premium, \$4\), \$4\)/);
   assert.match(body, /LEAST\(COALESCE\(trough_premium, \$4\), \$4\)/);
 });
+
+// PR-N1 (P0, docs/audit/NIGHTHAWK-OVERNIGHT-DECISION.md §0.1): ensureSchema used to
+// re-issue nighthawk_play_outcomes_outcome_check TWICE — the correct DROP+ADD (with
+// 'unfilled') right after the table DDL, then a stale pre-'unfilled' copy ~270 lines
+// later that, running last, clobbered the constraint back on every boot. Every
+// `outcome = 'unfilled'` grade write then threw, leaving 12 rows permanently
+// "pending" while the cron logged ok. Pin: the CHECK is ADDed exactly once, its
+// DROP is paired exactly once, and the allowed set is the full 6-outcome union
+// resolveOutcome (play-outcomes.ts) can emit. Same source-inspection idiom as the
+// tests above (no PG in CI).
+test("ensureSchema: nighthawk play-outcome CHECK issued exactly once, allowed set includes 'unfilled'", () => {
+  const src = readFileSync(fileURLToPath(new URL("./db.ts", import.meta.url)), "utf8");
+  const adds = src.match(/ADD CONSTRAINT nighthawk_play_outcomes_outcome_check/g) ?? [];
+  assert.equal(
+    adds.length,
+    1,
+    "the outcome CHECK must be ADDed exactly once — a later duplicate silently wins on every boot"
+  );
+  const drops = src.match(/DROP CONSTRAINT IF EXISTS nighthawk_play_outcomes_outcome_check/g) ?? [];
+  assert.equal(drops.length, 1, "exactly one DROP, paired with the single ADD");
+
+  // The single surviving ADD must allow everything resolveOutcome can write.
+  const addIdx = src.indexOf("ADD CONSTRAINT nighthawk_play_outcomes_outcome_check");
+  const stmt = src.slice(addIdx, src.indexOf(")", src.indexOf("CHECK", addIdx) + 1) + 1);
+  for (const outcome of ["target", "stop", "open", "ambiguous", "pending", "unfilled"]) {
+    assert.ok(stmt.includes(`'${outcome}'`), `outcome CHECK must allow '${outcome}' — got: ${stmt}`);
+  }
+  // And the fix ordering that makes the DROP+ADD meaningful: it must run AFTER the
+  // CREATE TABLE whose inline column CHECK (auto-named the same) lacks 'unfilled'.
+  assert.ok(
+    addIdx > src.indexOf("CREATE TABLE IF NOT EXISTS nighthawk_play_outcomes"),
+    "the re-issue must follow the table DDL it upgrades"
+  );
+});

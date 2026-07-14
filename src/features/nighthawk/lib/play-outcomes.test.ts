@@ -1,9 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import {
   buildNighthawkAuditRow,
   buildNighthawkRejectedAuditRow,
   buildNighthawkStageRejectedAuditRow,
+  nighthawkOutcomesRunHealth,
   outcomeSessionDate,
   parsePlayLevels,
   resolveOutcome,
@@ -549,4 +552,53 @@ test("stage-rejected audit row (premium-cap): confluence breakdown folds in iden
   // Stage-specific fields still present alongside the new confluence key (additive, not a
   // replacement of premium_cap's own established input_snapshot fields).
   assert.equal((audit.input_snapshot as { entry_premium: number }).entry_premium, 27.5);
+});
+
+// ── Cron honesty (PR-N1, docs/audit/NIGHTHAWK-OVERNIGHT-DECISION.md §0.1) ─────────────
+// The outcomes cron used to log `ok: true` unconditionally on its happy path while the
+// per-row grade failures sat in meta.errors — the 12 H-1 constraint violations stayed
+// green in cron-health for four days. Rule under test: errors with content ⇒ NOT ok.
+
+test("nighthawkOutcomesRunHealth: clean run (even with skips) is ok", () => {
+  assert.deepEqual(nighthawkOutcomesRunHealth({ resolved: 5, skipped: 2, errors: [] }), {
+    ok: true,
+  });
+});
+
+test("nighthawkOutcomesRunHealth: any per-row error means the run is NOT ok, even when others resolved", () => {
+  const health = nighthawkOutcomesRunHealth({
+    resolved: 3,
+    skipped: 0,
+    errors: ['AAPL@2026-07-06: new row for relation "nighthawk_play_outcomes" violates check constraint'],
+  });
+  assert.equal(health.ok, false);
+  assert.match(health.error ?? "", /1 grade write\(s\) failed/);
+  assert.match(health.error ?? "", /AAPL@2026-07-06/);
+});
+
+test("nighthawkOutcomesRunHealth: many errors summarize with an honest overflow count", () => {
+  const health = nighthawkOutcomesRunHealth({
+    resolved: 0,
+    skipped: 0,
+    errors: ["a: x", "b: x", "c: x", "d: x", "e: x"],
+  });
+  assert.equal(health.ok, false);
+  assert.match(health.error ?? "", /5 grade write\(s\) failed/);
+  assert.match(health.error ?? "", /\(\+2 more\)/);
+});
+
+// Wiring pin (same source-inspection idiom as db.test.ts): the cron route must derive
+// its health verdict from the error ledger — an unconditional `ok: true` in the
+// happy-path logCronRun call is exactly the bug this fixed.
+test("cron/nighthawk-outcomes route derives ok from nighthawkOutcomesRunHealth, not a literal", () => {
+  const src = readFileSync(
+    fileURLToPath(new URL("../../../app/api/cron/nighthawk-outcomes/route.ts", import.meta.url)),
+    "utf8"
+  );
+  assert.match(src, /nighthawkOutcomesRunHealth\(result\)/);
+  assert.match(src, /ok:\s*health\.ok/);
+  assert.ok(
+    !/logCronRun\("nighthawk-outcomes",\s*started,\s*\{\s*ok:\s*true/.test(src),
+    "the success-path health record must never hardcode ok: true"
+  );
 });
