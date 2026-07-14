@@ -271,7 +271,12 @@ export function computeSpxConfluence(desk: SpxDeskPayload): SpxConfluence | null
   }
 
   if (desk.gamma_flip != null) {
-    const aboveFlip = price > desk.gamma_flip;
+    // Use the desk's hysteresis-coherent side-of-flip, NOT a raw `price > desk.gamma_flip` — the raw
+    // compare straddles the 2pt buffer band against `gamma_regime`, so `regime === "mean_revert" &&
+    // aboveFlip` (and the amplification branch) both fell through inside the band and the γ-regime
+    // confluence factor silently zeroed. `above_gamma_flip` is now derived from the same regime label,
+    // so the pairing is coherent by construction. See gamma-desk.ts isAboveFlipFromRegime.
+    const aboveFlip = desk.above_gamma_flip;
     const regime = desk.gamma_regime ?? "unknown";
     if (regime === "mean_revert" && aboveFlip) {
       const w = 10;

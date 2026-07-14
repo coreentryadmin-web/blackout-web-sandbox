@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 // gamma-desk.ts has ZERO imports (no @/, no Next, no Redis) -> resolves cleanly
 // under tsx --test. Both functions are pure/deterministic.
-import { analyzeStrikeGexRows, computeGammaFlip, gammaRegime, gammaRegimeWithHysteresis, topGexWalls } from "./gamma-desk";
+import { analyzeStrikeGexRows, computeGammaFlip, gammaRegime, gammaRegimeWithHysteresis, isAboveFlipFromRegime, topGexWalls } from "./gamma-desk";
 import type { GexStrikeLevel } from "./gamma-desk";
 
 test("balanced net-0 strike (callG=-putG) SURVIVES the filter", () => {
@@ -179,4 +179,42 @@ test("gammaRegimeWithHysteresis: stays a pure spot-vs-flip model — no aggregat
   // override; see FINDINGS.) The function takes no netGex arg by design.
   assert.equal(gammaRegimeWithHysteresis(5999, flip, "amplification"), "amplification");
   assert.equal(gammaRegimeWithHysteresis(6001, flip, "mean_revert"), "mean_revert");
+});
+
+// ── SINGLE SIDE-OF-FLIP TRUTH (fix/spx-slayer-desk-coherence) ───────────────
+// Root-cause regression guard: `above_gamma_flip` used to be a raw `price > flip` compare while
+// `gamma_regime` used gammaRegimeWithHysteresis (2pt buffer). Inside the band the two STRADDLED —
+// side said "above" while the regime label (and the synthesis narration / confluence signal /
+// regime-route posture that key off it) said short-γ amplification (below). The fix derives the side
+// from the SAME regime label via isAboveFlipFromRegime, so the invariant
+// `above_gamma_flip === (gamma_regime === "mean_revert")` holds for EVERY snapshot — including the
+// two prices inside the hysteresis band that used to disagree.
+test("isAboveFlipFromRegime: mean_revert=above, amplification/unknown=not-above", () => {
+  assert.equal(isAboveFlipFromRegime("mean_revert"), true);
+  assert.equal(isAboveFlipFromRegime("amplification"), false);
+  assert.equal(isAboveFlipFromRegime("unknown"), false);
+});
+
+test("side-of-flip stays coherent with the hysteresis regime INSIDE the 2pt band (both sides)", () => {
+  const flip = 7500;
+
+  // Dip 1pt below the flip while previously above (mean_revert). Hysteresis holds the regime at
+  // mean_revert (needs spot <= flip-2 to flip to amplification). The derived side must therefore be
+  // ABOVE — matching the regime — even though a RAW price>flip compare would say BELOW.
+  const regimeDown = gammaRegimeWithHysteresis(7499, flip, "mean_revert");
+  assert.equal(regimeDown, "mean_revert", "hysteresis preserved: stays mean_revert inside the band");
+  const sideDown = isAboveFlipFromRegime(regimeDown);
+  assert.equal(sideDown, true, "side agrees with the regime (above), not the raw compare");
+  assert.notEqual(sideDown, 7499 > flip, "the OLD raw-compare bug: side would have disagreed here");
+  assert.equal(sideDown, regimeDown === "mean_revert", "invariant: above === (regime===mean_revert)");
+
+  // Tick 1pt above the flip while previously below (amplification). Hysteresis holds amplification
+  // (needs spot >= flip+2). Derived side must be NOT-above — matching the regime — though a raw
+  // compare would say above.
+  const regimeUp = gammaRegimeWithHysteresis(7501, flip, "amplification");
+  assert.equal(regimeUp, "amplification", "hysteresis preserved: stays amplification inside the band");
+  const sideUp = isAboveFlipFromRegime(regimeUp);
+  assert.equal(sideUp, false, "side agrees with the regime (below), not the raw compare");
+  assert.notEqual(sideUp, 7501 > flip, "the OLD raw-compare bug: side would have disagreed here");
+  assert.equal(sideUp, regimeUp === "mean_revert", "invariant: above === (regime===mean_revert)");
 });

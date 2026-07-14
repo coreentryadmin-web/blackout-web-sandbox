@@ -1581,3 +1581,90 @@ intact. Full suite **3669 pass / 0 fail**; tsc + eslint clean; `npm run build` g
 - **Validation:** full suite **3709 pass / 0 fail**; `tsc --noEmit` clean; `npx eslint` (changed) clean;
   `npm run build` green.
 - **Status:** FIXED — DRAFT PR opened, held for live validation (do not auto-merge).
+
+## 2026-07-14 — SPX SLAYER desk coherence (live RTH sweep, 2026-07-14 open) — PR fix/spx-slayer-desk-coherence
+
+### P1 — side-of-flip incoherence: ONE raw `price>flip` vs hysteresis regime caused 3 contradictions (FIXED, tested)
+- **Severity:** P1 (three member-visible cross-surface contradictions from one root cause).
+- **Root cause (single source):** `above_gamma_flip` was a **raw `price > gammaFlip`** compare
+  (`spx-desk.ts:1351`, and the same pattern in `stickyDeskGexFallback` :221, `buildCanonicalDeskGex`
+  :387, `gexSnapshotForPrice` :1578) while `gamma_regime` used `gammaRegimeWithHysteresis` (2pt buffer,
+  `gamma-desk.ts:141`). Inside the buffer band the two **straddle**: the raw side flips the instant
+  price crosses the flip, but the regime label stays sticky until price clears by 2pt. The in-code
+  comment at `spx-desk.ts:1352` *claimed* single-snapshot coherence — it was false for any price within
+  2pt of the flip. Three surfaces key off the mismatched pair:
+  - **(a)** the γ-regime **confluence factor** (`spx-signals.ts:274,276,284`) required
+    `regime==="mean_revert" && (price>flip)` (or the amplification mirror); inside the band one half was
+    true and the other false, so the factor **silently zeroed** (±10 dropped from the score exactly when
+    spot hovers the flip — a high-signal spot).
+  - **(b)** the desk-synthesis **narration** (`spx-desk-synthesis.ts:46-53` `gammaMechanicSentence`)
+    keys off `desk.above_gamma_flip`, so it printed "below γflip — dealers short γ" while the regime
+    label (and thus the whole desk read) said long-γ/mean-revert (above), and vice-versa.
+  - **(c)** `/api/market/regime` **posture**: the `market-regime-detector` cron stores
+    `gex_regime = merged.gamma_regime` (the hysteresis label), so the served regime posture disagreed
+    with the desk's raw `above_gamma_flip` inside the band.
+- **Fix:** establish ONE hysteresis-aware side-of-flip truth. New helper
+  `isAboveFlipFromRegime(regime)` (`gamma-desk.ts`) returns `regime === "mean_revert"`, and **every**
+  `above_gamma_flip` producer now derives the side from the SAME regime label it serves (all four desk
+  sites) — the invariant `above_gamma_flip === (gamma_regime === "mean_revert")` holds for every
+  snapshot. The confluence factor and synthesis narration then read `desk.above_gamma_flip`; the regime
+  route already keyed off `merged.gamma_regime`, so all three surfaces now agree by construction. The
+  hysteresis is **preserved** (not removed) — the regime stays the intended local spot-vs-flip model
+  with the 2pt debounce; only the *side* was realigned to it. The false coherence comment at
+  `spx-desk.ts:1352` was rewritten to describe the real invariant.
+- **Blast radius:** all four `above_gamma_flip` producers in `spx-desk.ts` (full desk, pulse
+  `gexSnapshotForPrice`, `stickyDeskGexFallback`, `buildCanonicalDeskGex`) + the two consumers
+  (`spx-signals.ts` confluence, `spx-desk-synthesis.ts` narration). The regime route needed no change
+  for coherence (it reads the hysteresis label already). Vector-flip VALUE divergence (chart 7572 vs
+  desk 7532) is OUT OF SCOPE — sequenced separately; this PR only makes the desk internally coherent.
+- **Evidence (tests, all green):** `gamma-desk.test.ts` — at flip=7500, price 7499 (prev mean_revert)
+  the regime holds mean_revert and the derived side is ABOVE (≠ raw `7499>7500`); symmetric at 7501/prev
+  amplification. `spx-desk-synthesis.test.ts` — narration reads "above γflip/long γ" (never
+  below/short) when side=above inside the band, and the mirror. `spx-signals.test.ts` — the γ-regime
+  factor now fires ±10 at prices inside the band (was silently zeroed); the byte-for-byte golden
+  fixture is unchanged (fixture is coherent: 7420>7380, mean_revert, above:true).
+- **Status:** FIXED. tsc + full suite (3715 pass / 0 fail) + build + eslint green. DRAFT PR — user live-validates.
+
+### P2 — /api/market/spx/pulse (+ SSE stream) served unrounded IEEE-754 floats (FIXED, tested)
+- **Root cause:** `pulse/route.ts` was the ONLY SPX route not wrapping its payload in `roundFloats`
+  (every sibling — desk/merged/play/signals/bootstrap/power-hour/outcomes — does). The pulse build
+  serves raw GEX/greek/price floats (`gex_net`, `gamma_flip`, dark-pool notionals) carrying float noise
+  (`7499.360000000001`, `-12701691969.618551`).
+- **Fix:** wrap the pulse GET in `roundFloats(pulse)` (default 2dp), and the SSE `pulse/stream` payload
+  (`stream/route.ts:121`, same numeric families — tide/net-flow premiums, dark-pool notionals). Integers
+  (epoch-ms `updatedAt`/`t`, counts) pass through untouched (roundFloats short-circuits `Number.isInteger`).
+- **Evidence:** `pulse/route.test.ts` (new) — recursive scan asserts NO value in the response carries
+  >4 dp; `7499.360000000001 → 7499.36`, `-12701691969.618551 → -12701691969.62`; epoch-ms integer preserved.
+- **Status:** FIXED, tested.
+
+### P2 — hydration #418 on /dashboard: sessionStorage-seeded desk during render (FIXED, tested)
+- **Root cause (NOT focus-mode — that read is already useEffect-guarded on this trunk):** `useMergedDesk`
+  seeds `desk` from a **synchronous** `readSessionCache` inside a `useRef` **initializer**, which runs
+  during render. Server (no `window`) → `readSessionCache` returns undefined → `deskLoading` true → SSR
+  renders the loading skeleton. The client's FIRST (hydration) render hits the same initializer WITH a
+  cached desk in sessionStorage → `desk` populated → renders the FULL desk. SSR markup (skeleton) ≠ first
+  client markup (full desk) → React #418.
+- **Fix (within ownership):** the hook lives in adjacent-owned territory, so the fix is in
+  `SpxDashboard.tsx` (owned): a `hydrated` state (false on server + first client render, flipped true in
+  a post-mount `useEffect`) gates the render onto the same skeleton the server emitted until after mount,
+  then re-renders with the cached/live desk. SSR and first client render are now byte-identical.
+- **Evidence:** the divergence is mechanical (server returns undefined from `readSessionCache`'s
+  `typeof window === "undefined"` guard; client reads a cached envelope) — the mount gate reproduces the
+  server skeleton on render 1. Verified against tsc + build (SSR compile) green.
+- **Status:** FIXED.
+
+### P3 — /api/market/regime `stale` was date-only; missed same-day intraday cron outages (FIXED, tested)
+- **Root cause:** `stale` compared only the row's ET calendar date vs `mostRecentTradingDayEt` — it caught
+  cross-day/weekend/holiday staleness but NOT a same-day cron stall (writer dies at 10:00 ET, newest row
+  5h old but still today's ET date → served `stale:false`). Live audit caught the class: `stale:false`
+  on a snapshot 148s behind, with `stale` carrying no age signal at all.
+- **Fix:** staleness is now the snapshot's ACTUAL AGE vs its refresh window OR the cross-day date miss OR
+  an unparseable timestamp (fails CLOSED). `REGIME_REFRESH_MS = 5min` (the cron's `*/5` cadence,
+  `railway.market-regime-detector.toml`); a row older than 2× cadence (10min) means the writer missed a
+  full beat → stale (robust against single-tick jitter). 148s-old rows stay `stale:false` (genuinely fresh).
+- **Evidence:** `regime/route.test.ts` — 148s-old same-day row → not stale; 45-min same-day row →
+  stale-by-age (the outage class); multi-session-old → stale by both; unparseable → stale. Clock frozen
+  via `t.mock.timers` so `now` is deterministic.
+- **Status:** FIXED, tested.
+
+**Tests:** full suite **3715 pass / 0 fail**; `npx tsc --noEmit`, `npx eslint` (changed), `npm run build` all green.

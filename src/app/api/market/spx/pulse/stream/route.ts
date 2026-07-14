@@ -5,6 +5,7 @@ import { tideStore, darkPoolStore, intervalFlowStore, netFlowStore } from "@/lib
 import { ensureDataSockets } from "@/lib/ws/init-data-sockets";
 import { getUwCacheRedis } from "@/lib/providers/uw-shared-cache";
 import { sseBackpressureExceeded } from "@/lib/sse-backpressure";
+import { roundFloats } from "@/lib/round-floats";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -118,7 +119,10 @@ export async function GET(req: NextRequest) {
           const snapshot = latestSnapshot;
           const tideFresh = tideStore.updatedAt > 0;
           const darkPoolFresh = darkPoolStore.updatedAt > 0 && darkPoolStore.data != null;
-          const data = JSON.stringify({
+          // Round at the wire boundary — same fix as the non-stream pulse route. The store values
+          // (index prices, tide/net-flow premiums, dark-pool notionals) carry IEEE-754 float noise;
+          // roundFloats leaves integers (epoch-ms updatedAt/t, counts) untouched.
+          const data = JSON.stringify(roundFloats({
             spx: snapshot["I:SPX"],
             vix: snapshot["I:VIX"],
             vix9d: snapshot["I:VIX9D"],
@@ -140,7 +144,7 @@ export async function GET(req: NextRequest) {
               ? { call_premium: netFlowStore.call_premium, put_premium: netFlowStore.put_premium, net: netFlowStore.net, updatedAt: netFlowStore.updatedAt }
               : undefined,
             t: Date.now(),
-          });
+          }));
           controller.enqueue(encoder.encode(`data: ${data}\n\n`));
         } catch {
           cleanup();

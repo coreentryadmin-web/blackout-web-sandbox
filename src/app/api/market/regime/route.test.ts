@@ -85,21 +85,39 @@ describe("/api/market/regime GET staleness + netGex/ivPercentile rounding", () =
     assert.equal("stale" in body, false);
   });
 
-  test("a fresh row (captured_at's ET date == mostRecentTradingDayEt) is not stale", async () => {
+  test("a fresh row (same ET date AND within the refresh window) is not stale", async (t) => {
+    // `now` is frozen 148s after the row's capture — the exact live-audit condition (the row was
+    // 148s behind and was served stale:false). Same ET date, well inside the 10-min age budget.
+    t.mock.timers.enable({ apis: ["Date"], now: Date.parse("2026-07-02T14:02:28Z") });
     mockMostRecentTradingDay = "2026-07-02";
     mockMarketOpen = true;
     mockRow = baseRow({ captured_at: new Date("2026-07-02T14:00:00Z") });
     const res = await GET();
     const body = await res.json();
     assert.equal(body.available, true);
-    assert.equal(body.stale, false);
+    assert.equal(body.stale, false, "148s-old same-day row is genuinely fresh — not stale");
     assert.equal(body.marketOpen, true);
   });
 
-  test("an old row (captured_at multiple sessions before mostRecentTradingDayEt) is stale", async () => {
+  test("a same-day row OLDER than the refresh window (intraday cron outage) is stale by AGE", async (t) => {
+    // The class the date check alone missed: writer stalls mid-session, so the newest row is 45min
+    // old but still TODAY's ET date. Date check → not stale; age check → stale. This is the fix.
+    t.mock.timers.enable({ apis: ["Date"], now: Date.parse("2026-07-02T14:45:00Z") });
+    mockMostRecentTradingDay = "2026-07-02";
+    mockMarketOpen = true;
+    mockRow = baseRow({ captured_at: new Date("2026-07-02T14:00:00Z") });
+    const res = await GET();
+    const body = await res.json();
+    assert.equal(body.stale, true, "45-min-old same-day row exceeds the age budget → stale");
+    assert.equal(body.playbook, "Buy dips, sell rips.", "stale text still served — stale is the honesty signal");
+  });
+
+  test("an old row (captured_at multiple sessions before mostRecentTradingDayEt) is stale", async (t) => {
     // Mirrors the live bug: mostRecentTradingDayEt says "2026-07-02" (today, e.g. as
     // computed from a Sunday walking back over the July-4th-observed holiday weekend)
-    // but the last row on file is from 2026-06-29 — several days/sessions old.
+    // but the last row on file is from 2026-06-29 — several days/sessions old. Stale by
+    // BOTH the age budget and the cross-day date check.
+    t.mock.timers.enable({ apis: ["Date"], now: Date.parse("2026-07-02T14:00:00Z") });
     mockMostRecentTradingDay = "2026-07-02";
     mockMarketOpen = false;
     mockRow = baseRow({ captured_at: new Date("2026-06-29T14:00:00Z") });
