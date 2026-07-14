@@ -240,11 +240,27 @@ export type ZeroDteGateFailure =
   | "min_dominance"
   | "max_itm_pct"
   | "no_dominant_strike"
-  | "no_underlying_price";
+  | "no_underlying_price"
+  // ── Hard entry-gate stack (G-1/G-2/G-3/G-5, docs/audit/NIGHTHAWK-0DTE-DECISION.md §2) —
+  // evaluated in ./gates.ts AFTER the four evidence gates above, i.e. only for candidates
+  // that already qualified as setups. Persisted through the same rejection log so "why
+  // didn't ticker X commit" is one queryable surface for both gate families.
+  | "tape_alignment" // G-1: direction fights the SPY session bias
+  | "no_market_bias" // G-1 fail-closed: bias read missing or stale
+  | "opening_window" // G-2: no new commits before 10:30 ET
+  | "score_floor" // G-3: post-edge-layer score below 65
+  | "governor_max_concurrent" // G-5: 3 plans already open
+  | "governor_session_stops" // G-5: 3 stops today — halted for the session
+  | "governor_reentry_lock" // G-5: same-direction re-entry within 20m of that ticker's stop
+  | "correlated_conflict" // G-5/B-3: opposes an OPEN plan on a correlated ticker
+  | "gate_context_unavailable"; // fail-closed: gate inputs (ledger/governor) unreadable
 
 export type ZeroDteGateRejection = {
   ticker: string;
   gate_failed: ZeroDteGateFailure;
+  /** Human-readable block sentence (hard-gate rows; the UI's SKIP card copy). Null for
+   *  the four evidence gates, whose numeric columns already carry the whole story. */
+  reason?: string | null;
   /** The real threshold constant this candidate was measured against (cited live,
    *  same discipline buildZeroDteAuditRow uses, so a future threshold tune can't
    *  retroactively relabel a historical rejection). `null` for the structural
@@ -645,6 +661,9 @@ export function rankEngineCards(
 import { computeFibLevels, nearestFibNote, type FibNote } from "./fib";
 import type { ContractPlan } from "./plan";
 import type { IntradayRead } from "./intraday";
+// Type-only (erased at compile time — no runtime cycle with ./gates, which imports
+// only types back from this module).
+import type { ZeroDteGateVerdict } from "./gates";
 
 /** Structural subset of TickerDossier the enrichment reads (keeps this module
  *  provider-import-free and the merge testable with plain objects). */
@@ -739,6 +758,11 @@ export type EnrichedZeroDteSetup = ZeroDteSetup & {
   /** Entry/exit contract plan (premium band + exits) — attached by the scan when a
    *  live quote or real fill exists; null = evidence only, never a guessed plan. */
   plan: ContractPlan | null;
+  /** Hard-gate verdict for a FRESH find (./gates.ts): BLOCKED setups stay visible
+   *  as WATCH/SKIP cards with every failing gate's reason (+ unlock time when the
+   *  block is clock-based). Null = not evaluated (already-committed ticker, or the
+   *  gate context couldn't be built — persist fails closed on that). */
+  gate: ZeroDteGateVerdict | null;
   halted: boolean;
   /** Reports today/next session — a 0DTE into an earnings print is a different trade. */
   earnings: EarningsFlag | null;
@@ -931,6 +955,7 @@ export function enrichSetup(
     analyst_note: dossier?.price_target ?? null,
     fib_note: fibNote,
     plan: null,
+    gate: null,
     halted: dossier?.trading_halt === true,
     earnings: extras?.earnings ?? null,
     news_hot: extras?.news_hot ?? null,

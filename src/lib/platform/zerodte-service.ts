@@ -275,7 +275,13 @@ export async function zeroDtePlaysForLargo(): Promise<Record<string, unknown>> {
         .slice(0, 5)
         .map((s) => {
           const moved = s.plan?.entry_status === "MOVED";
-          const status = resolveFreshFindStatus(heatState, moved, Boolean(s.plan?.illiquid));
+          // Hard-gate-blocked finds are SKIP regardless of clock/liquidity — the gate
+          // stack (src/lib/zerodte/gates.ts) already decided this is not committable,
+          // and Largo must never read a blocked find as an actionable "OPEN".
+          const status =
+            s.gate?.verdict === "BLOCKED"
+              ? "SKIP"
+              : resolveFreshFindStatus(heatState, moved, Boolean(s.plan?.illiquid));
           return {
             ticker: s.ticker,
             direction: s.direction,
@@ -284,6 +290,9 @@ export async function zeroDtePlaysForLargo(): Promise<Record<string, unknown>> {
             gross_premium: s.gross_premium,
             aggression: s.aggression,
             plan: s.plan,
+            // Machine code + human sentence per failing gate (null = clear/ungated) —
+            // the same copy the board's SKIP cards render.
+            gate_blocks: s.gate?.verdict === "BLOCKED" ? s.gate.blocks : null,
             intel: buildIntelNote({
               status,
               setup: s,
