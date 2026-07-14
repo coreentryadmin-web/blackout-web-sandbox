@@ -23,6 +23,8 @@ type LedgerRow = Record<string, unknown>;
 
 const state = {
   ledgerRows: [] as LedgerRow[],
+  /** When true, fetchZeroDteSetupLog throws — drives the P0 ledger-read-failure tests. */
+  ledgerReadFails: false,
   liveMark: null as number | null,
   updateCalls: [] as Array<{ session_date: string; ticker: string; patch: unknown }>,
   // gradeZeroDteLedger wiring (index-root mapping test below)
@@ -34,6 +36,7 @@ const state = {
 
 function resetState() {
   state.ledgerRows = [];
+  state.ledgerReadFails = false;
   state.liveMark = null;
   state.updateCalls = [];
   state.ungradedRows = [];
@@ -66,7 +69,10 @@ mock.module("../db", {
   namedExports: {
     dbConfigured: () => true,
     stampZeroDteExitContext: async () => {},
-    fetchZeroDteSetupLog: async () => state.ledgerRows,
+    fetchZeroDteSetupLog: async () => {
+      if (state.ledgerReadFails) throw new Error("hermetic: simulated ledger read failure");
+      return state.ledgerRows;
+    },
     updateZeroDteLiveState: async (session_date: string, ticker: string, patch: unknown) => {
       state.updateCalls.push({ session_date, ticker, patch });
     },
@@ -275,6 +281,54 @@ test("zeroDtePlaysFeed: a graded CLOSED play surfaces its result string unchange
   assert.equal(feed.plays[0]!.status, "CLOSED");
   assert.equal(feed.plays[0]!.result, "doubled +100%");
   assert.equal(state.updateCalls.length, 0, "a CLOSED row must never be re-synced");
+});
+
+// ── P0 one-way commit door: readZeroDteLedgerChecked's last-good latch ────────────
+// The old readZeroDteLedger swallowed ANY read failure into [], indistinguishable
+// from "no plays committed today" — one transient DB blip made every committed play
+// vanish from the board payload, and (because committed tickers usually still rank
+// in the scan's fresh finds) a member's OPEN card re-rendered as an uncommitted
+// watch card. These prove: failure serves the last-good same-session snapshot, and
+// a failure with NO snapshot says committed_known:false so consumers fail closed.
+
+test("readZeroDteLedgerChecked: a transient read failure serves the last-good same-session snapshot (committed rows never vanish)", async () => {
+  resetState();
+  const { readZeroDteLedgerChecked, _resetZeroDteLedgerLatchForTest } = await mod();
+  _resetZeroDteLedgerLatchForTest();
+
+  state.ledgerRows = [baseRow({ status: "OPEN" })];
+  const first = await readZeroDteLedgerChecked();
+  assert.equal(first.committed_known, true);
+  assert.equal(first.rows.length, 1);
+
+  // Next build: the DB read blips. Pre-fix this returned [] — the OPEN play gone.
+  state.ledgerReadFails = true;
+  const second = await readZeroDteLedgerChecked();
+  assert.equal(second.committed_known, true, "a same-session snapshot stands in — the committed set is still knowable");
+  assert.equal(second.rows.length, 1, "the committed row survives the blip");
+  assert.equal(second.rows[0]!.ticker, "NVDA");
+});
+
+test("readZeroDteLedgerChecked: failure with NO same-session snapshot is committed_known:false — never a lying empty ledger", async () => {
+  resetState();
+  const { readZeroDteLedgerChecked, _resetZeroDteLedgerLatchForTest } = await mod();
+  _resetZeroDteLedgerLatchForTest();
+
+  state.ledgerReadFails = true;
+  const read = await readZeroDteLedgerChecked();
+  assert.equal(read.committed_known, false);
+  assert.deepEqual(read.rows, []);
+});
+
+test("readZeroDteLedger: delegates through the checked read (empty on unknowable, latched rows on a blip)", async () => {
+  resetState();
+  const { readZeroDteLedger, _resetZeroDteLedgerLatchForTest } = await mod();
+  _resetZeroDteLedgerLatchForTest();
+
+  state.ledgerRows = [baseRow({ status: "HOLD" })];
+  assert.equal((await readZeroDteLedger()).length, 1);
+  state.ledgerReadFails = true;
+  assert.equal((await readZeroDteLedger()).length, 1, "latched snapshot serves through the legacy read too");
 });
 
 test("gradeZeroDteLedger: an index-root row (SPXW) fetches its close from I:SPX and gets a REAL direction grade", async () => {

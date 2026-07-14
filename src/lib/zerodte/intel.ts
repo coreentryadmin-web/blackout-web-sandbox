@@ -10,7 +10,7 @@ import type { EnrichedZeroDteSetup } from "./board";
 import type { ContractPlan } from "./plan";
 import { fmtPremium as money } from "@/lib/fmt-money";
 
-export type IntelAction = "ADD" | "HOLD" | "TRIM" | "SELL" | "PASS";
+export type IntelAction = "ADD" | "HOLD" | "TRIM" | "SELL" | "PASS" | "WATCH";
 
 export type IntelNote = {
   action: IntelAction;
@@ -65,7 +65,7 @@ function confirmClause(s: EnrichedZeroDteSetup | null): string | null {
  * (OPEN/HOLD/TRIM/CLOSED/SKIP from the board's state machine).
  */
 export function buildIntelNote(input: {
-  status: "OPEN" | "HOLD" | "TRIM" | "CLOSED" | "SKIP";
+  status: "OPEN" | "HOLD" | "TRIM" | "CLOSED" | "SKIP" | "WATCH";
   setup: EnrichedZeroDteSetup | null;
   plan: ContractPlan | null;
   entryPremium: number | null;
@@ -102,6 +102,22 @@ export function buildIntelNote(input: {
     return {
       action: "PASS",
       reason: "Flagged after the 3:00 ET cutoff — a fresh 0DTE entry this late trades against the clock, not the tape. Watch-only.",
+    };
+  }
+
+  // WATCH: a FRESH find that survived the display-side screens but has NO ledger
+  // commit yet (resolveFreshFindStatus, board.ts). The evidence is shown, the verb
+  // is explicitly not actionable — "ADD" here would be a buy call on a candidate
+  // whose gate/plan read can still flap on the next scan tick. It only becomes an
+  // OPEN play (and only then earns "ADD") when the desk's commit prints a ledger
+  // row, which is a one-way door.
+  if (status === "WATCH") {
+    return {
+      action: "WATCH",
+      reason:
+        `${evidenceClause(setup)}${confirm ? `; ${confirm}` : ""}. ` +
+        `Candidate only — the desk has NOT committed this play yet. It becomes an OPEN position ` +
+        `only after every hard gate and confirmation clears at commit; do not enter ahead of that.`,
     };
   }
 

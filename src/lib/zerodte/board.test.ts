@@ -50,8 +50,14 @@ test("heat: pre-market meter warms toward the open", () => {
 // mergePlays() (the UI) and zerodte-service.ts's zeroDtePlaysForLargo() (Largo/BIE),
 // which previously re-derived its own copy that skipped this cutoff entirely (FINDINGS.md).
 
-test("resolveFreshFindStatus: OPEN during RTH with no moved/illiquid flags", () => {
-  assert.equal(resolveFreshFindStatus("RTH", false, false), "OPEN");
+test("resolveFreshFindStatus: WATCH during RTH with no moved/illiquid flags — NEVER OPEN (P0 one-way commit door)", () => {
+  // Regression guard for the live P0: this used to return "OPEN" for a clean RTH
+  // fresh find, so an UNCOMMITTED candidate rendered exactly like a live position
+  // and then visibly regressed to a watch/SKIP card when the next scan tick's
+  // re-derived plan/gate flapped (MOVED/illiquid/gate verdicts are recomputed from
+  // scratch every ~5s board build). OPEN is reserved for committed ledger rows.
+  assert.equal(resolveFreshFindStatus("RTH", false, false), "WATCH");
+  assert.equal(resolveFreshFindStatus("OPENING_DRIVE", false, false), "WATCH");
 });
 
 test("resolveFreshFindStatus: SKIP once POWER_HOUR/LATE_SESSION/CLOSED starts — the entry cutoff", () => {
@@ -849,6 +855,18 @@ test("intel: OPEN play says ADD with entry/stop numbers from the plan", () => {
   assert.equal(note.action, "ADD");
   assert.match(note.reason, /Enter ≤ \$4\.20/);
   assert.match(note.reason, /stop \$2\.10/);
+});
+
+test("intel: WATCH (uncommitted fresh find) never says ADD or 'Enter ≤' — candidate language only", () => {
+  // P0 pre-commit honesty: the fresh-find lane used to feed status "OPEN" here,
+  // which produced action:"ADD" with a live entry instruction for a play the desk
+  // had NOT committed. WATCH must read as a candidate, never an actionable entry.
+  const s = enrichSetup(baseSetup(), fakeDossier());
+  const note = buildIntelNote({ status: "WATCH", setup: s, plan: s.plan, entryPremium: 4.2, livePnlPct: null, planOutcome: null, planPnlPct: null });
+  assert.equal(note.action, "WATCH");
+  assert.doesNotMatch(note.reason, /Enter ≤/);
+  assert.match(note.reason, /NOT committed/);
+  assert.match(note.reason, /do not enter/i);
 });
 
 test("intel: illiquid market is a PASS with the spread named", () => {

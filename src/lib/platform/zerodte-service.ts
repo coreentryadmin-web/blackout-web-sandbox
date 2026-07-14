@@ -33,7 +33,7 @@ import {
   summarizeGovernorForBoard,
   type ZeroDteGovernorSummary,
 } from "@/lib/zerodte/governor";
-import { gradeZeroDteLedger, readZeroDteLedger, scanZeroDteBoard, syncLedgerLiveState } from "@/lib/zerodte/scan";
+import { gradeZeroDteLedger, readZeroDteLedgerChecked, scanZeroDteBoard, syncLedgerLiveState } from "@/lib/zerodte/scan";
 
 export type ZeroDteBoardLedgerRow = {
   ticker: string;
@@ -196,11 +196,12 @@ export async function buildZeroDteBoardPayload(): Promise<ZeroDteBoardPayload> {
   const { hour, minute } = etNowParts();
   const heat = sessionHeat(hour * 60 + minute, tradingDay);
 
-  const [news, earningsSnap, rawLedger] = await Promise.all([
+  const [news, earningsSnap, ledgerRead] = await Promise.all([
     serverCache("news:benzinga:15", TTL.NEWS, () => fetchBenzingaNews(15)).catch(() => []),
     readGridEarnings().catch(() => null),
-    readZeroDteLedger(),
+    readZeroDteLedgerChecked(),
   ]);
+  const rawLedger = ledgerRead.rows;
 
   const ledgerRows = await syncLedgerLiveState(rawLedger).catch(() => rawLedger);
   const [nighthawkEcho, liveMarks, governor] = await Promise.all([
@@ -227,12 +228,23 @@ export async function buildZeroDteBoardPayload(): Promise<ZeroDteBoardPayload> {
 
   void gradeZeroDteLedger().catch(() => {});
 
+  // One-way commit door, presentation half (P0): when the committed set is
+  // UNKNOWABLE this build (ledger read failed with no same-session fallback), no
+  // fresh find may render — a committed play's ticker usually still ranks in the
+  // scan, and serving it as a "fresh find" demotes a member's OPEN position to a
+  // watch card. Same fail-closed rule persistZeroDteScan applies to commits
+  // ("can't tell fresh from committed → nothing new may print"), applied to
+  // display. upstream_ok goes false so the pane's freshness badge says degraded
+  // instead of impersonating a live-but-empty board.
+  const committedKnown = ledgerRead.committed_known;
+  const displaySetups = committedKnown ? setups : [];
+
   const payload = roundFloats({
     available: true,
     as_of: new Date().toISOString(),
-    upstream_ok,
+    upstream_ok: upstream_ok && committedKnown,
     session: { date: today, trading_day: tradingDay, heat },
-    setups,
+    setups: displaySetups,
     ledger: ledgerRows.map((r) => mapLedgerRow(r, nighthawkEcho, liveMarks.get(r.ticker.toUpperCase()) ?? null)),
     covered_elsewhere: nighthawk_covered,
     governor,
@@ -301,28 +313,36 @@ export async function zeroDtePlaysForLargo(): Promise<Record<string, unknown>> {
 
   // Same time-of-day gate ZeroDteBoard.tsx's mergePlays() applies to fresh (not-
   // yet-ledgered) finds — without it, a find surfacing during POWER_HOUR/LATE_SESSION
-  // (or after CLOSED, before the ledger sync catches up) got told to Largo as a plain
-  // "OPEN" → buildIntelNote returns action:"ADD", an active buy recommendation — even
-  // though the product rule (this function's own `rules` string below) is "no new
-  // plays after 15:00 ET" and the board itself would show it as SKIP/watch-only.
+  // (or after CLOSED, before the ledger sync catches up) got told to Largo as an
+  // actionable play even though the product rule (this function's own `rules` string
+  // below) is "no new plays after 15:00 ET" and the board itself would show it as
+  // SKIP/watch-only. A COMMITTED ticker never re-enters this lane (one-way commit
+  // door): the ledger row above is the only presentation of that ticker, and the
+  // dedupe is case-insensitive so a casing drift can never double-present a play.
   const heatState = board.session.heat.state;
   const sessionClosed = heatState === "CLOSED";
+  const committedTickers = new Set(board.ledger.map((row) => row.ticker.toUpperCase()));
   const fresh = sessionClosed
     ? []
     : board.setups
-        .filter((s) => !board.ledger.some((row) => row.ticker === s.ticker))
+        .filter((s) => !committedTickers.has(s.ticker.toUpperCase()))
         .slice(0, 5)
         .map((s) => {
           const moved = s.plan?.entry_status === "MOVED";
           // Hard-gate-blocked finds are SKIP regardless of clock/liquidity — the gate
-          // stack (src/lib/zerodte/gates.ts) already decided this is not committable,
-          // and Largo must never read a blocked find as an actionable "OPEN".
+          // stack (src/lib/zerodte/gates.ts) already decided this is not committable.
+          // Everything else is at most WATCH (never "OPEN" — resolveFreshFindStatus,
+          // board.ts): an uncommitted find is a candidate, not a position.
           const status =
             s.gate?.verdict === "BLOCKED"
-              ? "SKIP"
+              ? ("SKIP" as const)
               : resolveFreshFindStatus(heatState, moved, Boolean(s.plan?.illiquid));
           return {
             ticker: s.ticker,
+            // Presentation status for the fresh lane — WATCH (candidate) or SKIP
+            // (refused). Explicit so Largo never has to infer commitment from the
+            // absence of ledger fields.
+            status,
             direction: s.direction,
             strike: s.top_strike,
             score: s.score,

@@ -96,18 +96,29 @@ export function sessionHeat(etMinutes: number, isTradingDay: boolean): SessionHe
  * find's own plan flags — the same "no new plays after 15:00 ET" cutoff every
  * consumer of a fresh find must apply consistently. `heatState` undefined is
  * treated as closed (matches sessionHeat()'s own "no session today" fallback).
+ *
+ * NEVER "OPEN" (P0 fix — the one-way commit door): a fresh find has NOT been
+ * committed to the session ledger — its gate/plan/liquidity read is re-derived
+ * from scratch on every ~5s scan build, so any label it wears here can flap on
+ * the next tick (entry_status flips to MOVED, the spread widens to illiquid, a
+ * gate re-evaluation blocks). This function used to return "OPEN" for a clean
+ * RTH find, which rendered indistinguishably from a committed open position and
+ * then visibly regressed to a watch/SKIP card seconds later. OPEN is reserved
+ * for LEDGER rows (the desk's durable commit, written only after the full gate +
+ * Cortex stack passed at persist time); until that row exists a find is at most
+ * WATCH — a candidate, explicitly not a position.
  */
 export function resolveFreshFindStatus(
   heatState: SessionHeatState | undefined,
   moved: boolean,
   illiquid: boolean
-): "OPEN" | "SKIP" {
+): "WATCH" | "SKIP" {
   const pastCutoff =
     heatState === "POWER_HOUR" ||
     heatState === "LATE_SESSION" ||
     heatState === "CLOSED" ||
     heatState === undefined;
-  return moved || pastCutoff || illiquid ? "SKIP" : "OPEN";
+  return moved || pastCutoff || illiquid ? "SKIP" : "WATCH";
 }
 
 // ── Polygon symbol mapping for index option roots ─────────────────────────────────

@@ -57,32 +57,35 @@ test("board ledger: stopped play pins live_pnl_pct to −50; live row carries la
     close_price: null,
     entry_context: null,
   };
+  const mockLedgerRows = [
+    {
+      ...baseRow,
+      ticker: "NVDA",
+      entry_premium: 4.2,
+      last_mark: 4.4, // deliberately different from the lane's 4.62 below
+      status: "HOLD",
+      plan_json: { occ: OPEN_OCC },
+      peak_premium: 4.4,
+      trough_premium: 4.0,
+    },
+    {
+      // D-1 fixture: stopped out (trough through 2.1 = −50% of 4.2) but the
+      // frozen last_mark reads 2.6 (−38.1%) — the exact wrong-number class.
+      ...baseRow,
+      ticker: "TSLA",
+      entry_premium: 4.2,
+      last_mark: 2.6,
+      status: "CLOSED",
+      plan_json: { occ: "O:TSLA260714C00300000" },
+      peak_premium: 4.5,
+      trough_premium: 2.0,
+    },
+  ];
   mock.module("../zerodte/scan", {
     namedExports: {
-      readZeroDteLedger: async () => [
-        {
-          ...baseRow,
-          ticker: "NVDA",
-          entry_premium: 4.2,
-          last_mark: 4.4, // deliberately different from the lane's 4.62 below
-          status: "HOLD",
-          plan_json: { occ: OPEN_OCC },
-          peak_premium: 4.4,
-          trough_premium: 4.0,
-        },
-        {
-          // D-1 fixture: stopped out (trough through 2.1 = −50% of 4.2) but the
-          // frozen last_mark reads 2.6 (−38.1%) — the exact wrong-number class.
-          ...baseRow,
-          ticker: "TSLA",
-          entry_premium: 4.2,
-          last_mark: 2.6,
-          status: "CLOSED",
-          plan_json: { occ: "O:TSLA260714C00300000" },
-          peak_premium: 4.5,
-          trough_premium: 2.0,
-        },
-      ],
+      readZeroDteLedger: async () => mockLedgerRows,
+      // buildZeroDteBoardPayload reads through the checked lane (P0 commit latch).
+      readZeroDteLedgerChecked: async () => ({ rows: mockLedgerRows, committed_known: true }),
       syncLedgerLiveState: async (rows: unknown[]) => rows,
       scanZeroDteBoard: async () => ({ setups: [], nighthawk_covered: [], upstream_ok: true, rejections: [] }),
       gradeZeroDteLedger: async () => 0,

@@ -93,3 +93,30 @@ test("upsertZeroDteSetupLog: direction/top_strike/expiry are pinned (COALESCE-gu
   assert.match(upsertBody, /flow_avg_fill\s*=\s*COALESCE\(zerodte_setup_log\.flow_avg_fill,\s*EXCLUDED\.flow_avg_fill\)/);
   assert.match(upsertBody, /plan_json\s*=\s*COALESCE\(zerodte_setup_log\.plan_json,\s*EXCLUDED\.plan_json\)/);
 });
+
+// P0 one-way commit door (fix/zerodte-status-latch): status transitions in
+// updateZeroDteLiveState only move FORWARD along the real ladder derivePlayStatus
+// (zerodte/plan.ts) encodes — OPEN ↔ HOLD are the same live rung (the mark drifting
+// in/out of the entry band, legitimate both ways), TRIM is sticky, CLOSED terminal.
+// Two independent writers share this UPDATE (the ~2-min cron sync in zerodte/scan.ts
+// and the ~1s live-marks lane, each with its OWN latch memo / possibly stale row
+// snapshot), so the regression guard has to live IN the SQL — a JS-side check reads
+// a status that may already be stale by the time the write lands. Same
+// source-inspection idiom as the upsert COALESCE-pin test above (no PG in CI).
+test("updateZeroDteLiveState: SQL status CASE is monotonic — CLOSED terminal, TRIM never regresses to OPEN/HOLD", () => {
+  const src = readFileSync(fileURLToPath(new URL("./db.ts", import.meta.url)), "utf8");
+  const start = src.indexOf("export async function updateZeroDteLiveState");
+  assert.ok(start > 0, "updateZeroDteLiveState exists");
+  const body = src.slice(start, src.indexOf("stampZeroDteExitContext"));
+  // CLOSED is terminal (#321) — any write against a CLOSED row keeps CLOSED.
+  assert.match(body, /WHEN status = 'CLOSED' THEN status/);
+  // TRIM never demotes back to the live rung: a stale writer (pre-target-tag latch)
+  // deriving OPEN/HOLD must not un-trim a play members were already told to trim.
+  assert.match(body, /WHEN status = 'TRIM' AND \$3 IN \('OPEN','HOLD'\) THEN status/);
+  // Legitimate forward/live transitions still pass through.
+  assert.match(body, /ELSE \$3/);
+  // The mark + peak/trough latches still land even when the status write is dropped
+  // (real quote data must never be discarded by the status guard).
+  assert.match(body, /GREATEST\(COALESCE\(peak_premium, \$4\), \$4\)/);
+  assert.match(body, /LEAST\(COALESCE\(trough_premium, \$4\), \$4\)/);
+});

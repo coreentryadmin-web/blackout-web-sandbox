@@ -5054,11 +5054,26 @@ export async function gradeZeroDteSetupRow(
 
 /** Latch a play's live state: peak/trough only ever widen (GREATEST/LEAST), so a
  *  stop stays a stop even if the premium bounces; status is the derived lifecycle.
- *  CLOSED is TERMINAL at the SQL level: exit-engine closes (ratchet floor / thesis
- *  break / flat timeout — see zerodte/exit-engine.ts) are NOT re-derivable from the
- *  peak/trough latches the way plan stops are, so a concurrent writer working from
- *  a ≤10s-stale active set (the live-marks lane) could otherwise flip an
- *  engine-closed row back to HOLD and reopen a play the engine just protected. */
+ *
+ *  STATUS IS MONOTONIC at the SQL level (the one-way commit door, P0 fix — see
+ *  FINDINGS.md "OPEN regressed to Watch"). The real ladder, per derivePlayStatus
+ *  (zerodte/plan.ts): OPEN ↔ HOLD are the same "live" rung (the mark drifting in
+ *  and out of the ±10% entry band — both directions legitimate every tick), then
+ *  TRIM (sticky once the latched peak ever tagged +100%), then CLOSED (terminal).
+ *  Guards, and WHY each exists:
+ *  - CLOSED is TERMINAL (#321): exit-engine closes (ratchet floor / thesis break /
+ *    flat timeout — zerodte/exit-engine.ts) are NOT re-derivable from the peak/
+ *    trough latches the way plan stops are, so a concurrent writer working from a
+ *    ≤10s-stale active set (the live-marks lane) could otherwise flip an
+ *    engine-closed row back to HOLD and reopen a play the engine just protected.
+ *  - TRIM never regresses to OPEN/HOLD: TRIM is derived from the latched peak, but
+ *    each WRITER carries its own copy of that latch (live-marks' per-replica
+ *    latchMemo, the cron sync's just-read row on another replica) — a writer whose
+ *    latch predates the target tag derives HOLD and would demote a play members
+ *    were already told to trim. The row's own peak_premium column is the shared
+ *    truth, so a lower-rung write from a stale latch is dropped here, not raced.
+ *  A regressing write still lands its mark and widens peak/trough (real quote
+ *  data), it just cannot move the status rung backwards. */
 export async function updateZeroDteLiveState(
   sessionDate: string,
   ticker: string,
@@ -5067,7 +5082,11 @@ export async function updateZeroDteLiveState(
   await ensureSchema();
   await (await getPool()).query(
     `UPDATE zerodte_setup_log SET
-       status = CASE WHEN status = 'CLOSED' THEN status ELSE $3 END,
+       status = CASE
+         WHEN status = 'CLOSED' THEN status
+         WHEN status = 'TRIM' AND $3 IN ('OPEN','HOLD') THEN status
+         ELSE $3
+       END,
        last_mark = COALESCE($4, last_mark),
        peak_premium = CASE
          WHEN $4 IS NOT NULL THEN GREATEST(COALESCE(peak_premium, $4), $4)

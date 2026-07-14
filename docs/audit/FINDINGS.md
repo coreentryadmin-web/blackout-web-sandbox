@@ -330,3 +330,62 @@ plays show "entirely wrong" pnl/%/premium values, slow to update.
   lines from the passed prior OHLC + source guard that VectorChart sends `anchor=sessionYmd`.
   `spx-session.test.ts` +1 — displayed-session anchor returns the session strictly BEFORE the anchor
   (and documents the wall-clock-Saturday failure it replaces). tsc clean, full `npm test` + build green.
+
+## 2026-07-14 — 0DTE board: OPEN regressed to "Watch" mid-session (member-reported, P0, fix/zerodte-status-latch)
+
+### P0 — a board card wearing the OPEN badge flipped back to a watch/SKIP card within seconds (FIXED — one-way commit latch at every layer)
+- **Root cause (presentation, the one the member saw):** `resolveFreshFindStatus`
+  (`src/lib/zerodte/board.ts`) returned **"OPEN" for a clean RTH fresh find** — an
+  UNCOMMITTED candidate with no ledger row. Both consumers (`mergePlays`,
+  `ZeroDteBoard.tsx`; `zeroDtePlaysForLargo`, `src/lib/platform/zerodte-service.ts`)
+  rendered it exactly like a committed open position (OPEN badge, play card, sorted
+  first; Largo intel action "ADD" with an "Enter ≤ $x" line). Every ~5s board build
+  re-derives that find's plan and gates from live quotes, so the label flapped: plan
+  `entry_status` → MOVED, spread → `illiquid`, or (post-#322) gate verdict → BLOCKED
+  each demote the very same card to SKIP/watch-only on the next poll. Commits only
+  persist on the ~2-min cron (`warmZeroDteBoard`), so a find could wear OPEN for up
+  to ~2 min with nothing durable behind it. **#322 assessment:** it fixed the worst
+  half (gate-BLOCKED finds no longer showed OPEN/ADD) but didn't touch the core
+  (clean uncommitted finds still OPEN) — and gave the flap a third trigger (verdict
+  flipping COMMIT→BLOCKED across ticks now flipped the badge OPEN→SKIP, where
+  pre-#322 both frames showed OPEN).
+- **Root cause (vanishing committed rows, second verified path):** `readZeroDteLedger`
+  (`src/lib/zerodte/scan.ts`) swallowed ANY DB failure into `[]` —
+  indistinguishable from "nothing committed today". One transient blip removed every
+  committed play from the payload for a cache window, and because committed tickers
+  usually still rank in the scan's fresh finds, the member's OPEN card re-rendered
+  as an uncommitted watch card.
+- **Root cause (DB, latent):** `updateZeroDteLiveState` (`src/lib/db.ts`) let any
+  non-CLOSED status overwrite any other. Two independent writers share it (the
+  ~2-min cron sync and the ~1s live-marks lane, each with its own latch memo /
+  possibly-stale row snapshot), so a stale writer could demote TRIM → HOLD/OPEN.
+  (#321 had already made CLOSED terminal.)
+- **Fix (one-way door, all layers):**
+  1. `resolveFreshFindStatus` now returns **WATCH, never OPEN** — OPEN is reserved
+     for ledger rows. New WATCH presentation: pane renders WATCH cards in
+     "Skipped & watching" with a `WATCH — NOT COMMITTED` badge + candidate copy;
+     `buildIntelNote` gained a non-actionable WATCH verb (never "ADD"/"Enter ≤");
+     `fresh_finds` now carries an explicit `status` field for Largo/BIE.
+  2. Merge latch: committed-ticker dedupe in both merges is case-insensitive; a
+     concurrent fresh find of a committed ticker is dropped as a duplicate, never
+     allowed to demote the ledger presentation.
+  3. `readZeroDteLedgerChecked`: failed reads serve the replica's last-good
+     same-session snapshot; with no snapshot, `committed_known:false` makes the
+     board fail CLOSED on fresh finds (setups suppressed, `upstream_ok:false`) —
+     same rule `persistZeroDteScan` already applied to commits.
+  4. SQL monotonic ladder in `updateZeroDteLiveState`: OPEN ↔ HOLD (live rung,
+     legitimate both ways per `derivePlayStatus`) → TRIM (sticky) → CLOSED
+     (terminal); regressing status writes are dropped in the CASE, mark/peak/trough
+     still land.
+- **Blast radius checked:** BIE composers + Largo ambient feed ride the same fixed
+  payload readers. **SPX Slayer surface (spx-play-\*): NOT affected** — its open play
+  is read from the store BEFORE any fresh gate evaluation (`evaluateSpxPlayCore` →
+  `loadOpenPlay()` → `evaluateOpenPlay`), phase regresses to SCANNING only on a real
+  SELL close, and a DB failure in `loadOpenPlay` throws (route 500s) instead of
+  silently rendering SCANNING while a play is open.
+- **Tests:** `board.test.ts` (WATCH-never-OPEN regression + WATCH intel),
+  `ZeroDteBoard.test.ts` (fresh RTH find is WATCH; committed row wins over a
+  conflicting BLOCKED dup, both orders + case-insensitive), `zerodte-service.test.ts`
+  (Largo dedupe both orders; WATCH intel; unknowable-ledger fail-closed),
+  `scan.test.ts` (last-good latch; committed_known:false), `db.test.ts` (SQL CASE
+  ladder). tsc clean, full `npm test` green.
