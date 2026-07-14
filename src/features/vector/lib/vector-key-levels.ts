@@ -13,6 +13,7 @@
 
 import type { VectorLevelId } from "./vector-indicators-config";
 import { dominantSwing, swingRetracement } from "./vector-fib-swing";
+import { isRthBarSec } from "./vector-rth-window";
 
 export type LevelBar = { time: number; high: number; low: number; close: number };
 
@@ -96,10 +97,24 @@ export function lastSessionBars<T extends { time: number }>(bars: readonly T[]):
   return bars.slice(start);
 }
 
-/** High/low of the LAST session in `bars` (newest ET day only — see lastSessionBars), or null
- *  when there are no bars. */
+/**
+ * The LATEST session's REGULAR-TRADING-HOURS bars — lastSessionBars (newest ET day) then filtered to
+ * the 09:30–16:00 ET cash window. This is the anchor for every session level (P1-A): equity/ETF
+ * feeds carry pre-market (04:00 ET) + after-hours bars, so grouping by ET day alone made Opening
+ * Range / session HOD-LOD / VWAP anchor to the 04:00 premarket open instead of 09:30. SPX (no
+ * premarket bars) is unaffected — all its bars already fall inside the window, so the filter is a
+ * no-op for it. Bars carrying a non-finite time are dropped by isRthBarSec (they can't be RTH-scoped
+ * honestly). Empty when the latest day has no RTH bars yet (e.g. viewed during pre-market) — callers
+ * then draw nothing rather than a premarket-anchored level.
+ */
+export function rthSessionBars<T extends { time: number }>(bars: readonly T[]): T[] {
+  return lastSessionBars(bars).filter((b) => isRthBarSec(b.time));
+}
+
+/** High/low of the LAST session's RTH bars (see rthSessionBars), or null when there are no RTH bars
+ *  in the newest session. */
 export function sessionHodLod(bars: LevelBar[]): { hod: number; lod: number } | null {
-  const session = lastSessionBars(bars);
+  const session = rthSessionBars(bars);
   if (!session.length) return null;
   let hod = -Infinity;
   let lod = Infinity;
@@ -112,18 +127,19 @@ export function sessionHodLod(bars: LevelBar[]): { hod: number; lod: number } | 
 }
 
 /**
- * High/low of the opening range — the first `minutes` of the LAST session, measured from that
- * session's first bar's time (bars are epoch seconds; multi-session inputs are scoped via
- * lastSessionBars so the range can never anchor to an older seeded day's open). Bars exactly at
- * `firstTime + minutes*60` are excluded (the range is half-open), matching how the interval
- * buckets elsewhere. Null when no bar falls in it.
+ * High/low of the opening range — the first `minutes` of the LAST session's RTH window, measured
+ * from that session's first RTH bar's time (bars are epoch seconds; multi-session inputs are scoped
+ * via rthSessionBars so the range can never anchor to an older seeded day's open NOR to the 04:00
+ * premarket open — P1-A). Bars exactly at `firstTime + minutes*60` are excluded (the range is
+ * half-open), matching how the interval buckets elsewhere. Null when no RTH bar falls in it.
  */
 export function openingRange(
   bars: LevelBar[],
   minutes: number
 ): { high: number; low: number } | null {
   if (minutes <= 0) return null;
-  const session = lastSessionBars(bars);
+  // RTH-scoped (P1-A): session[0] is the 09:30 RTH open, never the 04:00 premarket first bar.
+  const session = rthSessionBars(bars);
   if (!session.length) return null;
   const start = session[0]!.time;
   const end = start + minutes * 60;

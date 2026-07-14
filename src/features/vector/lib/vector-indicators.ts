@@ -11,6 +11,8 @@
  * RSI = Wilder's smoothing; MACD = EMA(fast) − EMA(slow) with an EMA(signal) of that line.
  */
 
+import { isRthBarSec } from "./vector-rth-window";
+
 export type IndicatorBar = {
   /** Bar-start epoch SECONDS. Optional for MA math, but REQUIRED for a correct multi-session
    *  VWAP — without it vwapSeries cannot see session boundaries and accumulates across days. */
@@ -74,6 +76,14 @@ const ET_DAY = new Intl.DateTimeFormat("en-CA", {
  * A bar with missing/zero volume contributes nothing but VWAP still carries forward the running
  * value; if NO bar since the session start has volume, VWAP is null there (undefined without
  * volume — never silently substituted with price).
+ *
+ * RTH-ANCHORED (P1-A): only REGULAR-HOURS bars (09:30–16:00 ET) accumulate. Equity/ETF feeds carry
+ * pre-market (04:00 ET) + after-hours bars sharing the same ET calendar day; folding them in made
+ * the "session" VWAP start at the 04:00 premarket open (live: SPY 748.99 vs true-RTH 751.52). A
+ * pre-market bar therefore reads null (session hasn't opened), and after-hours bars carry the frozen
+ * close VWAP forward until the next ET day resets it. Bars WITHOUT a time keep the legacy continuous
+ * accumulation (no window is detectable), preserving old callers/tests. SPX has no premarket bars,
+ * so this is a no-op for it.
  */
 export function vwapSeries(bars: IndicatorBar[]): (number | null)[] {
   const out: (number | null)[] = new Array(bars.length).fill(null);
@@ -82,16 +92,19 @@ export function vwapSeries(bars: IndicatorBar[]): (number | null)[] {
   let day: string | null = null;
   for (let i = 0; i < bars.length; i++) {
     const b = bars[i]!;
-    if (b.time != null && Number.isFinite(b.time)) {
-      const d = ET_DAY.format(new Date(b.time * 1000));
+    const hasTime = b.time != null && Number.isFinite(b.time);
+    if (hasTime) {
+      const d = ET_DAY.format(new Date(b.time! * 1000));
       if (day !== null && d !== day) {
         cumTPV = 0;
         cumVol = 0;
       }
       day = d;
     }
+    // Only RTH bars accumulate (P1-A). No time → legacy continuous accumulation (treat as in-session).
+    const inSession = hasTime ? isRthBarSec(b.time!) : true;
     const vol = b.volume != null && b.volume > 0 ? b.volume : 0;
-    if (vol > 0) {
+    if (inSession && vol > 0) {
       const typical = (b.high + b.low + b.close) / 3;
       cumTPV += typical * vol;
       cumVol += vol;

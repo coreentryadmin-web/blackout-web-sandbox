@@ -16,14 +16,19 @@ const bar = (time: number, high: number, low: number, close = (high + low) / 2) 
   close,
 });
 
+// RTH ET anchor (09:30 ET, Mon 2026-07-13) for the basic fixtures. Session levels are now RTH-gated
+// (P1-A: equity/ETF feeds carry premarket bars, so OR/HOD/LOD/VWAP must anchor to 09:30, not 04:00),
+// so fixtures must use real regular-hours timestamps or the gate would filter them all out.
+const RTH0 = Math.floor(Date.parse("2026-07-13T09:30:00-04:00") / 1000);
+
 test("sessionHodLod: session extremes; null when empty", () => {
-  const bars = [bar(0, 101, 99), bar(60, 104, 100), bar(120, 103, 97)];
+  const bars = [bar(RTH0, 101, 99), bar(RTH0 + 60, 104, 100), bar(RTH0 + 120, 103, 97)];
   assert.deepEqual(sessionHodLod(bars), { hod: 104, lod: 97 });
   assert.equal(sessionHodLod([]), null);
 });
 
 test("openingRange: first N minutes only, half-open at the boundary", () => {
-  const t0 = 1_000_000;
+  const t0 = RTH0;
   const bars = [
     bar(t0, 101, 100),
     bar(t0 + 60, 103, 99), // in the 15m window
@@ -49,7 +54,7 @@ test("fibLevels: 0%=high, 100%=low, 50% midpoint, 61.8% golden; degenerate → [
 });
 
 test("levelLinesFor: hod-lod / opening-range / fib produce labelled lines; empty bars → []", () => {
-  const t0 = 2_000_000;
+  const t0 = RTH0;
   const bars = [bar(t0, 105, 100), bar(t0 + 60, 110, 98), bar(t0 + 20 * 60, 112, 95)];
 
   const hl = levelLinesFor("hod-lod", bars);
@@ -236,4 +241,62 @@ test("guard: VectorChart's prior-day fetch is anchored to the DISPLAYED session 
   );
   assert.match(src, /prior-day\?ticker=\$\{encodeURIComponent\(ticker\)\}/);
   assert.match(src, /anchor=\$\{encodeURIComponent\(sessionYmd\)\}/);
+});
+
+// ---------------------------------------------------------------------------------------------
+// P1-A (live sweep 2026-07-14): equity/ETF minute feeds carry PRE-MARKET bars (from 04:00 ET).
+// Session-anchored levels must gate to the 09:30 RTH open — NOT the 04:00 premarket open — so
+// e.g. TSLA OR-H reads the true-RTH 400.82, not the premarket-anchored 395.60. SPX (no premarket
+// bars) is unaffected. Fixture: a premarket block with EXTREME prints that must never leak into
+// the session levels, followed by the real RTH session.
+// ---------------------------------------------------------------------------------------------
+
+function sessionWithPremarket(ymd: string) {
+  // Premarket 08:00–08:02 ET with absurd extremes (high 999 / low 1) that MUST be excluded.
+  const pre = Array.from({ length: 3 }, (_, i) => ({
+    time: et(ymd, 8, 0) + i * 60,
+    high: 999,
+    low: 1,
+    close: 500,
+    volume: 50,
+  }));
+  // RTH from 09:30: first 15m (bars 0–14) ranges 99–103; the true session extremes 108/92 land at
+  // 09:45+, so OR ≠ HOD/LOD and both must reflect RTH only.
+  const rth = session(ymd, [
+    ...Array.from({ length: 15 }, (_, i): [number, number] => (i === 7 ? [103, 99] : [102, 100])),
+    [108, 101],
+    [107, 92],
+    [104, 100],
+  ]);
+  return [...pre, ...rth];
+}
+
+test("P1-A: session HOD/LOD gate to RTH — premarket extremes (999/1) never leak in", () => {
+  const bars = sessionWithPremarket("2026-07-13");
+  assert.deepEqual(sessionHodLod(bars), { hod: 108, lod: 92 });
+});
+
+test("P1-A: opening range anchors to the 09:30 RTH open, not the 04:00 premarket open", () => {
+  const bars = sessionWithPremarket("2026-07-13");
+  // First 15m of RTH (09:30–09:44) = 99–103. NOT the premarket 999/1, NOT the post-open 108/92.
+  assert.deepEqual(openingRange(bars, 15), { high: 103, low: 99 });
+});
+
+test("P1-A: fib anchors to the RTH session's HOD/LOD (premarket excluded)", () => {
+  const bars = sessionWithPremarket("2026-07-13");
+  const fib = levelLinesFor("fib", bars);
+  assert.equal(fib.find((l) => l.key === "fib-0")!.price, 108);
+  assert.equal(fib.find((l) => l.key === "fib-1")!.price, 92);
+});
+
+test("P1-A: premarket-only bars (no RTH yet) → null levels, never a premarket-anchored line", () => {
+  const preOnly = Array.from({ length: 3 }, (_, i) => ({
+    time: et("2026-07-13", 8, 0) + i * 60,
+    high: 999,
+    low: 1,
+    close: 500,
+  }));
+  assert.equal(sessionHodLod(preOnly), null);
+  assert.equal(openingRange(preOnly, 15), null);
+  assert.deepEqual(levelLinesFor("hod-lod", preOnly), []);
 });

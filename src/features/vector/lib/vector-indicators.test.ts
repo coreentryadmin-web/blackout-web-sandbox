@@ -81,6 +81,39 @@ test("vwapSeries: no volume anywhere → null (never substituted with price)", (
   assert.deepEqual(vwapSeries(bars), [null, null]);
 });
 
+test("vwapSeries: RTH-anchored (P1-A) — premarket bars don't accumulate; VWAP starts at 09:30", () => {
+  // Equity/ETF feeds carry premarket bars. Folding them into the "session" VWAP made it start at
+  // the 04:00 premarket open (live: SPY 748.99 vs true-RTH 751.52). Premarket bars must read null
+  // (session not open) and the first RTH bar must anchor the accumulation.
+  const et = (hh: number, mm: number) =>
+    Math.floor(Date.parse(`2026-07-13T${String(hh).padStart(2, "0")}:${String(mm).padStart(2, "0")}:00-04:00`) / 1000);
+  const bars = [
+    { time: et(8, 0), high: 500, low: 500, close: 500, volume: 100 }, // premarket — MUST NOT accumulate
+    { time: et(8, 1), high: 400, low: 400, close: 400, volume: 100 }, // premarket
+    { time: et(9, 30), high: 100, low: 100, close: 100, volume: 100 }, // RTH open
+    { time: et(9, 31), high: 120, low: 120, close: 120, volume: 300 }, // RTH
+  ];
+  const out = vwapSeries(bars);
+  assert.equal(out[0], null, "premarket bar has no session VWAP");
+  assert.equal(out[1], null, "premarket bar has no session VWAP");
+  approx(out[2], 100); // RTH anchor — NOT blended with the 500/400 premarket prints
+  approx(out[3], (100 * 100 + 120 * 300) / 400); // 115 — RTH-only accumulation
+});
+
+test("vwapSeries: after-hours bars carry the frozen RTH-close VWAP; next ET day resets", () => {
+  const et = (ymd: string, hh: number, mm: number) =>
+    Math.floor(Date.parse(`${ymd}T${String(hh).padStart(2, "0")}:${String(mm).padStart(2, "0")}:00-04:00`) / 1000);
+  const bars = [
+    { time: et("2026-07-13", 15, 59), high: 100, low: 100, close: 100, volume: 100 }, // RTH close
+    { time: et("2026-07-13", 17, 0), high: 200, low: 200, close: 200, volume: 100 }, // after-hours (same ET day)
+    { time: et("2026-07-14", 8, 0), high: 300, low: 300, close: 300, volume: 100 }, // next-day premarket
+  ];
+  const out = vwapSeries(bars);
+  approx(out[0], 100);
+  approx(out[1], 100, 1e-6); // after-hours does NOT push VWAP to 150 — session frozen at close
+  assert.equal(out[2], null); // new ET day reset + premarket → null again
+});
+
 test("rsiSeries: too-short → null; all-gains → 100; all-losses → 0", () => {
   assert.deepEqual(rsiSeries([1, 2, 3], 14), [null, null, null]);
   const up = Array.from({ length: 20 }, (_, i) => i + 1); // strictly increasing
