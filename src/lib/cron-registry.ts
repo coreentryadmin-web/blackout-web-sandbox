@@ -271,6 +271,17 @@ export const CRON_JOBS: CronJobDefinition[] = [
     produces_member_alert: true,
   },
   {
+    key: "nighthawk-debrief",
+    name: "Night Hawk Debrief",
+    kind: "http",
+    path: "/api/cron/nighthawk-debrief",
+    schedule_label: "~5:00 PM ET weekdays",
+    stale_after_min: 36 * 60,
+    weekdays_only: true,
+    description:
+      "Rolls the day's graded Night Hawk plays into an immutable per-session debrief (what went well / real winners / what misfired / how to improve) pinned first-write-wins to Redis; runs after the 4:30 PM ET outcomes grade",
+  },
+  {
     key: "market-regime-detector",
     name: "Market Regime Detector",
     kind: "http",

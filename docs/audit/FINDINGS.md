@@ -1282,3 +1282,54 @@ Three new PURE, deterministic, LLM-free modules + additive wiring (no existing p
 - **Status:** BUILT + tested. DRAFT PR (member-facing; post-deploy check: toggle to Flow on a liquid
   name, confirm signs flip on net-bought strikes + zero console errors; owner runs vector-hardcore).
   NOT merged.
+
+## 2026-07-14 — PR-N10 automated end-of-session DEBRIEF + PR-N11 SHADOW auto-tune (BUILT, tested, DRAFT)
+
+### N10 — the automated per-SESSION Debrief (member-readable, deterministic, LLM-free)
+- **Ask (product owner):** "automated end-of-day intelligence: what went well, real winners, what
+  misfired, how to improve — automated every session."
+- **What already existed (#337):** the per-PLAY forensic post-mortem (`debrief.ts` `debriefPlay`) and a
+  rolling-window aggregate (`debrief-aggregate.ts`) served on admin analytics + the member record route.
+  Missing: a single, per-SESSION artifact rolled up for ONE trading day, pinned immutably, and read by a
+  member for a given date. This PR adds exactly that layer on top of the tested #337 machinery (no rewrite).
+- **New:**
+  - `src/features/nighthawk/lib/session-debrief.ts` — pure `buildSessionDebrief({editionFor, rows,
+    windowPatterns?})`. Consumes the session's graded outcome rows and folds them into four evidence-only
+    buckets: **what_went_well** (winners + the pinned cortex-overnight SUPPORT sources that carried them),
+    **real_winners** (record-graded realized return + MFE — enterable wins only; the legacy unenterable
+    `gap_win` is counted as a win but excluded from the numeric ledger), **what_misfired** (each loss /
+    structural non-fill / wrong-pull with its deterministic WHY from `debriefPlay` + the morning-confirm
+    reason, classed `thesis_wrong` vs `thesis_right_execution` vs `gapped_pre_open` vs `structural_band` vs
+    `no_fill` vs `pull_removed_winner`), and **how_to_improve** (session-local observations — always low-N,
+    never actionable — plus `window_patterns` from the rolling aggregate for the properly-powered levers).
+  - `src/app/api/cron/nighthawk-debrief/route.ts` — cron (Bearer CRON_SECRET), fires ~5:00pm ET AFTER the
+    4:30pm outcomes grade (`railway.nighthawk-debrief.toml`, dual UTC band 21:30/22:30, DST-safe self-skip).
+    Slices the session, runs `buildSessionDebrief` + `buildNighthawkDebriefReport` (window patterns) +
+    `buildTuningObservations` (N11), and PINS both blobs to Redis **first-write-wins (SET NX)** keyed by
+    date (`nh:debrief:{date}`, `nh:tuning-observations:{date}`, 400-day TTL) so a session's debrief is
+    immutable + auditable. Does NOT pin when nothing is graded yet (retries next run).
+  - `src/app/api/nighthawk/debrief/route.ts` — premium-gated read (same gate as play-status), `?date=`,
+    returns `{available:false}` **200** for a not-yet-run date (same honest contract as play-status), else
+    `{available:true, ...SessionDebrief}`. Deliberately does NOT serve the N11 tuning blob (internal).
+- **Honesty gates:** #333 anti-blend (only current-methodology rows bucketed; legacy counted in
+  `legacy_excluded`), LOW-N discipline (win-rate + every session observation flagged; an observation under
+  n=5 never mints a suggestion), no fabricated win-rate (null when nothing scoreable), realized numbers are
+  the resolved close-vs-band-mid the record grades on (no counterfactual inflation).
+
+### N11 — auto-tuning OBSERVATION mode (SHADOW ONLY — proposes, never applies)
+- `src/features/nighthawk/lib/auto-tune-observe.ts` — pure `buildTuningObservations(report)`. From the SAME
+  rolling gate-validation evidence, proposes adjustments to a **whitelist** of two live publish-gate
+  thresholds (`GATE_BAND_MAX_DISTANCE_PCT`, `GATE_TARGET_MAX_ATR_MULTIPLE`). Each proposal carries: param,
+  current + proposed value (CLAMPED to hard bounds), direction, the evidence bar it cleared (n ≥ 5, not
+  low_n, mirror ≥ 15pts OR blocked-winner ≥ 40%), and **`applied: false`**. The blob is `mode:"observation"`
+  / `applied:false`. It has NO write path — applying is a future, separately-gated step (needs apply-time
+  re-check + audit record + auto-revert guard, none of which exist yet). Rails: whitelist + evidence bar +
+  hard bounds. Below the bar a param appears observe-only (`proposed_value:null`) — visible, not actionable.
+- **Evidence (tests):** `session-debrief.test.ts` (22 — every bucket + failure-mode + honesty gate) and
+  `auto-tune-observe.test.ts` (10 — tighten/loosen/observe-only, low-N never clears the bar, clamp-to-bound,
+  mirror-precedence, `applied:false` everywhere). Full suite **3661 pass / 0 fail**; tsc + eslint clean;
+  `npm run build` green (both routes registered).
+- **Blast radius:** additive only. New modules + 2 new routes + 1 railway toml; no existing file changed, no
+  schema migration, no live gate/threshold touched. The graded outcome rows remain the source of truth —
+  the debrief is a read artifact pinned first-write-wins.
+- **Status:** BUILT + tested. DRAFT PR (not merged — reported for review per the task).
