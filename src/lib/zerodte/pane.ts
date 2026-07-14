@@ -10,11 +10,15 @@
 import { CONVICTION_A_MIN_SCORE } from "@/lib/nighthawk/cortex/compose";
 
 // ── Cortex verdict (defensive structural read) ─────────────────────────────────────
-// The cortex wire-in (#318) attaches a CortexVerdict onto fresh finds; until it is
-// merged/deployed — and forever for rows the engine abstained on — the field is
-// simply absent. The pane therefore reads the verdict STRUCTURALLY and treats any
-// malformed/missing shape as "no verdict" (honest ABSTAIN copy), never a crash and
-// never a guessed evidence table.
+// The cortex wire-in (#318) ships the evidence in TWO shapes the pane must accept:
+//  - a fresh find's setup.cortex — ZeroDteCortexAssessment, verdict NESTED under
+//    `.verdict` ({abstained:false, decision, verdict:{score, vetoes, ...}});
+//  - a committed ledger row's entry_context.cortex — ZeroDteCortexEntryContext,
+//    the same fields FLATTENED ({abstained:false, decision, score, vetoes, ...}).
+// Both cross an HTTP/JSON boundary before reaching this client, and rows committed
+// before the wire-in shipped carry nothing at all — so the pane reads STRUCTURALLY
+// and treats any malformed/missing shape as "no verdict" (honest gates-only copy),
+// never a crash and never a guessed evidence table.
 
 export type CortexEvidenceItemLike = {
   source: string;
@@ -62,11 +66,37 @@ export function readCortexVerdict(raw: unknown): CortexVerdictLike | null {
   return v as unknown as CortexVerdictLike;
 }
 
-/** A verdict with no active evidence in any direction is an abstention — every
- *  source came back absent. Shown honestly ("gates-only commit"), never padded. */
-export function cortexAbstained(verdict: CortexVerdictLike | null): boolean {
-  if (verdict == null) return true;
-  return verdict.supports.length === 0 && verdict.opposes.length === 0 && verdict.vetoes.length === 0;
+/** The pane's normalized cortex state for one play/skip card. */
+export type PaneCortexView =
+  | { abstained: true; reason: string }
+  | { abstained: false; decision: "PASS" | "VETO" | "NET_NEGATIVE" | null; verdict: CortexVerdictLike };
+
+const CORTEX_DECISIONS = new Set(["PASS", "VETO", "NET_NEGATIVE"]);
+
+/**
+ * Normalize either cortex shape (nested assessment / flattened entry-context blob)
+ * into one view. Null = no verdict on record (pre-wire-in rows, refresh-lane
+ * setups, malformed blobs) — rendered as the honest "gates-only" line.
+ */
+export function readCortexView(raw: unknown): PaneCortexView | null {
+  if (raw == null || typeof raw !== "object") return null;
+  const a = raw as Record<string, unknown>;
+  if (a.abstained === true) {
+    return { abstained: true, reason: typeof a.reason === "string" ? a.reason : "" };
+  }
+  // Fresh-find assessment nests the verdict; the entry-context blob flattens it.
+  const verdict = readCortexVerdict(a.verdict ?? raw);
+  if (verdict == null) return null;
+  // Defensive: a verdict with zero active evidence IS an abstention (the composer
+  // normally converts these upstream — assessCortexVerdict — but never trust a blob).
+  if (verdict.supports.length === 0 && verdict.opposes.length === 0 && verdict.vetoes.length === 0) {
+    return {
+      abstained: true,
+      reason: `no Cortex source produced evidence (${verdict.absent.length} absent).`,
+    };
+  }
+  const decision = typeof a.decision === "string" && CORTEX_DECISIONS.has(a.decision) ? (a.decision as "PASS" | "VETO" | "NET_NEGATIVE") : null;
+  return { abstained: false, decision, verdict };
 }
 
 // ── B-4 suggested size (0.5× / 1× ONLY) ────────────────────────────────────────────
@@ -149,8 +179,8 @@ const GATE_LABELS: Record<string, string> = {
   governor_reentry_lock: "governor · re-entry lock",
   correlated_conflict: "governor · correlated conflict",
   gate_context_unavailable: "fail-closed · gate context",
-  // Cortex wire-in codes (defensive — present once #318 lands; harmless before).
-  cortex_veto: "cortex · veto",
+  // Cortex wire-in codes (#318). cortex_veto carries a `:<source>` suffix — handled
+  // by the prefix branch in zeroDteGateLabel below.
   cortex_net_negative: "cortex · net-negative",
   // Evidence gates (pre-setup rejections), for completeness if ever surfaced here.
   min_gross: "evidence · premium floor",
@@ -162,7 +192,19 @@ const GATE_LABELS: Record<string, string> = {
 };
 
 export function zeroDteGateLabel(code: string): string {
+  // "cortex_veto:<source>" — one block per vetoing source (cortex-gate.ts); the
+  // badge names the source, the payload's reason sentence carries the detail.
+  if (code.startsWith("cortex_veto")) {
+    const source = code.split(":")[1];
+    return source ? `cortex · veto [${source}]` : "cortex · veto";
+  }
   return GATE_LABELS[code] ?? code.replace(/_/g, " ");
+}
+
+/** True when a gate block came from the Cortex evidence layer (veto/net-negative) —
+ *  the SKIP card highlights these like the other hard-risk blocks. */
+export function isCortexBlockCode(code: string): boolean {
+  return code.startsWith("cortex_veto") || code === "cortex_net_negative";
 }
 
 // ── G-2 unlock countdown ───────────────────────────────────────────────────────────

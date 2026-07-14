@@ -68,6 +68,13 @@ export type ZeroDteBoardLedgerRow = {
   plan_pnl_pct: number | null;
   graded: boolean;
   nighthawk_echo: EcosystemNightHawkTake | null;
+  /** Commit-time Cortex evidence pinned on the row (entry_context.cortex, #318) —
+   *  additive (PR-D): the pane's play card renders the evidence table from this
+   *  all day, not just during the ≤2-min window the fresh find still carries its
+   *  live assessment. Null on pre-wire-in rows / refresh-lane commits — the pane
+   *  shows an honest "gates-only" line, never a fabricated table. Served as an
+   *  opaque blob; the client validates the shape structurally (zerodte/pane.ts). */
+  cortex: Record<string, unknown> | null;
 };
 
 export type ZeroDteBoardPayload = {
@@ -137,6 +144,10 @@ function mapLedgerRow(
     plan_pnl_pct: r.plan_pnl_pct,
     graded: r.graded_at != null,
     nighthawk_echo: nighthawkEcho.get(r.ticker.toUpperCase()) ?? null,
+    cortex:
+      r.entry_context && typeof r.entry_context.cortex === "object"
+        ? ((r.entry_context.cortex as Record<string, unknown> | null) ?? null)
+        : null,
   };
 }
 

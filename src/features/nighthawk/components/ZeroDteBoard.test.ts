@@ -82,6 +82,7 @@ function fakeSetup(ticker: string, plan: ContractPlan | null): EnrichedZeroDteSe
     fib_note: null,
     plan,
     gate: null,
+    cortex: null,
     halted: false,
     earnings: null,
     news_hot: null,
@@ -213,6 +214,103 @@ test("mergePlays: ledger row merges live setup evidence (committed, expiry carri
   assert.equal(rows[0]!.expiry, "2026-07-07");
 });
 
+test("mergePlays: ledger row's PINNED entry_context.cortex blob wins over the setup's live assessment", () => {
+  const setup = fakeSetup("NVDA", null);
+  // Live setup carries a later assessment (nested shape)…
+  setup.cortex = {
+    decision: "PASS",
+    abstained: false,
+    verdict: {
+      ticker: "NVDA",
+      direction: "long",
+      asOf: "2026-07-14T15:00:00.000Z",
+      vetoes: [],
+      score: 1.1,
+      supports: [{ source: "gex-walls", stance: "supports", weight: 1.1, halfLifeSec: 900, asOf: "2026-07-14T15:00:00.000Z", detail: "later read" }],
+      opposes: [],
+      absent: [],
+      conviction: "B",
+      narrative: [],
+    },
+  };
+  const rows = mergePlays(
+    [setup],
+    [
+      {
+        ticker: "NVDA",
+        direction: "long",
+        score_max: 80,
+        spike: false,
+        first_flagged_at: new Date().toISOString(),
+        underlying_at_flag: 138,
+        top_strike: 140,
+        conviction: null,
+        entry_premium: 4.2,
+        flow_avg_fill: 4.2,
+        status: "HOLD",
+        last_mark: 4.5,
+        live_pnl_pct: 7.14,
+        move_pct: null,
+        direction_hit: null,
+        plan_outcome: null,
+        plan_pnl_pct: null,
+        graded: false,
+        nighthawk_echo: null,
+        // …but the ledger row carries the commit-time blob (flattened shape) —
+        // the evidence that actually gated the money is what the card must show.
+        cortex: {
+          abstained: false,
+          decision: "PASS",
+          as_of: "2026-07-14T14:00:00.000Z",
+          score: 2.4,
+          conviction: "A",
+          vetoes: [],
+          supports: [{ source: "wall-trend", stance: "supports", weight: 2.4, halfLifeSec: 900, asOf: "2026-07-14T14:00:00.000Z", detail: "commit-time read" }],
+          opposes: [],
+          absent: [],
+          narrative: [],
+        },
+      },
+    ],
+    "RTH"
+  );
+  const view = rows[0]!.cortex;
+  assert.ok(view && !view.abstained);
+  assert.equal(view.verdict.score, 2.4);
+  assert.equal(view.verdict.supports[0]!.detail, "commit-time read");
+});
+
+test("mergePlays: pre-wire-in ledger row with no cortex anywhere carries a null view (honest gates-only line)", () => {
+  const rows = mergePlays(
+    [],
+    [
+      {
+        ticker: "MU",
+        direction: "long",
+        score_max: 70,
+        spike: false,
+        first_flagged_at: new Date().toISOString(),
+        underlying_at_flag: 100,
+        top_strike: 105,
+        conviction: null,
+        entry_premium: 2,
+        flow_avg_fill: 2,
+        status: "HOLD",
+        last_mark: 2.1,
+        live_pnl_pct: 5,
+        move_pct: null,
+        direction_hit: null,
+        plan_outcome: null,
+        plan_pnl_pct: null,
+        graded: false,
+        nighthawk_echo: null,
+      },
+    ],
+    "RTH"
+  );
+  assert.equal(rows[0]!.cortex, null);
+});
+
 test("mergePlays: ledger row without its own expiry falls back to the live setup's expiry", () => {
   const rows = mergePlays(
     [fakeSetup("NVDA", null)], // fakeSetup expiry = 2026-07-07
@@ -269,6 +367,7 @@ function playRow(over: Partial<Parameters<typeof overlayLiveMark>[0]>): Paramete
     score: 80,
     spike: false,
     setup: null,
+    cortex: null,
     nighthawkEcho: null,
     ...over,
   };

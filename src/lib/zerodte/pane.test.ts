@@ -3,11 +3,12 @@ import assert from "node:assert/strict";
 import { CONVICTION_A_MIN_SCORE } from "@/lib/nighthawk/cortex/compose";
 import { capConvictionDisplay, ZERODTE_CONVICTION_DISPLAY_CAP } from "./conviction";
 import {
-  cortexAbstained,
   evidenceRowParts,
   fmtLockRemaining,
+  isCortexBlockCode,
   minutesUntilEtUnlock,
   readCortexVerdict,
+  readCortexView,
   reentryLockRemainingMs,
   resolveZeroDteReadiness,
   suggestedZeroDteSize,
@@ -66,12 +67,39 @@ test("readCortexVerdict: missing/malformed shapes read as null (pre-#318 payload
   assert.equal(readCortexVerdict({ ...validVerdict, absent: [42] }), null);
 });
 
-test("cortexAbstained: no verdict OR a verdict with zero active evidence is an abstention", () => {
-  assert.equal(cortexAbstained(null), true);
-  assert.equal(cortexAbstained({ ...validVerdict, supports: [], opposes: [], vetoes: [] }), true);
-  assert.equal(cortexAbstained(validVerdict), false);
-  const vetoOnly = { ...validVerdict, supports: [], opposes: [], vetoes: [{ source: "flow-quality", stance: "veto", weight: 1, detail: "Opposing whale block." }] };
-  assert.equal(cortexAbstained(vetoOnly), false);
+test("readCortexView: normalizes a fresh find's NESTED assessment ({decision, verdict}) — the #318 setup shape", () => {
+  const view = readCortexView({ decision: "PASS", abstained: false, verdict: validVerdict });
+  assert.ok(view && !view.abstained);
+  assert.equal(view.decision, "PASS");
+  assert.equal(view.verdict.score, 2.4);
+});
+
+test("readCortexView: normalizes the ledger's FLATTENED entry_context.cortex blob — same fields, no .verdict nesting", () => {
+  const view = readCortexView({ abstained: false, decision: "PASS", as_of: validVerdict.asOf, ...validVerdict });
+  assert.ok(view && !view.abstained);
+  assert.equal(view.decision, "PASS");
+  assert.equal(view.verdict.supports.length, 2);
+});
+
+test("readCortexView: an honest ABSTAIN carries its reason; nothing else", () => {
+  const view = readCortexView({ abstained: true, reason: "no Cortex source produced evidence (8 absent)." });
+  assert.ok(view && view.abstained);
+  assert.match(view.reason, /8 absent/);
+});
+
+test("readCortexView: a verdict with zero active evidence reads as an abstention, never an empty table", () => {
+  const view = readCortexView({ abstained: false, decision: "PASS", verdict: { ...validVerdict, supports: [], opposes: [], vetoes: [] } });
+  assert.ok(view && view.abstained);
+});
+
+test("readCortexView: pre-wire-in rows / malformed blobs read as null (no verdict on record)", () => {
+  assert.equal(readCortexView(undefined), null);
+  assert.equal(readCortexView(null), null);
+  assert.equal(readCortexView({}), null);
+  assert.equal(readCortexView({ decision: "PASS" }), null); // no verdict anywhere
+  const view = readCortexView({ abstained: false, decision: "NOT_A_DECISION", verdict: validVerdict });
+  assert.ok(view && !view.abstained);
+  assert.equal(view.decision, null); // unknown decision string degrades to null, verdict survives
 });
 
 // ── B-4 suggested size (0.5×/1× only) ───────────────────────────────────────────────
@@ -123,8 +151,19 @@ test("zeroDteGateLabel: known codes map to their gate names; unknown codes prett
   assert.equal(zeroDteGateLabel("score_floor"), "G-3 · score floor");
   assert.equal(zeroDteGateLabel("governor_session_stops"), "governor · stop halt");
   assert.equal(zeroDteGateLabel("correlated_conflict"), "governor · correlated conflict");
-  assert.equal(zeroDteGateLabel("cortex_veto"), "cortex · veto");
+  assert.equal(zeroDteGateLabel("cortex_net_negative"), "cortex · net-negative");
   assert.equal(zeroDteGateLabel("some_future_gate"), "some future gate");
+});
+
+test("zeroDteGateLabel: cortex_veto:<source> names the vetoing source on the badge", () => {
+  assert.equal(zeroDteGateLabel("cortex_veto:flow-quality"), "cortex · veto [flow-quality]");
+  assert.equal(zeroDteGateLabel("cortex_veto"), "cortex · veto"); // defensive: bare code
+});
+
+test("isCortexBlockCode: veto (any source) and net-negative are cortex blocks; hard gates are not", () => {
+  assert.equal(isCortexBlockCode("cortex_veto:gex-walls"), true);
+  assert.equal(isCortexBlockCode("cortex_net_negative"), true);
+  assert.equal(isCortexBlockCode("tape_alignment"), false);
 });
 
 // ── G-2 unlock countdown ────────────────────────────────────────────────────────────

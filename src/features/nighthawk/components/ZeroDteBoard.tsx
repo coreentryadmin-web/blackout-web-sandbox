@@ -18,16 +18,16 @@ import { isZeroDteMarkStale, type ZeroDteMarkSource } from "@/lib/zerodte/marks-
 import type { ZeroDteLiveMarkRow } from "@/lib/zerodte/live-marks";
 import { etMinutesOf } from "@/lib/zerodte/plan";
 import {
-  cortexAbstained,
   evidenceRowParts,
   fmtLockRemaining,
+  isCortexBlockCode,
   minutesUntilEtUnlock,
-  readCortexVerdict,
+  readCortexView,
   reentryLockRemainingMs,
   resolveZeroDteReadiness,
   suggestedZeroDteSize,
   zeroDteGateLabel,
-  type CortexVerdictLike,
+  type PaneCortexView,
 } from "@/lib/zerodte/pane";
 import { LOW_N_THRESHOLD } from "@/lib/zerodte/record";
 import { useZeroDteLiveMarks } from "@/features/nighthawk/hooks/useZeroDteLiveMarks";
@@ -73,6 +73,9 @@ type LedgerRow = {
    *  prior edition — today's Night Hawk names never reach this scanner). Null
    *  for the vast majority of rows; purely an annotation, never a gate. */
   nighthawk_echo: NighthawkEcho | null;
+  /** Commit-time Cortex evidence blob (entry_context.cortex passthrough, #318) —
+   *  opaque here; validated structurally by readCortexView. */
+  cortex?: unknown;
 };
 
 /** G-5 session risk summary (additive, PR-D — zerodte-service's governor block). */
@@ -190,6 +193,11 @@ type PlayRow = {
   spike: boolean;
   /** Full live find (evidence + plan) when this ticker is still in the top-10. */
   setup: EnrichedZeroDteSetup | null;
+  /** Normalized Cortex evidence for the card. Committed rows prefer the ledger's
+   *  pinned commit-time blob (what actually gated the money) over the setup's
+   *  live assessment; fresh finds carry the live assessment. Null = no verdict
+   *  on record → the card says so honestly, never fabricates a table. */
+  cortex: PaneCortexView | null;
   /** BIE ecosystem echo — see LedgerRow. Null for fresh finds not yet persisted. */
   nighthawkEcho: NighthawkEcho | null;
   /** B-9 live-marks lane overlay (see overlayLiveMark): quote timestamp,
@@ -267,6 +275,7 @@ export function mergePlays(
     score: r.score_max,
     spike: r.spike,
     setup: byTicker.get(r.ticker) ?? null,
+    cortex: readCortexView(r.cortex) ?? readCortexView(byTicker.get(r.ticker)?.cortex),
     nighthawkEcho: r.nighthawk_echo,
     mark_as_of: r.mark_as_of ?? null,
     mark_source: r.mark_source ?? null,
@@ -307,18 +316,12 @@ export function mergePlays(
       score: s.score,
       spike: s.spike,
       setup: s,
+      cortex: readCortexView(s.cortex),
       nighthawkEcho: null,
     });
   }
   const order: Record<PlayRow["status"], number> = { OPEN: 0, TRIM: 1, HOLD: 2, SKIP: 3, CLOSED: 4 };
   return rows.sort((a, b) => order[a.status] - order[b.status] || b.score - a.score);
-}
-
-/** The Cortex verdict riding a row's setup, when the wire-in has attached one.
- *  Structural + defensive: absent/malformed reads as null (honest ABSTAIN copy). */
-function cortexOf(row: PlayRow): CortexVerdictLike | null {
-  const raw = (row.setup as unknown as { cortex?: unknown } | null)?.cortex;
-  return readCortexVerdict(raw);
 }
 
 // ── header: heat + readiness + governor strip ─────────────────────────────────────
@@ -355,7 +358,7 @@ function ReadinessChip({
       <span
         aria-hidden
         className={clsx(
-          "h-1.5 w-1.5 rounded-full",
+          "size-1.5 rounded-full",
           readiness.tone === "green" ? "bg-bull" : "bg-gold animate-pulse motion-reduce:animate-none"
         )}
       />
@@ -676,7 +679,8 @@ function ConvictionBadge({ raw }: { raw: string | null }) {
   );
 }
 
-function SizeChip({ verdict }: { verdict: CortexVerdictLike | null }) {
+function SizeChip({ view }: { view: PaneCortexView | null }) {
+  const verdict = view && !view.abstained ? view.verdict : null;
   const chip = suggestedZeroDteSize(verdict?.score ?? null, (verdict?.vetoes.length ?? 0) > 0);
   return (
     <span
@@ -694,30 +698,25 @@ function SizeChip({ verdict }: { verdict: CortexVerdictLike | null }) {
 
 // ── Cortex evidence table ─────────────────────────────────────────────────────────
 
-function CortexEvidenceBlock({ verdict }: { verdict: CortexVerdictLike | null }) {
-  if (cortexAbstained(verdict)) {
+function CortexEvidenceBlock({ view }: { view: PaneCortexView | null }) {
+  if (view == null || view.abstained) {
     return (
       <div>
         <p className="font-mono text-[10px] uppercase tracking-widest text-sky-300/50">
           Evidence · Night Hawk Cortex
         </p>
         <p className="mt-1 text-[11px] text-sky-300/70">
-          Evidence engine abstained — gates-only commit. No source could argue for or against this
-          play at commit time; the hard gate stack alone cleared it.
+          {view?.abstained
+            ? "Evidence engine abstained — gates-only commit. No source could argue for or against this play at commit time; the hard gate stack alone cleared it."
+            : "No Cortex verdict on record for this commit — the evidence layer didn't run for it (gates-only)."}
         </p>
-        {verdict && verdict.absent.length > 0 && (
-          <ul className="mt-1.5 space-y-0.5">
-            {verdict.absent.map((line) => (
-              <li key={line} className="font-mono text-[10px] leading-snug text-sky-300/40">
-                ◦ {line}
-              </li>
-            ))}
-          </ul>
+        {view?.abstained && view.reason && (
+          <p className="mt-1 font-mono text-[10px] leading-snug text-sky-300/40">◦ {view.reason}</p>
         )}
       </div>
     );
   }
-  const v = verdict!;
+  const v = view.verdict;
   const rows = [...v.vetoes, ...v.supports, ...v.opposes].map(evidenceRowParts);
   return (
     <div>
@@ -812,7 +811,7 @@ function PlayDetail({ row, nowMs }: { row: PlayRow; nowMs: number }) {
   const target = row.entry_premium != null ? row.entry_premium * 2 : null;
   return (
     <div className="space-y-3 border-t border-white/[0.06] px-4 py-3">
-      <CortexEvidenceBlock verdict={cortexOf(row)} />
+      <CortexEvidenceBlock view={row.cortex} />
 
       {/* why the play was picked */}
       <div>
@@ -906,7 +905,7 @@ function PlayCard({ row, nowMs }: { row: PlayRow; nowMs: number }) {
   const live = row.status === "OPEN" || row.status === "HOLD" || row.status === "TRIM";
   const note = intelFor(row, nowMs);
   const markAge = fmtAge(row.mark_as_of, nowMs);
-  const verdict = cortexOf(row);
+  const view = row.cortex;
   return (
     <div
       className={clsx(
@@ -931,7 +930,7 @@ function PlayCard({ row, nowMs }: { row: PlayRow; nowMs: number }) {
             exp {row.expiry ? shortMonthDay(row.expiry) : "—"}
           </span>
           <ConvictionBadge raw={row.conviction} />
-          {live && <SizeChip verdict={verdict} />}
+          {live && <SizeChip view={view} />}
           {row.closed_reason === "stopped" && (
             <span className="rounded-md border border-bear/35 bg-bear/[0.08] px-1.5 py-0.5 font-mono text-[10px] font-bold uppercase tracking-[0.12em] text-bear">
               stopped −50%
@@ -1008,9 +1007,11 @@ function PlayCard({ row, nowMs }: { row: PlayRow; nowMs: number }) {
           {row.nighthawkEcho && <NighthawkEchoNote echo={row.nighthawkEcho} />}
           {!open && (
             <p className="mt-1 font-mono text-[9px] uppercase tracking-[0.18em] text-sky-300/35">
-              {cortexAbstained(verdict)
-                ? "cortex: abstained — gates-only commit"
-                : `cortex: ${verdict!.score >= 0 ? "+" : ""}${verdict!.score.toFixed(2)} · ${verdict!.supports.length} for / ${verdict!.opposes.length} against${verdict!.vetoes.length > 0 ? ` / ${verdict!.vetoes.length} veto` : ""}`}
+              {view == null
+                ? "cortex: no verdict on record — gates-only"
+                : view.abstained
+                  ? "cortex: abstained — gates-only commit"
+                  : `cortex: ${view.verdict.score >= 0 ? "+" : ""}${view.verdict.score.toFixed(2)} · ${view.verdict.supports.length} for / ${view.verdict.opposes.length} against${view.verdict.vetoes.length > 0 ? ` / ${view.verdict.vetoes.length} veto` : ""}`}
               {" · expand for evidence"}
             </p>
           )}
@@ -1029,7 +1030,7 @@ function SkipCard({ row, nowMs }: { row: PlayRow; nowMs: number }) {
   const nowEt = nowMs > 0 ? etMinutesOf(nowMs) : null;
   const moved = row.setup?.plan?.entry_status === "MOVED";
   const illiquid = Boolean(row.setup?.plan?.illiquid);
-  const verdict = cortexOf(row);
+  const view = row.cortex;
   return (
     <div className="rounded-xl border border-white/[0.06] bg-white/[0.015] px-4 py-3">
       <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1.5">
@@ -1055,7 +1056,7 @@ function SkipCard({ row, nowMs }: { row: PlayRow; nowMs: number }) {
               <span
                 className={clsx(
                   "shrink-0 rounded-md border px-1.5 py-0.5 font-mono text-[9px] font-bold uppercase tracking-[0.12em]",
-                  code === "cortex_veto" || code === "correlated_conflict" || code === "governor_session_stops"
+                  isCortexBlockCode(code) || code === "correlated_conflict" || code === "governor_session_stops"
                     ? "border-bear/35 bg-bear/[0.08] text-bear"
                     : "border-sky-300/25 bg-sky-300/[0.05] text-sky-300"
                 )}
@@ -1102,9 +1103,9 @@ function SkipCard({ row, nowMs }: { row: PlayRow; nowMs: number }) {
           </li>
         )}
       </ul>
-      {!cortexAbstained(verdict) && (
+      {view != null && !view.abstained && (
         <div className="mt-2.5">
-          <CortexEvidenceBlock verdict={verdict} />
+          <CortexEvidenceBlock view={view} />
         </div>
       )}
     </div>
