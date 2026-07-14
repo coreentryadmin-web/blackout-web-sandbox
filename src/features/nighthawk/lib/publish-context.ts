@@ -21,10 +21,14 @@ import type { ScoredCandidate, NightHawkRegimeContext } from "./scorer";
 import type { TickerDossier } from "./dossier";
 import { parsePlayLevels } from "./play-levels";
 import { confluenceSnapshot } from "./play-outcomes";
+// Type-only (erased at runtime): the gate module imports this file's geometry helper, so a
+// value import back the other way would be a cycle. The pinned gate result is opaque here.
+import type { NighthawkPublishGateResult } from "./publish-gates";
 import type { MarketBreadthMetrics } from "@/lib/providers/polygon";
 
-/** Bump when the pinned shape changes so calibration reads can segment by version. */
-export const PUBLISH_CONTEXT_VERSION = 1;
+/** Bump when the pinned shape changes so calibration reads can segment by version.
+ *  v2 (PR-N3): + `gates` (publish-gate verdict/blocks/checks) and `quote_session`. */
+export const PUBLISH_CONTEXT_VERSION = 2;
 
 /** The slice of the evening MarketWideContext the pin actually uses — narrow on purpose
  *  so tests don't have to build the full context object and the pin can't silently grow
@@ -62,6 +66,69 @@ function finiteOrNull(n: unknown): number | null {
   return typeof n === "number" && Number.isFinite(n) ? n : null;
 }
 
+/**
+ * The band/target/stop geometry BOTH the publish pin and the publish gates (PR-N3,
+ * publish-gates.ts) read — one computation, so the number the gate thresholds on is
+ * byte-identical to the number the pin records as evidence. All `*_pct` values are
+ * SIGNED % of spot, UNROUNDED (the pin rounds for storage; the gates threshold raw).
+ */
+export type NighthawkPublishGeometry = {
+  direction: "LONG" | "SHORT";
+  /** Last price the dossier's tech card saw (tech.price); null when no tech card. */
+  spot: number | null;
+  prior_close: number | null;
+  atr14: number | null;
+  /** ET session date the spot quote came from (tech.price_session) — G-N3's subject. */
+  quote_session: string | null;
+  entry_range_low: number | null;
+  entry_range_high: number | null;
+  target: number | null;
+  stop: number | null;
+  /** Nearest FILLABLE band edge — LONG: band top; SHORT: band low. The level the
+   *  member would actually transact at, so distances are measured from here. */
+  fill_edge: number | null;
+  /** spot → fill edge, signed % of spot. Strongly negative for a LONG = the N-3
+   *  "detached band" signature (band sits far below the market). */
+  band_distance_pct: number | null;
+  target_distance_pct: number | null;
+  stop_distance_pct: number | null;
+};
+
+/** Compute the publish-time geometry for one play from the SAME in-memory dossier the
+ *  builder published from. Honesty rule: missing tech card / unparseable levels yield
+ *  nulls — never a re-fetched or guessed number. */
+export function computeNighthawkPublishGeometry(
+  play: PlaybookPlay,
+  dossier: TickerDossier | null | undefined
+): NighthawkPublishGeometry {
+  const levels = parsePlayLevels(play);
+  const direction: "LONG" | "SHORT" = String(play.direction ?? "LONG").toUpperCase().includes("SHORT")
+    ? "SHORT"
+    : "LONG";
+  const isLong = direction === "LONG";
+  const tech = dossier?.tech ?? null;
+  const spot = finiteOrNull(tech?.price);
+
+  // Nearest fillable band edge: the level the member would actually transact at.
+  const fillEdge = (isLong ? levels.entry_range_high : levels.entry_range_low) ?? null;
+
+  return {
+    direction,
+    spot,
+    prior_close: finiteOrNull(tech?.prior_day?.close),
+    atr14: finiteOrNull(tech?.atr14),
+    quote_session: typeof tech?.price_session === "string" ? tech.price_session : null,
+    entry_range_low: levels.entry_range_low,
+    entry_range_high: levels.entry_range_high,
+    target: levels.target,
+    stop: levels.stop,
+    fill_edge: fillEdge,
+    band_distance_pct: pctFrom(spot, fillEdge),
+    target_distance_pct: pctFrom(spot, levels.target),
+    stop_distance_pct: pctFrom(spot, levels.stop),
+  };
+}
+
 /** True when `ticker` appears in the UW tomorrow-earnings calendar rows. Same field
  *  convention as hunt-builder.ts's earningsDateForTicker (ticker | symbol). */
 export function earningsTomorrowForTicker(
@@ -92,39 +159,41 @@ export function buildNighthawkPublishContext(opts: {
   market: PublishContextMarket;
   /** ISO build timestamp — passed in (not Date.now()) so the pin matches meta.built_at. */
   builtAt: string;
+  /** PR-N3: the publish-gate evaluation this play went through — passed IN from the
+   *  builder (never re-evaluated here) so the pin records the EXACT object that gated
+   *  the play, PASS margins included (the calibration substrate for the thresholds).
+   *  Optional + nullable: an un-gated caller degrades to a null pin, never a throw. */
+  gates?: NighthawkPublishGateResult | null;
 }): Record<string, unknown> {
   const { play, scored, dossier, market, builtAt } = opts;
-  const levels = parsePlayLevels(play);
-  const direction = String(play.direction ?? "LONG").toUpperCase().includes("SHORT") ? "SHORT" : "LONG";
-  const isLong = direction === "LONG";
-  const tech = dossier?.tech ?? null;
-  const spot = finiteOrNull(tech?.price);
-  const priorClose = finiteOrNull(tech?.prior_day?.close);
-
-  // Nearest fillable band edge: the level the member would actually transact at.
-  const fillEdge = isLong ? levels.entry_range_high : levels.entry_range_low;
+  // One geometry computation shared with publish-gates.ts — see NighthawkPublishGeometry.
+  const geo = computeNighthawkPublishGeometry(play, dossier);
 
   return {
     context_version: PUBLISH_CONTEXT_VERSION,
     pinned_at: builtAt,
-    direction,
+    direction: geo.direction,
     conviction: String(play.conviction ?? "").toUpperCase() || null,
     score: finiteOrNull(play.score),
     entry_premium: finiteOrNull(play.entry_premium),
 
     // ── What the builder saw on the tape for THIS name ─────────────────────────
-    spot_at_publish: spot,
-    prior_close: priorClose,
-    atr14: finiteOrNull(tech?.atr14),
+    spot_at_publish: geo.spot,
+    prior_close: geo.prior_close,
+    atr14: geo.atr14,
+    quote_session: geo.quote_session,
 
     // ── Published geometry, re-parsed with the same parser grading uses ────────
-    entry_range_low: levels.entry_range_low,
-    entry_range_high: levels.entry_range_high,
-    target: levels.target,
-    stop: levels.stop,
-    band_distance_pct: round4(pctFrom(spot, fillEdge ?? null)),
-    target_distance_pct: round4(pctFrom(spot, levels.target)),
-    stop_distance_pct: round4(pctFrom(spot, levels.stop)),
+    entry_range_low: geo.entry_range_low,
+    entry_range_high: geo.entry_range_high,
+    target: geo.target,
+    stop: geo.stop,
+    band_distance_pct: round4(geo.band_distance_pct),
+    target_distance_pct: round4(geo.target_distance_pct),
+    stop_distance_pct: round4(geo.stop_distance_pct),
+
+    // ── PR-N3 publish-gate verdict for THIS play (null when un-gated) ──────────
+    gates: opts.gates ?? null,
 
     // ── That evening's market state (regime + the BIE breadth bundle) ──────────
     market: {
@@ -169,6 +238,9 @@ export function buildNighthawkPublishContexts(opts: {
   dossiers: Record<string, TickerDossier>;
   market: PublishContextMarket;
   builtAt: string;
+  /** PR-N3: per-ticker publish-gate results from the builder's gate pass (see the
+   *  singular builder's `gates` doc). Missing ticker/omitted map ⇒ null pin. */
+  gateResults?: Record<string, NighthawkPublishGateResult | null>;
 }): Record<string, Record<string, unknown> | null> {
   const out: Record<string, Record<string, unknown> | null> = {};
   let plays: PlaybookPlay[] = [];
@@ -188,6 +260,7 @@ export function buildNighthawkPublishContexts(opts: {
         dossier,
         market: opts.market,
         builtAt: opts.builtAt,
+        gates: opts.gateResults?.[ticker] ?? null,
       });
     } catch (err) {
       // Fail-soft: this play publishes un-pinned; the row still syncs.
