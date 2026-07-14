@@ -1,9 +1,18 @@
 import type { AggBar } from "@/lib/providers/polygon-largo";
 import { fetchPolygonMtfTechnicals } from "@/lib/providers/polygon-largo";
+import { formatEtDate } from "./session";
 
 export type TechnicalCard = {
   ticker: string;
   price: number;
+  /** ET session date (YYYY-MM-DD) of the daily bar `price` came from — quote PROVENANCE,
+   *  not another price field. The publish-time stale-quote gate (PR-N3 / G-N3,
+   *  docs/audit/NIGHTHAWK-OVERNIGHT-DECISION.md §N-3) compares this against the session
+   *  the edition is publishing from: the six 6.4%–45.5% detached backfill plays are the
+   *  signature of geometry built on a quote basis that wasn't tonight's tape. null when
+   *  the price fell back to an hourly bar (no daily bars) — the gate treats an
+   *  unverifiable quote session as fail-closed, same as missing geometry. */
+  price_session: string | null;
   trend: string;
   setup_tags: string[];
   support_levels: number[];
@@ -136,9 +145,20 @@ export async function buildTechnicalCard(ticker: string): Promise<TechnicalCard 
   const gapZones = setupTags.filter((t) => t.includes("gap"));
   const breakoutZones = setupTags.filter((t) => t.includes("breakout") || t.includes("HOD"));
 
+  // mtf.price = daily.at(-1)?.c ?? hourly fallback (polygon-largo). daily_bars is a slice
+  // of the SAME daily array, so its last bar's timestamp IS the price's session whenever a
+  // daily bar exists. On the hourly-fallback path there is no daily bar to date the quote
+  // from — record null (unverifiable) rather than guessing "today".
+  const lastDailyT = dailyBars.at(-1)?.t;
+  const priceSession =
+    typeof lastDailyT === "number" && Number.isFinite(lastDailyT)
+      ? formatEtDate(new Date(lastDailyT))
+      : null;
+
   return {
     ticker: ticker.toUpperCase(),
     price: mtf.price,
+    price_session: priceSession,
     trend: mtf.trend_stack ?? "mixed",
     setup_tags: setupTags,
     support_levels: [...swings.support, mtf.weekly?.support, mtf.monthly?.support].filter(

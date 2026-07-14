@@ -245,6 +245,71 @@ export const BLACKOUT_GLOSSARY: GlossaryEntry[] = [
       "The conviction/size bands a 0DTE play must EARN from evidence and the graded record — never asserted. Cortex conviction A requires roughly a structural argument plus the wall lifecycle agreeing, net of opposition (score ≥ 2); B is one real edge beyond noise (≥ 0.75); C means nothing here earns size. A vetoed play wears a C regardless of score, display is capped at A while the historical A+ tier remains mis-calibrated against outcomes, and sizing follows the same discipline: a full unit only at the conviction-A floor, half size for everything else — including 'no verdict at all'. Example: score +2.3 with no veto → A, 1× suggested size; score +1.1 → B, 0.5×; a +2.3 with one veto → blocked, and even if it somehow reached a card it would read C at 0.5×.",
   },
 
+  // ── Night Hawk overnight edition (PR-N9) ─────────────────────────────────
+  // Definitions grounded in src/features/nighthawk/lib/publish-context.ts (the pin),
+  // morning-verdict-persist.ts + morning-confirm-verdict.ts (the 9:15 check + pull
+  // latch), play-outcomes.ts resolveOutcome (fillability/unfilled), analytics.ts
+  // (the both-directions exclusion), and docs/audit/NIGHTHAWK-OVERNIGHT-DECISION.md
+  // (the N-3 detached-band class the publish gates target).
+  {
+    term: "Publish context (Night Hawk pin)",
+    aliases: [
+      "publish context",
+      "publish-time pin",
+      "publish pin",
+      "evidence pinning",
+      "pinned context",
+      "decision context",
+      "publish context pin",
+    ],
+    category: "concept",
+    definition:
+      "The publish context is Night Hawk's evidence pin: at the moment an edition publishes, each play's outcome row records exactly what the builder saw — spot, prior close and ATR14; the published band/target/stop with their SIGNED distances from spot (a strongly negative band distance on a LONG means the band sits below the market, the 'detached band' signature); that evening's regime, tide and breadth; catalyst knowledge (does this name report earnings into the session); and the scorer's confluence snapshot. It is written FIRST-WRITE-WINS — a later force-rebuild can update levels but can never rewrite what the original publish saw — and only values actually computed during that build are pinned (missing inputs persist as null, never re-fetched later). It's the overnight analogue of the 0DTE entry_context: the durable answer to 'why was this picked', and the substrate every calibration cut and publish gate reads. Plays published before pinning shipped carry no context — 'no decision context on record', never reconstructed.",
+  },
+  {
+    term: "Morning confirmation (Night Hawk 9:15 check)",
+    aliases: [
+      "morning confirmation",
+      "morning confirm",
+      "morning check",
+      "morning verdict",
+      "pre-open check",
+      "9 15 check",
+      "confirmation check",
+    ],
+    category: "concept",
+    definition:
+      "The morning confirmation is Night Hawk's pre-open re-check (a ~9:15 ET cron): each published play is re-examined against the pre-market tape — the overnight SPX gap, the stock's pre-market price versus its published stop and entry band, the regime, and wall shifts — and stamped CONFIRMED, DEGRADED, INVALIDATED, or UNVERIFIED with a reason. The verdict AND the numbers it saw are persisted durably onto the play's outcome row (first-write-wins), so 'what did the morning check see' is answerable later. INVALIDATED is BINDING: it engages the one-way pulled latch (e.g. a play that gapped through its published stop pre-market is pulled, not left tradeable). DEGRADED stays advisory — a caution label, not a pull. The verdict is a one-time pre-market snapshot, not a live re-evaluation.",
+  },
+  {
+    term: "Pulled play",
+    aliases: ["pulled play", "pull latch", "pulled pick", "pulled pre-open", "invalidated play"],
+    category: "concept",
+    definition:
+      "A pulled play is a published Night Hawk play the morning confirmation INVALIDATED before the open: a one-way latch marks it PULLED with the verdict's reason, and it stays VISIBLE at its published rank — presented as pulled and non-actionable, never hidden or deleted (the record of what was published stays intact). Its grade becomes counterfactual-only and is excluded from the headline record in BOTH directions: a pulled play that would have won adds no win, and one that would have lost adds no loss — the record only counts plays members could actually act on, and the pulled count is surfaced instead of the sample silently shrinking. The latch is one-way by design: once pulled, no later data un-pulls it.",
+  },
+  {
+    term: "Unfilled grade (fillability)",
+    aliases: ["unfilled grade", "fillability", "fillable", "unfilled play", "gap away", "no fill", "graded unfilled"],
+    category: "concept",
+    definition:
+      "Unfilled is the grading-honesty outcome for a Night Hawk play whose session never traded back into the published entry band — a LONG that gapped above its band (or a SHORT below) offered no fill at the published entry, so grading it off that entry would book a phantom win or phantom loss. Concretely: a LONG is fillable only if the session LOW reached the top of the band; a SHORT only if the session HIGH reached the bottom. An unfillable play grades 'unfilled' and is excluded from win/loss tallies (surfaced as its own count), the same discipline as plays whose intraday data is unavailable. It exists because the honest record only counts entries a member could actually have taken.",
+  },
+  {
+    term: "Publish gates (Night Hawk)",
+    aliases: ["publish gates", "publish gate", "band sanity gate", "detached band gate", "edition gates"],
+    category: "concept",
+    definition:
+      "The publish gates are Night Hawk's pre-publish quality checks: a candidate play must pass sanity thresholds before it can appear in an edition — headlined by the band-sanity/detached-band gate (reject or re-anchor a play whose entry band sits too far from spot, or whose target is further than the stock's ATR could plausibly reach in one session; the exact geometry the publish pin records as signed distances) alongside the existing geometry/premium checks. Status honestly: the evidence substrate the gates threshold on (the publish-context pin) is live today, and the gates themselves ship in a sibling PR — until then the pin records the detached-band signature but does not yet block on it. Fewer, more fillable plays over more plays is the deliberate trade.",
+  },
+  {
+    term: "Night Audit",
+    aliases: ["night audit", "the night audit", "overnight audit", "night audit pipeline"],
+    category: "concept",
+    definition:
+      "The Night Audit is Night Hawk's deep post-hoc audit pipeline — IN PROGRESS, not shipped yet. The plan: replay each edition end-to-end against its durable records (the publish-context pins, the persisted morning verdicts, the pull latches, the grades) to judge not just the plays but the DECISIONS — did the publish gates block the right candidates, did the morning check catch what it should have, did conviction letters track outcomes. The substrate it needs already ships (pins, verdicts, and the pulled latch are all persisted per play); the pipeline that reads them back into a nightly audit is the in-progress half. Until it lands, honest answer: the term names planned work, and per-play records are already queryable one play at a time.",
+  },
+
   // ── Technicals ───────────────────────────────────────────────────────────
   {
     term: "VWAP",

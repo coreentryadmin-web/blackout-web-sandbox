@@ -258,6 +258,49 @@ test("plural builder pins every play by UPPERCASED ticker and is FAIL-SOFT per p
   assert.equal(out.BOOM, null, "broken play degrades to a null pin, never a throw");
 });
 
+test("PR-N3: the publish-gate result is pinned VERBATIM — PASS margins included — and un-gated callers pin null", () => {
+  // The exact object shape evaluateNighthawkPublishGates returns (checks = PASS margins).
+  const gateResult = {
+    verdict: "PUBLISH" as const,
+    blocks: [],
+    checks: [
+      { code: "geometry_unknown" as const, passed: true, value: null, threshold: null },
+      { code: "band_detached" as const, passed: true, value: -0.463, threshold: 2.5 },
+      { code: "target_unreachable" as const, passed: true, value: 0.5952, threshold: 1.5 },
+      { code: "stale_quote_basis" as const, passed: true, value: "2026-07-13", threshold: "2026-07-13" },
+    ],
+  };
+  const ctx = buildNighthawkPublishContext({
+    play: play(),
+    scored: scored(),
+    dossier: dossier(),
+    market: market(),
+    builtAt: "2026-07-14T21:35:00.000Z",
+    gates: gateResult,
+  });
+  // Pinned as-is (never re-evaluated here) — the calibration substrate for the thresholds.
+  assert.deepEqual(ctx.gates, gateResult);
+
+  const unGated = buildNighthawkPublishContext({
+    play: play(),
+    scored: scored(),
+    dossier: dossier(),
+    market: market(),
+    builtAt: "2026-07-14T21:35:00.000Z",
+  });
+  assert.equal(unGated.gates, null, "an un-gated caller pins null, never a fabricated PASS");
+
+  // Plural: results keyed by uppercased ticker thread through to each play's pin.
+  const out = buildNighthawkPublishContexts({
+    plays: [play({ ticker: "amd" })],
+    dossiers: { AMD: dossier() },
+    market: market(),
+    builtAt: "2026-07-14T21:35:00.000Z",
+    gateResults: { AMD: gateResult },
+  });
+  assert.deepEqual((out.AMD as Record<string, unknown>).gates, gateResult);
+});
+
 test("plural builder tolerates garbage input wholesale (returns {} rather than throwing)", () => {
   const out = buildNighthawkPublishContexts({
     plays: undefined as unknown as PlaybookPlay[],
