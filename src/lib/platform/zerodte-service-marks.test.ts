@@ -3,10 +3,30 @@
 // buildZeroDteBoardPayload with the same hermetic-mock idiom zerodte-service.test.ts
 // uses. Separate file on purpose: node --test runs each file in its own process, so
 // these mocks/fixtures can't leak into the existing service test (ESM module cache).
+//
+// TIMING DISCIPLINE (CI flake fix, run 29296357116): the overlay only applies lane
+// marks fresher than ZERODTE_MARK_STALE_MS (5s) — that check runs against the REAL
+// clock inside attachLiveMarkMeta and is exactly the honesty rule under test, so this
+// file must never race it. The first version seeded `asOf = Date.now()` BEFORE the
+// tsx compile of the whole service graph (`await import("./zerodte-service")`); on a
+// loaded 4-core CI runner executing dozens of test processes concurrently, that gap
+// exceeded 5s, the overlay (correctly) rejected the "fresh" seed as stale, and the
+// assertion saw the sync mark (4.4) instead of the lane mark (4.62). Fix, without
+// loosening any assertion:
+//   1. ALL imports happen before seeding, so no compile cost sits inside the window.
+//   2. The fresh-direction seed is future-dated (+30s) — a fixture timestamp that
+//      stays inside the freshness window regardless of scheduler stalls. The
+//      REJECTION direction (stale marks never overlay) is asserted with a far-PAST
+//      asOf, which is timing-safe by construction, so both sides of the honesty rule
+//      stay covered deterministically.
+//   3. The lane store is seeded through the SAME module specifier the service's
+//      lazy import resolves ("@/lib/zerodte/live-marks"), so a path-alias/mock-cache
+//      split can never leave the test writing to a different module instance than
+//      the one the service reads.
 import { test, mock } from "node:test";
 import assert from "node:assert/strict";
 
-test("board ledger: stopped play pins live_pnl_pct to −50; live row carries lane mark + asOf", async () => {
+test("board ledger: stopped play pins live_pnl_pct to −50; live row carries lane mark + asOf; stale lane marks never overlay", async () => {
   const OPEN_OCC = "O:NVDA260714C00180000";
   mock.module("server-only", { namedExports: {} });
   mock.module("../bie/ecosystem-context", {
@@ -44,7 +64,7 @@ test("board ledger: stopped play pins live_pnl_pct to −50; live row carries la
           ...baseRow,
           ticker: "NVDA",
           entry_premium: 4.2,
-          last_mark: 4.4, // deliberately older than the lane's 4.62 below
+          last_mark: 4.4, // deliberately different from the lane's 4.62 below
           status: "HOLD",
           plan_json: { occ: OPEN_OCC },
           peak_premium: 4.4,
@@ -86,24 +106,43 @@ test("board ledger: stopped play pins live_pnl_pct to −50; live row carries la
     },
   });
 
-  // Seed the REAL live-marks store (the same module instance the service's lazy
-  // import resolves) with a fresh lane quote for the open contract.
-  const lane = await import("../zerodte/live-marks");
-  lane._resetZeroDteLiveMarksForTest();
-  const asOf = Date.now();
-  lane.putZeroDteLiveMark({
+  // ALL imports up front (see TIMING DISCIPLINE above): pay the full tsx compile
+  // cost of both graphs BEFORE any clock-sensitive seeding. The lane is imported
+  // via the exact specifier the service's lazy import uses, guaranteeing the seeds
+  // land in the module instance the service reads.
+  const lane = await import("@/lib/zerodte/live-marks");
+  const { buildZeroDteBoardPayload } = await import("./zerodte-service");
+
+  const laneMark = (asOf: number) => ({
     occ: OPEN_OCC,
     bid: 4.6,
     ask: 4.64,
     mid: 4.62,
     last: 4.6,
     mark: 4.62,
-    source: "mid",
+    source: "mid" as const,
     asOf,
-    lane: "rest",
+    lane: "rest" as const,
   });
 
-  const { buildZeroDteBoardPayload } = await import("./zerodte-service");
+  // ── Direction 1 (timing-safe by construction): a STALE lane mark must NOT
+  // overlay — the sync mark stands and no per-quote timestamp is claimed.
+  lane._resetZeroDteLiveMarksForTest();
+  lane.putZeroDteLiveMark(laneMark(Date.now() - 60_000));
+  {
+    const board = await buildZeroDteBoardPayload();
+    const nvda = board.ledger.find((r) => r.ticker === "NVDA")!;
+    assert.equal(nvda.last_mark, 4.4); // sync value — the stale lane mark was refused
+    assert.equal(nvda.mark_as_of, null);
+    assert.equal(nvda.mark_source, null);
+  }
+
+  // ── Direction 2: a FRESH lane mark overlays with provenance + timestamp.
+  // Future-dated fixture (+30s) so a CI scheduler stall between this line and the
+  // overlay's real-clock staleness check can never flip the outcome (the staleness
+  // rejection itself is proven above and in live-marks.test.ts / ZeroDteBoard.test.ts).
+  const asOf = Date.now() + 30_000;
+  lane.putZeroDteLiveMark(laneMark(asOf));
   const board = await buildZeroDteBoardPayload();
   const byTicker = new Map(board.ledger.map((r) => [r.ticker, r]));
 
