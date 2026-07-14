@@ -19,6 +19,7 @@ import {
   type EnrichedZeroDteSetup,
 } from "@/lib/zerodte/board";
 import { buildIntelNote } from "@/lib/zerodte/intel";
+import { cortexSummaryFor } from "@/lib/zerodte/cortex-gate";
 import {
   closedStopReason,
   isZeroDteMarkStale,
@@ -298,6 +299,11 @@ export async function zeroDtePlaysForLargo(): Promise<Record<string, unknown>> {
             // Machine code + human sentence per failing gate (null = clear/ungated) —
             // the same copy the board's SKIP cards render.
             gate_blocks: s.gate?.verdict === "BLOCKED" ? s.gate.blocks : null,
+            // Night Hawk Cortex verdict summary (design §2 "the full evidence table
+            // on every card — including SKIPs"): committed finds carry score/
+            // conviction + top supports; Cortex-blocked SKIPs carry the veto /
+            // net-negative evidence. Null = Cortex never ran (gate-blocked first).
+            cortex: cortexSummaryFor(s.cortex),
             intel: buildIntelNote({
               status,
               setup: s,
