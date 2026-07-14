@@ -1466,3 +1466,73 @@ all call walls → call rows.
 **Tests:** `vector-gex-ladder.test.ts` +3 (override crowns canonical wall / falls back when absent or
 wrong-signed / omitting preserves self-crown) — 15 ladder tests pass; #347 golden values-unchanged snapshot
 intact. Full suite **3669 pass / 0 fail**; tsc + eslint clean; `npm run build` green.
+
+## 2026-07-14 — PLATFORM CRON HEALTH: two full-state snapshot crons NEVER RAN + two FAILED (branch `fix/platform-cron-health`)
+
+Surfaced live by Largo's #58 ops read at market open (2026-07-14), confirmed via cron-health:
+`vector-full-state-snapshot` + `bie-full-state-snapshot` had **no run history**; `data-correctness`
+and `socket-health` were **FAILED**. Consequence: `vector_read`/BIE served an ~11-min-stale
+full-state cache → the live flip divergence.
+
+### HIGH — `vector-full-state-snapshot` + `bie-full-state-snapshot` NEVER RAN — provisioner bootstrap was a hardcoded subset (FIXED)
+- **Severity:** HIGH (platform-wide staleness — these two crons are the current-state feed behind
+  Vector `vector_read`, Largo-BIE ecosystem context, and the "brain of BlackOut" whole-platform snapshot).
+- **Root cause:** NOT a manifest/registry gap. Both crons are fully registered — `CRON_JOBS` entry,
+  `railway.<key>.toml` (valid `2-59/5`/`3-59/5 11-21 * * 1-5` schedules), route (`src/app/api/cron/
+  {vector,bie}-full-state-snapshot/route.ts`), and `CRON_SERVICE_NAMES` map — and
+  `node scripts/validate-railway-cron-manifest.mjs` is GREEN (31/31/31). The routes even `logCronRun`
+  on every path (skip/success/error), so a fired-but-skipped run would still be recorded. "No run
+  history" therefore meant the **Railway trigger service was never created**. The ONLY automation that
+  CREATES a missing cron service (`ensureCronService` → `railway add`) lived in
+  `scripts/railway-ops-provision.mjs` behind a **hardcoded 6-entry `CRON_BOOTSTRAP` array**
+  (`alert-outcome-sync`, `provider-health-reconcile`, `market-regime-detector`, `spx-issues-sync`,
+  `desk-warm`, `zerodte-warm`). `scripts/railway-audit-apply.mjs` only re-wires services that already
+  exist and silently `[skip]`s missing ones. So when #248 (`vector-full-state-snapshot`) and #262
+  (`bie-full-state-snapshot`) shipped, nothing ever provisioned their service and nobody hand-created
+  it in the dashboard → they never fired. Same shape as the earlier N10-debrief provisioning gap.
+- **Blast radius:** the hardcoded list omitted **25 of 31** registered crons — the two snapshots were the
+  ones that bit (their services were never hand-created), but ANY future cron added without also being
+  hand-appended to the array would inherit the same silent never-run fate.
+- **Fix:** derive the bootstrap from the service map — new `CRON_BOOTSTRAP` export in
+  `scripts/railway-cron-services.mjs:37` = `Object.entries(CRON_SERVICE_NAMES).map(...)`, consumed by
+  `scripts/railway-ops-provision.mjs` (hardcoded array removed, imported instead). Since the manifest
+  validator already proves `CRON_SERVICE_NAMES ⊇ registry`, every registered cron is now covered by
+  construction and the next `railway-ops-provision` run (Railway ops provision workflow, needs
+  `RAILWAY_TOKEN`) will `railway add` + wire the two missing services. `ensureCronService` is idempotent
+  for the 6 that already exist. **This corrects registration/scheduling going forward only — no cron-run
+  history was fabricated.**
+- **Test:** `src/lib/cron-bootstrap-coverage.test.ts` (3 cases) — bootstrap covers every `CRON_JOBS`
+  key, is derived from the service map with no drift, and explicitly includes both snapshot crons.
+- **Status:** FIXED (draft PR). Requires a `railway-ops-provision` run with `RAILWAY_TOKEN` to actually
+  create the two Railway services in prod (infra action — cannot be done from the sandbox).
+
+### `data-correctness` FAILED — the auditor is correctly flagging 2 real correctness issues (NOT masked; needs owning-surface data fix)
+- **Diagnosis:** NOT a route/code bug. `src/app/api/cron/data-correctness/route.ts` sets
+  `ok: card.flags.length === 0` **by design** — a run that finds correctness FLAGs is marked `failed`
+  and fires `notifyOpsDiscord({severity:"critical"})`. So "FAILED with 2 correctness flags" = the
+  auditor doing its job: 2 user-facing numbers were independently re-derived and disagreed with what
+  the platform serves. **Deliberately NOT masked** (flipping `ok` true would suppress the critical
+  alert and hide the data issue).
+- **What the 2 flags are:** each flag carries `{layer, metric, detail}` and is persisted in the run's
+  `meta_json.flags[]` and posted to the Discord ops webhook (title `Data-correctness FLAG ×2 (<surface>)`).
+  The exact flag text could not be extracted from this sandbox — the sandbox `CRON_SECRET` is not
+  authorized against prod `blackouttrades.com` (returns `{"error":"Unauthorized"}`; prod secret differs
+  post AWS-migration). **Action for the owning surface:** read the 2 flags from the latest
+  `data-correctness` run `meta_json.flags[]` / the Discord ops alert and fix the underlying number
+  (heatmap GEX/flip/walls, SPX desk, HELIX flows, etc.). Out of THIS PR's scope (registration/cron
+  plumbing only; must not touch `bie/**`, vector chart, or spx-desk signals).
+
+### `socket-health` FAILED — correctly reporting a degraded/stale WS cluster at open (NOT a route bug)
+- **Diagnosis:** NOT a route/assertion bug. Reviewed `src/app/api/cron/socket-health/route.ts` +
+  `src/lib/ws/socket-cluster-health.ts` — `ok = options_ok && luld_ok && uwEval.ok && polygonEval.ok`,
+  and the leader/follower cluster-heartbeat evaluators (`evaluateUwClusterOk`/`evaluatePolygonClusterOk`,
+  fresh-within-120s/30s) are correct (followers pass on a fresh leader heartbeat). `ok:false` → 503,
+  which `scripts/hit-cron.mjs` treats as a retryable status and, after 4 retries, exits non-zero → the
+  cron run is recorded `failed`. So "FAILED" reflects a genuinely stale/unauthenticated socket cluster
+  at market open (leader election still settling, an options/UW/Polygon auth gap, or a stale cluster
+  heartbeat — plausibly downstream of the same snapshot/cluster staleness). Real infra condition,
+  correctly surfaced; **not masked**. No route change warranted; if it persists past the open-settle
+  window it points at a WS-auth/leader issue on the server deploy (out of this PR's cron-plumbing scope).
+
+**Validation:** `node scripts/validate-railway-cron-manifest.mjs` GREEN (31/31/31); `npx tsc --noEmit`
+clean; `npx eslint` (changed files) clean; full `npm test` **3709 pass / 0 fail**; `npm run build` green.

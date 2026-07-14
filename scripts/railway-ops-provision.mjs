@@ -13,6 +13,7 @@
 import { execSync, spawnSync, execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
+import { CRON_BOOTSTRAP } from "./railway-cron-services.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dirname, "..");
@@ -91,15 +92,12 @@ if (!cronSecret) {
   process.exit(1);
 }
 
-const CRON_BOOTSTRAP = [
-  { key: "alert-outcome-sync", serviceName: "Alert-Outcome-Sync" },
-  { key: "provider-health-reconcile", serviceName: "provider-health-reconcile" },
-  { key: "market-regime-detector", serviceName: "Market-Regime-Detector" },
-  { key: "spx-issues-sync", serviceName: "SPX-Issues-Sync" },
-  { key: "desk-warm", serviceName: "SPX-Desk-Warm" },
-  // Renamed from grid-warm when classic Grid was deleted (2026-07-07).
-  { key: "zerodte-warm", serviceName: "ZeroDTE-Warm-Cron" },
-];
+// Bootstrap EVERY registered cron service (derived from CRON_SERVICE_NAMES), not a hand-curated
+// subset. A hardcoded list is how vector-full-state-snapshot + bie-full-state-snapshot were left
+// un-provisioned (see CRON_BOOTSTRAP's doc comment in railway-cron-services.mjs): registered in the
+// repo but never created on Railway, so they never ran and their full-state caches went stale.
+// ensureCronService is idempotent — existing services just get CRON_SECRET verified + config
+// re-wired; only genuinely-missing ones are `railway add`-ed.
 
 function ensureCronService(serviceName, cronKey) {
   if (!names[serviceName]) {

@@ -39,6 +39,27 @@ export const CRON_SERVICE_NAMES = {
 /** All cron job keys that have a railway.<key>.toml in the repo. */
 export const ALL_CRON_KEYS = Object.keys(CRON_SERVICE_NAMES);
 
+/**
+ * Every cron service the provisioner must ENSURE EXISTS on Railway (create-if-missing + wire).
+ *
+ * Derived from CRON_SERVICE_NAMES on purpose — NOT a hand-curated subset. The bootstrap loop in
+ * railway-ops-provision.mjs is the ONLY automation that CREATES a missing Railway cron trigger
+ * service (`railway add`); railway-audit-apply.mjs only re-wires services that already exist and
+ * silently `[skip]`s any that don't. When this was a hardcoded 6-service array, any cron whose
+ * railway.<key>.toml + registry entry shipped but whose Railway service was never hand-created in
+ * the dashboard would NEVER get created and therefore NEVER RUN — exactly what stranded
+ * vector-full-state-snapshot (#248) and bie-full-state-snapshot (#262): fully registered
+ * (manifest green, route + toml + service-map all present) yet no run history, because nothing
+ * ever provisioned their service. Deriving the list from the service map guarantees every
+ * registered cron is covered and closes that class for all future crons. The validator
+ * (validate-railway-cron-manifest.mjs) already proves CRON_SERVICE_NAMES ⊇ the registry, so this
+ * covers every registered cron by construction.
+ */
+export const CRON_BOOTSTRAP = Object.entries(CRON_SERVICE_NAMES).map(([key, serviceName]) => ({
+  key,
+  serviceName,
+}));
+
 export const INTERNAL_CRON_BASE =
   process.env.RAILWAY_INTERNAL_CRON_BASE ?? "http://blackout-web.railway.internal:8080";
 
