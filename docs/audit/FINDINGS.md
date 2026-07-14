@@ -1333,3 +1333,57 @@ Three new PURE, deterministic, LLM-free modules + additive wiring (no existing p
   schema migration, no live gate/threshold touched. The graded outcome rows remain the source of truth —
   the debrief is a read artifact pinned first-write-wins.
 - **Status:** BUILT + tested. DRAFT PR (not merged — reported for review per the task).
+
+## 2026-07-14 — GOVERNED OPS READ TOOLS for Largo/BIE (task #58) — FEATURE
+
+**Severity:** Enhancement (read-only ops awareness). **Status:** BUILT + tested. DRAFT PR (not merged).
+
+**What:** Three governed, READ-ONLY ops reads wired as a new Largo intent (`ops_read`), so Largo can
+answer "are the crons healthy / is UW up / is polygon down / is the data fresh / ops status" from
+REAL platform state, never fabricated:
+1. **cron_runs** — per registered cron (from `CRON_JOBS`): schedule, real last-run time + status +
+   staleness, honest "never ran" for a cron with no recorded run. Sourced from `buildCronHealthSnapshot()`
+   (the `cron_job_runs` Postgres log via `admin-cron-health.ts`) — cron last-run **is** tracked, so no
+   fabrication needed.
+2. **provider-health** — lightweight reachability GET to Polygon (`/v1/marketstatus/now`) + UW
+   (`/api/market/market-tide`) behind a 3.5s timeout, off the tracked/rate-limited path (a health check
+   must not spend the budget or trip the breaker). Returns clean up/down/unconfigured + latency; the raw
+   error is logged server-side ONLY (same "log raw, return clean" pattern as `/api/ready`, #66).
+3. **cache-probe** — freshness of key platform caches (`bie:full-state` 24/7 snapshot,
+   `vector:universe:snapshot`, `vector:full-state:SPX:all`): present? age (from the payload's own
+   `asOf`/`updatedAt`) vs its refresh window? Off-hours staleness on a market-hours cache is reported as
+   expected, not a fault.
+
+**Files (all in-scope: bie + tests + a read-only ops helper + docs):**
+- `src/lib/bie/ops-read-core.ts` — PURE, side-effect-free decision + render core (query parsing,
+  `evaluateCronRuns` / `evaluateProviderHealth` / `evaluateCacheProbe` / `combineOpsHealth`, and the
+  member-vs-admin renderers). No DB/cache/provider/clock — exhaustively unit-testable.
+- `src/lib/bie/ops-read.ts` — `server-only` orchestrator. Gathers each signal fail-open + read-only,
+  runs the pure core, renders. Relative dynamic `import()` from composers (CI Node-20 loader).
+- `src/lib/bie/ops-read-core.test.ts` — 32 unit tests (mocked data; no live providers).
+- `router.ts` — new `ops_read` intent + `isOpsReadQuestion` gate placed BEFORE `system_diagnostic`
+  (the diagnostic engine keeps the surface-forming "why isn't NVDA GEX forming" class; a general
+  "are the crons healthy / is UW up" is infra health). Wired in both classifiers + followups.
+- `composers.ts` — `ops_read` dispatch + headline; `ComposeBieOpts.isAdmin` added.
+- `platform-cache.ts` — `ops_read` added to `QUESTION_KEYED_INTENTS` (overview vs specific reads
+  differ by question, so the answer cache must key on the question hash).
+- `scripts/largo-hardcore-e2e.mjs` — new **ops** category (6 checks: each read returns a real ops
+  answer from the intelligence layer with the right vocabulary + a verdict, plus a hard governance gate
+  that NO secret/key/internal-hostname leaks into any ops answer). Run post-deploy.
+
+**Governance:** read-only (no mutations anywhere); member-facing strings never carry a secret/key/
+hostname/raw upstream error; HONEST (real status/time/age or explicit "unavailable" — never a fabricated
+healthy/unhealthy). **Gating:** matches #56 self-diagnosis — served through the admin-launch-gated Largo
+path (`requireToolApi("largo")`), so today every ops answer reaches an admin and gets the full breakdown.
+The member/admin split is built via `ComposeBieOpts.isAdmin` (`false` → clean one-line health badge with
+no internal detail); the default is the admin view.
+
+**Known gap (noted per task):** threading `isAdmin` from the signed-in session through `tryBieRoute`/
+`composeBieAnswer` is a one-line follow-up in `largo-terminal.ts` (OUT of this PR's bie-only scope). Until
+then `isAdmin` is unset → admin view — correct today because Largo is entirely admin-gated. When Largo
+de-gates to premium members, the terminal should resolve admin from the userId and pass `isAdmin` so
+non-admins get the badge.
+
+**Evidence:** `ops-read-core.test.ts` 32/32; router `ops_read` suite added (router.test 97/97); full
+`npm test` **3703 pass / 0 fail**; `tsc --noEmit` clean; `eslint` (changed files) clean; `npm run build`
+green.

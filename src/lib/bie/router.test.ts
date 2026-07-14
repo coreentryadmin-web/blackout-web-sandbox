@@ -274,6 +274,43 @@ describe("router: system_diagnostic intent", () => {
   });
 });
 
+describe("router: ops_read intent (governed ops read, task #58)", () => {
+  test("cron / provider / freshness / overview asks route to ops_read", () => {
+    for (const q of [
+      "are the crons healthy",
+      "cron status",
+      "is UW up",
+      "is polygon down",
+      "is the data fresh",
+      "ops status",
+      "health check",
+      "is everything healthy",
+    ]) {
+      assert.equal(classifyBieIntent(q, NO_LEDGER)?.intent, "ops_read", q);
+    }
+  });
+
+  test("ops_read wins BEFORE system_diagnostic for infra-health phrasings", () => {
+    // "is the cron healthy" is an ops read, not a surface diagnosis.
+    assert.equal(classifyBieIntent("is the cron healthy", NO_LEDGER)?.intent, "ops_read");
+  });
+
+  test("the surface-forming diagnostic class is NOT stolen by ops_read", () => {
+    assert.equal(classifyBieIntent("is the flow pipeline healthy", NO_LEDGER)?.intent, "system_diagnostic");
+    assert.equal(classifyBieIntent("what's failing right now", NO_LEDGER)?.intent, "system_diagnostic");
+    assert.equal(classifyBieIntent("why isn't NVDA GEX forming", NO_LEDGER)?.intent, "system_diagnostic");
+  });
+
+  test("the staging fallback classifier also routes ops reads", () => {
+    assert.equal(classifyBieStagingFallback("is UW up").intent, "ops_read");
+    assert.equal(classifyBieStagingFallback("are the crons healthy").intent, "ops_read");
+  });
+
+  test("bieFollowups has an ops_read branch", () => {
+    assert.equal(bieFollowups("ops_read").length, 3);
+  });
+});
+
 describe("router: verdict intent (cross-tool synthesis, task #59)", () => {
   test("the flagship grading question routes to verdict with its ticker", () => {
     const r = classifyBieIntent("is SPX 7500 0DTE good today", NO_LEDGER);
