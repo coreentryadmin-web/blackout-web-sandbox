@@ -42,9 +42,30 @@ function resetState() {
   state.dailyBars = new Map();
 }
 
+// scan.ts's exit-engine wiring (./exit-sync) imports ./live-marks, which reaches
+// @/lib/et-market-hours → @/lib/et-date → `import "server-only"` — same stub the
+// platform service tests use for the same boundary.
+mock.module("server-only", { namedExports: {} });
+
+// The exit engine's thesis-break check fetches Cortex evidence for OPEN rows
+// (bounded + fail-soft). Hermetic stand-in: a throwing fetch degrades to
+// "evidence unavailable → thesis check skipped" — the fail-soft contract itself —
+// so no real reader fan-out (or its 2.5s per-source budgets) ever runs in here.
+// CORTEX_SOURCE_TIMEOUT_MS must exist too: the cortex barrel re-exports it from
+// this same module, and ESM linking checks every re-exported name.
+mock.module("../nighthawk/cortex/fetch", {
+  namedExports: {
+    fetchCortexInputs: async () => {
+      throw new Error("hermetic: no cortex reads in scan.test.ts");
+    },
+    CORTEX_SOURCE_TIMEOUT_MS: 2_500,
+  },
+});
+
 mock.module("../db", {
   namedExports: {
     dbConfigured: () => true,
+    stampZeroDteExitContext: async () => {},
     fetchZeroDteSetupLog: async () => state.ledgerRows,
     updateZeroDteLiveState: async (session_date: string, ticker: string, patch: unknown) => {
       state.updateCalls.push({ session_date, ticker, patch });
@@ -85,6 +106,11 @@ mock.module("../../features/nighthawk/lib/session", {
   namedExports: {
     todayEt: () => "2026-07-06",
     etNowParts: () => ({ hour: 11, minute: 30 }),
+    // ./exit-sync pulls ./live-marks into scan.ts's graph, which reaches
+    // @/lib/et-market-hours and @/features/spx/lib/spx-play-session-guards — both
+    // real modules importing these names from this (mocked) module.
+    isTradingDayEt: () => true,
+    formatEtDate: (d: Date) => d.toISOString().slice(0, 10),
   },
 });
 
@@ -120,6 +146,11 @@ mock.module("../ws/options-socket", {
     // Never actually invoked by zeroDtePlaysFeed/syncLedgerLiveState (they read occ
     // straight off plan_json) — stubbed only so the module-scope import resolves.
     buildOcc: () => null,
+    // ./live-marks (pulled in via ./exit-sync) imports these at module scope; the
+    // exit path only READS the lane's in-memory store, never the WS pool itself.
+    getLiveOptionMark: async () => null,
+    subscribeContracts: () => {},
+    unsubscribeContracts: () => {},
   },
 });
 
@@ -158,8 +189,13 @@ function baseRow(overrides: Partial<LedgerRow> = {}): LedgerRow {
     score_max: 80,
     spike: false,
     underlying_at_flag: 140,
-    first_flagged_at: "2026-07-06T14:00:00.000Z",
-    last_seen_at: "2026-07-06T14:00:00.000Z",
+    // Recent relative to the REAL clock: the exit engine's flat-timeout ages a row
+    // off first_flagged_at vs Date.now(), and a fixture stamped hours/days in the
+    // past would read as ≥45min of flat theta bleed and (correctly) exit — these
+    // tests are about the sync/grade paths, not the timeout rule (covered in
+    // exit-engine.test.ts / exit-sync.test.ts).
+    first_flagged_at: new Date(Date.now() - 10 * 60_000).toISOString(),
+    last_seen_at: new Date(Date.now() - 10 * 60_000).toISOString(),
     entry_premium: 4.2,
     last_mark: 4.2,
     status: "OPEN",

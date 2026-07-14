@@ -49,6 +49,7 @@ import {
   type ZeroDteGateRejection,
 } from "./board";
 import { buildZeroDteEntryContext, fetchZeroDteSessionContext } from "./entry-context";
+import { evaluateLedgerRowExit } from "./exit-sync";
 import { cortexEntryContextFor, cortexGateBlocks, evaluateCortexForCommit } from "./cortex-gate";
 import { persistZeroDteRejections } from "./rejections";
 import { evaluateZeroDteGates, gateRejectionFor, recentNighthawkTake } from "./gates";
@@ -657,13 +658,38 @@ export async function syncLedgerLiveState(rows: ZeroDteSetupLogRow[]): Promise<Z
         trough,
         nowEtMinutes,
       });
-      if (state.status === "CLOSED" && state.closed_reason === "stopped") {
+      // ── 0DTE exit engine (B-8, ./exit-engine.ts) — runs AFTER derivePlayStatus so
+      // the plan's own latched stop/target/time-stop machinery is untouched; the
+      // engine only ADDS exits on rows the plan still considers live: profit-ratchet
+      // floors (green never finishes red), thesis break (Cortex evidence turned
+      // against the play — unconditional, fires even at a loss), flat timeout
+      // (45min inside ±10% = theta bleed), and fresh-lane-mark stop breaches the
+      // ~2.5s snapshot above hasn't seen yet. Fail-soft by contract: any missing
+      // input (no mark, no evidence) → null → the row proceeds exactly as before.
+      const exit =
+        state.status !== "CLOSED"
+          ? await evaluateLedgerRowExit(r, { syncMark: mark, status: state.status }).catch(() => null)
+          : null;
+      const status = exit ? ("CLOSED" as const) : state.status;
+      const finalMark = exit ? exit.mark : mark;
+      // Governor stop accounting: a plan-stop exit IS a stop wherever it was
+      // detected (latch or fresher lane mark). Ratchet/thesis/flat exits are
+      // deliberately NOT counted — the governor's halt counts busted plans, and a
+      // breakeven-floor scratch or a banked runner is not one.
+      if (
+        (state.status === "CLOSED" && state.closed_reason === "stopped") ||
+        exit?.decision.reason === "plan_stop"
+      ) {
         stopEvents.push({ ticker: r.ticker, direction: r.direction, at_ms: Date.now() });
       }
       if (dbConfigured()) {
-        await updateZeroDteLiveState(r.session_date, r.ticker, { status: state.status, mark }).catch(() => {});
+        await updateZeroDteLiveState(r.session_date, r.ticker, { status, mark: finalMark }).catch(() => {});
       }
-      return { ...r, status: state.status, last_mark: mark ?? r.last_mark, peak_premium: peak, trough_premium: trough };
+      // Widen the returned latches with the exit mark too (the lane mark can sit
+      // outside the snapshot mark) — mirrors the DB write's GREATEST/LEAST.
+      const peakOut = finalMark != null ? Math.max(peak, finalMark) : peak;
+      const troughOut = finalMark != null ? Math.min(trough, finalMark) : trough;
+      return { ...r, status, last_mark: finalMark ?? r.last_mark, peak_premium: peakOut, trough_premium: troughOut };
     })
   );
   if (stopEvents.length > 0) {
