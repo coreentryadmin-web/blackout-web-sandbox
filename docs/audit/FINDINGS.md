@@ -515,3 +515,23 @@ plays show "entirely wrong" pnl/%/premium values, slow to update.
   grade IS the counterfactual, tagged by `pulled` for N2's methodology-versioned
   record; DEGRADED enforcement (→ N6); Cortex compose at publish/9:15 (→ N5/N6);
   the Redis play-status blob and its UI badge (kept as-is).
+
+## 2026-07-14 — Night Hawk playbook UI rebuild (PR-N12, branch feat/nighthawk-playbook-ui)
+
+### LOW — Component test outside the CI glob: `PlaybookBoard.ssr.test.tsx` never ran (FIXED in PR-N12)
+- **Severity:** LOW (verification gap, no member impact). Both `npm test` and the CI
+  `verify` job expand `src/**/*.test.ts` (ci.yml "Unit tests" step, bash globstar) —
+  a `*.test.tsx` file never matches, so the playbook board's only rendering suite
+  (`PlaybookBoard.ssr.test.tsx`) was silently skipped on every run since it landed.
+  Evidence: `files=(src/**/*.test.ts)` in `.github/workflows/ci.yml:37`; the suite
+  also fails when run manually (`ReferenceError: React is not defined` — classic-JSX
+  transform, the FreshnessChip.ssr.test.ts global-React idiom was never applied).
+- **Root cause:** test authored as `.tsx` for JSX convenience; nothing guards that
+  new test files land inside the glob CI actually executes.
+- **Fix:** replaced by `PlaybookBoard.test.ts` (React.createElement + global-React +
+  relative dynamic imports, per the FreshnessChip idiom) — 15 rendering/contract
+  tests that DO execute in CI. Folded into PR-N12 because the old suite asserted the
+  exact five-empty-slot layout that PR removes; a separate PR would have merged a
+  dead test only to delete it.
+- **Residual:** other `*.test.tsx` files would have the same blind spot (none exist
+  today); consider a CI guard that fails on `src/**/*.test.tsx` files.
