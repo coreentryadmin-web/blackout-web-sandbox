@@ -170,6 +170,81 @@ export const BLACKOUT_GLOSSARY: GlossaryEntry[] = [
       "0DTE = zero days to expiry — options expiring the SAME trading day. With no time left, they're almost pure gamma/theta: value swings violently with small spot moves and decays fast, so dealer gamma hedging dominates the intraday tape. 0DTE is the basis for SPX Slayer (the SPX 0DTE play engine) and 0DTE Command (the multi-ticker 0DTE scanner) — it's where the gamma flip, walls, and charm pin have the most immediate effect.",
   },
 
+  // ── Cortex / 0DTE decision layer (PR-H) ──────────────────────────────────
+  // Definitions grounded in src/lib/nighthawk/cortex/* (composer), src/lib/zerodte/
+  // cortex-gate.ts (gate wiring), exit-engine.ts (exits), calibration.ts +
+  // skip-grading.ts (the learning loop). Plain English, one concrete example each.
+  {
+    term: "Cortex (Night Hawk Cortex)",
+    aliases: ["cortex", "night hawk cortex", "nighthawk cortex", "evidence composer", "cortex verdict", "the cortex"],
+    category: "concept",
+    definition:
+      "The Cortex is the 0DTE evidence brain: eight independent sources (GEX walls, wall lifecycle, flow quality, sector heat, catalysts/news, VEX/charm, dark-pool confluence, and the opening harvest) each contribute signed, timestamped evidence about a specific play, and the composer folds them into one verdict — a net score (supports minus opposes, decayed for age and capped per source), a conviction band (A/B/C), and any hard VETOES. It runs on plays that already passed the hard gates: a veto blocks the commit outright, a net-negative score blocks it too, and on a commit the FULL evidence vector is pinned to the play's ledger row so 'why did we take this' is answerable forever. Example: NVDA long clears the gates, the wall lifecycle and GEX walls both argue for it (net +2.1, conviction A) → it prints, and those exact evidence lines are the pinned reason; if flow quality had spotted opposing whale blocks instead, that one veto would have killed it regardless of the +2.1.",
+  },
+  {
+    term: "Evidence veto (Cortex veto)",
+    aliases: ["veto", "evidence veto", "cortex veto", "hard veto", "veto channel"],
+    category: "concept",
+    definition:
+      "A veto is the Cortex's hard-block channel: one loud, concrete opposing fact that kills an entry no matter how good the rest of the evidence is. Unlike supports (bounded and capped), a veto is not a score contribution — any veto at all blocks the commit, and the blocked play is recorded as a SKIP with the vetoing source named (e.g. 'cortex veto [flow-quality]'). Example: a long setup with strong walls and +1.8 net evidence still doesn't print if the flow tape shows a cluster of large opposing put blocks — that single fact vetoes the trade, and the skip card shows exactly why.",
+  },
+  {
+    term: "Veto asymmetry",
+    aliases: ["veto asymmetry", "precision-first asymmetry", "asymmetric evidence", "evidence asymmetry"],
+    category: "concept",
+    definition:
+      "The Cortex's core safety rule: positive and negative evidence are deliberately NOT symmetric. Supporting evidence is capped per source (no single source can pile up unlimited bullish weight), but vetoes are unbounded hard blocks — so one loud bearish fact can kill an entry, while one loud bullish signal can never buy one. This makes the system precision-first: it would rather miss a winner than commit into a known objection. Example: three sources each maxing out their support caps can lift a play to conviction A — but a single dark-pool distribution veto still blocks it; there is no amount of bullish evidence that outvotes a veto.",
+  },
+  {
+    term: "Evidence decay (half-life)",
+    aliases: ["evidence decay", "half-life", "half life", "evidence half-life", "signal decay", "decay half-life", "stale evidence"],
+    category: "concept",
+    definition:
+      "Every piece of Cortex evidence carries its own half-life and decays exponentially from the moment its underlying reading was taken — alpha expires, so a 20-minute-old flow cluster is worth less than a fresh one, automatically. Once evidence is older than three half-lives (≤12.5% of its original weight) it self-silences: the source reports 'absent' instead of pretending a microscopic weight is an answer, which keeps recorder or reader outages visible in the verdict rather than hidden inside a stale number. Example: a wall-trend signal weighted +1.25 with a 10-minute half-life contributes about +0.62 at the 10-minute mark and is treated as absent past 30 minutes.",
+  },
+  {
+    term: "Opening harvest",
+    aliases: ["opening harvest", "opening character", "opening window read", "9:30 harvest"],
+    category: "concept",
+    definition:
+      "The opening harvest is the Cortex source that reads the first 15 minutes of the session (9:30–9:45 ET) — the overnight gap and what price DID with it (held, drove, or faded), plus market internals (TICK/ADD) — and turns that opening character into evidence for or against a play. It deliberately reports 'not ready' before 9:45 rather than guessing from a half-formed window; the same clock that gates early commits is harvested as signal instead of wasted. Example: a gap-up that holds its gains through 9:45 with positive internals supports longs; the same gap fading back through the prior close with negative internals opposes them.",
+  },
+  {
+    term: "Thesis-break exit",
+    aliases: ["thesis break", "thesis-break", "thesis break exit", "thesis broke", "broken thesis"],
+    category: "concept",
+    definition:
+      "An exit-engine rule for live 0DTE plays: if the evidence that justified the entry has TURNED — the Cortex read on the same play flips against it — the play exits immediately and unconditionally, even at a loss. The entry was an evidence bet, so when the evidence breaks, the reason to be in the trade is gone; waiting for the price stop to confirm what the evidence already knows just donates the difference. Example: a long committed on wall support exits the moment the supporting wall dissolves and flow turns opposing, at −12%, instead of riding to the −50% plan stop.",
+  },
+  {
+    term: "Profit ratchet",
+    aliases: ["profit ratchet", "ratchet", "ratchet floor", "runner floor", "profit floor"],
+    category: "concept",
+    definition:
+      "The exit engine's 'green never finishes red' mechanism: once a 0DTE play is meaningfully profitable, a P&L floor latches beneath it, and the floor only ever ratchets UP as the peak grows — it never loosens. If the mark then falls back through the armed floor, the play exits with gains banked instead of round-tripping to a loss. Example: a play that peaks at +60% arms a floor; when the fade comes and the mark crosses back down through that floor, the engine closes it there — a banked winner, not a 'was up 60%, stopped out red' story.",
+  },
+  {
+    term: "Gate calibration",
+    aliases: ["gate calibration", "calibration loop", "gate calibration loop", "calibrated gates"],
+    category: "concept",
+    definition:
+      "The learning loop that grades the 0DTE gates against what actually happened: every commit pins the gate verdicts and context (VIX open, market bias, score) on its ledger row, every block is logged, and the calibration job then measures each gate's real hit rate from the graded record — so thresholds are EARNED from outcomes, not asserted from theory. A gate that keeps blocking would-have-been winners gets exposed by its own record, as does one waving losers through. Example: the record showed day-open VIX 15–17 ran ~69% win rate while 17–20 ran ~25% — a calibration cut derived from pinned per-play context, not from a backtest guess.",
+  },
+  {
+    term: "Counterfactual skip grading",
+    aliases: ["counterfactual skip grading", "skip grading", "counterfactual", "graded skips", "counterfactual grading"],
+    category: "concept",
+    definition:
+      "Every play the gates BLOCK gets graded as if it had been taken: entry at the first real price bar after the block, then the exact same stop/target/time-stop physics as committed plays, producing 'would have won / would have lost / ungradeable (with the reason)'. Without this, a gate that blocks losers and a gate that amputates winners look identical — both just write a rejection row. Ties grade conservatively AGAINST the skipped play, so blocked value is never inflated to pressure the gates open. Example: a ticker vetoed at 10:02 is replayed from the 10:02 bar; if it would have hit +100% before any stop, that veto is charged with a missed winner in the calibration record.",
+  },
+  {
+    term: "Merit tiers (conviction bands)",
+    aliases: ["merit tiers", "merit tier", "conviction tiers", "conviction bands", "conviction band", "a b c tiers", "tier"],
+    category: "concept",
+    definition:
+      "The conviction/size bands a 0DTE play must EARN from evidence and the graded record — never asserted. Cortex conviction A requires roughly a structural argument plus the wall lifecycle agreeing, net of opposition (score ≥ 2); B is one real edge beyond noise (≥ 0.75); C means nothing here earns size. A vetoed play wears a C regardless of score, display is capped at A while the historical A+ tier remains mis-calibrated against outcomes, and sizing follows the same discipline: a full unit only at the conviction-A floor, half size for everything else — including 'no verdict at all'. Example: score +2.3 with no veto → A, 1× suggested size; score +1.1 → B, 0.5×; a +2.3 with one veto → blocked, and even if it somehow reached a card it would read C at 0.5×.",
+  },
+
   // ── Technicals ───────────────────────────────────────────────────────────
   {
     term: "VWAP",

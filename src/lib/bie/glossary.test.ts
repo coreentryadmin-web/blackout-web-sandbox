@@ -112,3 +112,64 @@ describe("lookupGlossary", () => {
     }
   });
 });
+
+describe("Cortex / 0DTE decision-layer concepts (PR-H)", () => {
+  test("every new decision-layer concept resolves via a natural question", () => {
+    const probes: Array<[string, RegExp]> = [
+      ["what is the cortex?", /Cortex/],
+      ["what is a cortex veto", /veto/i],
+      ["what is veto asymmetry", /asymmetry/i],
+      ["what is evidence decay", /decay/i],
+      ["explain the evidence half-life", /decay|half-life/i],
+      ["what is the opening harvest", /Opening harvest/i],
+      ["what is a thesis-break exit", /Thesis-break/i],
+      ["what is the profit ratchet", /Profit ratchet/i],
+      ["what is gate calibration", /Gate calibration/i],
+      ["what is counterfactual skip grading", /skip grading/i],
+      ["what are merit tiers", /Merit tiers/i],
+      ["what are conviction bands", /Merit tiers/i],
+    ];
+    for (const [q, termRe] of probes) {
+      const hit = lookupGlossary(q);
+      assert.ok(hit, `expected a glossary hit for: ${q}`);
+      assert.match(hit!.term, termRe, `wrong term for: ${q} (got ${hit!.term})`);
+    }
+  });
+
+  test("each new entry is member-plain and carries a concrete example", () => {
+    const terms = [
+      "Cortex (Night Hawk Cortex)",
+      "Evidence veto (Cortex veto)",
+      "Veto asymmetry",
+      "Evidence decay (half-life)",
+      "Opening harvest",
+      "Thesis-break exit",
+      "Profit ratchet",
+      "Gate calibration",
+      "Counterfactual skip grading",
+      "Merit tiers (conviction bands)",
+    ];
+    for (const term of terms) {
+      const entry = BLACKOUT_GLOSSARY.find((e) => e.term === term);
+      assert.ok(entry, `missing glossary entry: ${term}`);
+      assert.ok(entry!.definition.length > 120, `${term}: definition too thin`);
+      assert.match(entry!.definition, /Example:/, `${term}: needs a concrete example`);
+    }
+  });
+
+  test("key semantics are pinned: asymmetry direction, 3-half-life absence, green-never-finishes-red, conservative counterfactuals", () => {
+    assert.match(
+      lookupGlossary("veto asymmetry")!.definition,
+      /one loud bearish fact can kill an entry, while one loud bullish signal can never buy one/i
+    );
+    assert.match(lookupGlossary("evidence decay")!.definition, /three half-lives/i);
+    assert.match(lookupGlossary("profit ratchet")!.definition, /green never finishes red/i);
+    assert.match(lookupGlossary("counterfactual skip grading")!.definition, /conservatively AGAINST/i);
+    assert.match(lookupGlossary("what is a thesis-break exit")!.definition, /even at a loss/i);
+  });
+
+  test("longest-alias precedence: 'cortex veto' resolves to the veto entry, not the Cortex product entry", () => {
+    assert.match(lookupGlossary("what is a cortex veto")!.term, /Evidence veto/i);
+    assert.match(lookupGlossary("what is the cortex")!.term, /^Cortex/);
+  });
+});

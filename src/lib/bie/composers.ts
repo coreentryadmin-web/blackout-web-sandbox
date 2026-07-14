@@ -85,12 +85,28 @@ async function composeZeroDtePlays(): Promise<BieComposed | null> {
       context: board,
     };
   }
+  // PR-H: cite the pinned commit-time Cortex evidence per play (the WHY of record) —
+  // one ledger read for the whole board, fail-soft to an empty map (list still renders).
+  let cortexLines = new Map<string, string>();
+  try {
+    const { pinnedCortexLinesForSession } = await import("@/lib/bie/cortex-read");
+    cortexLines = await pinnedCortexLinesForSession();
+  } catch {
+    /* plays render without cortex lines */
+  }
   const lines: string[] = ["**Today's 0DTE Command plays** (live board — /grid):", ""];
-  for (const p of plays.slice(0, 10)) lines.push(`- ${playLine(p)}`);
+  for (const p of plays.slice(0, 10)) {
+    lines.push(`- ${playLine(p)}`);
+    const cx = cortexLines.get(p.ticker.toUpperCase());
+    if (cx) lines.push(`  ${cx}`);
+  }
   if (fresh.length) {
     lines.push("", "**Fresh finds (not yet plays):**");
     for (const f of fresh.slice(0, 4))
       lines.push(`- ${f.ticker} ${f.direction === "long" ? "calls" : "puts"} ${fmt(f.strike)} (score ${f.score}) — ${f.intel}`);
+  }
+  if (plays.length > 0 && cortexLines.size > 0) {
+    lines.push("", `_Ask "why did we commit <ticker>" for the full pinned Cortex evidence table._`);
   }
   if (board.rules) lines.push("", `_${board.rules}_`);
   return { answer: lines.join("\n"), context: board };
@@ -167,14 +183,29 @@ async function composeSpxDeskRead(question?: string): Promise<BieComposed | null
   // Strip the {{value}} grounding markers so the member sees the number, not the marker — the SPX
   // desk brief lines wrap every figure in {{…}} for the strict grounding guard, and the non-stream
   // Largo path was shipping them literally (live audit: "above γflip {{7,496}}").
-  const answer = stripGroundingTokens(
+  let answer = stripGroundingTokens(
     [`**SPX Live Desk read**`, "", `**${brief.headline}**`, "", brief.body, knowledge ? `\n\n${knowledge}` : ""]
       .filter(Boolean)
       .join("\n")
   );
+  // PR-H: the SPX why/desk path cites the PINNED Cortex verdict when an SPX-family
+  // 0DTE play exists on this session's ledger (one cheap ledger read). Deliberately
+  // pinned-only — no live Cortex composition on the flagship question's hot path;
+  // "cortex SPX" gets the full live evidence read. Fail-soft: no record → no block.
+  let cortexCitation: unknown = null;
+  try {
+    const { cortexCitationFor, renderCortexCitation } = await import("@/lib/bie/cortex-read");
+    const citation = await cortexCitationFor("SPX", { allowLive: false });
+    if (citation) {
+      cortexCitation = citation;
+      answer = `${answer}\n\n${renderCortexCitation(citation)}`;
+    }
+  } catch {
+    /* desk read renders without the cortex block */
+  }
   return {
     answer,
-    context: { desk, confluence, brief, platform },
+    context: { desk, confluence, brief, platform, cortex: cortexCitation },
   };
 }
 
@@ -502,11 +533,30 @@ async function composeTickerEcosystem(ticker: string): Promise<BieComposed | nul
 
 async function composeTickerAdvice(ticker: string, question: string): Promise<BieComposed | null> {
   const { fetchEcosystemContext } = await import("@/lib/bie/ecosystem-context");
-  const ctx = await fetchEcosystemContext(ticker);
+  // PR-H: advice on a 0DTE-relevant ticker cites the Cortex alongside the ecosystem
+  // read — PINNED commit-time evidence when a play exists this session, the LIVE
+  // composition otherwise. Fetched in parallel (both cache-first) and fail-soft: a
+  // Cortex outage yields an honest "unavailable" line, never a stalled/failed answer.
+  const [ctx, cortex] = await Promise.all([
+    fetchEcosystemContext(ticker),
+    (async () => {
+      try {
+        const { cortexCitationFor, directionFromQuestion } = await import("@/lib/bie/cortex-read");
+        return await cortexCitationFor(ticker, { direction: directionFromQuestion(question), allowLive: true });
+      } catch {
+        return null;
+      }
+    })(),
+  ]);
   const verdict = await synthesizeTickerVerdict(ctx, question);
+  let answer = formatTickerVerdictMarkdown(verdict);
+  if (cortex) {
+    const { renderCortexCitation } = await import("@/lib/bie/cortex-read");
+    answer = `${answer}\n\n${renderCortexCitation(cortex)}`;
+  }
   return {
-    answer: formatTickerVerdictMarkdown(verdict),
-    context: { ecosystem: ctx, verdict },
+    answer,
+    context: { ecosystem: ctx, verdict, cortex },
   };
 }
 
@@ -647,6 +697,7 @@ function headlineForRoute(route: BieRoute): string {
     system_diagnostic: `${t}diagnosis`,
     zerodte_plays: "0DTE plays",
     ticker_play_state: `${t}play`,
+    cortex_read: `${t}Cortex read`,
   };
   return map[route.intent] ?? "BIE read";
 }
@@ -698,6 +749,14 @@ async function composeBieAnswerUncached(route: BieRoute, opts?: ComposeBieOpts):
       case "system_diagnostic": {
         const { composeDiagnostic } = await import("@/lib/bie/diagnostic");
         return await composeDiagnostic(route.ticker ?? "SPX", opts?.question ?? "");
+      }
+      case "cortex_read": {
+        // BIE × Cortex bridge (PR-H) — "why did we commit/skip/exit X" from the PINNED
+        // ledger/rejection records, "what does cortex say" via live composition. Returns
+        // a fully-populated BieAnswerEnvelope directly (never null — honest no-verdict
+        // envelopes on outage), so the shim leaves it untouched.
+        const { composeCortexRead } = await import("@/lib/bie/cortex-read");
+        return await composeCortexRead(route.ticker, opts?.question ?? "");
       }
       default:
         return null;
