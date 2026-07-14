@@ -1,0 +1,28 @@
+# Railway config for the NightHawk-Debrief cron service (PR-N10 automated end-of-session debrief).
+# Wire it up: service Settings -> Config-as-code -> set path to "railway.nighthawk-debrief.toml"
+# Requires CRON_SECRET on this service (same value as blackout-web).
+[build]
+builder = "nixpacks"
+buildCommand = "echo 'cron trigger service: no app build needed'"
+# Only redeploy this trigger service when its OWN driver/config changes — NOT on docs/src/ log
+# commits (mirrors railway.nighthawk-outcomes.toml's rationale). This service only runs
+# scripts/hit-cron.mjs; all business logic lives in the main blackout-web app it pings.
+watchPatterns = [
+  "scripts/hit-cron.mjs",
+  "railway.nighthawk-debrief.toml",
+  "nixpacks.toml",
+]
+
+[deploy]
+startCommand = "node scripts/hit-cron.mjs /api/cron/nighthawk-debrief"
+# Runs AFTER the 4:30pm ET outcomes grade (railway.nighthawk-outcomes.toml fires at 16:30 ET).
+# 21:30 + 22:30 UTC covers a 17:30 ET debrief target in BOTH EDT (UTC-4: 21:30 UTC = 17:30 ET)
+# and EST (UTC-5: 22:30 UTC = 17:30 ET). The route self-skips the off-band fire via
+# inDebriefWindow() (DST-aware Intl ET clock, targetHour 17 + 120-min catch-up); a second same-DST
+# fire is a harmless no-op (the debrief blob is pinned first-write-wins, so it is never
+# overwritten). Mirrors railway.nighthawk-outcomes.toml's dual-band convention. NOTE: if
+# cronSchedule was set in the Railway dashboard UI, the dashboard value overrides this TOML —
+# update it there too.
+cronSchedule = "30 21,22 * * 1-5"
+restartPolicyType = "never"
+numReplicas = 1
