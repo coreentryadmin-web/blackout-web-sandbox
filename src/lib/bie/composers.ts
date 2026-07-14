@@ -736,6 +736,7 @@ function headlineForRoute(route: BieRoute): string {
     ticker_play_state: `${t}play`,
     cortex_read: `${t}Cortex read`,
     nighthawk_edition: `${t}Night Hawk edition`,
+    scenario: `${t}scenario`,
   };
   return map[route.intent] ?? "BIE read";
 }
@@ -803,6 +804,15 @@ async function composeBieAnswerUncached(route: BieRoute, opts?: ComposeBieOpts):
         // a fully-populated envelope directly (honest empty/miss envelopes included).
         const { composeNighthawkEditionRead } = await import("@/lib/bie/nighthawk-edition-read");
         return await composeNighthawkEditionRead(route.ticker, opts?.question ?? "");
+      }
+      case "scenario": {
+        // Largo SCENARIO what-if (PR-L4c) — "if SPX drops 1%", "what if QQQ rips 2%",
+        // "if we lose the flip". Recomputes regime / walls / max-pain at the SHIFTED spot
+        // from the SAME live Vector state, and returns a fully-populated envelope directly
+        // (honest "can't scope" envelopes when the shift is unparseable / data absent).
+        // The shift is parsed from the member's question text.
+        const { composeScenario } = await import("@/lib/bie/scenario-read");
+        return await composeScenario(route.ticker ?? "SPX", opts?.question ?? "", { horizon: route.horizon ?? "all" });
       }
       default:
         return null;

@@ -62,6 +62,67 @@ describe("router: vector_read intent", () => {
   });
 });
 
+describe("router: scenario intent (PR-L4c)", () => {
+  test("the live gauntlet question routes to scenario for SPX", () => {
+    const r = classifyBieIntent(
+      "If SPX drops 1% at tomorrow's open, what happens to the dealer positioning — does the regime flip, and which walls become live?",
+      NO_LEDGER
+    );
+    assert.equal(r?.intent, "scenario");
+    assert.equal(r?.ticker, "SPX");
+  });
+
+  test("shift-form variants all route to scenario with the right ticker", () => {
+    const cases: Array<[string, string]> = [
+      ["if SPX drops 1%", "SPX"],
+      ["what happens if SPY breaks 745", "SPY"],
+      ["if we lose the flip", "SPX"], // no ticker → defaults to the flagship SPX
+      ["SPX at 7450 scenario", "SPX"],
+      ["what if QQQ rips 2%", "QQQ"],
+      ["suppose NVDA falls 3%", "NVDA"],
+      ["if SPX breaks the call wall", "SPX"],
+      ["imagine SPY down 40 points", "SPY"],
+    ];
+    for (const [q, ticker] of cases) {
+      const r = classifyBieIntent(q, NO_LEDGER);
+      assert.equal(r?.intent, "scenario", `expected scenario for: ${q}`);
+      assert.equal(r?.ticker, ticker, `expected ticker ${ticker} for: ${q}`);
+    }
+  });
+
+  test("scenario requires BOTH a hypothetical trigger AND a scopeable shift — neither alone fires", () => {
+    // Trigger but no scopeable move → NOT scenario.
+    assert.notEqual(classifyBieIntent("what if the market opens green", NO_LEDGER)?.intent, "scenario");
+    // Scopeable move but no hypothetical trigger → NOT scenario (stays a static read).
+    assert.notEqual(classifyBieIntent("SPX drops 1% today", NO_LEDGER)?.intent, "scenario");
+  });
+
+  test("existing intents are NOT stolen by scenario (regression table)", () => {
+    // concept — definitional, no trigger/shift.
+    assert.equal(classifyBieIntent("what is the gamma flip", NO_LEDGER)?.intent, "concept_read");
+    // cortex — decision-why, no scopeable shift.
+    assert.equal(classifyBieIntent("why did we commit NVDA", NO_LEDGER)?.intent, "cortex_read");
+    // nighthawk edition — no shift.
+    assert.equal(classifyBieIntent("what's in tonight's edition", NO_LEDGER)?.intent, "nighthawk_edition");
+    // verdict — grade shape, "7500" is not a scoped target, no trigger.
+    assert.equal(classifyBieIntent("is SPX 7500 a good play today", NO_LEDGER)?.intent, "verdict");
+    // compare — two tickers, no shift.
+    assert.equal(classifyBieIntent("compare SPX vs NVDA", NO_LEDGER)?.intent, "ticker_compare");
+  });
+
+  test("staging fallback also routes the gauntlet scenario to scenario", () => {
+    assert.equal(classifyBieStagingFallback("if SPX drops 1% does the regime flip").intent, "scenario");
+    assert.equal(classifyBieStagingFallback("what if QQQ rips 2%").intent, "scenario");
+    // And still protects a definitional ask.
+    assert.equal(classifyBieStagingFallback("what is a gamma flip").intent, "concept_read");
+  });
+
+  test("bieFollowups has a scenario branch", () => {
+    const f = bieFollowups("scenario");
+    assert.ok(Array.isArray(f) && f.length === 3);
+  });
+});
+
 describe("router: concept_read intent", () => {
   test("definitional questions route to concept_read", () => {
     for (const q of [
