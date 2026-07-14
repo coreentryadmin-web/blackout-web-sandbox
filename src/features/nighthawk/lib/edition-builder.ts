@@ -33,6 +33,7 @@ import { rankCandidates, regimeContextFromMarket, type ScoredCandidate } from ".
 import { rescoreDossier } from "./hunt-builder";
 import { DOSSIER_BATCH_SIZE, EDITION_SYNTHESIS_POOL, EDITION_TARGET_PLAYS, MAX_CANDIDATES, MAX_DOSSIER_STOCKS } from "./constants";
 import { backfillThinEditionPlays } from "./play-backfill";
+import { buildNighthawkPublishContexts } from "./publish-context";
 import { partitionPlaysByGeometry } from "./play-constraints";
 import { nextTradingDayEt, todayEt } from "./session";
 import { notifyOpsDiscord } from "@/features/spx/lib/spx-play-notify";
@@ -906,7 +907,24 @@ export async function buildEveningEdition(opts?: {
     // rescue. Outcome-sync failure self-heals the same way (sync is idempotent).
     try {
       const sectorByTicker = Object.fromEntries(topDossiers.map((d) => [d.ticker.toUpperCase(), d.sector ?? null]));
-      await syncNighthawkPlayOutcomes(editionFor, finalPlays, sectorByTicker);
+      // PR-N4 evidence pin: what the builder saw for each play, captured from the SAME
+      // in-memory context/dossiers this build published from — never re-fetched. The
+      // builder is fail-soft by contract (per-play failures pin null + warn), so the
+      // worst case is an un-pinned row, never a blocked outcome sync or publish.
+      const publishContexts = buildNighthawkPublishContexts({
+        plays: finalPlays,
+        dossiers,
+        market: {
+          regime: regimeContextFromMarket(ctx),
+          market_breadth: ctx.market_breadth,
+          tomorrow_earnings: ctx.tomorrow_earnings,
+          tomorrow: ctx.tomorrow,
+          vix_close: ctx.vix_bars.at(-1)?.c ?? null,
+          spx_close: ctx.spx_bars.at(-1)?.c ?? null,
+        },
+        builtAt: new Date().toISOString(),
+      });
+      await syncNighthawkPlayOutcomes(editionFor, finalPlays, sectorByTicker, publishContexts);
 
       if (checkpointing) {
         await upsertNighthawkJob(editionFor, {

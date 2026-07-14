@@ -554,6 +554,36 @@ async function runMigrations(): Promise<void> {
     CREATE INDEX IF NOT EXISTS idx_nighthawk_play_outcomes_resolved
     ON nighthawk_play_outcomes(edition_for DESC) WHERE outcome <> 'pending';
   `);
+  // PR-N4 (docs/audit/NIGHTHAWK-OVERNIGHT-DECISION.md §3.5 / C-2): publish-time decision
+  // context, pinned per play at edition publish — what the builder actually saw (spot,
+  // band-vs-spot geometry, regime/breadth, catalyst flags, score components). Mirrors the
+  // 0DTE entry_context idiom (zerodte_setup_log below): additive JSONB, COALESCE
+  // first-write-wins in the upsert so a force-rebuild refresh can never overwrite the
+  // original publish-time pin. Idempotent ALTER so existing prod tables pick it up.
+  await p.query(`
+    ALTER TABLE nighthawk_play_outcomes ADD COLUMN IF NOT EXISTS publish_context JSONB;
+  `);
+  // PR-N4: the 9:15 ET morning-confirm verdict, persisted per play (previously Redis-only,
+  // 24h TTL — verdict history evaporated daily, so confirm-vs-outcome calibration was
+  // impossible; decision doc N-7). COALESCE first-write-wins like publish_context: the
+  // FIRST verdict of the session is the calibration datum, a forced re-run never rewrites it.
+  await p.query(`
+    ALTER TABLE nighthawk_play_outcomes ADD COLUMN IF NOT EXISTS morning_verdict JSONB;
+  `);
+  // PR-N4: the INVALIDATED pull latch — one-way (SET-only, same latch discipline as the
+  // 0DTE status latch, #326): an INVALIDATED play is presented as PULLED on the member
+  // surface for the rest of its session and its grade becomes counterfactual-only (never
+  // counted in the headline record). A later re-run that computes a softer verdict can
+  // never un-pull (pulled = pulled OR new, reason/at COALESCE-pinned).
+  await p.query(`
+    ALTER TABLE nighthawk_play_outcomes ADD COLUMN IF NOT EXISTS pulled BOOLEAN NOT NULL DEFAULT FALSE;
+  `);
+  await p.query(`
+    ALTER TABLE nighthawk_play_outcomes ADD COLUMN IF NOT EXISTS pulled_reason TEXT;
+  `);
+  await p.query(`
+    ALTER TABLE nighthawk_play_outcomes ADD COLUMN IF NOT EXISTS pulled_at TIMESTAMPTZ;
+  `);
   await p.query(`
     CREATE TABLE IF NOT EXISTS nighthawk_jobs (
       id BIGSERIAL PRIMARY KEY,
@@ -5855,6 +5885,16 @@ export type NighthawkPlayOutcomeRow = {
   hit_stop: boolean;
   outcome: "target" | "stop" | "open" | "ambiguous" | "pending" | "unfilled";
   created_at: string;
+  // PR-N4 additive fields — OPTIONAL (not `| null` required) so the many existing test
+  // fixtures that build full row literals keep compiling; the mapper always sets them.
+  /** One-way INVALIDATED pull latch (see the ALTERs in runMigrations). A pulled play's
+   *  grade is counterfactual-only and must never count in the headline record. */
+  pulled?: boolean;
+  pulled_reason?: string | null;
+  /** Publish-time decision context pinned at edition publish (first-write-wins). */
+  publish_context?: Record<string, unknown> | null;
+  /** Persisted 9:15 morning-confirm verdict blob (first-write-wins). */
+  morning_verdict?: Record<string, unknown> | null;
 };
 
 function mapNighthawkPlayOutcomeRow(r: QueryResultRow): NighthawkPlayOutcomeRow {
@@ -5878,6 +5918,10 @@ function mapNighthawkPlayOutcomeRow(r: QueryResultRow): NighthawkPlayOutcomeRow 
     hit_stop: Boolean(r.hit_stop),
     outcome: String(r.outcome) as NighthawkPlayOutcomeRow["outcome"],
     created_at: new Date(String(r.created_at)).toISOString(),
+    pulled: Boolean(r.pulled),
+    pulled_reason: r.pulled_reason != null ? String(r.pulled_reason) : null,
+    publish_context: (r.publish_context as Record<string, unknown>) ?? null,
+    morning_verdict: (r.morning_verdict as Record<string, unknown>) ?? null,
   };
 }
 
@@ -5902,6 +5946,11 @@ export async function upsertNighthawkPlayOutcomes(
     stop: number | null;
     score: number;
     sector: string | null;
+    /** PR-N4: publish-time decision context, pinned FIRST-WRITE-WINS (COALESCE below) —
+     *  a force-rebuild refresh updates levels but can never rewrite what the builder saw
+     *  at the ORIGINAL publish. Omit/null when the pinning builder failed (fail-soft:
+     *  a missing pin must never block the outcome row itself). */
+    publish_context?: Record<string, unknown> | null;
   }>
 ): Promise<Set<string>> {
   if (!rows.length) return new Set();
@@ -5909,11 +5958,11 @@ export async function upsertNighthawkPlayOutcomes(
   const pool = await getPool();
 
   // Single multi-row INSERT (one round-trip) instead of an awaited per-row loop (N round-trips).
-  // Each row contributes 10 bound params; outcome is the 'pending' literal as before.
+  // Each row contributes 11 bound params; outcome is the 'pending' literal as before.
   const params: Array<string | number | null> = [];
   const tuples = rows
     .map((row, i) => {
-      const b = i * 10;
+      const b = i * 11;
       params.push(
         row.edition_for,
         row.ticker,
@@ -5924,9 +5973,10 @@ export async function upsertNighthawkPlayOutcomes(
         row.target,
         row.stop,
         row.score,
-        row.sector
+        row.sector,
+        row.publish_context != null ? JSON.stringify(row.publish_context) : null
       );
-      return `($${b + 1}::date, $${b + 2}, $${b + 3}, $${b + 4}, $${b + 5}, $${b + 6}, $${b + 7}, $${b + 8}, $${b + 9}, $${b + 10}, 'pending')`;
+      return `($${b + 1}::date, $${b + 2}, $${b + 3}, $${b + 4}, $${b + 5}, $${b + 6}, $${b + 7}, $${b + 8}, $${b + 9}, $${b + 10}, $${b + 11}::jsonb, 'pending')`;
     })
     .join(", ");
 
@@ -5934,7 +5984,7 @@ export async function upsertNighthawkPlayOutcomes(
     `
     INSERT INTO nighthawk_play_outcomes (
       edition_for, ticker, direction, conviction,
-      entry_range_low, entry_range_high, target, stop, score, sector, outcome
+      entry_range_low, entry_range_high, target, stop, score, sector, publish_context, outcome
     ) VALUES ${tuples}
     ON CONFLICT (edition_for, ticker) DO UPDATE SET
       direction = EXCLUDED.direction,
@@ -5945,6 +5995,10 @@ export async function upsertNighthawkPlayOutcomes(
       stop = EXCLUDED.stop,
       score = EXCLUDED.score,
       sector = EXCLUDED.sector,
+      -- PR-N4 context pin: first-write-wins, mirroring zerodte_setup_log.entry_context.
+      -- The whole point is "what did the builder see when this play FIRST published" —
+      -- a later force-rebuild's fresher read must never replace the original evidence.
+      publish_context = COALESCE(nighthawk_play_outcomes.publish_context, EXCLUDED.publish_context),
       updated_at = NOW()
     WHERE nighthawk_play_outcomes.outcome = 'pending'
     RETURNING ticker, (xmax = 0) AS inserted
@@ -5989,7 +6043,8 @@ export async function fetchPendingNighthawkOutcomes(lookbackDays = 7): Promise<N
     SELECT id, edition_for, ticker, direction, conviction,
            entry_range_low, entry_range_high, target, stop, score, sector,
            next_day_open, next_day_close, session_high, session_low,
-           hit_target, hit_stop, outcome, created_at
+           hit_target, hit_stop, outcome, created_at,
+           pulled, pulled_reason, publish_context, morning_verdict
     FROM nighthawk_play_outcomes
     WHERE outcome = 'pending'
       AND edition_for >= ((NOW() AT TIME ZONE 'America/New_York')::date - ($1::int || ' days')::interval)
@@ -6039,6 +6094,81 @@ export async function updateNighthawkPlayOutcome(
   );
 }
 
+/** PR-N4: persist one morning-confirm verdict onto its play's outcome row.
+ *
+ *  Two pinning rules, both deliberate:
+ *  - `morning_verdict` is COALESCE first-write-wins — the FIRST verdict of the session
+ *    (the 9:15 read) is the calibration datum; a forced re-run later in the day computes
+ *    different numbers and must not overwrite the record of what was knowable at 9:15.
+ *  - `pulled` is a ONE-WAY latch (pulled OR new): once INVALIDATED has pulled a play it
+ *    stays pulled even if a re-run computes a softer verdict — same no-flapping discipline
+ *    as the 0DTE status latch (#326). reason/at are COALESCE-pinned to the first pull.
+ *
+ *  Returns per-row facts so the caller (the morning-confirm cron) can log honestly:
+ *  matched=false ⇒ no outcome row exists for this edition/ticker (sync failed at publish —
+ *  the verdict has nowhere durable to live; the Redis blob still carries it for the UI). */
+export async function recordNighthawkMorningVerdict(row: {
+  edition_for: string;
+  ticker: string;
+  verdict: Record<string, unknown>;
+  /** True when the verdict is INVALIDATED — engages the pull latch. */
+  pull: boolean;
+  pull_reason: string | null;
+}): Promise<{ matched: boolean; verdict_written: boolean; pulled: boolean }> {
+  await ensureSchema();
+  const res = await (await getPool()).query<{
+    wrote_verdict: boolean;
+    pulled: boolean;
+  }>(
+    `
+    WITH before AS (
+      SELECT id, (morning_verdict IS NULL) AS was_empty
+      FROM nighthawk_play_outcomes
+      WHERE edition_for = $1::date AND ticker = $2
+    )
+    UPDATE nighthawk_play_outcomes o
+    SET morning_verdict = COALESCE(o.morning_verdict, $3::jsonb),
+        pulled = o.pulled OR $4::boolean,
+        pulled_reason = CASE WHEN $4::boolean THEN COALESCE(o.pulled_reason, $5) ELSE o.pulled_reason END,
+        pulled_at = CASE WHEN $4::boolean THEN COALESCE(o.pulled_at, NOW()) ELSE o.pulled_at END,
+        updated_at = NOW()
+    FROM before
+    WHERE o.id = before.id
+    RETURNING before.was_empty AS wrote_verdict, o.pulled
+    `,
+    [row.edition_for, row.ticker.toUpperCase(), JSON.stringify(row.verdict), row.pull, row.pull_reason]
+  );
+  const r = res.rows[0];
+  if (!r) return { matched: false, verdict_written: false, pulled: false };
+  return { matched: true, verdict_written: Boolean(r.wrote_verdict), pulled: Boolean(r.pulled) };
+}
+
+export type NighthawkPulledPlay = {
+  ticker: string;
+  pulled_reason: string | null;
+  pulled_at: string | null;
+};
+
+/** PR-N4: the pulled plays for one edition — the read half of the pull latch, merged onto
+ *  the member edition payload at read time (the edition row itself is never mutated). */
+export async function fetchNighthawkPulledPlays(editionFor: string): Promise<NighthawkPulledPlay[]> {
+  await ensureSchema();
+  const res = await (await getPool()).query(
+    `
+    SELECT ticker, pulled_reason, pulled_at
+    FROM nighthawk_play_outcomes
+    WHERE edition_for = $1::date AND pulled = TRUE
+    ORDER BY ticker ASC
+    `,
+    [editionFor]
+  );
+  return res.rows.map((r) => ({
+    ticker: String(r.ticker).toUpperCase(),
+    pulled_reason: r.pulled_reason != null ? String(r.pulled_reason) : null,
+    pulled_at: r.pulled_at != null ? new Date(String(r.pulled_at)).toISOString() : null,
+  }));
+}
+
 export async function fetchNighthawkOutcomeAnalytics(windowDays = 30): Promise<{
   rows: NighthawkPlayOutcomeRow[];
   pending_count: number;
@@ -6056,7 +6186,8 @@ export async function fetchNighthawkOutcomeAnalytics(windowDays = 30): Promise<{
       SELECT o.id, o.edition_for, o.ticker, o.direction, o.conviction,
              o.entry_range_low, o.entry_range_high, o.target, o.stop, o.score, o.sector,
              o.next_day_open, o.next_day_close, o.session_high, o.session_low,
-             o.hit_target, o.hit_stop, o.outcome, o.created_at
+             o.hit_target, o.hit_stop, o.outcome, o.created_at,
+             o.pulled, o.pulled_reason, o.publish_context, o.morning_verdict
       FROM nighthawk_play_outcomes o
       INNER JOIN nighthawk_editions e ON e.edition_for = o.edition_for
       WHERE o.outcome <> 'pending'

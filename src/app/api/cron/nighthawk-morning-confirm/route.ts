@@ -8,14 +8,22 @@
 //   2. Fetches today's Night Hawk edition plays via the edition DB helper.
 //   3. Fetches pre-market SPX price from Polygon snapshot.
 //   4. For each play: computes CONFIRMED / DEGRADED / INVALIDATED verdict.
-//   5. Writes the status blob to Redis at nh:play-status:{YYYYMMDD} (TTL 24h).
-//   6. Writes docs/nighthawk/morning-confirm-{YYYYMMDD}.md (best-effort, ephemeral FS).
-//   7. Ops-alerts on Discord if any play is INVALIDATED.
+//   5. PERSISTS each verdict + the numbers it saw onto the play's outcome row
+//      (nighthawk_play_outcomes.morning_verdict, first-write-wins) and, for
+//      INVALIDATED, engages the one-way PULLED latch (PR-N4 — see
+//      morning-verdict-persist.ts; before this, verdicts lived only in the 24h
+//      Redis blob and an INVALIDATED play stayed tradeable all day: AMD 7/07).
+//   6. Writes the status blob to Redis at nh:play-status:{YYYYMMDD} (TTL 24h) —
+//      kept alongside the DB write; the UI badge layer reads it today.
+//   7. Writes docs/nighthawk/morning-confirm-{YYYYMMDD}.md (best-effort, ephemeral FS).
+//   8. Ops-alerts on Discord if any play is INVALIDATED.
 //
 // AUTH: Bearer CRON_SECRET (isCronAuthorized). force-dynamic. maxDuration 60s.
 //
-// The edition is NEVER mutated — status lives only in Redis, surfaced via
-// /api/nighthawk/play-status for the UI badge layer.
+// The edition ROW (nighthawk_editions.plays) is still never mutated — the pull latch
+// lives on the outcome row and is merged onto the member payload at read time
+// (/api/market/nighthawk/edition), so the published record stays intact while the
+// actionable surface presents the play as PULLED with its reason.
 
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
@@ -29,6 +37,7 @@ import {
   type PlayConfirmStatus,
   type PlayStatus,
 } from "@/features/nighthawk/lib/morning-confirm-verdict";
+import { persistNighthawkMorningVerdicts } from "@/features/nighthawk/lib/morning-verdict-persist";
 import { notifyOpsDiscord } from "@/features/spx/lib/spx-play-notify";
 import { makeRedis } from "@/lib/make-redis";
 import { todayEt as etYmdOf } from "@/lib/et-date";
@@ -372,6 +381,34 @@ export async function GET(req: NextRequest) {
       summary,
     };
 
+    // ── Phase 3.5: persist verdicts durably + engage the INVALIDATED pull latch ──
+    // PR-N4: onto the plays' outcome rows (morning_verdict JSONB, first-write-wins;
+    // INVALIDATED ⇒ one-way pulled). Fail-soft by contract — the helper never throws;
+    // a DB failure costs the durable copy for this run (reported in the cron payload
+    // below), never the Redis blob or the cron itself. DEGRADED persists label-only.
+    const verdictPersist = await persistNighthawkMorningVerdicts({
+      editionFor,
+      checkedAt: result.checked_at,
+      playStatuses,
+      plays,
+      market: {
+        gapPts,
+        spxPremarket,
+        spxPriorClose: priorClose,
+        regime: intel.regime,
+        stockPremarketByTicker: Object.fromEntries(
+          plays.map((p) => [p.ticker.toUpperCase(), stockSnaps[p.ticker.toUpperCase()]?.price ?? null])
+        ),
+      },
+    });
+    if (!verdictPersist.ok || verdictPersist.missing_rows > 0) {
+      console.warn(
+        `[nighthawk-morning-confirm] verdict persistence degraded — persisted=${verdictPersist.persisted} ` +
+          `already=${verdictPersist.already_recorded} missing_rows=${verdictPersist.missing_rows} ` +
+          `errors=${verdictPersist.errors.join("; ") || "none"}`
+      );
+    }
+
     // ── Phase 4: write to Redis ─────────────────────────────────────────────
     try {
       const redisUrl = process.env.REDIS_URL ?? "";
@@ -407,7 +444,19 @@ export async function GET(req: NextRequest) {
       }).catch(() => undefined);
     }
 
-    const payload = { ok: true, edition_for: editionFor, ...summary, duration_ms: Date.now() - started };
+    const payload = {
+      ok: true,
+      edition_for: editionFor,
+      ...summary,
+      // PR-N4: the durable-verdict ledger for this run — cron-health meta shows whether
+      // verdicts actually persisted (and whether any play had no outcome row to pin to).
+      verdicts_persisted: verdictPersist.persisted,
+      verdicts_already_recorded: verdictPersist.already_recorded,
+      verdicts_missing_rows: verdictPersist.missing_rows,
+      plays_pulled: verdictPersist.pulled,
+      verdict_persist_errors: verdictPersist.errors,
+      duration_ms: Date.now() - started,
+    };
     await logCronRun(CRON_KEY, started, payload);
     return NextResponse.json({ ...payload, plays: playStatuses });
   } catch (err) {

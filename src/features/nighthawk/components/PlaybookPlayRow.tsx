@@ -64,6 +64,11 @@ export function PlaybookPlayRow({
   }, []);
   const morningConfirmStale =
     nowMs != null && isMorningConfirmStale(morningConfirmCheckedAt, nowMs);
+  // PR-N4: the server-side pull latch (an INVALIDATED morning verdict). Stronger than the
+  // Redis-badge "Invalidated" label — the play is no longer actionable and is presented as
+  // PULLED with its reason, but stays visible at its published rank (honesty: pulled plays
+  // are never hidden; their grade is counterfactual-only in the record).
+  const isPulled = Boolean(play?.pulled);
   const morningConfirmTitle = morningConfirm
     ? morningConfirmCheckedAt
       ? `${morningConfirm.reason} — checked ${formatCheckedAtEt(morningConfirmCheckedAt)}${
@@ -80,6 +85,9 @@ export function PlaybookPlayRow({
         !empty && isBull && "nighthawk-play-row-bull",
         !empty && isBear && "nighthawk-play-row-bear",
         !empty && !isBull && !isBear && "nighthawk-play-row-neutral",
+        // Pulled: de-emphasize the whole card — the levels below are additionally
+        // struck through so a screenshot can't read as an actionable setup.
+        !empty && isPulled && "nighthawk-play-row-pulled opacity-60",
         onSelect && "nighthawk-play-row-clickable"
       )}
       onClick={onSelect}
@@ -126,6 +134,14 @@ export function PlaybookPlayRow({
               {play.conviction && (
                 <span className="nighthawk-play-conviction">{play.conviction}</span>
               )}
+              {isPulled && (
+                <span
+                  className="nighthawk-play-pulled-badge rounded border border-rose-400/50 bg-rose-400/15 px-1.5 py-0.5 font-mono text-[10px] font-semibold uppercase tracking-wide text-rose-300"
+                  title={play.pulled_reason ?? "Pulled pre-open by the morning confirmation check"}
+                >
+                  Pulled
+                </span>
+              )}
               {morningConfirm && (
                 <span
                   className={clsx(
@@ -160,9 +176,15 @@ export function PlaybookPlayRow({
             </div>
           </div>
 
+          {isPulled && (
+            <p className="nighthawk-play-pulled-reason font-mono text-xs text-rose-300" role="status">
+              {play.pulled_reason ?? "Pulled pre-open by the morning confirmation check"}
+            </p>
+          )}
+
           <p className="nighthawk-play-thesis">{play.thesis || play.key_signal}</p>
 
-          <div className="nighthawk-play-levels">
+          <div className={clsx("nighthawk-play-levels", isPulled && "line-through")}>
             <div className="nighthawk-play-level">
               <span className="nighthawk-play-level-label">Entry</span>
               <span className="nighthawk-play-level-value">{play.entry_range}</span>

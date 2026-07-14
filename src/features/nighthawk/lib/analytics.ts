@@ -100,6 +100,10 @@ export type NighthawkMetrics = {
   stop_data_unavailable_count: number;
   /** Plays whose session never traded back into the entry band (gap-away) — no fill existed. */
   unfilled_count: number;
+  /** PR-N4: plays PULLED pre-open by an INVALIDATED morning verdict (one-way latch).
+   *  Their grades are counterfactual-only — excluded from every ratio/bucket above,
+   *  surfaced here so the record can say "N pulled" instead of silently shrinking. */
+  pulled_count: number;
   by_conviction: Array<{ conviction: string; n: number; win_rate: number; avg_return_pct: number }>;
   by_direction: Array<{ direction: "LONG" | "SHORT"; n: number; win_rate: number; avg_return_pct: number }>;
   by_sector: Array<{ sector: string; n: number; win_rate: number; avg_return_pct: number }>;
@@ -206,6 +210,7 @@ function emptyMetrics(windowDays: number): NighthawkMetrics {
     by_edition: [],
     stop_data_unavailable_count: 0,
     unfilled_count: 0,
+    pulled_count: 0,
     funnel: buildNighthawkFunnel(windowDays, 0, []),
   };
 }
@@ -242,7 +247,14 @@ export async function getNighthawkMetrics(windowDays = 30): Promise<NighthawkMet
   // there was no fill to win or lose. Excluded from ratio denominators exactly
   // like stop_data_unavailable; surfaced via unfilled_count.
   const unfilled = rows.filter((r) => r.outcome === "unfilled");
-  const scoreable = rows.filter((r) => !isStopDataUnavailable(r) && r.outcome !== "unfilled");
+  // PR-N4: pulled = INVALIDATED pre-open and withdrawn from the actionable surface —
+  // the grade on the row is a COUNTERFACTUAL, tagged for calibration, never headline.
+  // Same exclusion discipline as unfilled/stop_data_unavailable (and the same rule as
+  // track-record-page.ts's isNighthawkOutcomeScoreable — keep the two in lockstep).
+  const pulled = rows.filter((r) => r.pulled === true);
+  const scoreable = rows.filter(
+    (r) => !isStopDataUnavailable(r) && r.outcome !== "unfilled" && r.pulled !== true
+  );
 
   const winners = scoreable.filter((r) => r.outcome === "target");
   const losers = scoreable.filter((r) => r.outcome === "stop");
@@ -293,6 +305,7 @@ export async function getNighthawkMetrics(windowDays = 30): Promise<NighthawkMet
     pending_count,
     stop_data_unavailable_count: stopDataUnavailable.length,
     unfilled_count: unfilled.length,
+    pulled_count: pulled.length,
     win_rate: scoreableTotal > 0 ? winners.length / scoreableTotal : 0,
     profitable_rate: profitableRate(scoreable),
     loss_rate: scoreableTotal > 0 ? losers.length / scoreableTotal : 0,

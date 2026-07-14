@@ -462,3 +462,56 @@ plays show "entirely wrong" pnl/%/premium values, slow to update.
 - **Post-merge action:** run the regrade endpoint against prod (dry-run first) once
   deployed — expect matched=12, all `unfilled` — then confirm the record strip shows
   26 resolved and `pending_count` equals the live edition's play count only.
+
+## 2026-07-14 — Night Hawk OVERNIGHT: evidence pinning + binding morning verdicts (PR-N4, branch feat/nighthawk-pinning-verdicts)
+
+### HIGH — Editions published with no decision context; morning verdicts unpersisted and advisory (FIXED)
+- **Severity:** HIGH (process/calibration + member harm). Two coupled gaps from
+  `docs/audit/NIGHTHAWK-OVERNIGHT-DECISION.md` (§0.5, N-7, C-2 class):
+  1. Plays published with NO pinned record of what the builder saw — every
+     calibration cut (VIX-at-entry, regime-at-entry, band-vs-spot) was impossible
+     after the fact, the same C-2 blindness the 0DTE side fixed with
+     `entry_context` (#311).
+  2. Morning-confirm verdicts lived only in a 24h-TTL Redis badge + a Discord
+     ping. INVALIDATED changed nothing on the member surface: AMD 2026-07-07 (the
+     record's only A+) gapped −6.55% through its published stop pre-market, was
+     INVALIDATED-knowable at 9:15, stayed fully actionable on the board, booked
+     −6.59% — and the verdict itself evaporated with the TTL.
+- **Fix (PR-N4):**
+  1. **Publish-time pin** — `publish_context` JSONB on `nighthawk_play_outcomes`
+     (idempotent ALTER; COALESCE first-write-wins in the upsert, mirroring the
+     0DTE idiom). Built by `src/features/nighthawk/lib/publish-context.ts` from
+     the SAME in-memory build context the edition publishes from (never
+     re-fetched): spot/prior-close/ATR from the dossier tech card, signed
+     band/target/stop distance % (the N-3 detached-band signature), regime + the
+     BIE market-breadth bundle, earnings-tomorrow knowledge, and the scorer's own
+     confluence snapshot (shared shape with the rejection audit rows). Fail-soft:
+     a pin failure logs and publishes un-pinned — never blocks the edition.
+  2. **Persisted verdicts** — `morning_verdict` JSONB on the play row
+     (first-write-wins: the 9:15 read is the calibration datum), written by the
+     morning-confirm cron alongside the kept Redis badge, carrying the numbers the
+     check saw (pre-market spot, gap pts/pct, spot-vs-stop/-band %, regime).
+     Persistence ledger surfaces in the cron payload/cron-health meta.
+  3. **INVALIDATED is binding** — one-way `pulled` latch (pulled/pulled_reason/
+     pulled_at; `pulled OR` in SQL, #326 latch discipline). The edition read path
+     merges the latch at read time (`pull-overlay.ts` — edition row never
+     mutated): the play stays visible at its published rank, presented PULLED
+     with the verdict's reason (badge + struck-through levels). Pulled plays
+     still grade (counterfactual) but are excluded from every headline surface
+     (`analytics.ts` scoreable + `isNighthawkOutcomeScoreable` in
+     track-record-page.ts, kept in lockstep; `pulled_count` surfaced). DEGRADED
+     stays advisory — enforcement thresholds are a calibration decision deferred
+     to N6, now answerable from exactly this verdict table.
+- **Tests:** `publish-context.test.ts` (pin shape/signs, never-guess nulls,
+  per-play fail-soft), `morning-verdict-persist.test.ts` (numbers-seen contract,
+  INVALIDATED pulls / DEGRADED doesn't, idempotent re-run + one-way latch,
+  missing-row honesty, per-play failure isolation), `pull-overlay.test.ts`
+  (visible-as-pulled, non-destructive, case-insensitive), `analytics-pulled.test.ts`
+  (counterfactual grades never count, either direction; DEGRADED still counts),
+  `nighthawk-pinning-contract.test.ts` (SQL COALESCE/one-way pins, overlay on all
+  serve branches, Redis badge kept). tsc clean, full `npm test` green, next build
+  green.
+- **Deliberately unchanged:** grading path (`resolveOutcome`) — a pulled play's
+  grade IS the counterfactual, tagged by `pulled` for N2's methodology-versioned
+  record; DEGRADED enforcement (→ N6); Cortex compose at publish/9:15 (→ N5/N6);
+  the Redis play-status blob and its UI badge (kept as-is).
