@@ -164,6 +164,11 @@ export function buildNighthawkPublishContext(opts: {
    *  the play, PASS margins included (the calibration substrate for the thresholds).
    *  Optional + nullable: an un-gated caller degrades to a null pin, never a throw. */
   gates?: NighthawkPublishGateResult | null;
+  /** PR-N5: the composed OVERNIGHT Cortex verdict for this play (cortex-overnight/
+   *  compose.ts). Additive, opaque here (the pin does not re-derive it) — a PASS/WEAK
+   *  play publishes with its full evidence vector pinned so the Debrief (#337) and future
+   *  calibration read the substrate that decided it. Omitted/null ⇒ the key is null. */
+  cortexOvernight?: Record<string, unknown> | null;
 }): Record<string, unknown> {
   const { play, scored, dossier, market, builtAt } = opts;
   // One geometry computation shared with publish-gates.ts — see NighthawkPublishGeometry.
@@ -194,6 +199,10 @@ export function buildNighthawkPublishContext(opts: {
 
     // ── PR-N3 publish-gate verdict for THIS play (null when un-gated) ──────────
     gates: opts.gates ?? null,
+
+    // ── PR-N5 overnight Cortex verdict for THIS play (null when the lens abstained
+    //    at the whole-edition level or was not run) — the §3.5 calibration substrate ──
+    cortex_overnight: opts.cortexOvernight ?? null,
 
     // ── That evening's market state (regime + the BIE breadth bundle) ──────────
     market: {
@@ -241,6 +250,9 @@ export function buildNighthawkPublishContexts(opts: {
   /** PR-N3: per-ticker publish-gate results from the builder's gate pass (see the
    *  singular builder's `gates` doc). Missing ticker/omitted map ⇒ null pin. */
   gateResults?: Record<string, NighthawkPublishGateResult | null>;
+  /** PR-N5: per-ticker composed overnight Cortex verdict (cortex-overnight/compose.ts).
+   *  Missing ticker/omitted map ⇒ null cortex_overnight key on that pin. */
+  cortexOvernight?: Record<string, Record<string, unknown> | null>;
 }): Record<string, Record<string, unknown> | null> {
   const out: Record<string, Record<string, unknown> | null> = {};
   let plays: PlaybookPlay[] = [];
@@ -261,6 +273,7 @@ export function buildNighthawkPublishContexts(opts: {
         market: opts.market,
         builtAt: opts.builtAt,
         gates: opts.gateResults?.[ticker] ?? null,
+        cortexOvernight: opts.cortexOvernight?.[ticker] ?? null,
       });
     } catch (err) {
       // Fail-soft: this play publishes un-pinned; the row still syncs.

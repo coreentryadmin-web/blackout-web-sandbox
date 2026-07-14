@@ -192,6 +192,20 @@ export type NighthawkRejectionDetail =
         threshold: number | string | null;
         value: number | string | null;
       }>;
+    }
+  // PR-N5 (docs/audit/NIGHTHAWK-OVERNIGHT-DECISION.md §3.1/§3.4): the OVERNIGHT Cortex
+  // lens vetoed the candidate at publish — an earnings/binary event inside the hold (the
+  // §3.4 overnight killer) or another unbounded veto. The play does NOT publish; this
+  // audit row is its ONLY record, kept so the vetoed pick is counterfactually gradeable
+  // ("what would the earnings-gap play have done"), the same skip-grading philosophy the
+  // #332 gates use. `verdict` is the full composed OvernightVerdict JSON — deterministic
+  // and reproducible from its snapshot — so the calibration loop reads the whole evidence
+  // vector, not just the reason strings.
+  | {
+      stage: "cortex_overnight_veto";
+      score: number;
+      veto_reasons: string[];
+      verdict: Record<string, unknown>;
     };
 
 // Exported (task #145) so nighthawk/analytics.ts can invert this map — the admin funnel/
@@ -208,6 +222,8 @@ export const REJECTION_TRIGGER_REASON: Record<NighthawkRejectionDetail["stage"],
   sector_concentration: "rejected at synthesis — sector-concentration cap reached for this edition",
   publish_gate:
     "rejected at publish — failed the publish-time sanity gates (detached band / unreachable target / stale quote basis / unknown geometry)",
+  cortex_overnight_veto:
+    "rejected at publish — vetoed by the overnight Cortex lens (earnings/binary event in the hold, or a hard structural veto)",
 };
 
 function decisionTraceForRejection(
@@ -263,6 +279,15 @@ function decisionTraceForRejection(
         passed: false,
         value: block.value ?? block.reason,
         threshold: block.threshold,
+      }));
+    case "cortex_overnight_veto":
+      // One trace entry per veto reason (typically the earnings/binary event line); the
+      // net score is threshold-less (a veto blocks regardless of score, §3.1 asymmetry).
+      return detail.veto_reasons.map((reason, i) => ({
+        check: `cortex_overnight_veto_${i + 1}`,
+        passed: false,
+        value: reason,
+        threshold: null,
       }));
   }
 }
@@ -361,6 +386,17 @@ function inputSnapshotForRejection(
       };
     case "publish_gate":
       return { ...base, gate_blocks: detail.blocks, options_play: play.options_play };
+    case "cortex_overnight_veto":
+      // The full composed verdict is the calibration substrate — score, every veto/
+      // support/oppose item, and the deterministic narrative — so a counterfactual grade
+      // later has the whole evidence vector, not just the reason strings.
+      return {
+        ...base,
+        cortex_overnight_score: detail.score,
+        cortex_overnight_veto_reasons: detail.veto_reasons,
+        cortex_overnight_verdict: detail.verdict,
+        options_play: play.options_play,
+      };
   }
 }
 

@@ -5,6 +5,39 @@ conflict-resolution mishap. Historical entries live in git history — `git log 
 docs/audit/FINDINGS.md`. New entries append below; keep severity / root cause / file:line /
 evidence / fix / status per the CLAUDE.md policy.)
 
+## 2026-07-14 — Night Hawk overnight edition: Cortex overnight lens + catalyst veto — PR-N5
+
+### P1 — no publish-time evidence gate on overnight picks (best-plays-only) (BUILT, tested)
+- **Severity:** P1 (strategy gate — the "make picks strong" build of the overnight ladder).
+- **Root cause / motivation (NIGHTHAWK-OVERNIGHT-DECISION.md forensics):** after the #332 geometry
+  gates a candidate published with NO evidence discipline. Named failure modes: **§3.4 the overnight
+  killer** — earnings/binary events only *nudged* the score (−6, and only when a flow expiry matched
+  the event date), so "no play can currently be VETOED for an earnings/binary event, and no play was"
+  (AMD-class gap-through-stop deaths). **N-4 long-only monoculture** — regime only scaled scores,
+  nothing marked a long into a bearish tape/sector as a negative. **§3.2** — per-ticker wall structure
+  ignored (a long whose target sits beyond a hardening call wall fights dealer structure). Plus the
+  one-print-splash / overnight-carry-cost / dark-pool-fade classes.
+- **Fix (this PR):** new deterministic, no-LLM `src/features/nighthawk/lib/cortex-overnight/` lens —
+  the overnight analogue of the intraday 0DTE Cortex (same veto asymmetry: supports capped per
+  source, vetoes UNBOUNDED, net score). Six fail-soft sources: **catalyst-veto** (earnings/binary in
+  the hold → HARD VETO unless the play is flagged a catalyst play — §3.4), **wall-migration** (target
+  beyond / fighting a hardening opposing wall — §3.2), **darkpool-trend** (accumulation vs the play),
+  **iv-term** (overnight theta/vega cost), **sector-breadth** (long into a bearish sector/tape — N-4),
+  **flow-persistence** (streak/into-the-close vs morning splash). Composed at publish STRICTLY AFTER
+  the #332 gates in `edition-builder.ts`: VETO → does not publish, persists as `nighthawk_rejected`
+  (new `cortex_overnight_veto` union variant in `play-outcomes.ts`) for counterfactual grading; WEAK
+  → publishes flagged, conviction floored to C; total lens outage → ABSTAIN (passes on gates alone,
+  never blocks the book). Full verdict pinned into `publish_context.cortex_overnight` (additive key)
+  as the Debrief/#337 + calibration substrate.
+- **Evidence (tests):** `cortex-overnight.test.ts` + `sources/*.test.ts` (29 new) — catalyst veto
+  fires on earnings-tomorrow-premarket and does NOT on a labeled catalyst play (emits an oppose);
+  afterhours-on-horizon still vetoes; wall-fighting/building → oppose stack; each source fail-soft
+  (absent w/ error class); veto→rejected-row; net-score + veto-asymmetry math; total outage→abstain;
+  pinned into publish_context. Example replay of the AMD-7/07-class pick: an earnings-tomorrow long
+  composes to VETO (score-irrelevant) — exactly the death the deep-dive named. tsc clean; 385 nighthawk
+  lib tests green; eslint clean.
+- **Status:** BUILT + tested. PR open (not merged — headline build, reported for review).
+
 ## 2026-07-14 — Largo gauntlet P1s (deployed build, via POST /api/market/largo/query) — PR-L4a
 
 ### P1 — "now" / "right now" collided with the ticker $NOW (ServiceNow) (FIXED, tested)
