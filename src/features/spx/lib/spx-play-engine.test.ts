@@ -58,11 +58,14 @@ mock.module("../../../lib/ws/uw-socket", {
 // since neither is exercised by the open-play path under test.
 mock.module("./spx-play-session-guards", {
   namedExports: {
+    CASH_OPEN_ET_MINS: 570,
+    getEarlyCloseMinutes: () => null,
     forceExitCutoffLabel: () => "3:50 PM ET",
     isPastForceExitCutoff: () => mockForceExit,
     isBeforeCashOpen: () => false,
     isPremarketPlanningWindow: () => false,
     isPastNoEntryCutoff: () => false,
+    isEtWeekday: () => true,
     cashOpenLabel: () => "9:30 AM ET",
     noEntryCutoffLabel: () => "3:30 PM ET",
   },
