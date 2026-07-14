@@ -207,3 +207,70 @@ evidence / fix / status per the CLAUDE.md policy.)
   were real losers. 141 zerodte-suite tests green; Slayer gate tests updated for the 9:45 boundary.
 - **Schema/Redis**: `zerodte_scan_rejections.reason` (TEXT), `zerodte_setup_log.
   gate_calibration_json` (JSONB, COALESCE-pinned), Redis `zerodte:governor:stops:{date}` (24h TTL).
+
+## 2026-07-14 — Session-anchored indicators anchored to the WRONG session (member-reported, P0)
+
+### P0 — HOD/LOD, Opening Range, session Fib (and off-hours PDH/PDL/pivots) used 3-day-old sessions (FIXED — fix/indicator-session-scoping)
+- **Found**: member report (angry, correct): "I selected Opening H and L on SPX Slayer and it
+  shows FRIDAY's ranges. All indicators are wrong across all timeframes and DTE."
+- **Root cause**: the chart seeds THREE sessions (`vector-seed-bars.ts` `TARGET_SEED_SESSIONS=3`)
+  but the session-anchored level math still assumed the bars array IS one session — the exact
+  class of the multi-session VWAP bug (#305, entry above), in the level layer this time:
+  - `vector-key-levels.ts:sessionHodLod` — min/max over the WHOLE array → 3-day extremes.
+  - `vector-key-levels.ts:openingRange` — measured from `bars[0].time`, the FIRST bar of the
+    OLDEST seeded session → literally Friday's (actually Thursday's, the oldest day's) opening
+    range on Monday. The member's exact symptom.
+  - Session Fib (`levelLinesFor("fib")`) inherits `sessionHodLod` → 0%/100% pinned to 3-day extremes.
+  - Timeframe/DTE-independent: the same wrong lines redraw at every TF and DTE toggle, matching
+    "wrong across all timeframes and DTE".
+- **Fix (shared layer)**: new `lastSessionBars(bars)` in `vector-key-levels.ts` — slices to the
+  trailing run of bars sharing the final bar's ET calendar day (same ET-day rule/formatter pattern
+  as `vwapSeries`' #305 reset). `sessionHodLod` + `openingRange` scope through it INTERNALLY, so
+  every consumer is fixed at one point. Bar times are bucket-START epoch seconds and the overnight
+  gap dwarfs the 4h interval cap, so ET-day detection survives `aggregateVectorBars` — verified by
+  test at 5m/15m.
+- **priorDay verification (found wrong off-hours, fixed)**: `/api/market/vector/prior-day` called
+  `priorDayFromDailyBars(bars)` anchored to wall-clock TODAY. During RTH that's the session before
+  the displayed one (correct). But on weekends/pre-open the chart displays Friday while the walk-back
+  ("last bar dated < today") returns FRIDAY ITSELF — PDH/PDL/PDC = the displayed session's OWN
+  extremes, and floor pivots computed from the session being viewed. Fix: route accepts
+  `anchor=YYYY-MM-DD` (strictly validated) and `VectorChart` passes its `sessionYmd` (the displayed
+  session), so "prior day" is always the session strictly BEFORE what's on screen. RTH behavior
+  byte-identical (anchor == today).
+- **Blast-radius sweep** (every seed/session-bars consumer, fixed or explicitly cleared):
+  - FIXED `vector-key-levels.ts` sessionHodLod / openingRange / fib — via `lastSessionBars`.
+  - FIXED (transitively) `VectorChart.tsx` levels overlays (`levelLinesFor` at paintOverlays) and
+    confluence-zone HOD/LOD (`gatherConfluenceLevels` → sessionHodLod) — both /vector AND the SPX
+    Slayer dashboard embed (one shared VectorChart + one shared `loadVectorSeedProps`; embed has NO
+    separate derivation — verified, and guarded by vector-seed-props.test.ts's drift test).
+  - FIXED `prior-day` route + VectorChart fetch (anchor, above) — PDH/PDL/PDC lines AND floor pivots.
+  - FIXED `vector-seed-props.ts` rail-prefix gap check — compared today's first observed rail sample
+    against `bars[0]` (now the OLDEST session's open), making "rail starts late" trivially true every
+    load and firing the reconstruction fetch needlessly; now uses `lastSessionBars(bars)[0]`.
+  - CLEARED (by definition) VWAP — already resets per ET day (#305). EMA/SMA/RSI/MACD — continuous
+    studies; prior-session history only improves warm-up (TradingView parity).
+  - CLEARED (window-scoped BY DESIGN, now documented in-code) fib-auto golden pocket
+    (`dominantSwing` over DISPLAYED bars — deliberate multi-day structure read), market-structure
+    BOS/CHOCH markers, `summarizeTechnicals`' goldenPocket/structure (client terminal + server
+    `vector-server-technicals-core.ts` → play engine share the same deliberate window semantics).
+  - CLEARED wall-history/replay: `liveTrailAnchorSec`/`seedWallHistoryForDisplay`/
+    `narrowedHorizonTrail` anchor to the LAST bar (correct with multi-day bars); `buildReplayTimeline`
+    spanning all seeded sessions is the multi-day replay feature, not a bug.
+  - CLEARED SPX desk (non-Vector path): `spx-play-technicals.ts` fetches `today,today` only (single
+    session by construction; its `openingRangeFromBars` filters by 9:30 ET clock); `spx-desk.ts` OR
+    comes from today's minute bars; its `priorDayFromDailyBars(dailyBars)` wall-clock anchor is
+    correct for a live "right now" desk (always today-anchored, unlike a chart displaying a session).
+  - CLEARED `spx-live-voice.ts` openingRange — reads the desk's session-scoped OR, no bar math.
+- **Why it was missed**: every render-level E2E asserts indicators PAINT and CLEAR
+  (`vector-staging-e2e.mjs`: "enabling one of each kind actually draws"; `vector-hardcore-e2e.mjs`:
+  paints-alone + badge-tracks + canvas-hash redraw checks) — none asserted WHICH session the drawn
+  level belongs to, and the unit fixtures only ever contained one session of bars. Value-correctness
+  checks (ladder/regime/max-pain) covered options surfaces, not the session-level overlays. Action:
+  hardcore suite should gain a session-scoping case (OR-H/OR-L within today's price range, HOD ≥
+  session max only of today's bars) — deferred to the staging validation pass.
+- **Tests** (all in-repo, green): `vector-key-levels.test.ts` +6 — 3-real-ET-day fixture (Thu/Fri/Mon,
+  distinct ranges): lastSessionBars slice; HOD/LOD = last session only; OR = last session's first 15m;
+  fib 0%/100% at last-session extremes; same assertions after 5m/15m aggregation; prior-day/pivot
+  lines from the passed prior OHLC + source guard that VectorChart sends `anchor=sessionYmd`.
+  `spx-session.test.ts` +1 — displayed-session anchor returns the session strictly BEFORE the anchor
+  (and documents the wall-clock-Saturday failure it replaces). tsc clean, full `npm test` + build green.

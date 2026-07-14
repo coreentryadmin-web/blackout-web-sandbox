@@ -130,3 +130,110 @@ test("levelLinesFor fib-auto: DOMINANT swing, distinct labels, golden-pocket ban
   const flat = Array.from({ length: 13 }, (_, i) => ({ time: 60 * i, high: 100 + i + 0.5, low: 100 + i - 0.5, close: 100 + i }));
   assert.deepEqual(levelLinesFor("fib-auto", flat), []);
 });
+
+// ---------------------------------------------------------------------------------------------
+// MULTI-SESSION SCOPING (P0, 2026-07-14): the chart seeds ~3 sessions (vector-seed-bars
+// TARGET_SEED_SESSIONS = 3), so every session-anchored level must scope to the LAST ET day.
+// Regression for the member-reported bug: "Opening H and L on SPX Slayer shows FRIDAY's ranges".
+// Fixture: three real ET trading days (Thu 2026-07-09, Fri 2026-07-10, Mon 2026-07-13), each
+// with DISTINCT extremes; the oldest session is deliberately the widest so any whole-array
+// min/max (the old bug) is caught, and Friday's open differs from Monday's so an "or from
+// bars[0]" regression is caught too.
+// ---------------------------------------------------------------------------------------------
+
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import { lastSessionBars } from "./vector-key-levels";
+import { aggregateVectorBars } from "./vector-bar-timeframes";
+
+/** Epoch seconds for an ET (EDT, UTC-4) wall-clock time on a given date. */
+const et = (ymd: string, hh: number, mm: number) =>
+  Math.floor(Date.parse(`${ymd}T${String(hh).padStart(2, "0")}:${String(mm).padStart(2, "0")}:00-04:00`) / 1000);
+
+/** One RTH-open session of 1m bars: `points` = [high, low] per minute from 09:30 ET. */
+function session(ymd: string, points: Array<[number, number]>) {
+  return points.map(([high, low], i) => ({
+    time: et(ymd, 9, 30) + i * 60,
+    high,
+    low,
+    close: (high + low) / 2,
+    volume: 100,
+  }));
+}
+
+// Thu: widest range of the three (HOD 120 / LOD 80) — the old whole-array HOD/LOD.
+const thu = session("2026-07-09", [[110, 100], [120, 105], [100, 80], [105, 95]]);
+// Fri: opening 15m range 118–112 — the old bars[0]-anchored opening range... except bars[0] was
+// actually THU's open; either way, distinct from Monday's so any non-last-session anchor fails.
+const fri = session("2026-07-10", [[115, 112], [118, 113], [117, 112], [116, 85], [115, 111]]);
+// Mon (LAST session): HOD 105 / LOD 95; the first 15 MINUTES (bars 0–14, 09:30–09:44) top out at
+// 103/96, and the session extremes land at 09:45+ — so OR ≠ HOD/LOD at every timeframe (the
+// 09:45 bucket boundary aligns for 1m, 5m and 15m aggregation alike).
+const mon = session("2026-07-13", [
+  ...Array.from({ length: 15 }, (_, i): [number, number] => (i === 7 ? [103, 96] : [102, 98])),
+  [105, 99],
+  [104, 95],
+  [103, 100],
+]);
+const multi = [...thu, ...fri, ...mon];
+
+test("lastSessionBars: slices to the trailing ET-day run; single session passes through", () => {
+  assert.deepEqual(lastSessionBars(multi), mon);
+  assert.deepEqual(lastSessionBars(mon), mon);
+  assert.deepEqual(lastSessionBars([]), []);
+});
+
+test("sessionHodLod over 3 seeded sessions = LAST session's extremes only", () => {
+  // Old bug: min/max over the whole array → Thu's 120/80.
+  assert.deepEqual(sessionHodLod(multi), { hod: 105, lod: 95 });
+});
+
+test("openingRange over 3 seeded sessions = LAST session's first 15m (not Friday's, not Thursday's)", () => {
+  // Old bug: measured from bars[0].time = the OLDEST session's open (the literal member report).
+  assert.deepEqual(openingRange(multi, 15), { high: 103, low: 96 });
+});
+
+test("fib over 3 seeded sessions anchors 0%/100% to the LAST session's HOD/LOD", () => {
+  const fib = levelLinesFor("fib", multi);
+  assert.equal(fib.find((l) => l.key === "fib-0")!.price, 105);
+  assert.equal(fib.find((l) => l.key === "fib-1")!.price, 95);
+  // 61.8% golden = 105 − 0.618·10
+  assert.ok(Math.abs(fib.find((l) => l.key === "fib-0.618")!.price - 98.82) < 1e-9);
+});
+
+test("session scoping survives 5m/15m aggregation (bucket-start times keep their ET day)", () => {
+  for (const tf of [5, 15]) {
+    const agg = aggregateVectorBars(multi, tf);
+    assert.deepEqual(sessionHodLod(agg), { hod: 105, lod: 95 }, `HOD/LOD @ ${tf}m`);
+    // Mon's opening window (09:30–09:45) aligns with the 5m/15m bucket grid, so the aggregated
+    // OR equals the 1m OR exactly — and is MONDAY's window, never Thu's 120/80 or Fri's.
+    assert.deepEqual(openingRange(agg, 15), { high: 103, low: 96 }, `OR @ ${tf}m`);
+    const fib = levelLinesFor("fib", agg);
+    assert.equal(fib.find((l) => l.key === "fib-0")!.price, 105, `fib 0% @ ${tf}m`);
+    assert.equal(fib.find((l) => l.key === "fib-1")!.price, 95, `fib 100% @ ${tf}m`);
+  }
+});
+
+test("prior-day + pivot lines derive from the session immediately BEFORE the last (passed as priorDay)", () => {
+  // With Monday displayed, priorDay must be FRIDAY's OHLC (the /prior-day route walks back from
+  // the chart's anchor=sessionYmd; selection is unit-tested in spx-session.test.ts). Assert the
+  // level lines faithfully draw from that prior session — P from Friday's H/L/C, PDH at its high.
+  const fridayOhlc = { pdh: 118, pdl: 85, pdc: 113.5 };
+  const pd = levelLinesFor("pdh-pdl-pdc", multi, fridayOhlc);
+  assert.equal(pd.find((l) => l.key === "pdh")!.price, 118);
+  assert.equal(pd.find((l) => l.key === "pdl")!.price, 85);
+  assert.equal(pd.find((l) => l.key === "pdc")!.price, 113.5);
+  const piv = levelLinesFor("pivots", multi, fridayOhlc);
+  assert.ok(Math.abs(piv.find((l) => l.key === "piv-p")!.price - (118 + 85 + 113.5) / 3) < 1e-9);
+});
+
+test("guard: VectorChart's prior-day fetch is anchored to the DISPLAYED session (anchor=sessionYmd)", () => {
+  // Drift guard in the repo's readFileSync style: without the anchor, a weekend/pre-open member
+  // gets PDH/PDL equal to the displayed session's own extremes (see spx-session.test.ts).
+  const src = readFileSync(
+    join(process.cwd(), "src/features/vector/components/VectorChart.tsx"),
+    "utf8"
+  );
+  assert.match(src, /prior-day\?ticker=\$\{encodeURIComponent\(ticker\)\}/);
+  assert.match(src, /anchor=\$\{encodeURIComponent\(sessionYmd\)\}/);
+});
