@@ -268,6 +268,16 @@ evidence / fix / status per the CLAUDE.md policy.)
   checks (ladder/regime/max-pain) covered options surfaces, not the session-level overlays. Action:
   hardcore suite should gain a session-scoping case (OR-H/OR-L within today's price range, HOD ≥
   session max only of today's bars) — deferred to the staging validation pass.
+- **Evidence (live staging seed, read-only probe 2026-07-14 pre-open)**: `/api/market/vector/bars`
+  really carries 3 ET sessions (SPX: 1184 bars across 07-09/07-10/07-13; NVDA: 2834). Over that
+  exact shape, OLD math vs FIXED: SPX opening range was drawn from THURSDAY's open
+  {7512.05, 7483.29} → now Monday's {7565.37, 7547.53} (the member's literal symptom); SPX
+  HOD/LOD was the 3-day {7579.93, 7481.73} → now Monday's {7565.37, 7506.41}; NVDA OR
+  {205.86, 203.40}(Thu) → {207.97, 205.93}(Mon), HOD/LOD {211.10, 198.96} → {210.57, 202.75}.
+  Fixed values verified equal to an independent per-ET-day recompute, at 1m and after 5m/15m
+  aggregation. Live prior-day read (Mon displayed, Mon evening ET): {7579.93, 7508.16, 7575.39} =
+  Friday's OHLC — currently correct on both paths; the anchor matters once the ET date rolls past
+  the displayed session (weekend/holiday/pre-open), per the spx-session unit test.
 - **Tests** (all in-repo, green): `vector-key-levels.test.ts` +6 — 3-real-ET-day fixture (Thu/Fri/Mon,
   distinct ranges): lastSessionBars slice; HOD/LOD = last session only; OR = last session's first 15m;
   fib 0%/100% at last-session extremes; same assertions after 5m/15m aggregation; prior-day/pivot
