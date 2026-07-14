@@ -84,6 +84,49 @@ test("buildGexLadder: a put king OUTSIDE the nearest-N band is force-retained + 
   assert.equal(putKing!.magnitude, 1);
 });
 
+test("buildGexLadder: material runner-up walls OUTSIDE the band are retained (FIG missing-strike bug)", () => {
+  // Live FIG shape @ spot 23.2 (see docs/audit/FINDINGS.md GEX-vs-Skylit forensic): a fat call wall
+  // at strike 30 (OI 47k → +$648K) and the true put wall at 17.5 (−$323K) both sit OUTSIDE the ±8%
+  // display band [21.34, 25.06]. Before the top-N-per-side retain only the single king per side
+  // survived, so the panel showed the −GEX peak pinned at the near-spot strike 20 and hid the 30
+  // call wall entirely. Numbers are the real recomputed net-GEX per strike.
+  const fig: Record<string, number> = {
+    "30": 648_000, "27": 46_000, "26": 68_000, "25.5": 2_000, "25": 832_000,
+    "24.5": 11_000, "24": 157_000, "23.5": 37_000, "23": 212_000, "22.5": 83_000,
+    "22": 125_000, "21.5": 31_000, "21": 400, "20.5": -10_000, "20": -174_000,
+    "19.5": 12_000, "19": -10_000, "18": -20_000, "17.5": -323_000, "17": 19_000,
+  };
+  const l = buildGexLadder(fig, 23.2); // defaults: bandPct 0.08, maxRows 40, keepPerSide 3
+
+  const strikes = new Set(l.rows.map((r) => r.strike));
+  // The fat call wall at 30 (a runner-up, NOT the king) is no longer dropped by the ±8% window.
+  assert.ok(strikes.has(30), "material +$648K call wall at 30 is retained");
+  // The true put wall at 17.5 is retained AND crowned — not the band-edge strike 20.
+  assert.ok(strikes.has(17.5), "true put wall at 17.5 is retained");
+  const putKing = l.rows.find((r) => r.isKing && r.side === "put");
+  assert.equal(putKing!.strike, 17.5, "put king is the TRUE put wall (17.5), not the band edge (20)");
+  // The most-negative displayed row (−GEX peak the panel highlights) is 17.5, not 20.
+  const minRow = l.rows.reduce((a, b) => (b.gex < a.gex ? b : a));
+  assert.equal(minRow.strike, 17.5, "−GEX peak is 17.5, fixing the band-edge-pinned '20' artifact");
+  // Call king unchanged (25 is the strongest), and the runner-up put wall 20 also survives.
+  assert.equal(l.rows.find((r) => r.isKing && r.side === "call")!.strike, 25);
+  assert.ok(strikes.has(20), "runner-up put wall at 20 also retained");
+});
+
+test("buildGexLadder: keepPerSide=1 reproduces the old single-king retain (runner-ups dropped)", () => {
+  // Regression guard: with keepPerSide=1 only the king per side is force-retained, so a fat
+  // out-of-band runner-up wall is dropped — the exact pre-fix behaviour, proving the new default
+  // (3) is what surfaces the runner-ups.
+  const fig: Record<string, number> = {
+    "30": 648_000, "25": 832_000, "24": 157_000, "23": 212_000, "22": 125_000, "17.5": -323_000, "20": -174_000,
+  };
+  const l = buildGexLadder(fig, 23.2, { keepPerSide: 1 });
+  const strikes = new Set(l.rows.map((r) => r.strike));
+  assert.ok(!strikes.has(30), "with keepPerSide=1 the out-of-band call runner-up 30 is dropped");
+  assert.ok(strikes.has(25), "call king still retained");
+  assert.ok(strikes.has(17.5), "put king still retained");
+});
+
 test("buildGexLadder: equal-|gex| ties crown the strike nearest spot (no far-OTM tie dragged in)", () => {
   const totals: Record<string, number> = {};
   for (let s = 80; s <= 120; s += 1) totals[String(s)] = s % 2 === 0 ? 100 : -100;

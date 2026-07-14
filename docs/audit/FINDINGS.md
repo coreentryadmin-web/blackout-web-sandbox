@@ -103,6 +103,73 @@ evidence / fix / status per the CLAUDE.md policy.)
 - **Status:** FIXED (new engine; tsc clean, full suite green — 3487 pass; scenario-read.test.ts +
   router.test.ts scenario regression table).
 
+## 2026-07-14 — GEX ladder vs Skylit forensic ($FIG member report) — PR fix/gex-forensic
+
+Member reported a large GEX mismatch between our Vector ladder and Skylit for $FIG (fresh high-IV
+IPO, spot ~23.2, +12% on the day). Three distinct issues were raised; ground truth = the live
+Polygon/Massive $FIG chain (592 contracts, 11 expiries) recomputed the canonical way. Scripts:
+`/home/user/fig-gex-probe.mjs` (raw chain + per-strike recompute), `/home/user/fig-sim.mjs`
+(both code paths + buildGexLadder simulation).
+
+### Issue 1 — MAGNITUDE (~10–25× vs Skylit): NOT a formula bug — NO CHANGE
+- **Finding:** Our per-contract GEX is already the canonical SpotGamma per-1%-move dollar-gamma:
+  `sign · γ · OI · sharesPerContract · S² · 0.01` (calls +, puts −). It is applied IDENTICALLY in
+  both paths — `polygon-options-gex.ts:2149` (heatmap) and `vector-gex-reconstruct.ts:94`
+  (`gexLadderAtSpot`). No factor is missing (Spot², ×100, ×0.01 all present).
+- **Evidence:** canonical recompute of $FIG strike 25 = **+$795K** (all expiries) — same order of
+  magnitude our ladder shows, not 10–25× smaller. Skylit's headline (28.0 = **−$8.11M**) is NOT
+  reproducible under canonical dealer-gamma: strike 28 in the real chain is call-DOMINATED (OI 886,
+  mostly calls) → canonical value is **+$27.7K POSITIVE**, not −$8.1M. Skylit's per-strike numbers
+  don't scale to canonical by any constant (their 30 = $232K < our $661K; their 22.5 = $1.14M vs our
+  $72K), so it is a different proprietary computation, not a scale factor we're missing.
+- **Decision:** do NOT rescale — changing the formula would wrongly shift EVERY ticker's
+  member-visible magnitude. The apparent "10–25×" is an artifact of Issue 2 (our displayed PEAK was
+  capped by band truncation, so our max looked far smaller than the true structure).
+
+### Issue 2 — MISSING STRIKES / wrong −GEX peak (the real bug, FIXED, tested)
+- **Root cause:** the GEX-ladder route's **"all" horizon** read the ±12%-strike-banded heatmap
+  `strike_totals` (`fetchGexHeatmap` → `fetchHeatmapBand`, `DEFAULT_HEATMAP_BAND_PCT = 0.12`,
+  `polygon-options-gex.ts:1287`). For a low-priced name that band is tiny: spot 23.2 → strikes
+  **[20, 26] only**. So the ladder's put wall / −GEX peak was PINNED at the band's lower edge
+  (strike **20**) instead of the true put wall, and the fat call wall at 30 (OI 47k) plus the whole
+  17.5 / 30 / 35 structure were dropped. `src/app/api/market/vector/gex-ladder/route.ts:43`.
+  Compounding it, `buildGexLadder`'s ±8% DISPLAY band ([21.3, 25.1]) force-retained only the single
+  king per side, so even a wide input dropped material runner-up walls. `vector-gex-ladder.ts`.
+- **Evidence (live sim, `fig-sim.mjs`):**
+  - CURRENT "all" (±12% band): strike_totals keys = 20…26 only; ladder **King 25, +GEX peak 25,
+    −GEX peak 20** — an EXACT match to the member's report ("Flip 21, King 25, +GEX peak 25, −GEX
+    peak 20"), confirming the −GEX peak at 20 is a band-EDGE artifact.
+  - DTE path (wider [16,32] band, already correct): −GEX peak = **17.5** (−$323K), the true put wall.
+  - So the "all" ladder was NARROWER than its own weekly/monthly views and pinned the peak at the
+    band edge. Real dropped high-OI walls: 30 (OI 47k, +$661K), 17.5 (OI 39k, −$327K), 35 (OI 22k,
+    +$181K), 40 (OI 25k, +$131K).
+- **Fix (blast radius = the GEX-ladder SIDE PANEL only; desk / Largo / heatmap walls / the formula
+  are all UNCHANGED):**
+  1. `gex-ladder/route.ts` — route the "all" horizon through the SAME per-expiry canonical chain the
+     DTE horizons already use (`getHorizonStrikeTotals`, band ≈ [spot·0.7, spot·1.35]), with the
+     near-term heatmap aggregate kept as the honest fallback. "all" is now never narrower than
+     weekly/monthly.
+  2. `vector-gex-ladder.ts` — generalized the single-king force-retain to the top-N strongest walls
+     PER SIDE (`keepPerSide`, default 3), so a material runner-up wall just outside the ±8% window
+     (FIG 30) still renders. Bounded by `maxRows`; retain set capped to `maxRows`; a push reverts
+     when no non-retained row is evictable (cap always holds).
+- **After (live verify with the real modules):** new "all" ladder shows **−GEX peak 17.5** (true put
+  wall, was 20), **strike 30 (+$649K) now renders**, +GEX peak/king 25 unchanged.
+- **Tests:** `vector-gex-ladder.test.ts` — FIG-shaped fixture asserts 30 retained, 17.5 crowned as
+  put king, −GEX peak = 17.5 (not the band edge 20); a `keepPerSide:1` regression reproduces the old
+  drop. All pre-existing ladder tests (single-king retain, ties, no-spot cap) still pass.
+- **DEPLOY-RISK / member-visible:** YES for the ladder panel — the "all" ladder now shows more
+  strikes, its magnitudes shift slightly (all-expiries recompute: 25 = $817K vs old truncated
+  near-8 $793K) and the put king/−GEX peak moves 20 → 17.5. This is a correctness improvement but it
+  IS visible to members on the ladder. It does NOT touch the desk/Largo/heatmap walls or any GEX
+  magnitude elsewhere. Flagged for user review before ship (PR left unmerged).
+
+### Issue 3 — SIGN distribution: our signs are CORRECT — NO CHANGE
+- **Finding:** our per-strike signs match ground truth by the canonical dealer convention (call +,
+  put −). $FIG strike 28 is call-dominated → correctly POSITIVE in our calc; Skylit shows it large
+  NEGATIVE, which canonical dealer-gamma does not produce for a call-heavy strike. The member's
+  "big negatives at 28/27/26" is Skylit's convention, not a sign bug on our side. No change.
+
 ## 2026-07-13 — Vector bead-rail / DTE-coherence audit (member-driven, RTH live)
 
 ### P0 — Bead trails ran full-width from the open; "no new walls all day" (FIXED, live-verified)
