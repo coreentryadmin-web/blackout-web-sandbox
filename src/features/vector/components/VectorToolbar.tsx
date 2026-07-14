@@ -48,6 +48,8 @@ type Props = {
   /** Compact page title/ticker cluster, rendered at the far LEFT of the toolbar row (so the header
    *  and the timeframe/indicator controls share one line instead of a tall separate header block). */
   leadSlot?: React.ReactNode;
+  /** Host-desk slot rendered immediately LEFT of the Replay controls (2026-07-14). */
+  replayLeadSlot?: React.ReactNode;
   /** Freshness/status chip, rendered at the far RIGHT of the toolbar row, aligned with the title. */
   trailSlot?: React.ReactNode;
 };
@@ -89,6 +91,7 @@ export function VectorToolbar(props: Props) {
     barCount,
     leadSlot,
     trailSlot,
+    replayLeadSlot,
   } = props;
 
   return (
@@ -109,6 +112,7 @@ export function VectorToolbar(props: Props) {
           />
         </div>
         <div className="flex min-w-0 flex-1 flex-wrap items-center justify-end gap-2">
+          {replayLeadSlot}
           <VectorReplayControls
             replayMode={replayMode}
             playing={playing}

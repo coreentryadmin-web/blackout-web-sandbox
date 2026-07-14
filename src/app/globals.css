@@ -17872,3 +17872,23 @@ body::before {
 .bo-static.bo-nighthawk .nh-sweep{transform:rotate(-32deg)} .bo-static.bo-nighthawk .nh-wedge-fill{opacity:.35}
 .bo-static.bo-spx .bo-scan,.bo-static.bo-grid .bo-scan{opacity:.35}
 .bo-static.bo-heatmap .c.d1,.bo-static.bo-heatmap .c.d2{opacity:.9} .bo-static.bo-heatmap .c.d3{opacity:.6}
+
+/* STRIP SPOT (2026-07-14, user-directed): live SPX price leads the header strip — bigger than
+   pill values (it's the desk's anchor number) but pill-height so the one-line strip holds. */
+.spx-strip-spot { min-width: 9.5rem; }
+.spx-strip-spot .spx-hero-stat-value-row { align-items: baseline; gap: 0.4rem; }
+.spx-strip-spot-price { font-size: clamp(1.05rem, 1vw + 0.5rem, 1.35rem); font-weight: 700; line-height: 1; }
+.spx-strip-spot-pct { font-size: clamp(0.7rem, 0.5vw + 0.4rem, 0.8rem); font-weight: 600; opacity: 0.9; }
+
+/* MATRIX REFRESH (2026-07-14, user-directed): icon button in the Dealer Gamma Map title bar —
+   revalidates the matrix SWR key only and recenters on spot. Spins while validating. */
+.spx-matrix-refresh-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 1.5rem; height: 1.5rem; border-radius: 0.45rem;
+  border: 1px solid rgba(34, 211, 238, 0.35); color: rgb(34 211 238 / 0.85);
+  font-size: 0.85rem; line-height: 1; transition: color 120ms, border-color 120ms;
+}
+.spx-matrix-refresh-btn:hover { color: rgb(103 232 249); border-color: rgba(103, 232, 249, 0.6); }
+.spx-matrix-refresh-btn--spinning { animation: spx-matrix-refresh-spin 0.9s linear infinite; }
+@keyframes spx-matrix-refresh-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .spx-matrix-refresh-btn--spinning { animation: none; opacity: 0.6; } }

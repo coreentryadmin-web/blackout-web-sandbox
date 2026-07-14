@@ -49,16 +49,6 @@ const SpxCommentaryRail = dynamic(
   { loading: () => null }
 );
 
-const SpxLiveSpotPrice = dynamic(
-  () => import("./SpxLiveSpotPrice").then((m) => ({ default: m.SpxLiveSpotPrice })),
-  { loading: () => null }
-);
-
-const SpxSessionTimeBar = dynamic(
-  () => import("./SpxSessionTimeBar").then((m) => ({ default: m.SpxSessionTimeBar })),
-  { loading: () => null }
-);
-
 class SpxPanelErrorBoundary extends React.Component<
   { children: React.ReactNode },
   { hasError: boolean }
@@ -227,18 +217,9 @@ export function SpxDashboard({ vectorSeed }: SpxDashboardProps) {
         <SpxSniperHeader desk={desk} live={live} nativeShell={nativeShell} />
       </SpxPanelErrorBoundary>
 
-      {/* SESSION TIME BAR (2026-07-13): thin RTH timeline — playbook windows, macro blocks,
-          Largo event dots, now-cursor — plus the focus-mode toggle at its right edge. */}
-      <SpxPanelErrorBoundary>
-        <SpxSessionTimeBar
-          macroEvents={desk?.macro_events}
-          live={live}
-          focus={focusActive}
-          onToggleFocus={toggleFocus}
-          showFocusToggle={!compactPanels}
-        />
-      </SpxPanelErrorBoundary>
-
+      {/* SESSION TIME BAR removed (user-directed 2026-07-14): the strip cost a row of panel
+          height for information the ribbon/banner already carry. Component stays in the repo;
+          the focus toggle it hosted now lives in the Vector toolbar, left of Replay. */}
       {compactPanels && (
         <IosNativeSegment
           value={iosPanel}
@@ -291,11 +272,9 @@ export function SpxDashboard({ vectorSeed }: SpxDashboardProps) {
               compactPanels && iosPanel === "matrix" && "ios-native-panel-visible"
             )}
           >
-            {(!compactPanels || iosPanel === "matrix") && !focusActive && (
-              <div className="spx-matrix-column-spot shrink-0" aria-label="SPX live spot">
-                <SpxLiveSpotPrice desk={desk} live={live} size="panel" />
-              </div>
-            )}
+            {/* Spot module removed from this column (user-directed 2026-07-14): spot now lives
+                in the header ribbon left of EMA, and the Dealer Gamma Map gets the full column
+                height — same as the other two panels. */}
             <SpxGexMatrixHeatmap
               live={live}
               sessionActive={sessionActive}
@@ -333,6 +312,22 @@ export function SpxDashboard({ vectorSeed }: SpxDashboardProps) {
                 defaultDteHorizon="0dte"
                 defaultTimeframe={3}
                 onPriceScaleRender={setPriceScaleMap}
+                toolbarReplayLeadSlot={
+                  // Focus toggle relocated here from the removed session time bar
+                  // (user-directed 2026-07-14: "move Focus to left of Replay").
+                  !compactPanels ? (
+                    <button
+                      type="button"
+                      id="spx-desk-focus-toggle"
+                      className={clsx("spx-desk-focus-btn", focusActive && "spx-desk-focus-btn--active")}
+                      onClick={toggleFocus}
+                      aria-pressed={focusActive}
+                      title={focusActive ? "Exit focus mode (F or Esc)" : "Focus mode — chart fills the desk (F)"}
+                    >
+                      ⛶ Focus
+                    </button>
+                  ) : undefined
+                }
               />
             ) : (
               <EmptyState
