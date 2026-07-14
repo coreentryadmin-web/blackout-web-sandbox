@@ -107,4 +107,44 @@ Dynamic-universe MECHANISM is sound (TTL 45d > retention 14d; cap 100; recorder 
 - `scratchpad/zerodte-open-watch.mjs` — 0DTE first-live-session watch (14:05 checkpoint)
 
 ## 6. SWEEP FINDINGS (appended as agents report)
-_(pending — Vector / SPX Slayer / Night Hawk / Largo live sweeps)_
+
+### SPX Slayer (live 13:45Z) — 32 PASS / 1 FAIL / 6 CHECK — `scratchpad/live-sweep-spxslayer.md`
+- **P1 #1 flip self-contradiction**: desk γflip 7532.45 vs embedded Vector 0DTE chart flip 7572.77
+  (0.53% > 0.1% bar); Largo+desk cluster ~7532-7536 → **Vector 0DTE flip is the outlier**. Two
+  derivations: `spx-desk.ts:1465 canonicalGex.gamma_flip` vs `vector/walls/route.ts:40
+  getVectorGammaFlipForHorizon`. → FIX via VECTOR-FLIP UNIFICATION (single canonical flip all
+  surfaces read) — sequence as sole vector editor AFTER multiday agent. This is N4-1/N5-1 live.
+- **P1 #2 side-of-flip incoherence**: `above_gamma_flip` raw price>flip (`spx-desk.ts:1351`) vs
+  `gamma_regime` 2pt hysteresis (`gamma-desk.ts:141`) straddle near flip → (a) γ-regime confluence
+  signal zeros within 2pt (`spx-signals.ts:276,284`), (b) Largo narrated "below γflip/short γ" while
+  ABOVE (`spx-desk-synthesis.ts:46-53`), (c) `/api/market/regime` "long gamma" vs desk "amplification".
+  → FIX: one hysteresis-aware side-of-flip truth all consumers key off. (SPX Slayer fix agent)
+- **P2 #3**: `/api/market/spx/pulse` missing `roundFloats` (`pulse/route.ts:15`, +stream :121) —
+  serves 7536.9800000000005. → one-liner. (SPX Slayer fix agent)
+- **P2 #4**: React hydration #418 on `/dashboard` (localStorage focus-mode `SpxDashboard.tsx:97-103`).
+- **P3 #5**: `/api/market/regime` stale flag date-based (fresh while 148s behind).
+
+### Largo/BIE (live 13:50Z) — 66 asks, aggregates clean (0 fallback/marker/malformed, p95 8.4s) — `scratchpad/live-sweep-largo.md`
+- **P1-A terse ticker misroute**: `flip nvda`/`flip tsla`/`0dte spy` → SPX dump (ticker discarded).
+  `router.ts:149 VECTOR_STRUCTURE_RE` matches "gamma flip" not bare "flip"; `:711`
+  classifyBieStagingFallback forces SPX. Hidden by hardcore (only `flip spx`). → add bare flip / guard
+  :711 on non-SPX ticker. (bie fix agent)
+- **P1-C never-ran crons (PROD)**: `vector-full-state-snapshot` + `bie-full-state-snapshot` NEVER RAN;
+  `data-correctness` FAILED (2 flags); `socket-health` FAILED — surfaced by the #58 ops read. Upstream
+  cause of P1-B stale flip. → investigate cron registration (cron-registry.ts + railway-cron-services +
+  railway.*.toml) + schedule + errors. (ops/cron fix agent — likely biggest lever, platform-wide staleness)
+- **P1-B flip divergence**: `vector_read` flip ≠ walls flip back-to-back, walls stable (SPX wk
+  7597.42 vs 7600.33; mo 7638.73 vs 7646.69; TSLA 408.94 vs 404.84). vector_read reads ~11m-stale
+  full-state cache; RTH numeric gate wired only into verdict.ts not vector_read. → wire RTH gate into
+  vector_read (bie) + fix the cron (ops). Verdict path flip was correct.
+- **P2-A N5-2 entity leak (live)**: `Nvidia&#39;s` in BIE news (`ticker-verdict.ts:124`,
+  `spx-live-voice.ts:783`, `spx-desk-brief.ts:213`); `sanitizeFeedText` wired only into src/lib/largo/*.
+  → wire decoder into BIE composers. (bie fix agent)
+- **P2 misc**: "market regime?" → glossary def not live (#45); off-topic "recipe" → concept "logged it"
+  not scope card (#41); compound drops answerable "SPX vs flip" part (#48); "self-diagnosis" → identity
+  card (#34). (bie fix agent)
+- N5-3 SESSION WRAPPED not reproducible RTH (off-hours only) — unverified.
+
+### Vector / Night Hawk / Thermal — _(pending)_
+### Technicals session-anchoring (OR-15m-Friday hypothesis: 3→22 seed bump) — _(pending, Vector sweep)_
+### Multi-session continuity (Gap A/B) — _(building, feat/vector-multiday-continuity)_
