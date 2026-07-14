@@ -2,7 +2,7 @@
 
 import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { PageShell, FreshnessChip } from "@/components/ui";
 import { ProductMark } from "@/components/marks/ProductMark";
 import type { VectorBar } from "@/features/vector/components/VectorChart";
@@ -21,10 +21,11 @@ import type { AlertRule, AlertKind, FiredAlert } from "@/features/vector/lib/vec
 import { loadAlertRules, saveAlertRules, buildAlertRule, loadNotifyEnabled, saveNotifyEnabled } from "@/features/vector/lib/vector-alerts-store";
 import { notificationForFire, shouldSystemNotify } from "@/features/vector/lib/vector-notify";
 import { enableVectorNotifications, notifyPermission, presentSystemNotification } from "@/features/vector/lib/vector-notify-client";
-import { deriveVectorRegime, type VectorRegime } from "@/features/vector/lib/vector-regime";
-import { deriveWallProximity, type WallProximity } from "@/features/vector/lib/vector-wall-proximity";
-import { deriveGammaMagnet, type GammaMagnet } from "@/features/vector/lib/vector-gamma-magnet";
-import { scoreTopWalls, type WallIntegrity } from "@/features/vector/lib/vector-wall-integrity";
+import type { VectorRegime } from "@/features/vector/lib/vector-regime";
+import type { WallProximity } from "@/features/vector/lib/vector-wall-proximity";
+import type { GammaMagnet } from "@/features/vector/lib/vector-gamma-magnet";
+import type { WallIntegrity } from "@/features/vector/lib/vector-wall-integrity";
+import { deriveVectorSurfaceSeed } from "@/features/vector/lib/vector-surface-seed";
 import type { VectorWallEvent } from "@/features/vector/lib/vector-wall-events";
 import { VECTOR_DEFAULT_TICKER } from "@/features/vector/lib/vector-ticker";
 
@@ -125,23 +126,27 @@ export function VectorPageShell({
   const [scannerOpen, setScannerOpen] = useState(false);
   const activeTicker = ticker || VECTOR_DEFAULT_TICKER;
 
-  // Seed the regime from the SSR snapshot so the banner is right on first paint;
-  // VectorChart streams live updates via onRegimeChange during a session.
-  const [regime, setRegime] = useState<VectorRegime>(() =>
-    deriveVectorRegime({
-      spot: initialBars.length ? initialBars[initialBars.length - 1]!.close : null,
-      gammaFlip: initialGammaFlip,
-      topCallWall: initialWalls?.callWalls?.[0]?.strike ?? null,
-      topPutWall: initialWalls?.putWalls?.[0]?.strike ?? null,
-    })
+  // ONE canonical SSR-seed derivation (N5-1 one-flip-source): the banner regime, the terminal
+  // proximity/magnet callouts, and the wall-integrity badges are all first painted from the SAME
+  // spot + gamma flip + wall set, with the regime derived a SINGLE time. This replaces the three
+  // separate inline deriveVectorRegime/deriveWallProximity/deriveGammaMagnet seeds (the magnet used
+  // to re-derive the regime a second time just for its posture) so the seeded surfaces cannot
+  // disagree on first paint. VectorChart streams live updates via the onRegimeChange/onProximity/
+  // onMagnet callbacks during a session.
+  const initialSpot = initialBars.length ? initialBars[initialBars.length - 1]!.close : null;
+  const surfaceSeed = useMemo(
+    () =>
+      deriveVectorSurfaceSeed({
+        spot: initialSpot,
+        gammaFlip: initialGammaFlip,
+        walls: initialWalls,
+        wallHistory: initialWallHistory,
+      }),
+    [initialSpot, initialGammaFlip, initialWalls, initialWallHistory]
   );
-  const [proximity, setProximity] = useState<WallProximity | null>(() =>
-    deriveWallProximity({
-      spot: initialBars.length ? initialBars[initialBars.length - 1]!.close : null,
-      walls: initialWalls,
-      gammaFlip: initialGammaFlip,
-    })
-  );
+
+  const [regime, setRegime] = useState<VectorRegime>(surfaceSeed.regime);
+  const [proximity, setProximity] = useState<WallProximity | null>(surfaceSeed.proximity);
   const [confluence, setConfluence] = useState<string[] | null>(null);
   // Always-on technicals lines (VWAP/EMA/RSI/MACD/pocket/structure) — narrated by the terminal even
   // when the member hasn't toggled the overlays on the chart.
@@ -159,22 +164,11 @@ export function VectorPageShell({
   // state (granted / denied / needs-prompt). Both are read after mount to stay SSR-safe.
   const [notifyEnabled, setNotifyEnabled] = useState(false);
   const [notifyPerm, setNotifyPerm] = useState<NotificationPermission>("default");
-  const [magnet, setMagnet] = useState<GammaMagnet | null>(() =>
-    deriveGammaMagnet({
-      spot: initialBars.length ? initialBars[initialBars.length - 1]!.close : null,
-      walls: initialWalls,
-      posture: deriveVectorRegime({
-        spot: initialBars.length ? initialBars[initialBars.length - 1]!.close : null,
-        gammaFlip: initialGammaFlip,
-        topCallWall: initialWalls?.callWalls?.[0]?.strike ?? null,
-        topPutWall: initialWalls?.putWalls?.[0]?.strike ?? null,
-      }).posture,
-    })
-  );
+  const [magnet, setMagnet] = useState<GammaMagnet | null>(surfaceSeed.magnet);
   const [wallIntegrity, setWallIntegrity] = useState<{
     call: WallIntegrity | null;
     put: WallIntegrity | null;
-  }>(() => scoreTopWalls(initialWalls, initialWallHistory));
+  }>(surfaceSeed.wallIntegrity);
 
   useEffect(() => {
     if (!liveSession) return;

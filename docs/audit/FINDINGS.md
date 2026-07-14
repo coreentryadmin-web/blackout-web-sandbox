@@ -876,3 +876,75 @@ against staging: **68 pass · 0 fail · 4 skip · 3 expected-fail (keyed to #338
   scorer, publish-gates.ts (its constants are imported as the single source of truth),
   `HawkRecordStrip` (parallel agent owns the playbook UI), and gate thresholds — the
   Debrief produces the evidence to move them; it never moves them itself.
+
+## 2026-07-14 — Vector morning-gate backlog (fix/vector-morning-gate)
+
+### P2 — Multi-day replay seed too shallow for the monthly DTE horizon (FIXED, tested)
+- **Severity:** P2 (correct data, but the chart/replay canvas didn't span the horizon the member
+  is trading — monthly-DTE beads/replay sat over ~3 days of chart under a 30-day wall rail).
+- **Root cause:** `TARGET_SEED_SESSIONS = 3` in `src/features/vector/lib/vector-seed-bars.ts:45`.
+  The seed feeds the chart candles, the wall rail, and the replay timeline. The MONTHLY DTE horizon
+  is 35 calendar days (`HORIZON_MAX_DTE.monthly`, `vector-dte-horizon.ts:23`), and the 30-day
+  wall-history retention keeps a month of beads — but only 3 sessions of chart existed to scrub
+  them over. The bar-count ceiling `MAX_SEED_BARS = 3000` (~7.7 sessions of 1m) was the real
+  governor, so a naive constant bump alone would have been silently capped and ineffective.
+- **Evidence:** monthly-DTE replay/beads reference a ~30-day rail; the pre-fix seed returned 3
+  sessions (today + 2 prior). New unit test `newest 3 sessions stay 1m; older sessions are
+  decimated to 5m` proves the fix returns 22 sessions at `3 × 390 (1m) + 19 × 78 (5m) = 2,652`
+  bars for an index.
+- **Fix:** `TARGET_SEED_SESSIONS = 22` (≈30 calendar days of trading). To keep the deep seed
+  payload-bounded, ported the decimation mechanism (older-than-`FULL_RES_SESSIONS=3` sessions
+  aggregated to 5m via `aggregateVectorBars`), parallel target-sized batched Polygon fetches (22
+  sequential SSR round-trips would add seconds), `MAX_SEED_BARS = 7000` (fits 22 index AND
+  extended-hours-stock sessions; trims only pathological sub-minute density, whole-oldest-session
+  first), `MAX_SESSION_WALKBACK = 35`. Added `targetSessions` param (default 22); the two
+  lightweight callers — bars-route reconnect backfill (`src/app/api/market/vector/bars/route.ts`)
+  and server technicals (`vector-server-technicals.ts`) — pass `3` explicitly so only the page SSR
+  seed pays for the depth, AND so 5m-decimated priors never contaminate fixed-period EMA/RSI/MACD
+  windows or the reconnect merge-by-time union.
+- **Perf/payload note (verified by construction):** index seed ≈ 2,652 bars ≈ 240 KB JSON / ~30 KB
+  gzip; extended-hours stock worst case ≈ 6,528 bars ≈ 590 KB / ~80 KB gzip — bounded by
+  `MAX_SEED_BARS`. Decimation keeps the deep seed at ~1/3 of the raw-1m size (raw 22×1m ≈ 800 KB).
+  Live SSE payload is untouched (candle/bead ticks only — the seed is a one-time SSR cost).
+- **Relationship to held branches:** `origin/fix/vector-multiday-replay` (46 commits behind trunk,
+  925 lines / 17 files) is the FULL multi-day feature (wall-history DB persistence, replay-UI depth,
+  page wiring) and set the seed to 15. This PR adopts ONLY its self-contained seed-bars decimation
+  at the decision's 22-session target; the larger wall-history-persistence half of that branch
+  remains separate work (needs live RTH verification), NOT resurrected here.
+- **Status:** FIXED. `vector-seed-bars.test.ts` extended (11 cases; decimation, targetSessions=3
+  parity, ceiling drops oldest-first, empty result). tsc clean; full suite green.
+
+### N5-1 — Flip/regime single-source: seed-time canonicalized; live-cadence coherence noted (PARTIAL, tested)
+- **Severity:** P3 (no live wrong number today — the client flip is already single-sourced; this is
+  drift-PREVENTION + a remaining coherence gap).
+- **Audit result:** the gamma flip is ALREADY canonical on both sides. Server: every horizon flip
+  flows from `getVectorGammaFlip` / `getVectorGammaFlipForHorizon` (`vector-snapshot.ts`) →
+  `getGexPositioning` / per-expiry ladder. Client: the chart banner, flip line, and the terminal's
+  proximity/magnet/confluence all read the chart's single `liveGammaFlip()` =
+  `pickHorizonScopedValue(horizon, horizonFlipRef, gammaFlipRef)` (`vector-dte-horizon.ts:71`,
+  `VectorChart.tsx:1647`) and one shared `deriveVectorRegime`. The GEX-ladder API returns rows+spot
+  only — no independent flip. (`vector-key-levels.ts` is Fib/HOD/pivots, NOT the gamma flip.)
+- **Root cause fixed (seed-time):** `VectorPageShell.tsx` seeded the banner regime, terminal
+  proximity, and magnet with THREE separate inline derivations — and the magnet re-ran
+  `deriveVectorRegime` a SECOND time just to read its posture. Two derivations from the same flip
+  are one refactor (a changed default, a reordered wall) away from silently disagreeing on first
+  paint — the literal ">1 source" the decision flagged.
+- **Fix:** new pure `deriveVectorSurfaceSeed()` (`src/features/vector/lib/vector-surface-seed.ts`):
+  one spot + one flip + one wall set in, regime derived ONCE, its posture threaded into the magnet;
+  returns `{ regime, proximity, magnet, wallIntegrity }`. PageShell now seeds all four surfaces from
+  this single object. `vector-surface-seed.test.ts` (4 cases) pins the invariant (seed regime ==
+  standalone derive; magnet posture == the banner's regime; honest empty seed; populated when
+  walls+spot present).
+- **Remaining (NOT done here — larger, needs live RTH verification):** the LIVE-cadence coherence —
+  chart, GEX ladder, max-pain, and expected-move poll on FOUR independent 15s clocks, so at any
+  instant the ladder's king row / max-pain can describe a slightly different moment than the chart.
+  The held `origin/fix/vector-surface-sync` branch (590 lines) fixes this properly with an atomic
+  per-15s `VectorHorizonSnapshot` store (`use-vector-horizon-snapshot.ts`) every surface consumes.
+  That's a real refactor whose acceptance criteria are all live-RTH (identical numbers on all three
+  surfaces at one instant; shared `asOf` in lockstep; failure coherence) — it must be finalized +
+  validated on the deployed build during RTH, not merged blind off-hours. Also noted: the SSR
+  regime seed uses the "all"-horizon flip while the chart/ladder default to the "weekly" horizon,
+  so the banner briefly shows the all-horizon regime until the first weekly fetch lands (transient,
+  self-correcting; a server-side weekly seed flip would close it but is out of this small scope).
+- **Status:** PARTIAL — seed-time single-source shipped + tested; live-cadence snapshot store
+  tracked to `fix/vector-surface-sync` (finalize during RTH).

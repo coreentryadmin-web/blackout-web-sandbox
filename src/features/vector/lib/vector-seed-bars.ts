@@ -2,6 +2,7 @@ import type { UTCTimestamp } from "lightweight-charts";
 import { formatEtDate, previousTradingDayEt } from "@/features/nighthawk/lib/session";
 import { fetchIndexMinuteBars, fetchStockMinuteBars } from "@/lib/providers/polygon";
 import { fetchSpyVolumeByMinute } from "./vector-spy-volume";
+import { aggregateVectorBars } from "./vector-bar-timeframes";
 import {
   isVectorIndexTicker,
   normalizeVectorTicker,
@@ -38,92 +39,157 @@ function mapMinuteBars(bars: AggBar[], volumeByTime?: Map<number, number>): Vect
     });
 }
 
-/** How many trading sessions of intraday context to seed (today + prior sessions). Members
- *  reported the chart "losing Friday" near the open: with a single session, today has only a
- *  handful of bars at 09:31 and the prior session is gone entirely. Three sessions gives a
- *  multi-day intraday backdrop without dragging in a wall of history. */
-const TARGET_SEED_SESSIONS = 3;
-/** Hard bar-count ceiling so a pathological run (e.g. a stock with sub-minute rows, or many
- *  short holiday sessions) can't balloon the seed. ~5 RTH sessions of 1m bars ≈ 1950; 3000 is
- *  comfortable headroom above the 3-session target. */
-const MAX_SEED_BARS = 3000;
-/** Walk-back budget in trading days — must exceed TARGET_SEED_SESSIONS enough to skip weekends
- *  and holidays while still collecting the target number of non-empty sessions. */
-const MAX_SESSION_WALKBACK = 12;
+/** How many trading sessions of intraday context to seed (today + prior sessions). 22 sessions
+ *  ≈ 30 CALENDAR days of trading — the depth the 30-day-retention decision requires so the
+ *  MONTHLY DTE horizon (HORIZON_MAX_DTE.monthly = 35 calendar days in vector-dte-horizon.ts) has
+ *  a chart/replay/bead canvas that spans the whole horizon a member can scrub, instead of the old
+ *  3-session backdrop that left monthly-DTE replay with only ~3 days of context under a 30-day
+ *  wall rail. The chart, wall rail, and replay timeline all derive from these bars, so this is the
+ *  scrub-back horizon. Cost is contained by (a) PARALLEL per-day fetches (22 sequential Polygon
+ *  round-trips would add seconds to SSR), (b) 5-min decimation of every session older than the
+ *  newest FULL_RES_SESSIONS (keeps the payload ~1/3 of raw 1m — see below), and (c) the lightweight
+ *  callers (bars-route reconnect backfill, server technicals) passing a smaller targetSessions
+ *  explicitly so only the page's SSR seed pays for the depth. */
+const TARGET_SEED_SESSIONS = 22;
+/** Newest sessions kept at native 1m resolution; older sessions are decimated to 5m bars.
+ *  3 matches the pre-multi-day seed depth exactly, so every ≤3-session caller (bars route,
+ *  server technicals) sees byte-identical output to before — the decimation only ever applies
+ *  to the deep prior-day context the 22-session page seed adds. */
+const FULL_RES_SESSIONS = 3;
+/** Hard bar-count ceiling (applied AFTER prior-session decimation) so a pathological run can't
+ *  balloon the seed/SSR payload. 22 RTH index sessions ≈ 3×390 (1m) + 19×78 (5m) ≈ 2,652 bars
+ *  (~240 KB JSON, ~30 KB gzip); a liquid stock carrying extended-hours minute rows
+ *  ≈ 3×960 + 19×192 ≈ 6,528 bars (~590 KB JSON, ~80 KB gzip). 7000 is headroom above both so the
+ *  full 22-session depth lands for index AND stocks, while a sub-minute-dense pathological ticker
+ *  still gets trimmed. When the cap trims, whole OLDEST sessions are dropped first — never a
+ *  partial session (partial sessions break session-anchored math downstream). */
+const MAX_SEED_BARS = 7000;
+/** Walk-back budget in trading days — must exceed TARGET_SEED_SESSIONS enough to skip data-gap
+ *  days (previousTradingDayEt already skips weekends/holidays) while still collecting the target
+ *  number of non-empty sessions. 35 leaves ~13 days of slack above the 22-session target for
+ *  provider gaps/holidays. */
+const MAX_SESSION_WALKBACK = 35;
+/** Decimated interval (minutes) for sessions older than FULL_RES_SESSIONS. A 5m candle at the
+ *  zoomed-out multi-day replay depth is visually indistinguishable from 1m for prior-day context,
+ *  and mixing it with the native-1m latest sessions keeps strictly-ascending time (see below). */
+const PRIOR_SESSION_BAR_MINUTES = 5;
 
 /**
  * Seed bars for the Vector chart: the latest session (today, or the most recent trading day
- * when today has no bars yet — weekend/holiday/pre-open) PLUS up to TARGET_SEED_SESSIONS-1
- * prior trading sessions, concatenated oldest→newest with strictly ascending, de-duplicated
- * time so the chart draws genuine multi-day intraday context instead of a single session.
+ * when today has no bars yet — weekend/holiday/pre-open) PLUS up to targetSessions-1 prior
+ * trading sessions, concatenated oldest→newest with strictly ascending, de-duplicated time so
+ * the chart draws genuine multi-day intraday context instead of a single session. The newest
+ * FULL_RES_SESSIONS keep 1m bars; older sessions are aggregated to 5m so the payload of the deep
+ * 22-session seed stays bounded (raw 1m for 22 sessions would be ~800 KB before wall history).
  *
- * `sessionYmd` remains the LATEST session's date (not the oldest) — every downstream
- * consumer (SSE/live upsert, session scoping, SPY-volume backfill, wall-history keying) keys
- * off it, so keeping it pinned to the newest session leaves all of that logic unchanged; only
- * the returned bar array grows to include prior-day context.
+ * `sessionYmd` remains the LATEST session's date (not the oldest) — every downstream consumer
+ * (SSE/live upsert, session scoping, SPY-volume backfill, wall-history keying) keys off it, so
+ * keeping it pinned to the newest session leaves all of that logic unchanged; only the returned
+ * bar array grows to include prior-day context. `sessionYmds` lists every included session
+ * ascending, and `latestSessionStartSec` is the newest session's first-bar time, for consumers
+ * that need the honest per-session window without re-deriving it from the bar array.
  */
 export async function fetchVectorSeedBars(
   ticker: string = VECTOR_DEFAULT_TICKER,
   now = new Date(),
   fetchIndex: typeof fetchIndexMinuteBars = fetchIndexMinuteBars,
   fetchStock: typeof fetchStockMinuteBars = fetchStockMinuteBars,
-  fetchSpyVolume: (ymd: string) => Promise<Map<number, number>> = fetchSpyVolumeByMinute
+  fetchSpyVolume: (ymd: string) => Promise<Map<number, number>> = fetchSpyVolumeByMinute,
+  targetSessions: number = TARGET_SEED_SESSIONS
 ): Promise<{
   bars: VectorSeedBar[];
   sessionYmd: string;
   ticker: string;
+  /** Every session actually included in `bars`, ascending (oldest first). */
+  sessionYmds: string[];
+  /** Epoch-sec time of the LATEST session's first bar — the honest-reconstruction window start. */
+  latestSessionStartSec: number | null;
 }> {
   const t = normalizeVectorTicker(ticker);
   const today = formatEtDate(now);
-  let ymd = today;
+  const target = Math.max(1, Math.floor(targetSessions));
   const polySym = vectorPolygonMinuteSymbol(t);
   const useIndex = isVectorIndexTicker(t);
 
-  // Collected newest-first as we walk back; emitted oldest-first below.
-  const sessions: Array<{ ymd: string; bars: VectorSeedBar[] }> = [];
-  let latestYmd: string | null = null;
-  let totalBars = 0;
+  // Candidate trading days, newest first. previousTradingDayEt already skips weekends/holidays,
+  // so nearly every candidate is a real session — the walk-back padding only absorbs provider
+  // data gaps. Precomputing the list lets the per-day fetches run in PARALLEL: the old
+  // sequential walk was fine at 3 sessions but 22 sequential Polygon round-trips would add
+  // seconds to SSR.
+  const candidates: string[] = [];
+  {
+    let ymd = today;
+    for (let i = 0; i < MAX_SESSION_WALKBACK; i++) {
+      candidates.push(ymd);
+      ymd = previousTradingDayEt(ymd);
+    }
+  }
 
-  for (let i = 0; i < MAX_SESSION_WALKBACK; i++) {
-    if (sessions.length >= TARGET_SEED_SESSIONS || totalBars >= MAX_SEED_BARS) break;
-
+  const fetchSession = async (ymd: string): Promise<{ ymd: string; bars: VectorSeedBar[] }> => {
     const rawBars = useIndex
       ? await fetchIndex(polySym, ymd, ymd).catch(() => [])
       : await fetchStock(t, ymd, ymd).catch(() => []);
+    if (!rawBars.length) return { ymd, bars: [] };
+    // SPX has no native tape volume — fetch SPY 1m volume per included session so prior-day
+    // SPX bars carry volume too (the live backfill in VectorChart only refreshes sessionYmd).
+    let volumeByTime: Map<number, number> | undefined;
+    if (t === "SPX") volumeByTime = await fetchSpyVolume(ymd).catch(() => new Map());
+    return { ymd, bars: mapMinuteBars(rawBars, volumeByTime) };
+  };
 
-    if (rawBars.length) {
-      // SPX has no native tape volume — fetch SPY 1m volume per included session so prior-day
-      // SPX bars carry volume too (the live backfill in VectorChart only refreshes sessionYmd).
-      let volumeByTime: Map<number, number> | undefined;
-      if (t === "SPX") volumeByTime = await fetchSpyVolume(ymd);
-
-      const mapped = mapMinuteBars(rawBars, volumeByTime);
-      if (mapped.length > 0) {
-        // First non-empty session found is the latest one — today, or (walking back) the most
-        // recent trading day when today has no bars yet. That's what sessionYmd must stay.
-        if (latestYmd === null) latestYmd = ymd;
-        sessions.push({ ymd, bars: mapped });
-        totalBars += mapped.length;
-      }
-    }
-
-    ymd = previousTradingDayEt(ymd);
+  // Collected newest-first; emitted oldest-first below. Fetch in target-sized parallel batches:
+  // batch 1 almost always fills the target (candidates are real trading days), batch 2+ only
+  // runs when data-gap days left the target short.
+  const sessions: Array<{ ymd: string; bars: VectorSeedBar[] }> = [];
+  let cursor = 0;
+  while (sessions.length < target && cursor < candidates.length) {
+    const batch = candidates.slice(cursor, cursor + Math.max(1, target - sessions.length));
+    cursor += batch.length;
+    const results = await Promise.all(batch.map(fetchSession));
+    for (const r of results) if (r.bars.length > 0) sessions.push(r);
   }
 
-  if (!sessions.length) return { bars: [], sessionYmd: today, ticker: t };
+  if (!sessions.length) {
+    return { bars: [], sessionYmd: today, ticker: t, sessionYmds: [], latestSessionStartSec: null };
+  }
+
+  // First non-empty session (newest candidate order) is the latest one — today, or the most
+  // recent trading day when today has no bars yet. That's what sessionYmd must stay.
+  const latestYmd = sessions[0]!.ymd;
+
+  // Decimate sessions older than the newest FULL_RES_SESSIONS to 5m and apply the bar-count
+  // ceiling newest-first, dropping whole oldest sessions past the cap (never a partial one).
+  const included: Array<{ ymd: string; bars: VectorSeedBar[] }> = [];
+  let totalBars = 0;
+  for (let i = 0; i < sessions.length; i++) {
+    const s = sessions[i]!;
+    const sessionBars =
+      i < FULL_RES_SESSIONS
+        ? s.bars
+        : (aggregateVectorBars(s.bars, PRIOR_SESSION_BAR_MINUTES) as VectorSeedBar[]);
+    if (included.length > 0 && totalBars + sessionBars.length > MAX_SEED_BARS) break;
+    included.push({ ymd: s.ymd, bars: sessionBars });
+    totalBars += sessionBars.length;
+  }
 
   // Emit oldest-first so the chart draws left→right, and enforce strictly ascending unique
   // time across the session boundaries (defensive: drop any bar that isn't newer than the
   // last kept one, so a provider quirk can't produce a duplicate or backwards step).
   const bars: VectorSeedBar[] = [];
   let lastTime = Number.NEGATIVE_INFINITY;
-  for (let s = sessions.length - 1; s >= 0; s--) {
-    for (const bar of sessions[s]!.bars) {
+  for (let s = included.length - 1; s >= 0; s--) {
+    for (const bar of included[s]!.bars) {
       if (bar.time <= lastTime) continue;
       bars.push(bar);
       lastTime = bar.time;
     }
   }
 
-  return { bars, sessionYmd: latestYmd!, ticker: t };
+  return {
+    bars,
+    sessionYmd: latestYmd,
+    ticker: t,
+    sessionYmds: included.map((s) => s.ymd).reverse(),
+    latestSessionStartSec: included[0]?.bars[0]?.time ?? null,
+  };
 }

@@ -28,6 +28,19 @@ export async function GET(req: NextRequest) {
   }
   const ticker = normalizeVectorTicker(rawTicker);
 
-  const { bars, sessionYmd } = await fetchVectorSeedBars(ticker);
+  // targetSessions=3 pins this endpoint to its PRE-multi-day depth (3 sessions, all native 1m —
+  // identical output to before the 22-session page seed). The route exists to backfill bars that
+  // closed while a live SSE connection was down — always a hole in TODAY's session — so the deep
+  // multi-day context (which ships once in the page's SSR seed, priors decimated to 5m) must not
+  // be re-fetched here on every client reconnect: 22 Polygon calls per reconnect, and its 5m prior
+  // days would collide with these 1m rows in the client's merge-by-time union.
+  const { bars, sessionYmd } = await fetchVectorSeedBars(
+    ticker,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    3
+  );
   return NextResponse.json({ ticker, sessionYmd, bars, available: bars.length > 0 });
 }
