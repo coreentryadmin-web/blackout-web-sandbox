@@ -1510,8 +1510,8 @@ export function VectorChart({
       }
     };
     void fetchFlow();
-    // Live sessions get fresh prints as they hit; off-hours a single fetch is enough (static tape).
-    const id = liveSession ? setInterval(fetchFlow, 30_000) : null;
+    // Live: refresh flow data every 15s. Off-hours a single fetch is enough (static tape).
+    const id = liveSession ? setInterval(fetchFlow, 15_000) : null;
     return () => {
       cancelled = true;
       if (id) clearInterval(id);
@@ -1976,10 +1976,9 @@ export function VectorChart({
 
     void fetchScoped();
     void fetchHistory();
-    // Only the current walls need the 15s cadence; the recorded trail advances at the recorder's
-    // 5-min bucket, so refresh it on a slower interval in RTH (and once, above, off-hours).
+    // Refresh both walls and wall history on the same 15s cadence for coherent display.
     const id = liveSession ? setInterval(fetchScoped, 15_000) : null;
-    const histId = liveSession ? setInterval(fetchHistory, 60_000) : null;
+    const histId = liveSession ? setInterval(fetchHistory, 15_000) : null;
     return () => {
       cancelled = true;
       if (id) clearInterval(id);
