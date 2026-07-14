@@ -105,6 +105,25 @@ const VERDICT_HOLD_RE =
   /\b(hold|holding|keep|keeping)\b[^?]{0,30}\b(into|through|over)\s+(earnings|the\s+(print|report|close|open)|the\s+weekend|overnight|the\s+event)\b/i;
 const VERDICT_MARKET_RE = /\bis\s+(the\s+market|it)\s+risk[- ]?(on|off)\b/i;
 
+// Verdict RECALL (task #83) — "why did you say 7500 was good this morning", "does that verdict still
+// hold?". These reference a PRIOR verdict and are answered from the pinned case-law record (re-checking
+// its falsifiers against the live read), never re-fabricated. Two signals: a backreference to something
+// I SAID/CALLED, or a "still valid/holds" ask that explicitly names a verdict/call/read. Deliberately
+// tight — "why did we PULL/PICK/SKIP X" (Night Hawk/Cortex decision reads) and a play-state "is my
+// play still good" are excluded so this only steals genuine recall-of-my-verdict asks.
+const RECALL_BACKREF_RE =
+  /\b(you (said|called|graded|rated)|why did (you|largo|we) (say|call|grade|rate)|(your|the|that|this)\s+(earlier|previous|prior|morning|last)\s+(verdict|call|read|take|grade))\b/i;
+const RECALL_VALIDITY_RE =
+  /\b(still\s+(valid|hold|holds|holding|stand|standing|good)|does\s+(that|it|this|the read)\s+still\s+(hold|stand|apply))\b/i;
+
+/** True when the question is a recall of a previously-rendered verdict (task #83). */
+export function isVerdictRecallQuestion(q: string): boolean {
+  if (/\bmy\b[^?]{0,20}\bplay\b/i.test(q)) return false; // "is my TSLA play still good" → play-state
+  if (/\b(pull|pulled|pick|picked|skip|skipp|commit|committed)\b/i.test(q)) return false; // NH/Cortex decision reads
+  if (RECALL_BACKREF_RE.test(q)) return true;
+  return RECALL_VALIDITY_RE.test(q) && /\b(verdict|call|read|take|grade)\b/i.test(q);
+}
+
 /** True when the question is an explicit cross-tool verdict/grade ask (task #59). "should I …" is
  *  excluded on purpose (stays ticker_advice), as is "hold my … play …" (that's a play-state ask). */
 function isVerdictQuestion(q: string): boolean {
@@ -524,6 +543,11 @@ export function classifyBieIntent(question: string, ledgerTickers: Set<string>):
     return { intent: "vector_read", ticker: extractKnownTicker(q) ?? "SPX", horizon: extractHorizon(q) };
   }
 
+  // Verdict RECALL (task #83) — before SPX_WHY (which would steal a "why did you say SPX …" recall)
+  // and before the fresh-verdict branch: a recall of a PAST verdict is answered from the pinned
+  // case-law record, not re-graded from scratch.
+  if (isVerdictRecallQuestion(q)) return { intent: "verdict", ticker: extractKnownTicker(q) };
+
   if (SPX_WHY_RE.test(q)) return { intent: "spx_desk_read", ticker: "SPX" };
   if (SPX_EXPLAIN_RE.test(q)) return { intent: "spx_desk_read", ticker: "SPX" };
   if (SPX_INVALIDATION_RE.test(q)) return { intent: "spx_invalidation", ticker: "SPX" };
@@ -635,6 +659,8 @@ export function classifyBieStagingFallback(question: string): BieRoute {
   }
   if (ZERODTE_RE.test(q)) return { intent: "zerodte_plays", ticker: null };
   if (SPX_INVALIDATION_RE.test(q)) return { intent: "spx_invalidation", ticker: "SPX" };
+  // Verdict RECALL (task #83) — same placement rationale as the primary classifier.
+  if (isVerdictRecallQuestion(q)) return { intent: "verdict", ticker: extractKnownTicker(q) };
   if (isVerdictQuestion(q)) return { intent: "verdict", ticker: extractKnownTicker(q) };
   // Same horizon-scope guard as the primary classifier — a weekly/monthly SPX structure figure must
   // come from the per-DTE Vector engine, never the aggregate SPX desk fallback.

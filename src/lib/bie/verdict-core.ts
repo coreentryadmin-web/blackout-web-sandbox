@@ -19,6 +19,7 @@ import {
   type BieUnavailableSource,
   type BieLevel,
 } from "@/lib/bie/answer-envelope";
+import { deriveFalsifiers, type FalsifierEvidence } from "@/lib/bie/verdict-falsifiers";
 
 /** Which engine legs a verdict question warrants — depth matches merit; don't fan out needlessly. */
 export type VerdictLegPlan = {
@@ -299,6 +300,24 @@ export function assembleVerdictEnvelope(inp: VerdictInputs): BieAnswerEnvelope {
 
   const headline = buildVerdictHeadline(T, inp, bias, confidence.level);
 
+  // Falsifiers — the specific, machine-checkable conditions that would flip THIS verdict, derived
+  // from the SAME live evidence it rests on (task #83). Only emitted when the level they watch is
+  // live, so they're real falsifiers of this read, not boilerplate. Pinned with the case-law record
+  // (verdict.ts) so a later recall can re-evaluate them against a fresh snapshot.
+  const falsifiers = pos
+    ? deriveFalsifiers(
+        {
+          spot: pos.spot,
+          flip: pos.flip,
+          call_wall: pos.call_wall,
+          put_wall: pos.put_wall,
+          max_pain: pos.max_pain,
+          regime: inp.regime,
+        } satisfies FalsifierEvidence,
+        bias
+      )
+    : [];
+
   return makeEnvelope({
     headline,
     bias,
@@ -309,8 +328,9 @@ export function assembleVerdictEnvelope(inp: VerdictInputs): BieAnswerEnvelope {
     invalidation,
     scenarios,
     levels,
+    falsifiers,
     unavailableSources: inp.unavailable,
-    followups: ["What would flip this read?", "Show the flow tape", "What is the gamma flip?"],
+    followups: ["What would flip this read?", "Is that verdict still valid?", "Show the flow tape"],
   });
 }
 

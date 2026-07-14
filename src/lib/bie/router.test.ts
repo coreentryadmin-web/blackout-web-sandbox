@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
-import { classifyBieIntent, classifyBieStagingFallback, bieFollowups } from "@/lib/bie/router";
+import { classifyBieIntent, classifyBieStagingFallback, bieFollowups, isVerdictRecallQuestion } from "@/lib/bie/router";
 
 const NO_LEDGER = new Set<string>();
 
@@ -295,6 +295,28 @@ describe("router: verdict intent (cross-tool synthesis, task #59)", () => {
   test("market risk-on/off is a market-wide verdict", () => {
     assert.equal(classifyBieIntent("is the market risk-on today", NO_LEDGER)?.intent, "verdict");
     assert.equal(classifyBieIntent("is the market risk-off right now", NO_LEDGER)?.intent, "verdict");
+  });
+
+  test("verdict RECALL routes to verdict (task #83) — 'why did you say / does that verdict still hold'", () => {
+    assert.equal(classifyBieIntent("why did you say 7500 was good this morning", NO_LEDGER)?.intent, "verdict");
+    assert.equal(classifyBieIntent("does that SPX verdict still hold?", NO_LEDGER)?.intent, "verdict");
+    assert.equal(classifyBieStagingFallback("why did you call SPX 7500 good earlier").intent, "verdict");
+  });
+
+  test("isVerdictRecallQuestion: recognizes recall, excludes play-state + NH/Cortex decision reads", () => {
+    assert.equal(isVerdictRecallQuestion("why did you say 7500 was good this morning"), true);
+    assert.equal(isVerdictRecallQuestion("does that verdict still hold"), true);
+    assert.equal(isVerdictRecallQuestion("your morning verdict on SPX"), true);
+    // NOT recall: play-state, and Night Hawk / Cortex "pulled/picked/skipped" decision reads.
+    assert.equal(isVerdictRecallQuestion("is my TSLA play still good"), false);
+    assert.equal(isVerdictRecallQuestion("why was AMD pulled this morning"), false);
+    assert.equal(isVerdictRecallQuestion("why did we skip SPX today"), false);
+  });
+
+  test("BOUNDARY: verdict RECALL does not steal 'why was X pulled/picked this morning' (Night Hawk)", () => {
+    // These must keep routing to nighthawk_edition, not verdict — the recall guard excludes them.
+    const r = classifyBieIntent("why was AMD pulled this morning?", NO_LEDGER);
+    assert.notEqual(r?.intent, "verdict");
   });
 
   test("BOUNDARY: a 'should I ...' question stays ticker_advice, NOT verdict (tested advice shapes preserved)", () => {

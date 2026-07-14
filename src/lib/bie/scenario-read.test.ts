@@ -63,6 +63,17 @@ describe("parseShift", () => {
     assert.equal(parseShift("SPX 1% move today"), null); // % but no direction/sign → refuse to guess
     assert.equal(parseShift("is SPX 7500 0DTE a good play"), null); // 7500 not a scoped target
   });
+
+  // REGRESSION (task #83 fold-in): the canonical question incidentally mentions "regime flip" and
+  // "walls" AND the relation phrase "to the" — which the old level-first parser matched as a level
+  // reference, snapping the shift to the flip and dropping the −1%. The explicit percentage must win.
+  test("canonical full question keeps the explicit −1% (not snapped to a mentioned level)", () => {
+    const s = parseShift(
+      "If SPX drops 1% at tomorrow's open, what happens to the dealer positioning picture — does the regime flip, and which walls become live?"
+    );
+    assert.equal(s?.kind, "pct");
+    assert.equal((s as { pct: number }).pct, -1);
+  });
 });
 
 describe("resolveShiftTarget (fixture: spot 7560, flip 7520)", () => {
@@ -110,6 +121,21 @@ describe("buildScenarioEnvelope — cross-flip detection", () => {
     const env = buildScenarioEnvelope(state({ spot: 7510, regime: { posture: "short" } }), { kind: "pct", pct: 1, raw: "" });
     assert.match(env.headline, /CROSSES the flip/);
     assert.match(env.headline, /long gamma/);
+  });
+
+  // REGRESSION (task #83 fold-in): end-to-end from the canonical text through parseShift →
+  // buildScenarioEnvelope. Fixture spot 7560, flip 7520 → 0.99×7560 = 7484.4 < 7520 < 7560, so the
+  // −1% MUST (a) land at spot×0.99, (b) report a flip CROSS, (c) NOT be snapped to the flip level.
+  test("canonical −1% question shifts to spot×0.99 and reports a flip cross (not snapped to the flip)", () => {
+    const spec = parseShift(
+      "If SPX drops 1% at tomorrow's open, what happens to the dealer positioning picture — does the regime flip, and which walls become live?"
+    );
+    const env = buildScenarioEnvelope(state(), spec);
+    const move = env.sections.find((s) => s.title === "The move")!;
+    assert.match(move.body, /7,?484(\.4)?/); // 7560 × 0.99 = 7484.4, within rounding
+    assert.doesNotMatch(move.body, /7,?520/); // NOT snapped to the flip level
+    assert.match(env.headline, /CROSSES the flip/);
+    assert.match(env.headline, /short gamma/);
   });
 });
 

@@ -312,6 +312,72 @@ async function runNumeric(page) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
+// Category 2b — VERDICT CASE-LAW + falsifiers + RTH numeric gate (task #83)
+// ═══════════════════════════════════════════════════════════════════════════════
+// A verdict must (a) carry explicit machine-checkable FALSIFIERS grounded in the SAME levels it
+// cites (not boilerplate), (b) obey the composition-time numeric gate — the spot it states equals the
+// number the clean ladder API serves, at display precision (off-hours it must instead be
+// staleness-marked), and (c) be RECALLABLE from the pinned case-law record ("why did you say that /
+// does it still hold?") rather than re-fabricated, and answer honestly when nothing is pinned.
+async function runVerdictCaseLaw(page) {
+  console.log("\n───── 2b. VERDICT case-law + falsifiers + RTH gate ─────");
+  const rth = marketOpenNowEt();
+
+  // Fresh verdict on SPX 0DTE — this both exercises the falsifier envelope and pins the case record.
+  const spotBefore = Number((await apiGet(page, "/api/market/vector/gex-ladder?ticker=SPX"))?.spot);
+  const v = await ask(page, "verdict", "Give me the verdict: is SPX 7500 a good 0DTE play today?");
+  const spotAfter = Number((await apiGet(page, "/api/market/vector/gex-ladder?ticker=SPX"))?.spot);
+  const env = v.envelope;
+
+  if (!env) {
+    skip("verdict", "verdict: envelope present", `no rich envelope returned (answer: "${v.answer.slice(0, 90)}")`);
+  } else {
+    // (a) FALSIFIERS — at least one INVALIDATE falsifier, grounded in a live level (finite refLevel).
+    const fals = Array.isArray(env.falsifiers) ? env.falsifiers : [];
+    const inval = fals.filter((f) => f && f.effect === "invalidate");
+    rec("verdict", "verdict: envelope carries ≥1 invalidate falsifier", inval.length > 0,
+      `falsifiers=${fals.length} invalidate=${inval.length}${fals.length ? ` e.g. "${(fals[0].text || "").slice(0, 80)}"` : ""}`);
+    // The flip invalidator's refLevel must MATCH the gamma-flip level the verdict cites — a real
+    // falsifier of THIS read, not a template with an arbitrary number.
+    const flipFals = fals.find((f) => /flip/i.test(f.id || "") && f.refLevel != null);
+    const flipLevel = (env.levels || []).find((l) => /gamma flip/i.test(l.label || ""));
+    if (flipFals && flipLevel) {
+      const ok = Math.abs(Number(flipFals.refLevel) - Number(flipLevel.price)) <= 0.5;
+      rec("verdict", "verdict: flip falsifier refLevel == the cited gamma-flip level (grounded, not boilerplate)",
+        ok, `falsifier=${flipFals.refLevel} cited=${flipLevel.price}`);
+    } else {
+      skip("verdict", "verdict: flip falsifier grounded in cited level", "no live flip level to check against this turn");
+    }
+
+    // (b) RTH NUMERIC GATE — the spot the verdict STATES must equal the ladder API's spot at display
+    // precision (spot is cross-source-robust). Off-hours it must instead be staleness-marked.
+    if (Number.isFinite(spotBefore)) {
+      const lo = Math.min(spotBefore, spotAfter || spotBefore), hi = Math.max(spotBefore, spotAfter || spotBefore);
+      const inWindow = numTokens(v.answer).some((t) =>
+        t.value >= lo - (0.5 * 10 ** -t.decimals + 0.01) && t.value <= hi + (0.5 * 10 ** -t.decimals + 0.01));
+      const staleMarked = /prior close|delayed|as of \d{1,2}:\d{2}\s*et/i.test(v.answer);
+      const ok = rth ? inWindow : inWindow || staleMarked;
+      rec("verdict", `verdict: stated spot ${rth ? "== ladder API (RTH hard)" : "in-window or staleness-marked (off-hours)"}`,
+        ok, `window [${lo}, ${hi}]${ok ? "" : ` · answer: "${v.answer.slice(0, 120).replace(/\n/g, " ")}"`}`);
+    } else {
+      skip("verdict", "verdict: stated spot == ladder API", "ladder API served no SPX spot");
+    }
+  }
+
+  // (c) RECALL — the verdict just rendered is pinned; a recall must answer FROM the record (re-checking
+  // its falsifiers), never re-synthesize. Accept the honest no-record answer if the pin didn't persist.
+  const recall = await ask(page, "verdict", "Does that SPX verdict still hold, and why did you say it earlier?");
+  const recalled = /still (holds|stands)|is (invalidated|weakened)|earlier i (said|called|graded)|at \d{1,2}:\d{2}\s*et i (called|graded|said)|pinned/i.test(recall.answer);
+  const honestNoRecord = /no verdict on record|won't reconstruct|nothing pinned/i.test(recall.answer);
+  rec("verdict", "verdict: recall answers from the pinned record (re-checks falsifiers) or honest no-record",
+    recalled || honestNoRecord,
+    recalled ? "recalled + re-checked" : honestNoRecord ? "honest no-record" : `neither: "${recall.answer.slice(0, 120).replace(/\n/g, " ")}"`);
+  // A recall must NOT fabricate a brand-new full multi-engine synthesis dressed as a memory.
+  rec("verdict", "verdict: recall is a record read, not a fresh fabricated synthesis",
+    recalled || honestNoRecord, recalled || honestNoRecord ? "" : "recall produced a non-record answer");
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
 // Category 3 — COMPOUND decomposition (every part answered, none silently dropped)
 // ═══════════════════════════════════════════════════════════════════════════════
 async function runCompound(page) {
@@ -637,6 +703,7 @@ async function main() {
 
     await runConcepts(page);
     await runNumeric(page);
+    await runVerdictCaseLaw(page);
     await runCompound(page);
     await runAdversarial(page);
     await runTerse(page);
