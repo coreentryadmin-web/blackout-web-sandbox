@@ -319,6 +319,15 @@ export const CRON_JOBS: CronJobDefinition[] = [
       "Write SPX coaching alerts (VWAP / gamma walls / posture) to coaching_alerts — replaces the never-shipped position-coaching-monitor cron",
     produces_member_alert: true,
   },
+  {
+    key: "platform-warm",
+    name: "Platform Warm",
+    kind: "http",
+    path: "/api/cron/platform-warm",
+    schedule_label: "Every 5 min",
+    stale_after_min: 10,
+    description: "24/7 cache warming for platform snapshots and cross-surface coherence",
+  },
 ];
 
 export const CRON_JOB_BY_KEY = Object.fromEntries(CRON_JOBS.map((j) => [j.key, j])) as Record<
