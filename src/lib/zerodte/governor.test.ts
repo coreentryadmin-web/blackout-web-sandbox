@@ -12,6 +12,7 @@ import {
   loadRecordedGovernorStops,
   mergeGovernorStops,
   recordGovernorStops,
+  summarizeGovernorForBoard,
   GOVERNOR_MAX_CONCURRENT_PLANS,
   GOVERNOR_MAX_SESSION_STOPS,
   GOVERNOR_REENTRY_LOCK_MS,
@@ -148,6 +149,35 @@ test("governor: 20-min same-direction re-entry lock — inside blocks, outside/o
   // Untimed (ledger-only) stop can't drive the timed lock — never fabricate timing.
   const untimed = { open_plans: [], stops: [{ ticker: "META", direction: "short" as const, at_ms: null }] };
   assert.deepEqual(evaluateZeroDteGovernor({ ticker: "META", direction: "short" }, untimed, NOW), []);
+});
+
+// ── board summary (PR-D governor strip) ────────────────────────────────────────────
+
+test("summarizeGovernorForBoard: carries the REAL caps + lock length so the pane never hardcodes them", () => {
+  const s = summarizeGovernorForBoard([], []);
+  assert.equal(s.max_concurrent, GOVERNOR_MAX_CONCURRENT_PLANS);
+  assert.equal(s.max_session_stops, GOVERNOR_MAX_SESSION_STOPS);
+  assert.equal(s.reentry_lock_ms, GOVERNOR_REENTRY_LOCK_MS);
+  assert.equal(s.halted, false);
+  assert.deepEqual(s.open_plans, []);
+  assert.deepEqual(s.stops, []);
+});
+
+test("summarizeGovernorForBoard: merges recorded stop timestamps and flips halted at the cap", () => {
+  const s = summarizeGovernorForBoard(
+    [
+      row({ ticker: "SPY", status: "CLOSED", trough_premium: 1.9 }), // trough-crossed stop, untimed
+      row({ ticker: "MU", status: "CLOSED", plan_outcome: "stopped" }),
+      row({ ticker: "AMD", status: "CLOSED", plan_outcome: "stopped" }),
+      row({ ticker: "NVDA", status: "HOLD" }),
+    ],
+    [{ ticker: "SPY", direction: "long", at_ms: NOW - 5 * 60_000 }]
+  );
+  assert.equal(s.halted, true, "3 stops = session halt");
+  assert.equal(s.stops.length, 3);
+  assert.equal(s.stops.find((x) => x.ticker === "SPY")!.at_ms, NOW - 5 * 60_000, "recorded timestamp wins");
+  assert.equal(s.stops.find((x) => x.ticker === "MU")!.at_ms, null, "ledger-only stop stays untimed");
+  assert.deepEqual(s.open_plans, [{ ticker: "NVDA", direction: "long" }]);
 });
 
 // ── persistence round-trip (real shared-cache in-memory fallback) ──────────────────

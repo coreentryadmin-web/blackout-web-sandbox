@@ -81,6 +81,7 @@ function fakeSetup(ticker: string, plan: ContractPlan | null): EnrichedZeroDteSe
     analyst_note: null,
     fib_note: null,
     plan,
+    gate: null,
     halted: false,
     earnings: null,
     news_hot: null,
@@ -132,7 +133,50 @@ test("mergePlays: MOVED entry_status always SKIP even during RTH", () => {
   assert.equal(rows[0]!.status, "SKIP");
 });
 
-test("mergePlays: ledger row merges live setup evidence", () => {
+test("mergePlays: hard-gate-BLOCKED fresh find is SKIP even in-range during RTH (parity with zeroDtePlaysForLargo)", () => {
+  const setup = fakeSetup("META", {
+    occ: "M",
+    flow_avg_fill: 4.2,
+    bid: 4,
+    ask: 4.4,
+    mark: 4.2,
+    entry_max: 4.2,
+    vs_flow_pct: 0,
+    entry_status: "IN_RANGE",
+    spread_pct: 5,
+    illiquid: false,
+    stop_premium: 2.1,
+    target_premium: 8.4,
+    time_stop_et: "15:30",
+    underlying_target: null,
+    underlying_invalid: null,
+  }).plan!;
+  const blocked = fakeSetup("META", setup);
+  blocked.gate = {
+    verdict: "BLOCKED",
+    blocks: [
+      {
+        code: "tape_alignment",
+        reason: "Long setup fights the DOWN market tape — counter-tape 0DTE entries are blocked.",
+        threshold: null,
+        unlock_et: null,
+      },
+    ],
+    calibration: {
+      score_at_commit: 75,
+      market_bias: "down",
+      committed_at_et: "10:15",
+      g4_vix: { day_open_vix: null, tier: "unknown", would_block: false, would_halve_size: false, note: "n/a" },
+      g6_conflict: { conflict: false, against: [], would_block: false, note: "No cross-system conflict." },
+    },
+  };
+  const rows = mergePlays([blocked], [], "RTH");
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0]!.status, "SKIP");
+  assert.equal(rows[0]!.committed, false);
+});
+
+test("mergePlays: ledger row merges live setup evidence (committed, expiry carried)", () => {
   const setup = fakeSetup("NVDA", null);
   const rows = mergePlays(
     [setup],
@@ -145,6 +189,7 @@ test("mergePlays: ledger row merges live setup evidence", () => {
         first_flagged_at: new Date().toISOString(),
         underlying_at_flag: 138,
         top_strike: 140,
+        expiry: "2026-07-07",
         conviction: "high",
         entry_premium: 4.2,
         flow_avg_fill: 4.2,
@@ -164,6 +209,39 @@ test("mergePlays: ledger row merges live setup evidence", () => {
   assert.equal(rows.length, 1);
   assert.equal(rows[0]!.status, "HOLD");
   assert.equal(rows[0]!.setup?.ticker, "NVDA");
+  assert.equal(rows[0]!.committed, true);
+  assert.equal(rows[0]!.expiry, "2026-07-07");
+});
+
+test("mergePlays: ledger row without its own expiry falls back to the live setup's expiry", () => {
+  const rows = mergePlays(
+    [fakeSetup("NVDA", null)], // fakeSetup expiry = 2026-07-07
+    [
+      {
+        ticker: "NVDA",
+        direction: "long",
+        score_max: 80,
+        spike: false,
+        first_flagged_at: new Date().toISOString(),
+        underlying_at_flag: 138,
+        top_strike: 140,
+        conviction: null,
+        entry_premium: 4.2,
+        flow_avg_fill: 4.2,
+        status: "HOLD",
+        last_mark: 4.5,
+        live_pnl_pct: 7.14,
+        move_pct: null,
+        direction_hit: null,
+        plan_outcome: null,
+        plan_pnl_pct: null,
+        graded: false,
+        nighthawk_echo: null,
+      },
+    ],
+    "RTH"
+  );
+  assert.equal(rows[0]!.expiry, "2026-07-07");
 });
 
 // ── B-9 live-marks overlay (overlayLiveMark) ───────────────────────────────────────
@@ -176,11 +254,15 @@ function playRow(over: Partial<Parameters<typeof overlayLiveMark>[0]>): Paramete
     ticker: "NVDA",
     direction: "long",
     strike: 140,
+    expiry: null,
     status: "HOLD",
+    committed: true,
     entry_premium: 4.2,
     flow_avg_fill: 4.2,
+    conviction: null,
     last_mark: 4.4,
     live_pnl_pct: 4.76,
+    closed_reason: null,
     plan_outcome: null,
     plan_pnl_pct: null,
     first_flagged_at: new Date().toISOString(),
@@ -221,6 +303,9 @@ test("overlayLiveMark: fresh pushed mark replaces the board mark; P&L is the PUS
   assert.equal(out.live_pnl_pct, 10); // exactly what the server pushed (single derivation)
   assert.equal(out.mark_source, "mid");
   assert.equal(out.mark_stale, false);
+  // The two-sided quote behind the mark rides along for the card's bid×ask display.
+  assert.equal(out.mark_bid, 4.6);
+  assert.equal(out.mark_ask, 4.64);
 });
 
 test("overlayLiveMark: a mark older than the 5s honesty bar renders STALE (dim), never as live", () => {

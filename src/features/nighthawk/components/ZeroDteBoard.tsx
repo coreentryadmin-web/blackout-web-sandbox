@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import useSWR from "swr";
 import { clsx } from "clsx";
 import {
@@ -9,19 +9,27 @@ import {
   FreshnessChip,
   Panel,
   Skeleton,
-  Table,
-  THead,
-  TBody,
-  TR,
-  TH,
-  TD,
   type FreshnessStatus,
 } from "@/components/ui";
 import { resolveFreshFindStatus, type EnrichedZeroDteSetup, type SessionHeat } from "@/lib/zerodte/board";
 import { buildIntelNote, type IntelAction } from "@/lib/zerodte/intel";
+import { capConvictionDisplay } from "@/lib/zerodte/conviction";
 import { isZeroDteMarkStale, type ZeroDteMarkSource } from "@/lib/zerodte/marks-math";
 import type { ZeroDteLiveMarkRow } from "@/lib/zerodte/live-marks";
 import { etMinutesOf } from "@/lib/zerodte/plan";
+import {
+  cortexAbstained,
+  evidenceRowParts,
+  fmtLockRemaining,
+  minutesUntilEtUnlock,
+  readCortexVerdict,
+  reentryLockRemainingMs,
+  resolveZeroDteReadiness,
+  suggestedZeroDteSize,
+  zeroDteGateLabel,
+  type CortexVerdictLike,
+} from "@/lib/zerodte/pane";
+import { LOW_N_THRESHOLD } from "@/lib/zerodte/record";
 import { useZeroDteLiveMarks } from "@/features/nighthawk/hooks/useZeroDteLiveMarks";
 import { shortMonthDay } from "@/lib/relative-time";
 
@@ -43,6 +51,8 @@ type LedgerRow = {
   first_flagged_at: string;
   underlying_at_flag: number | null;
   top_strike: number | null;
+  /** Contract expiry (YYYY-MM-DD) — additive (PR-D); absent on older payloads. */
+  expiry?: string | null;
   conviction: string | null;
   entry_premium: number | null;
   flow_avg_fill: number | null;
@@ -65,6 +75,16 @@ type LedgerRow = {
   nighthawk_echo: NighthawkEcho | null;
 };
 
+/** G-5 session risk summary (additive, PR-D — zerodte-service's governor block). */
+type BoardGovernor = {
+  open_plans: Array<{ ticker: string; direction: "long" | "short" }>;
+  max_concurrent: number;
+  stops: Array<{ ticker: string; direction: "long" | "short"; at_ms: number | null }>;
+  max_session_stops: number;
+  halted: boolean;
+  reentry_lock_ms: number;
+};
+
 type BoardResponse = {
   available: boolean;
   degraded?: boolean;
@@ -77,6 +97,7 @@ type BoardResponse = {
   setups?: EnrichedZeroDteSetup[];
   ledger?: LedgerRow[];
   covered_elsewhere?: string[];
+  governor?: BoardGovernor | null;
 };
 
 /** Pure: derives a real freshness status from the scan's own success signal + response
@@ -130,6 +151,16 @@ function fmtTime(iso: string | null | undefined): string {
   }
 }
 
+/** Compact "8s" / "2m" age between an ISO instant and now — for mark freshness. */
+function fmtAge(iso: string | null | undefined, nowMs: number): string {
+  if (!iso || !(nowMs > 0)) return "";
+  const ms = nowMs - Date.parse(iso);
+  if (!Number.isFinite(ms) || ms < 0) return "";
+  const s = Math.floor(ms / 1000);
+  if (s < 60) return `${s}s`;
+  return `${Math.floor(s / 60)}m`;
+}
+
 function largoHref(ticker: string, contract: string, entry: string): string {
   const q = `Analyze the ${ticker} 0DTE play ${contract} (entry ${entry}). Is it still valid right now — hold, trim, or exit?`;
   return `/terminal?q=${encodeURIComponent(q)}`;
@@ -141,11 +172,17 @@ type PlayRow = {
   ticker: string;
   direction: "long" | "short";
   strike: number | null;
+  expiry: string | null;
   status: "OPEN" | "HOLD" | "TRIM" | "CLOSED" | "SKIP";
+  /** True for ledger-backed rows (a printed plan being managed to its exit);
+   *  false for fresh finds the cron hasn't persisted yet. */
+  committed: boolean;
   entry_premium: number | null;
   flow_avg_fill: number | null;
+  conviction: string | null;
   last_mark: number | null;
   live_pnl_pct: number | null;
+  closed_reason: "stopped" | null;
   plan_outcome: string | null;
   plan_pnl_pct: number | null;
   first_flagged_at: string | null;
@@ -160,6 +197,9 @@ type PlayRow = {
   mark_as_of?: string | null;
   mark_source?: ZeroDteMarkSource | null;
   mark_stale?: boolean;
+  /** Two-sided quote behind the live mark, when the marks lane pushed one. */
+  mark_bid?: number | null;
+  mark_ask?: number | null;
 };
 
 /**
@@ -188,6 +228,8 @@ export function overlayLiveMark(
     live_pnl_pct: live.live_pnl_pct ?? row.live_pnl_pct,
     mark_as_of: live.mark_as_of,
     mark_source: live.source,
+    mark_bid: live.bid ?? null,
+    mark_ask: live.ask ?? null,
     mark_stale: isZeroDteMarkStale(liveAsOfMs, nowMs),
   };
 }
@@ -204,6 +246,7 @@ export function mergePlays(
     ticker: r.ticker,
     direction: r.direction,
     strike: r.top_strike,
+    expiry: r.expiry ?? byTicker.get(r.ticker)?.expiry ?? null,
     // Unknown/null status (e.g. a row the sync couldn't price) falls back by clock:
     // CLOSED once the session is over, HOLD while it's live — never a stale badge.
     status: (["OPEN", "HOLD", "TRIM", "CLOSED"].includes(r.status ?? "")
@@ -211,10 +254,13 @@ export function mergePlays(
       : sessionClosed
         ? "CLOSED"
         : "HOLD") as PlayRow["status"],
+    committed: true,
     entry_premium: r.entry_premium,
     flow_avg_fill: r.flow_avg_fill,
+    conviction: r.conviction,
     last_mark: r.last_mark,
     live_pnl_pct: r.live_pnl_pct,
+    closed_reason: r.closed_reason ?? null,
     plan_outcome: r.plan_outcome,
     plan_pnl_pct: r.plan_pnl_pct,
     first_flagged_at: r.first_flagged_at,
@@ -237,14 +283,24 @@ export function mergePlays(
       ticker: s.ticker,
       direction: s.direction,
       strike: s.top_strike,
-      // Past the entry cutoff — or an untradeably wide market — a fresh find is
-      // watch-only, never OPEN. Same gate zerodte-service.ts's zeroDtePlaysForLargo()
-      // applies to fresh finds for Largo/BIE — see resolveFreshFindStatus (board.ts).
-      status: resolveFreshFindStatus(heatState, moved, Boolean(s.plan?.illiquid)),
+      expiry: s.expiry || null,
+      // Hard-gate-blocked finds are SKIP regardless of clock/liquidity — the gate
+      // stack (src/lib/zerodte/gates.ts) already decided this is not committable.
+      // Same rule zeroDtePlaysForLargo applies, so the pane and Largo can never
+      // disagree about whether a blocked find is a play. Otherwise: past the entry
+      // cutoff — or an untradeably wide market — a fresh find is watch-only, never
+      // OPEN (resolveFreshFindStatus, board.ts).
+      status:
+        s.gate?.verdict === "BLOCKED"
+          ? "SKIP"
+          : resolveFreshFindStatus(heatState, moved, Boolean(s.plan?.illiquid)),
+      committed: false,
       entry_premium: s.plan?.entry_max ?? s.top_strike_avg_fill,
       flow_avg_fill: s.top_strike_avg_fill,
+      conviction: s.conviction,
       last_mark: s.plan?.mark ?? null,
       live_pnl_pct: null,
+      closed_reason: null,
       plan_outcome: null,
       plan_pnl_pct: null,
       first_flagged_at: s.first_seen,
@@ -258,30 +314,197 @@ export function mergePlays(
   return rows.sort((a, b) => order[a.status] - order[b.status] || b.score - a.score);
 }
 
-// ── heat header ───────────────────────────────────────────────────────────────────
+/** The Cortex verdict riding a row's setup, when the wire-in has attached one.
+ *  Structural + defensive: absent/malformed reads as null (honest ABSTAIN copy). */
+function cortexOf(row: PlayRow): CortexVerdictLike | null {
+  const raw = (row.setup as unknown as { cortex?: unknown } | null)?.cortex;
+  return readCortexVerdict(raw);
+}
 
-function HeatHeader({ data }: { data: BoardResponse }) {
+// ── header: heat + readiness + governor strip ─────────────────────────────────────
+
+function ReadinessChip({
+  data,
+  transport,
+  hasLivePlays,
+  nowMs,
+}: {
+  data: BoardResponse;
+  transport: "sse" | "poll" | null;
+  hasLivePlays: boolean;
+  nowMs: number;
+}) {
+  const asOfMs = data.as_of ? Date.parse(data.as_of) : NaN;
+  const readiness = resolveZeroDteReadiness({
+    serverDegraded: data.degraded === true || data.upstream_ok === false,
+    asOfAgeMs: nowMs > 0 && Number.isFinite(asOfMs) ? nowMs - asOfMs : null,
+    sessionLive: data.session?.heat?.state !== "CLOSED",
+    marksTransport: transport,
+    hasLivePlays,
+  });
+  return (
+    <span
+      title={readiness.detail}
+      className={clsx(
+        "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 font-mono text-[10px] font-semibold uppercase tracking-[0.12em]",
+        readiness.tone === "green"
+          ? "border-bull/35 bg-bull/10 text-bull"
+          : "border-gold/35 bg-gold/10 text-gold"
+      )}
+    >
+      <span
+        aria-hidden
+        className={clsx(
+          "h-1.5 w-1.5 rounded-full",
+          readiness.tone === "green" ? "bg-bull" : "bg-gold animate-pulse motion-reduce:animate-none"
+        )}
+      />
+      {readiness.label}
+    </span>
+  );
+}
+
+/** One mono stat pill for the governor strip — desk v3 silhouette (spx-hero style). */
+function GovPill({
+  label,
+  value,
+  tone = "sky",
+  title,
+}: {
+  label: string;
+  value: string;
+  tone?: "sky" | "bull" | "bear" | "gold";
+  title?: string;
+}) {
+  const toneCls: Record<string, string> = {
+    sky: "border-sky-400/20 text-sky-200/90",
+    bull: "border-bull/30 text-bull",
+    bear: "border-bear/40 text-bear",
+    gold: "border-gold/35 text-gold",
+  };
+  return (
+    <span
+      title={title}
+      className={clsx(
+        "inline-flex items-baseline gap-1.5 rounded-lg border bg-void-deep/80 px-2.5 py-1.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]",
+        toneCls[tone]
+      )}
+    >
+      <span className="font-mono text-[9px] uppercase tracking-[0.18em] text-sky-300/50">{label}</span>
+      <span className="t-num text-[12px] font-bold">{value}</span>
+    </span>
+  );
+}
+
+/** Session governor strip: open-plan cap, stop halt, re-entry locks, correlated-
+ *  conflict blocks. Every number is the payload's own; the client adds only the
+ *  ticking clock for lock countdowns. */
+function GovernorStrip({
+  gov,
+  conflicts,
+  nowMs,
+}: {
+  gov: BoardGovernor | null | undefined;
+  /** SKIP rows currently blocked by correlated_conflict, with the payload's sentence. */
+  conflicts: Array<{ ticker: string; direction: string; reason: string }>;
+  nowMs: number;
+}) {
+  if (!gov) {
+    return (
+      <p className="mt-3 font-mono text-[10px] uppercase tracking-widest text-sky-300/40">
+        Session governor · state unavailable this cycle — new commits fail closed server-side
+      </p>
+    );
+  }
+  const locks =
+    nowMs > 0
+      ? gov.stops
+          .map((s) => ({ ...s, remaining: reentryLockRemainingMs(s.at_ms, gov.reentry_lock_ms, nowMs) }))
+          .filter((s): s is typeof s & { remaining: number } => s.remaining != null)
+      : [];
+  return (
+    <div className="mt-3 space-y-2">
+      <div className="flex flex-wrap items-center gap-2">
+        <GovPill
+          label="Plans"
+          value={`${gov.open_plans.length}/${gov.max_concurrent}`}
+          tone={gov.open_plans.length >= gov.max_concurrent ? "gold" : gov.open_plans.length > 0 ? "bull" : "sky"}
+          title={
+            gov.open_plans.length > 0
+              ? `Open: ${gov.open_plans.map((p) => `${p.ticker} ${p.direction}`).join(", ")}`
+              : "No plans open"
+          }
+        />
+        <GovPill
+          label="Stops"
+          value={`${gov.stops.length}/${gov.max_session_stops}`}
+          tone={gov.halted ? "bear" : gov.stops.length > 0 ? "gold" : "sky"}
+          title={
+            gov.stops.length > 0
+              ? `Stopped: ${gov.stops.map((s) => `${s.ticker} ${s.direction}`).join(", ")}`
+              : "No stops this session"
+          }
+        />
+        {locks.map((l) => (
+          <GovPill
+            key={`lock-${l.ticker}`}
+            label="Lock"
+            value={`${l.ticker} ${l.direction} · ${fmtLockRemaining(l.remaining)}`}
+            tone="gold"
+            title="Same-direction re-entry locked after this ticker's stop"
+          />
+        ))}
+        {conflicts.map((c) => (
+          <GovPill
+            key={`conflict-${c.ticker}`}
+            label="Conflict"
+            value={`${c.ticker} ${c.direction} blocked`}
+            tone="bear"
+            title={c.reason}
+          />
+        ))}
+      </div>
+      {gov.halted && (
+        <p className="rounded-lg border border-bear/40 bg-bear/[0.08] px-3 py-2 font-mono text-[11px] font-bold uppercase tracking-widest text-bear">
+          Session halted — {gov.stops.length} stops (max {gov.max_session_stops}). No new commits for
+          the rest of the session.
+        </p>
+      )}
+    </div>
+  );
+}
+
+function PaneHeader({
+  data,
+  transport,
+  hasLivePlays,
+  conflicts,
+  nowMs,
+}: {
+  data: BoardResponse;
+  transport: "sse" | "poll" | null;
+  hasLivePlays: boolean;
+  conflicts: Array<{ ticker: string; direction: string; reason: string }>;
+  nowMs: number;
+}) {
   const heat = data.session?.heat;
   const asOfMs = data.as_of ? new Date(data.as_of).getTime() : 0;
-  const [nowMs, setNowMs] = useState(0);
-  useEffect(() => {
-    setNowMs(Date.now());
-    const id = setInterval(() => setNowMs(Date.now()), 10_000);
-    return () => clearInterval(id);
-  }, []);
   const freshnessStatus = resolveZeroDteFreshness(data.upstream_ok, asOfMs, nowMs);
   if (!heat) return null;
   const hot = heat.heat_pct >= 70;
   return (
     <Panel accent={hot ? "bull" : "sky"} bodyClassName="px-5 py-4 md:px-6 md:py-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-3">
+        <div className="flex min-w-0 items-center gap-3">
           <Badge tone={hot ? "bull" : heat.heat_pct > 0 ? "sky" : "neutral"} size="md" dot={hot}>
             {heat.label}
           </Badge>
-          <span className="text-sm text-sky-200/80">{heat.note}</span>
+          <span className="truncate text-sm text-sky-200/80">{heat.note}</span>
         </div>
-        <FreshnessChip status={freshnessStatus} asOf={data.as_of ? new Date(data.as_of) : null} />
+        <div className="flex shrink-0 items-center gap-2">
+          <ReadinessChip data={data} transport={transport} hasLivePlays={hasLivePlays} nowMs={nowMs} />
+          <FreshnessChip status={freshnessStatus} asOf={data.as_of ? new Date(data.as_of) : null} />
+        </div>
       </div>
       <div className="mt-3 h-1.5 w-full overflow-hidden rounded-full bg-white/[0.06]" aria-hidden>
         <div
@@ -294,6 +517,7 @@ function HeatHeader({ data }: { data: BoardResponse }) {
           style={{ width: `${Math.max(2, Math.min(100, heat.heat_pct))}%` }}
         />
       </div>
+      <GovernorStrip gov={data.governor} conflicts={conflicts} nowMs={nowMs} />
       <p className="mt-2 font-mono text-[10px] uppercase tracking-widest text-sky-300/50">
         0DTE discipline: no new plays after 3:00 ET · everything closes by 3:30 ET · nothing held overnight
       </p>
@@ -324,9 +548,10 @@ function StatusBadge({ row }: { row: PlayRow }) {
     );
   if (row.status === "SKIP") {
     const ran = row.setup?.plan?.entry_status === "MOVED";
+    const gated = row.setup?.gate?.verdict === "BLOCKED";
     return (
       <Badge tone="bear" size="sm">
-        {ran ? "SKIP — RAN" : "SKIP — LATE"}
+        {gated ? "SKIP — GATED" : ran ? "SKIP — RAN" : "SKIP — LATE"}
       </Badge>
     );
   }
@@ -342,7 +567,7 @@ function StatsCell({ row }: { row: PlayRow }) {
   if (row.plan_outcome && row.plan_outcome !== "ungradeable") {
     const win = (row.plan_pnl_pct ?? 0) > 0;
     return (
-      <span className={clsx("font-mono text-[12px] font-bold tabular-nums", win ? "text-bull" : "text-bear")}>
+      <span className={clsx("t-num text-[13px] font-bold", win ? "text-bull" : "text-bear")}>
         {win ? "WIN" : "LOSS"}
         {row.plan_pnl_pct != null ? ` ${row.plan_pnl_pct >= 0 ? "+" : ""}${row.plan_pnl_pct.toFixed(0)}%` : ""}
       </span>
@@ -353,7 +578,7 @@ function StatsCell({ row }: { row: PlayRow }) {
     return (
       <span
         className={clsx(
-          "font-mono text-[12px] font-bold tabular-nums",
+          "t-num text-[13px] font-bold",
           up ? "text-bull" : "text-bear",
           // Stale-honesty (B-9): money numbers older than the freshness bar dim
           // instead of impersonating a live quote.
@@ -366,7 +591,11 @@ function StatsCell({ row }: { row: PlayRow }) {
       </span>
     );
   }
-  return <span className="font-mono text-[11px] text-sky-300/50">—</span>;
+  return (
+    <span className="t-num text-[12px] text-sky-300/50" title="No live quote for this contract yet">
+      —
+    </span>
+  );
 }
 
 const ACTION_TONE: Record<IntelAction, "bull" | "sky" | "accent" | "bear" | "neutral"> = {
@@ -409,7 +638,7 @@ function NighthawkEchoNote({ echo }: { echo: NighthawkEcho }) {
 }
 
 /** BlackOut Intel: one actionable verb + a reason built only from observed numbers. */
-function intelFor(row: PlayRow) {
+function intelFor(row: PlayRow, nowMs: number) {
   return buildIntelNote({
     status: row.status,
     setup: row.setup,
@@ -418,10 +647,129 @@ function intelFor(row: PlayRow) {
     livePnlPct: row.live_pnl_pct,
     planOutcome: row.plan_outcome,
     planPnlPct: row.plan_pnl_pct,
-    // Live inputs — the line recomputes with every 10s refresh.
-    nowEtMinutes: etMinutesOf(Date.now()),
+    // Live inputs — the line recomputes with every refresh.
+    nowEtMinutes: etMinutesOf(nowMs > 0 ? nowMs : Date.now()),
     lastMark: row.last_mark,
   });
+}
+
+// ── conviction / size chips ───────────────────────────────────────────────────────
+
+function ConvictionBadge({ raw }: { raw: string | null }) {
+  const capped = capConvictionDisplay(raw);
+  if (!capped) return null;
+  const upper = capped.toUpperCase();
+  const tone = upper === "A" ? "bull" : upper === "B" ? "sky" : "neutral";
+  const wasCapped = raw != null && capConvictionDisplay(raw) !== raw.trim();
+  return (
+    <Badge
+      tone={tone}
+      size="sm"
+      title={
+        wasCapped
+          ? "Scored A+ — display capped at A while the A+ band is under calibration investigation (C-1)."
+          : `Conviction ${upper}`
+      }
+    >
+      {upper}
+    </Badge>
+  );
+}
+
+function SizeChip({ verdict }: { verdict: CortexVerdictLike | null }) {
+  const chip = suggestedZeroDteSize(verdict?.score ?? null, (verdict?.vetoes.length ?? 0) > 0);
+  return (
+    <span
+      title={`${chip.basis} Richer sizing must be earned by ≥30 sessions of calibration — 0.5×/1× only until then.`}
+      className={clsx(
+        "inline-flex items-baseline gap-1 rounded-md border px-1.5 py-0.5 font-mono text-[10px] font-bold uppercase tracking-[0.12em]",
+        chip.size === "1×" ? "border-bull/30 bg-bull/[0.08] text-bull" : "border-sky-300/25 bg-sky-300/[0.05] text-sky-300"
+      )}
+    >
+      <span className="text-[8px] font-semibold text-sky-300/50">size</span>
+      {chip.size}
+    </span>
+  );
+}
+
+// ── Cortex evidence table ─────────────────────────────────────────────────────────
+
+function CortexEvidenceBlock({ verdict }: { verdict: CortexVerdictLike | null }) {
+  if (cortexAbstained(verdict)) {
+    return (
+      <div>
+        <p className="font-mono text-[10px] uppercase tracking-widest text-sky-300/50">
+          Evidence · Night Hawk Cortex
+        </p>
+        <p className="mt-1 text-[11px] text-sky-300/70">
+          Evidence engine abstained — gates-only commit. No source could argue for or against this
+          play at commit time; the hard gate stack alone cleared it.
+        </p>
+        {verdict && verdict.absent.length > 0 && (
+          <ul className="mt-1.5 space-y-0.5">
+            {verdict.absent.map((line) => (
+              <li key={line} className="font-mono text-[10px] leading-snug text-sky-300/40">
+                ◦ {line}
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    );
+  }
+  const v = verdict!;
+  const rows = [...v.vetoes, ...v.supports, ...v.opposes].map(evidenceRowParts);
+  return (
+    <div>
+      <div className="flex items-center justify-between gap-2">
+        <p className="font-mono text-[10px] uppercase tracking-widest text-sky-300/50">
+          Evidence · Night Hawk Cortex
+        </p>
+        <span className="t-num text-[11px] font-bold text-sky-200/85">
+          score {v.score >= 0 ? "+" : ""}
+          {v.score.toFixed(2)} · {capConvictionDisplay(v.conviction)}
+        </span>
+      </div>
+      <ul className="mt-1.5 space-y-1">
+        {rows.map((r, i) => (
+          <li
+            key={`${r.tag}-${i}`}
+            className={clsx(
+              "flex items-start gap-2 rounded-md px-1.5 py-1",
+              r.tone === "veto" && "border border-bear/35 bg-bear/[0.08]"
+            )}
+          >
+            <span
+              className={clsx(
+                "mt-px shrink-0 font-mono text-[10px]",
+                r.tone === "veto" ? "font-bold text-bear" : r.tone === "opposes" ? "text-bear/80" : "text-bull/80"
+              )}
+            >
+              {r.tag}
+            </span>
+            <span className="min-w-0 flex-1 text-[11px] leading-snug text-sky-200/85">{r.detail}</span>
+            <span
+              className={clsx(
+                "t-num shrink-0 text-[11px] font-bold",
+                r.tone === "veto" ? "text-bear" : r.tone === "opposes" ? "text-bear/90" : "text-bull"
+              )}
+            >
+              {r.weight}
+            </span>
+          </li>
+        ))}
+      </ul>
+      {v.absent.length > 0 && (
+        <ul className="mt-1.5 space-y-0.5">
+          {v.absent.map((line) => (
+            <li key={line} className="font-mono text-[10px] leading-snug text-sky-300/40">
+              ◦ {line}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
 }
 
 // ── expanded detail (why picked · what to watch) ─────────────────────────────────
@@ -455,7 +803,7 @@ function FactorChips({ f }: { f: NonNullable<EnrichedZeroDteSetup["factor_breakd
   );
 }
 
-function PlayDetail({ row }: { row: PlayRow }) {
+function PlayDetail({ row, nowMs }: { row: PlayRow; nowMs: number }) {
   const s = row.setup;
   const p = s?.plan ?? null;
   const contract = `${row.ticker} ${fmtStrike(row.strike)}${row.direction === "long" ? "c" : "p"}`;
@@ -463,12 +811,14 @@ function PlayDetail({ row }: { row: PlayRow }) {
   const stop = row.entry_premium != null ? row.entry_premium * 0.5 : null;
   const target = row.entry_premium != null ? row.entry_premium * 2 : null;
   return (
-    <div className="space-y-3 px-4 py-3">
+    <div className="space-y-3 border-t border-white/[0.06] px-4 py-3">
+      <CortexEvidenceBlock verdict={cortexOf(row)} />
+
       {/* why the play was picked */}
       <div>
         <p className="font-mono text-[10px] uppercase tracking-widest text-sky-300/50">Why this play</p>
         {s ? (
-          <p className="mt-1 font-mono text-[11px] tabular-nums text-sky-200/85">
+          <p className="mt-1 t-num text-[11px] text-sky-200/85">
             {fmtMoney(s.gross_premium)} gross · {Math.round(s.side_dominance * 100)}%{" "}
             {row.direction === "long" ? "call" : "put"}-side · {s.prints} prints ·{" "}
             {Math.round(s.sweep_pct * 100)}% sweeps
@@ -505,46 +855,17 @@ function PlayDetail({ row }: { row: PlayRow }) {
         )}
       </div>
 
-      {/* live premium math — pushed at ~1s via the live-marks SSE lane (B-9);
-          dims when the quote goes stale instead of impersonating a live number */}
-      {row.last_mark != null && row.entry_premium != null && row.status !== "CLOSED" && (
-        <div>
-          <p className="font-mono text-[10px] uppercase tracking-widest text-sky-300/50">
-            Live
-            {row.mark_source === "last" ? " · last-trade quote (no live bid/ask)" : ""}
-            {row.mark_stale ? " · STALE — waiting for a fresh tick" : ""}
-          </p>
-          <p
-            className={clsx(
-              "mt-1 font-mono text-[11px] tabular-nums text-sky-200/85",
-              row.mark_stale && "opacity-40"
-            )}
-          >
-            Mark ${row.last_mark.toFixed(2)}
-            {row.live_pnl_pct != null ? (
-              <span className={row.live_pnl_pct >= 0 ? " text-bull" : " text-bear"}>
-                {" "}
-                ({row.live_pnl_pct >= 0 ? "+" : ""}
-                {row.live_pnl_pct.toFixed(1)}%)
-              </span>
-            ) : null}
-            {" · "}${Math.max(0, row.entry_premium * 2 - row.last_mark).toFixed(2)} to the trim · $
-            {Math.max(0, row.last_mark - row.entry_premium * 0.5).toFixed(2)} above the stop
-          </p>
-        </div>
-      )}
-
       {/* what to watch — entry to exit */}
       <div>
         <p className="font-mono text-[10px] uppercase tracking-widest text-sky-300/50">What to watch</p>
-        <p className="mt-1 font-mono text-[11px] tabular-nums text-sky-200/85">
+        <p className="mt-1 t-num text-[11px] text-sky-200/85">
           Entry {entryStr}
           {p?.flow_avg_fill != null ? ` (flow paid ~$${p.flow_avg_fill.toFixed(2)})` : ""} · stop −50%
           {stop != null ? ` ($${stop.toFixed(2)})` : ""} · trim/target +100%
           {target != null ? ` ($${target.toFixed(2)})` : ""} · hard exit 3:30 ET
         </p>
         {(p?.underlying_target != null || p?.underlying_invalid != null || s?.key_supports.length || s?.key_resistances.length) && (
-          <p className="mt-1 font-mono text-[11px] tabular-nums text-sky-300/75">
+          <p className="mt-1 t-num text-[11px] text-sky-300/75">
             {p?.underlying_target != null ? `Stock target ${fmtNum(p.underlying_target)}` : ""}
             {p?.underlying_invalid != null
               ? ` · idea wrong ${row.direction === "long" ? "below" : "above"} ${fmtNum(p.underlying_invalid)}`
@@ -559,17 +880,6 @@ function PlayDetail({ row }: { row: PlayRow }) {
             Premium tagged +100% — take at least half off; manage the rest to the 3:30 ET exit.
           </p>
         )}
-        {row.status === "SKIP" &&
-          (s?.plan?.entry_status === "MOVED" ? (
-            <p className="mt-1 text-[11px] font-semibold text-bear">
-              Premium already ran {s?.plan?.vs_flow_pct != null ? `+${s.plan.vs_flow_pct}% ` : ""}past the
-              flow&apos;s fill — the move happened. No entry.
-            </p>
-          ) : (
-            <p className="mt-1 text-[11px] font-semibold text-bear">
-              Flagged after the 3:00 ET cutoff — 0DTE discipline: no fresh entries this late. Watch-only.
-            </p>
-          ))}
       </div>
 
       <div className="flex items-center justify-between">
@@ -588,99 +898,485 @@ function PlayDetail({ row }: { row: PlayRow }) {
   );
 }
 
-// ── the plays table ───────────────────────────────────────────────────────────────
+// ── play cards (committed plans) ──────────────────────────────────────────────────
 
-function PlaysTable({ rows }: { rows: PlayRow[] }) {
-  const [open, setOpen] = useState<string | null>(null);
+function PlayCard({ row, nowMs }: { row: PlayRow; nowMs: number }) {
+  const [open, setOpen] = useState(false);
+  const contract = `${row.ticker} ${fmtStrike(row.strike)}${row.direction === "long" ? "C" : "P"}`;
+  const live = row.status === "OPEN" || row.status === "HOLD" || row.status === "TRIM";
+  const note = intelFor(row, nowMs);
+  const markAge = fmtAge(row.mark_as_of, nowMs);
+  const verdict = cortexOf(row);
   return (
-    <div className="overflow-x-auto">
-      <Table className="min-w-[680px]">
-        <THead>
-          <TR>
-            <TH className="w-[90px]">Status</TH>
-            <TH className="w-[190px]">Play</TH>
-            <TH>BlackOut Intel</TH>
-            <TH className="w-[110px] text-right">Stats</TH>
-          </TR>
-        </THead>
-        <TBody>
-          {rows.map((row) => {
-            const expanded = open === row.ticker;
-            const contract = `${row.ticker} ${fmtStrike(row.strike)}${row.direction === "long" ? "c" : "p"}`;
-            return (
-              <Fragment key={row.ticker}>
-                <TR
-                  className={clsx("cursor-pointer transition-colors hover:bg-white/[0.03]", expanded && "bg-white/[0.03]")}
-                  onClick={() => setOpen(expanded ? null : row.ticker)}
-                  aria-expanded={expanded}
+    <div
+      className={clsx(
+        "rounded-xl border border-white/[0.08] bg-white/[0.02] transition-colors",
+        open ? "bg-white/[0.03]" : "hover:bg-white/[0.03]"
+      )}
+    >
+      <button
+        type="button"
+        className="block w-full cursor-pointer px-4 py-3 text-left"
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+      >
+        {/* header: status · contract · dir · expiry · conviction · size · closed chip */}
+        <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1.5">
+          <StatusBadge row={row} />
+          <span className="t-num text-[14px] font-bold text-white">{contract}</span>
+          <Badge tone={row.direction === "long" ? "bull" : "bear"} size="sm">
+            {row.direction}
+          </Badge>
+          <span className="font-mono text-[10px] uppercase tracking-widest text-sky-300/50">
+            exp {row.expiry ? shortMonthDay(row.expiry) : "—"}
+          </span>
+          <ConvictionBadge raw={row.conviction} />
+          {live && <SizeChip verdict={verdict} />}
+          {row.closed_reason === "stopped" && (
+            <span className="rounded-md border border-bear/35 bg-bear/[0.08] px-1.5 py-0.5 font-mono text-[10px] font-bold uppercase tracking-[0.12em] text-bear">
+              stopped −50%
+            </span>
+          )}
+          {row.status === "TRIM" && (
+            <span className="rounded-md border border-cyan-400/35 bg-cyan-400/[0.08] px-1.5 py-0.5 font-mono text-[10px] font-bold uppercase tracking-[0.12em] text-cyan-300">
+              +100% tagged
+            </span>
+          )}
+          <span className="ml-auto flex items-center gap-2">
+            <span className="font-mono text-[9px] uppercase tracking-[0.18em] text-sky-300/40">score</span>
+            <span className="t-num text-[12px] font-bold text-sky-200/85">{Math.round(row.score)}</span>
+            <span className={clsx("inline-block text-sky-300/40 transition-transform", open && "rotate-90")}>›</span>
+          </span>
+        </div>
+
+        {/* money row: flow fill → live mark (bid/ask/mid + freshness) → P&L */}
+        <div className="mt-2 flex flex-wrap items-baseline gap-x-4 gap-y-1">
+          <span className="inline-flex items-baseline gap-1.5">
+            <span
+              className="font-mono text-[9px] uppercase tracking-[0.18em] text-sky-300/50"
+              title="Premium-weighted average the FLOW actually paid on the top strike — the plan's entry reference. Not a fill of ours."
+            >
+              {row.flow_avg_fill != null ? "flow fill" : "entry ref"}
+            </span>
+            <span className="t-num text-[13px] font-bold text-sky-200/90">
+              {row.entry_premium != null ? `$${row.entry_premium.toFixed(2)}` : "—"}
+            </span>
+          </span>
+          {live && (
+            <span className={clsx("inline-flex items-baseline gap-1.5", row.mark_stale && "opacity-40")}>
+              <span className="font-mono text-[9px] uppercase tracking-[0.18em] text-sky-300/50">
+                mark{row.mark_source === "last" ? " · last-trade" : row.mark_source === "mid" ? " · mid" : ""}
+              </span>
+              <span
+                className="t-num text-[13px] font-bold text-white"
+                title={row.mark_stale ? "Quote is stale — waiting for a live tick" : undefined}
+              >
+                {row.last_mark != null ? `$${row.last_mark.toFixed(2)}` : "—"}
+              </span>
+              {row.mark_bid != null && row.mark_ask != null && (
+                <span className="t-num text-[10px] text-sky-300/60">
+                  {row.mark_bid.toFixed(2)}×{row.mark_ask.toFixed(2)}
+                </span>
+              )}
+              {row.mark_as_of && (
+                <span
+                  className={clsx(
+                    "font-mono text-[9px] uppercase tracking-widest",
+                    row.mark_stale ? "text-gold" : "text-sky-300/40"
+                  )}
+                  title={`Quote as of ${fmtTime(row.mark_as_of)} ET`}
                 >
-                  <TD>
-                    <StatusBadge row={row} />
-                  </TD>
-                  <TD className="whitespace-nowrap">
-                    <div className="font-mono text-[13px] font-bold text-white">{contract}</div>
-                    <div className="font-mono text-[11px] tabular-nums text-sky-200/85">
-                      {row.entry_premium != null ? `@ ${row.entry_premium.toFixed(2)}` : ""}
-                      {row.last_mark != null && row.status !== "CLOSED" ? (
-                        <span
-                          className={clsx(row.mark_stale && "opacity-40")}
-                          title={row.mark_stale ? "Quote is stale — waiting for a live tick" : undefined}
-                        >
-                          {` → ${row.last_mark.toFixed(2)}`}
-                        </span>
-                      ) : (
-                        ""
-                      )}
-                    </div>
-                  </TD>
-                  <TD>
-                    {(() => {
-                      const note = intelFor(row);
-                      return (
-                        <div>
-                          <div className="flex items-start gap-2">
-                            <Badge tone={ACTION_TONE[note.action]} size="sm" className="mt-0.5 shrink-0">
-                              {note.action}
-                            </Badge>
-                            <span className="text-[12px] leading-snug text-sky-200/85">{note.reason}</span>
-                          </div>
-                          {row.nighthawkEcho && <NighthawkEchoNote echo={row.nighthawkEcho} />}
-                        </div>
-                      );
-                    })()}
-                  </TD>
-                  <TD className="text-right">
-                    <StatsCell row={row} />
-                    <span className={clsx("ml-2 inline-block text-sky-300/40 transition-transform", expanded && "rotate-90")}>
-                      ›
-                    </span>
-                  </TD>
-                </TR>
-                {expanded && (
-                  <TR className="bg-[rgba(8,9,14,0.5)]">
-                    <TD colSpan={4} className="p-0">
-                      <PlayDetail row={row} />
-                    </TD>
-                  </TR>
-                )}
-              </Fragment>
-            );
-          })}
-        </TBody>
-      </Table>
+                  {fmtTime(row.mark_as_of)} ET{markAge ? ` · ${markAge}` : ""}
+                  {row.mark_stale ? " · stale" : ""}
+                </span>
+              )}
+            </span>
+          )}
+          <span className="ml-auto">
+            <StatsCell row={row} />
+          </span>
+        </div>
+
+        {/* intel line */}
+        <div className="mt-2">
+          <div className="flex items-start gap-2">
+            <Badge tone={ACTION_TONE[note.action]} size="sm" className="mt-0.5 shrink-0">
+              {note.action}
+            </Badge>
+            <span className="text-[12px] leading-snug text-sky-200/85">{note.reason}</span>
+          </div>
+          {row.nighthawkEcho && <NighthawkEchoNote echo={row.nighthawkEcho} />}
+          {!open && (
+            <p className="mt-1 font-mono text-[9px] uppercase tracking-[0.18em] text-sky-300/35">
+              {cortexAbstained(verdict)
+                ? "cortex: abstained — gates-only commit"
+                : `cortex: ${verdict!.score >= 0 ? "+" : ""}${verdict!.score.toFixed(2)} · ${verdict!.supports.length} for / ${verdict!.opposes.length} against${verdict!.vetoes.length > 0 ? ` / ${verdict!.vetoes.length} veto` : ""}`}
+              {" · expand for evidence"}
+            </p>
+          )}
+        </div>
+      </button>
+      {open && <PlayDetail row={row} nowMs={nowMs} />}
     </div>
   );
 }
 
-// ── board ─────────────────────────────────────────────────────────────────────────
+// ── SKIP / WATCH cards (discipline made visible) ──────────────────────────────────
+
+function SkipCard({ row, nowMs }: { row: PlayRow; nowMs: number }) {
+  const contract = `${row.ticker} ${fmtStrike(row.strike)}${row.direction === "long" ? "C" : "P"}`;
+  const blocks = row.setup?.gate?.verdict === "BLOCKED" ? row.setup.gate.blocks : [];
+  const nowEt = nowMs > 0 ? etMinutesOf(nowMs) : null;
+  const moved = row.setup?.plan?.entry_status === "MOVED";
+  const illiquid = Boolean(row.setup?.plan?.illiquid);
+  const verdict = cortexOf(row);
+  return (
+    <div className="rounded-xl border border-white/[0.06] bg-white/[0.015] px-4 py-3">
+      <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1.5">
+        <StatusBadge row={row} />
+        <span className="t-num text-[13px] font-bold text-sky-100/90">{contract}</span>
+        <Badge tone={row.direction === "long" ? "bull" : "bear"} size="sm">
+          {row.direction}
+        </Badge>
+        <span className="ml-auto flex items-baseline gap-1.5">
+          <span className="font-mono text-[9px] uppercase tracking-[0.18em] text-sky-300/40">score</span>
+          <span className="t-num text-[12px] font-bold text-sky-200/80">{Math.round(row.score)}</span>
+        </span>
+      </div>
+      <ul className="mt-2 space-y-1.5">
+        {blocks.map((b) => {
+          // Widened to string: the cortex wire-in adds veto/net-negative codes to the
+          // ZeroDteGateFailure union; until it merges they simply never appear here.
+          const code = b.code as string;
+          const minsLeft =
+            code === "opening_window" && nowEt != null ? minutesUntilEtUnlock(b.threshold, nowEt) : null;
+          return (
+            <li key={code} className="flex flex-wrap items-start gap-x-2 gap-y-1">
+              <span
+                className={clsx(
+                  "shrink-0 rounded-md border px-1.5 py-0.5 font-mono text-[9px] font-bold uppercase tracking-[0.12em]",
+                  code === "cortex_veto" || code === "correlated_conflict" || code === "governor_session_stops"
+                    ? "border-bear/35 bg-bear/[0.08] text-bear"
+                    : "border-sky-300/25 bg-sky-300/[0.05] text-sky-300"
+                )}
+                title={`machine code: ${code}`}
+              >
+                {zeroDteGateLabel(b.code)}
+              </span>
+              {minsLeft != null && b.unlock_et && (
+                <span className="shrink-0 rounded-md border border-gold/35 bg-gold/[0.08] px-1.5 py-0.5 font-mono text-[9px] font-bold uppercase tracking-[0.12em] text-gold">
+                  unlocks {b.unlock_et} · {minsLeft}m
+                </span>
+              )}
+              <span className="min-w-0 flex-1 basis-full text-[11px] leading-snug text-sky-200/75 sm:basis-auto">
+                {b.reason}
+              </span>
+            </li>
+          );
+        })}
+        {blocks.length === 0 && moved && (
+          <li className="text-[11px] leading-snug text-sky-200/75">
+            <span className="mr-2 rounded-md border border-sky-300/25 bg-sky-300/[0.05] px-1.5 py-0.5 font-mono text-[9px] font-bold uppercase tracking-[0.12em] text-sky-300">
+              chase guard
+            </span>
+            Premium already ran {row.setup?.plan?.vs_flow_pct != null ? `+${row.setup.plan.vs_flow_pct}% ` : ""}
+            past the flow&apos;s fill — the move happened. No entry.
+          </li>
+        )}
+        {blocks.length === 0 && !moved && illiquid && (
+          <li className="text-[11px] leading-snug text-sky-200/75">
+            <span className="mr-2 rounded-md border border-sky-300/25 bg-sky-300/[0.05] px-1.5 py-0.5 font-mono text-[9px] font-bold uppercase tracking-[0.12em] text-sky-300">
+              liquidity
+            </span>
+            Bid/ask spread too wide for a 0DTE scalp
+            {row.setup?.plan?.spread_pct != null ? ` (${row.setup.plan.spread_pct}% of mark)` : ""} — an
+            untradeable market taxes every exit. Watch-only.
+          </li>
+        )}
+        {blocks.length === 0 && !moved && !illiquid && (
+          <li className="text-[11px] leading-snug text-sky-200/75">
+            <span className="mr-2 rounded-md border border-sky-300/25 bg-sky-300/[0.05] px-1.5 py-0.5 font-mono text-[9px] font-bold uppercase tracking-[0.12em] text-sky-300">
+              late window
+            </span>
+            Flagged after the 3:00 ET cutoff — 0DTE discipline: no fresh entries this late. Watch-only.
+          </li>
+        )}
+      </ul>
+      {!cortexAbstained(verdict) && (
+        <div className="mt-2.5">
+          <CortexEvidenceBlock verdict={verdict} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function SkipsSection({ rows, nowMs }: { rows: PlayRow[]; nowMs: number }) {
+  const [open, setOpen] = useState(false);
+  if (rows.length === 0) return null;
+  return (
+    <Panel
+      accent="sky"
+      kicker="Discipline · every pass is shown, none are hidden"
+      title="Skipped & watching"
+      actions={
+        <button
+          type="button"
+          onClick={() => setOpen((v) => !v)}
+          className="rounded-lg border border-sky-400/25 bg-sky-400/[0.06] px-2.5 py-1 font-mono text-[10px] uppercase tracking-widest text-sky-300 transition-colors hover:bg-sky-400/[0.12]"
+          aria-expanded={open}
+        >
+          {open ? "Hide" : `Show ${rows.length}`}
+        </button>
+      }
+      bodyClassName={open ? "space-y-3 px-4 py-4" : "px-5 py-3"}
+    >
+      {open ? (
+        rows.map((row) => <SkipCard key={row.ticker} row={row} nowMs={nowMs} />)
+      ) : (
+        <p className="text-[11px] leading-relaxed text-sky-300/60">
+          {rows.length} setup{rows.length === 1 ? "" : "s"} the scanner saw but refused — blocked by a
+          hard gate (tape alignment, opening window, score floor, session governor, evidence veto) or
+          the chase/liquidity/late rules. Expand to see each block in plain English.
+        </p>
+      )}
+    </Panel>
+  );
+}
+
+// ── record section (measured, never asserted) ─────────────────────────────────────
+
+type RecordBucket = {
+  label: string;
+  n: number;
+  wins: number;
+  losses: number;
+  win_rate_pct: number | null;
+  avg_pnl_pct: number | null;
+  low_n: boolean;
+};
+
+type RecordPlay = {
+  session_date: string;
+  ticker: string;
+  direction: "long" | "short";
+  flagged_et: string;
+  score: number;
+  conviction: string | null;
+  plan_outcome: string | null;
+  plan_pnl_pct: number | null;
+};
+
+type RecordResponse = {
+  available: boolean;
+  degraded?: boolean;
+  methodology?: string;
+  window?: { since: string; through: string; days: number; sessions: number };
+  plays?: RecordPlay[];
+  total_flagged?: number;
+  graded?: number;
+  wins?: number;
+  losses?: number;
+  win_rate_pct?: number | null;
+  avg_pnl_pct?: number | null;
+  by_time_of_day?: RecordBucket[];
+  by_direction?: RecordBucket[];
+  by_score_band?: RecordBucket[];
+};
+
+const recordFetcher = (url: string) =>
+  fetch(url, { cache: "no-store", credentials: "same-origin" }).then((r) => r.json()) as Promise<RecordResponse>;
+
+function LowNChip() {
+  return (
+    <span
+      className="rounded-md border border-gold/35 bg-gold/[0.08] px-1 py-px font-mono text-[8px] font-bold uppercase tracking-[0.1em] text-gold"
+      title={`Fewer than ${LOW_N_THRESHOLD} graded plays in this bucket — not enough samples to read as a track record`}
+    >
+      n&lt;{LOW_N_THRESHOLD}
+    </span>
+  );
+}
+
+function fmtPct(v: number | null | undefined, signed = false): string {
+  if (v == null || !Number.isFinite(v)) return "—";
+  return `${signed && v > 0 ? "+" : ""}${v.toFixed(1)}%`;
+}
+
+function CutTable({ title, buckets }: { title: string; buckets: RecordBucket[] }) {
+  if (buckets.length === 0) return null;
+  return (
+    <div className="min-w-0">
+      <p className="font-mono text-[9px] uppercase tracking-[0.18em] text-sky-300/50">{title}</p>
+      <ul className="mt-1.5 space-y-1">
+        {buckets.map((b) => (
+          <li key={b.label} className="flex items-baseline gap-2">
+            <span className="min-w-0 flex-1 truncate font-mono text-[10px] text-sky-200/75">{b.label}</span>
+            {b.low_n && <LowNChip />}
+            <span className="t-num shrink-0 text-[10px] text-sky-300/60">
+              {b.wins}W/{b.losses}L
+            </span>
+            <span
+              className={clsx(
+                "t-num w-[44px] shrink-0 text-right text-[11px] font-bold",
+                b.win_rate_pct != null && b.win_rate_pct >= 50 ? "text-bull" : "text-sky-200/80"
+              )}
+            >
+              {fmtPct(b.win_rate_pct)}
+            </span>
+            <span
+              className={clsx(
+                "t-num w-[52px] shrink-0 text-right text-[10px]",
+                b.avg_pnl_pct != null && b.avg_pnl_pct > 0 ? "text-bull" : b.avg_pnl_pct != null ? "text-bear" : "text-sky-300/50"
+              )}
+            >
+              {fmtPct(b.avg_pnl_pct, true)}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+const RECORD_OUTCOME_LABEL: Record<string, string> = {
+  doubled: "+100% target",
+  stopped: "stopped",
+  time_stop: "time stop",
+  ungradeable: "ungradeable",
+};
+
+function RecordSection() {
+  const { data, error } = useSWR<RecordResponse>("/api/market/zerodte/record?days=30", recordFetcher, {
+    refreshInterval: 300_000,
+    revalidateOnFocus: false,
+  });
+  if (error || data?.degraded) {
+    return (
+      <Panel accent="accent" kicker="Measured · 30 days" title="0DTE record">
+        <p className="text-[12px] text-sky-300/70">Record temporarily unavailable — it reloads automatically.</p>
+      </Panel>
+    );
+  }
+  if (!data) {
+    return <Skeleton className="h-48 w-full rounded-2xl" />;
+  }
+  const headline = (
+    <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+      <div className="rounded-xl border border-white/[0.07] bg-void-deep/60 px-3.5 py-2.5">
+        <p className="font-mono text-[9px] uppercase tracking-[0.18em] text-sky-300/50">Win rate</p>
+        <p
+          className={clsx(
+            "t-num mt-0.5 text-[20px] font-bold leading-none",
+            data.win_rate_pct != null && data.win_rate_pct >= 50 ? "text-bull" : "text-white"
+          )}
+        >
+          {fmtPct(data.win_rate_pct)}
+        </p>
+        <p className="t-num mt-1 text-[10px] text-sky-300/60">
+          {data.wins ?? 0}W / {data.losses ?? 0}L graded
+        </p>
+      </div>
+      <div className="rounded-xl border border-white/[0.07] bg-void-deep/60 px-3.5 py-2.5">
+        <p className="font-mono text-[9px] uppercase tracking-[0.18em] text-sky-300/50">Avg plan P&L</p>
+        <p
+          className={clsx(
+            "t-num mt-0.5 text-[20px] font-bold leading-none",
+            data.avg_pnl_pct != null && data.avg_pnl_pct > 0 ? "text-bull" : data.avg_pnl_pct != null ? "text-bear" : "text-white"
+          )}
+        >
+          {fmtPct(data.avg_pnl_pct, true)}
+        </p>
+        <p className="mt-1 font-mono text-[10px] text-sky-300/60">per graded play</p>
+      </div>
+      <div className="rounded-xl border border-white/[0.07] bg-void-deep/60 px-3.5 py-2.5">
+        <p className="font-mono text-[9px] uppercase tracking-[0.18em] text-sky-300/50">Graded</p>
+        <p className="t-num mt-0.5 text-[20px] font-bold leading-none text-white">{data.graded ?? 0}</p>
+        <p className="t-num mt-1 text-[10px] text-sky-300/60">of {data.total_flagged ?? 0} flagged</p>
+      </div>
+      <div className="rounded-xl border border-white/[0.07] bg-void-deep/60 px-3.5 py-2.5">
+        <p className="font-mono text-[9px] uppercase tracking-[0.18em] text-sky-300/50">Sessions</p>
+        <p className="t-num mt-0.5 text-[20px] font-bold leading-none text-white">{data.window?.sessions ?? 0}</p>
+        <p className="t-num mt-1 text-[10px] text-sky-300/60">last {data.window?.days ?? 30} days</p>
+      </div>
+    </div>
+  );
+  return (
+    <Panel accent="accent" kicker="Measured · every committed setup, no cherry-picking" title="0DTE record — 30 days">
+      <div className="space-y-4">
+        {headline}
+        {!data.available && (
+          <p className="text-[11px] text-sky-300/60">
+            No graded plays in the window yet — the record prints itself as sessions grade.
+          </p>
+        )}
+        {data.available && (
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+            <CutTable title="By time of day" buckets={data.by_time_of_day ?? []} />
+            <CutTable title="By direction" buckets={data.by_direction ?? []} />
+            <CutTable title="By score band" buckets={data.by_score_band ?? []} />
+          </div>
+        )}
+        {data.plays && data.plays.length > 0 && (
+          <div>
+            <p className="font-mono text-[9px] uppercase tracking-[0.18em] text-sky-300/50">Recent plays</p>
+            <ul className="mt-1.5 divide-y divide-white/[0.05]">
+              {data.plays.slice(0, 10).map((p) => (
+                <li key={`${p.session_date}-${p.ticker}`} className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5 py-1.5">
+                  <span className="t-num w-[48px] shrink-0 text-[10px] text-sky-300/50">{shortMonthDay(p.session_date)}</span>
+                  <span className="t-num shrink-0 text-[11px] font-bold text-sky-100/90">
+                    {p.ticker} {p.direction}
+                  </span>
+                  {p.flagged_et && (
+                    <span className="shrink-0 font-mono text-[10px] text-sky-300/50">{p.flagged_et}</span>
+                  )}
+                  {capConvictionDisplay(p.conviction) && (
+                    <span className="shrink-0 font-mono text-[10px] text-sky-300/60">
+                      {capConvictionDisplay(p.conviction)}
+                    </span>
+                  )}
+                  <span className="ml-auto shrink-0 font-mono text-[10px] text-sky-300/60">
+                    {p.plan_outcome ? (RECORD_OUTCOME_LABEL[p.plan_outcome] ?? p.plan_outcome) : "ungraded"}
+                  </span>
+                  <span
+                    className={clsx(
+                      "t-num w-[56px] shrink-0 text-right text-[11px] font-bold",
+                      p.plan_pnl_pct != null && p.plan_pnl_pct > 0
+                        ? "text-bull"
+                        : p.plan_pnl_pct != null
+                          ? "text-bear"
+                          : "text-sky-300/40"
+                    )}
+                    title={p.plan_pnl_pct == null ? "Not graded yet — grades come from the contract's own bars after the session" : undefined}
+                  >
+                    {p.plan_pnl_pct != null ? fmtPct(p.plan_pnl_pct, true) : "—"}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+        {data.methodology && (
+          <p className="border-t border-white/[0.06] pt-3 text-[10px] leading-relaxed text-sky-300/50">
+            {data.methodology}
+          </p>
+        )}
+      </div>
+    </Panel>
+  );
+}
+
+// ── the pane ──────────────────────────────────────────────────────────────────────
 
 /**
- * 0DTE Command — the always-on hunt, presented as a live plays table
- * (Status | Play | BlackOut Intel | Stats). Statuses are derived server-side from
- * each play's premium vs its fixed rules and latched extremes — OPEN → HOLD →
- * TRIM → CLOSED, everything force-closed by 3:30 ET, no new plays after 3:00 ET.
- * Rows expand to show why the play was picked and what to watch. Auto-refreshes;
- * no user action needed.
+ * Night Hawk 0DTE — the member-facing pane over the whole 0DTE stack: committed
+ * play cards (live marks + Cortex evidence + honest sizing), the discipline layer
+ * (every gate-blocked/skipped setup with its reason), the session governor strip,
+ * and the measured 30-day record. Statuses are derived server-side from each play's
+ * premium vs its fixed rules and latched extremes — OPEN → HOLD → TRIM → CLOSED,
+ * everything force-closed by 3:30 ET, no new plays after 3:00 ET. Every number
+ * rendered here is a payload field; the client contributes only clocks (countdowns,
+ * staleness dimming). Auto-refreshes; no user action needed.
  */
 export function ZeroDteBoard() {
   const { data, error } = useSWR<BoardResponse>("/api/market/zerodte/board", fetcher, {
@@ -691,9 +1387,19 @@ export function ZeroDteBoard() {
   // B-9 live-marks lane: ~1s SSE push (REST poll fallback) for the OPEN plays'
   // mark/P&L, overlaid onto the board's 10s payload below. Off after the close —
   // every play is frozen/graded then, there is nothing live to stream.
-  const live = useZeroDteLiveMarks(
-    Boolean(data && data.available !== false && data.session?.heat?.state !== "CLOSED")
-  );
+  const sessionLive = Boolean(data && data.available !== false && data.session?.heat?.state !== "CLOSED");
+  const live = useZeroDteLiveMarks(sessionLive);
+
+  // Pane clock: the live lane ticks at 1s while the session runs; off-hours fall
+  // back to a 10s tick so freshness/countdowns still update. Starts at 0 on the
+  // server render (SSR-deterministic) — clock-dependent chips appear after mount.
+  const [fallbackNowMs, setFallbackNowMs] = useState(0);
+  useEffect(() => {
+    setFallbackNowMs(Date.now());
+    const id = setInterval(() => setFallbackNowMs(Date.now()), 10_000);
+    return () => clearInterval(id);
+  }, []);
+  const nowMs = live.nowMs || fallbackNowMs;
 
   if (error || data?.available === false) {
     return (
@@ -707,89 +1413,81 @@ export function ZeroDteBoard() {
   if (!data) {
     return (
       <div className="space-y-4">
-        <Skeleton className="h-24 w-full rounded-2xl" />
-        <Skeleton className="h-80 w-full rounded-2xl" />
+        <Skeleton className="h-32 w-full rounded-2xl" />
+        <Skeleton className="h-72 w-full rounded-2xl" />
+        <Skeleton className="h-40 w-full rounded-2xl" />
       </div>
     );
   }
 
   const rows = mergePlays(data.setups ?? [], data.ledger ?? [], data.session?.heat?.state).map((r) =>
-    overlayLiveMark(r, live.byTicker.get(r.ticker), live.nowMs || Date.now())
+    overlayLiveMark(r, live.byTicker.get(r.ticker), nowMs || Date.now())
   );
   const covered = data.covered_elsewhere ?? [];
-  // Only the strongest get top billing: A-tier = conviction score ≥ 55, dossier not
-  // disagreeing, tradeable. Everything else (including PASSes) lives on the radar —
-  // visible and still measured, but never presented as a play to take.
-  const aTier = rows.filter(
-    (r) =>
-      r.status !== "SKIP" &&
-      r.score >= 55 &&
-      r.setup?.direction_confirmed !== false &&
-      r.setup?.intraday_conflict !== true
-  );
-  const radar = rows.filter((r) => !aTier.includes(r));
-  const graded = rows.filter((r) => r.plan_outcome && r.plan_outcome !== "ungradeable");
+  const plays = rows.filter((r) => r.status !== "SKIP");
+  const skips = rows.filter((r) => r.status === "SKIP");
+  const hasLivePlays = plays.some((r) => r.status === "OPEN" || r.status === "HOLD" || r.status === "TRIM");
+  const graded = plays.filter((r) => r.plan_outcome && r.plan_outcome !== "ungradeable");
   const wins = graded.filter((r) => (r.plan_pnl_pct ?? 0) > 0).length;
+  // Governor-strip conflict pills: named from the SKIP cards' own correlated_conflict
+  // blocks (payload sentences) — never re-derived client-side.
+  const conflicts = skips.flatMap((r) => {
+    const block = r.setup?.gate?.blocks.find((b) => b.code === "correlated_conflict");
+    return block ? [{ ticker: r.ticker, direction: r.direction, reason: block.reason }] : [];
+  });
 
   return (
     <div className="space-y-4">
-      <HeatHeader data={data} />
+      <PaneHeader
+        data={data}
+        transport={live.transport}
+        hasLivePlays={hasLivePlays}
+        conflicts={conflicts}
+        nowMs={nowMs}
+      />
 
       <Panel
         accent="bull"
-        kicker="Always-on scanner · new plays only"
-        title="Today's 0DTE plays"
+        kicker="Night Hawk 0DTE · committed plans only"
+        title="Today's plays"
         actions={
           graded.length > 0 ? (
             <Badge tone={wins * 2 >= graded.length ? "bull" : "bear"} size="sm">
               {wins}W / {graded.length - wins}L
             </Badge>
           ) : (
-            <Badge tone={rows.length > 0 ? "bull" : "neutral"} size="sm" dot={rows.length > 0}>
-              {rows.length} plays
+            <Badge tone={plays.length > 0 ? "bull" : "neutral"} size="sm" dot={plays.length > 0}>
+              {plays.length} plays
             </Badge>
           )
         }
-        bodyClassName="px-0 py-0"
+        bodyClassName="px-4 py-4"
       >
-        {aTier.length === 0 ? (
-          <p className="px-5 py-6 text-sm text-sky-300/70">
-            No A-tier play right now — and that&apos;s the discipline: the scanner hunts every 2
-            minutes, and only conviction-grade tape prints here. Lower-grade activity sits on the
-            radar below.
+        {plays.length === 0 ? (
+          <p className="px-1 py-2 text-sm text-sky-300/70">
+            No committed play right now — and that&apos;s the discipline: the scanner hunts every 2
+            minutes, and a plan prints only when the evidence AND every hard gate agree. What it
+            refused (and why) is below.
           </p>
         ) : (
-          <PlaysTable rows={aTier} />
+          <div className="space-y-3">
+            {plays.map((row) => (
+              <PlayCard key={row.ticker} row={row} nowMs={nowMs} />
+            ))}
+          </div>
         )}
-        <p className="px-5 py-3 text-[10px] leading-relaxed text-sky-300/50">
-          Click a play for why it was picked and what to watch. Statuses update automatically: OPEN
-          (in the entry range) → HOLD → TRIM (premium doubled — take some off) → CLOSED (stop, target
-          discipline, or the 3:30 ET hard exit). Plays already published elsewhere on the desk are
-          excluded{covered.length > 0 ? ` (today: ${covered.join(", ")})` : ""}; grades come from each
+        <p className="mt-3 border-t border-white/[0.06] px-1 pt-3 text-[10px] leading-relaxed text-sky-300/50">
+          Click a play for its evidence and plan. Statuses update automatically: OPEN (in the entry
+          range) → HOLD → TRIM (premium doubled — take some off) → CLOSED (stop, target discipline,
+          or the 3:30 ET hard exit). Plays already published elsewhere on the desk are excluded
+          {covered.length > 0 ? ` (today: ${covered.join(", ")})` : ""}; grades come from each
           contract&apos;s own prices, not opinion.
         </p>
       </Panel>
 
-      {radar.length > 0 && (
-        <Panel
-          accent="sky"
-          kicker="Radar"
-          title="Watching — not plays"
-          actions={
-            <Badge tone="neutral" size="sm">
-              {radar.length}
-            </Badge>
-          }
-          bodyClassName="px-0 py-0"
-        >
-          <PlaysTable rows={radar} />
-          <p className="px-5 py-3 text-[10px] leading-relaxed text-sky-300/50">
-            Real tape that failed a conviction gate — score below 55, dossier disagreement, already
-            ran, too late, or an untradeable spread. Tracked and graded like everything else, but not
-            presented as money plays.
-          </p>
-        </Panel>
-      )}
+      <SkipsSection rows={skips} nowMs={nowMs} />
+
+      <RecordSection />
     </div>
   );
 }
