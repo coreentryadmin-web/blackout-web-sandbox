@@ -73,6 +73,7 @@ const QUESTION_KEYED_INTENTS = new Set([
   "universal_lookup",
   "verdict",
   "system_diagnostic",
+  "ops_read",
   "cortex_read",
   "nighthawk_edition",
   "vector_read",

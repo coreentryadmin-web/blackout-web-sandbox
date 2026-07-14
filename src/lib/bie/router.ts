@@ -10,6 +10,7 @@ import { KNOWN_TICKERS } from "@/lib/largo/question-intent";
 import { lookupGlossary } from "./glossary";
 import { namesUnsupportedHorizon } from "./vector-read-fallback";
 import { isScenarioQuestion } from "./scenario-read";
+import { isOpsReadQuestion } from "./ops-read-core";
 
 export type BieIntent =
   | "zerodte_plays"
@@ -28,6 +29,7 @@ export type BieIntent =
   | "verdict"
   | "compound_lookup"
   | "system_diagnostic"
+  | "ops_read"
   | "cortex_read"
   | "nighthawk_edition"
   | "scenario"
@@ -488,6 +490,14 @@ export function classifyBieIntent(question: string, ledgerTickers: Set<string>):
   // when a path or provider is explicitly named, so a plain "show me the SPX setup" isn't stolen.
   if (isUniversalLookup(q)) return { intent: "universal_lookup", ticker: extractKnownTicker(q) };
 
+  // "are the crons healthy / is UW up / is polygon down / is the data fresh / ops status" → the
+  // governed OPS READ tools (task #58): read-only ops awareness (cron_runs / provider-health /
+  // cache-probe / combined overview). MUST be before system_diagnostic — the diagnostic engine owns
+  // the surface-forming "why isn't NVDA GEX forming" class, while a general "are the crons healthy"
+  // / "is UW up" is an infra-health question answered from real cron-run/provider/cache state. Placed
+  // before REASONING_RE for the same "why/is" bail-to-Claude reason as the diagnostic branch.
+  if (isOpsReadQuestion(q)) return { intent: "ops_read", ticker: null };
+
   // "why isn't X forming / is the pipeline healthy / what's failing" → self-diagnosis from real ops
   // signals. MUST be before REASONING_RE (and before the vector branch, whose "forming" overlaps),
   // or "why" bails to Claude / the surface gets read as a normal Vector question.
@@ -632,6 +642,8 @@ export function classifyBieStagingFallback(question: string): BieRoute {
   const q = question.trim();
   if (isConceptQuestion(q)) return { intent: "concept_read", ticker: null };
   if (isUniversalLookup(q)) return { intent: "universal_lookup", ticker: extractKnownTicker(q) };
+  // Same placement as the primary classifier: governed ops read BEFORE system_diagnostic.
+  if (isOpsReadQuestion(q)) return { intent: "ops_read", ticker: null };
   if (isDiagnosticQuestion(q)) return { intent: "system_diagnostic", ticker: extractKnownTicker(q) };
   // Same Night Hawk edition branch as the primary classifier (same placement: after
   // concept/diagnostic, before the cortex branch — "why was X picked/pulled" is an
@@ -748,6 +760,8 @@ export function bieFollowups(intent: BieIntent): string[] {
       return ["Ask a single question for the full read", "What's the SPX setup right now?", "What is a King node?"];
     case "system_diagnostic":
       return ["Is the flow pipeline healthy?", "Why isn't SPX GEX updating?", "What's the SPX setup right now?"];
+    case "ops_read":
+      return ["Is UW up?", "Is the data fresh?", "What's the SPX setup right now?"];
     case "cortex_read":
       return ["Show today's 0DTE plays", "What is a Cortex veto?", "What does Cortex say about SPY?"];
     case "nighthawk_edition":

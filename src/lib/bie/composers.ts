@@ -34,8 +34,12 @@ import {
   type CompoundPart,
 } from "./decompose";
 
-/** Optional member question — premise correction + advice routing context. */
-export type ComposeBieOpts = { question?: string };
+/** Optional member question — premise correction + advice routing context. `isAdmin` gates the
+ *  governed ops read (#58): admins get the full cron/provider/cache breakdown, non-admins a clean
+ *  health badge. Optional/undefined defaults to the admin view — matches how #56 self-diagnosis is
+ *  gated (Largo is admin-launch-gated today), so the caller only needs to pass isAdmin=false once
+ *  Largo de-gates to premium members. */
+export type ComposeBieOpts = { question?: string; isAdmin?: boolean };
 
 /** Deterministic answer plus the raw source payload for Layer 4 claim verification. */
 import { tierLine, type BieComposed } from "@/lib/bie/composers-shared";
@@ -775,6 +779,7 @@ function headlineForRoute(route: BieRoute): string {
     universal_lookup: "Lookup",
     verdict: `${t}verdict`,
     system_diagnostic: `${t}diagnosis`,
+    ops_read: "Ops status",
     zerodte_plays: "0DTE plays",
     ticker_play_state: `${t}play`,
     cortex_read: `${t}Cortex read`,
@@ -833,6 +838,14 @@ async function composeBieAnswerUncached(route: BieRoute, opts?: ComposeBieOpts):
       case "system_diagnostic": {
         const { composeDiagnostic } = await import("@/lib/bie/diagnostic");
         return await composeDiagnostic(route.ticker ?? "SPX", opts?.question ?? "");
+      }
+      case "ops_read": {
+        // Governed OPS READ tools (task #58) — read-only ops awareness (cron_runs / provider-health /
+        // cache-probe / combined overview) from REAL state, never fabricated. Admin-gated detail:
+        // admins get the full breakdown, non-admins a clean health badge (opts.isAdmin === false).
+        // Relative import so the CI Node-20 dynamic-import loader resolves it (no @/ dynamic import).
+        const { composeOpsRead } = await import("./ops-read");
+        return await composeOpsRead(opts?.question ?? "", { isAdmin: opts?.isAdmin });
       }
       case "cortex_read": {
         // BIE × Cortex bridge (PR-H) — "why did we commit/skip/exit X" from the PINNED

@@ -642,6 +642,58 @@ async function runFreshness(page) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
+// Category 7b — GOVERNED OPS READS (task #58)
+// Read-only ops awareness through the REAL member path: cron_runs / provider-health /
+// cache-probe / overview. The temp user is admin, so the FULL breakdown is expected. Checks are
+// structural + honesty (live ops state varies): a real ops answer from the intelligence layer,
+// the right ops vocabulary present, an explicit health verdict, and — the cardinal governance
+// rule — NO secret / key / internal hostname ever leaks into the member-facing answer.
+// ═══════════════════════════════════════════════════════════════════════════════
+// Anything that would be a governance breach if it reached a member: raw keys, bearer tokens,
+// api-key query params, internal Railway/RDS/ECS hostnames, or a full provider URL.
+const OPS_SECRET_LEAK = /apikey=|api_key|bearer\s|_API_KEY|\.railway\.internal|\.rlwy\.net|amazonaws\.com|https?:\/\/[^\s)]+/i;
+
+async function runOpsTools(page) {
+  console.log("\n───── 7b. GOVERNED OPS READS (#58) ─────");
+
+  // 1) cron_runs — "are the crons healthy" must return a real cron-health read, not a market dump.
+  const cron = await ask(page, "ops", "are the crons healthy");
+  rec("ops", "ops: cron-health ask returns an ops read from the intelligence layer",
+    cron.source === "blackout-intelligence" && cron.answer.length > 15, `src=${cron.source} · ${cron.ms}ms`);
+  rec("ops", "ops: cron read carries cron-health vocabulary + a verdict",
+    hasAny(cron.answer, ["cron", "job", "scheduled"]) && hasAny(cron.answer, ["healthy", "stale", "failed", "normal", "delayed", "attention", "run"]),
+    `"${cron.answer.slice(0, 100).replace(/\n/g, " ")}"`);
+
+  // 2) provider-health — "is UW up / is polygon up". Honest up/down/unknown; NEVER a leaked key/host.
+  const prov = await ask(page, "ops", "is UW up and is polygon up right now");
+  rec("ops", "ops: provider-health ask returns a reachability read",
+    prov.source === "blackout-intelligence" && hasAny(prov.answer, ["polygon", "unusual whales", "provider", "reachab", "up", "down", "normal"]),
+    `"${prov.answer.slice(0, 100).replace(/\n/g, " ")}"`);
+
+  // 3) cache-probe — "is the data fresh".
+  const cache = await ask(page, "ops", "is the data fresh");
+  rec("ops", "ops: cache-freshness ask returns a freshness read",
+    cache.source === "blackout-intelligence" && hasAny(cache.answer, ["fresh", "stale", "snapshot", "cache", "current", "normal", "closed"]),
+    `"${cache.answer.slice(0, 100).replace(/\n/g, " ")}"`);
+
+  // 4) overview — "ops status".
+  const ov = await ask(page, "ops", "ops status");
+  rec("ops", "ops: overview ask returns a combined ops read",
+    ov.source === "blackout-intelligence" && ov.answer.length > 15, `src=${ov.source} · ${ov.ms}ms`);
+
+  // 5) GOVERNANCE gate (hard): no secret/key/hostname leak in ANY ops answer.
+  const opsAnswers = [cron, prov, cache, ov];
+  const leaked = opsAnswers.filter((r) => OPS_SECRET_LEAK.test(r.answer));
+  rec("ops", "ops: NO secret / key / internal-hostname leak in any ops answer (governance gate)",
+    leaked.length === 0, leaked.map((r) => `"${(r.answer.match(OPS_SECRET_LEAK) || [])[0]}"`).join(" | "));
+
+  // 6) HONESTY: an ops answer must not fabricate a healthy verdict when it can't confirm — accept an
+  // explicit health verdict OR an honest "unavailable/can't confirm". (Never a bare non-answer.)
+  rec("ops", "ops: every ops answer states a verdict or an honest 'no data' (no fabricated all-clear)",
+    opsAnswers.every((r) => hasAny(r.answer, ["healthy", "normal", "stale", "failed", "down", "degraded", "delayed", "attention", "reachab", "fresh", "unavailable", "can't confirm", "closed"])));
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
 // Category 8 — AGGREGATES over the ENTIRE suite
 // ═══════════════════════════════════════════════════════════════════════════════
 function runAggregates() {
@@ -709,6 +761,7 @@ async function main() {
     await runTerse(page);
     await runDecisions(page);
     await runFreshness(page);
+    await runOpsTools(page);
     runAggregates();
   } finally {
     await browser.close();
