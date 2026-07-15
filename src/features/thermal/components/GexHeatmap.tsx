@@ -3510,112 +3510,12 @@ export function GexHeatmap({
 
   const matrixPanel = (
     <div className="min-w-0">
-      <div className="mb-2 flex flex-wrap items-center gap-x-5 gap-y-2 text-[10px] font-mono uppercase tracking-widest gex-matrix-legend">
-        <span className="mr-1 shrink-0 font-bold tracking-[0.2em] text-sky-300">
-          Strike × Expiry Matrix
-        </span>
-        {/* Always-visible matrix freshness anchor — the gamma matrix / walls / KING NODE /
-            gamma-flip are the numbers traders act on, so the sample time belongs here on the
-            grid header, not only inside the collapsible Largo panel (#8). */}
-        <MatrixFreshness asof={data?.asof} />
-        <span className="flex items-center gap-1.5 text-sky-300">
-          <span
-            className="inline-block h-3 w-3 rounded-sm"
-            style={{ backgroundColor: `rgba(${LENS_COLORS[lens].posRgb},0.5)` }}
-          />
-          {`${vocab.pos} (+)`}
-        </span>
-        <span className="flex items-center gap-1.5 text-sky-300">
-          <span
-            className="inline-block h-3 w-3 rounded-sm"
-            style={{ backgroundColor: `rgba(${LENS_COLORS[lens].negRgb},0.5)` }}
-          />
-          {`${vocab.neg} (−)`}
-        </span>
-        {flip != null && (
-          <span className="flex items-center gap-1.5 text-gold">
-            <span aria-hidden>◀ {vocab.pivot}</span>
-            <span className="text-white">{fmtStrike(flip)}</span>
-          </span>
-        )}
-        {spot > 0 && (
-          <span className="flex items-center gap-1.5 text-cyan-400">
-            <span aria-hidden>● spot</span>
-          </span>
-        )}
-        {/* ANCHOR legend — the dominant dealer-gamma node (max |net|), now a BRIGHT-WHITE ◆. */}
-        {matrixAnchorStrike != null && (
-          <span className="flex items-center gap-1.5 text-white" title={GEX_KING_NODE_HELP}>
-            <AnchorGlyph size={11} />
-            <span aria-hidden>{gexKingDualLabel("near-term")}</span>
-            <span className="text-white">{fmtStrike(matrixAnchorStrike)}</span>
-          </span>
-        )}
-        {/* +GEX PEAK legend — the dominant call wall (single highest positive cell), matching
-            SPX Slayer's .spx-odte-matrix-row--max-pos BULL GREEN exactly. */}
-        {posPeakCell != null && (
-          <span className="flex items-center gap-1.5" style={{ color: "#00e676" }}>
-            <span
-              aria-hidden
-              className="h-2.5 w-2.5 rounded-sm"
-              style={{ outline: "2px solid #00e676", outlineOffset: "-2px", boxShadow: "inset 0 0 6px rgba(0,230,118,0.7)" }}
-            />
-            <span aria-hidden>+{lensUpper} peak</span>
-            <span className="text-white">{fmtStrike(posPeakCell.strike)}</span>
-          </span>
-        )}
-        {/* −GEX PEAK legend — the dominant put wall (single lowest negative cell), matching
-            SPX Slayer's .spx-odte-matrix-row--max-neg VIOLET exactly. */}
-        {negPeakCell != null && (
-          <span className="flex items-center gap-1.5" style={{ color: "#8b5cf6" }}>
-            <span
-              aria-hidden
-              className="h-2.5 w-2.5 rounded-sm"
-              style={{ outline: "2px solid #8b5cf6", outlineOffset: "-2px", boxShadow: "inset 0 0 6px rgba(109,40,217,0.7)" }}
-            />
-            <span aria-hidden>−{lensUpper} peak</span>
-            <span className="text-white">{fmtStrike(negPeakCell.strike)}</span>
-          </span>
-        )}
-        {/* Per-day King legend (Step 4) — the amber ★ marking each expiry column's own
-            dominant strike, matching SPX Slayer's per-column King star exactly. Only shown
-            when ≥1 column has a per-day King. */}
-        {Object.keys(perDayAnchorByExpiry).length > 0 && (
-          <span className="flex items-center gap-1.5 text-amber-300/80">
-            <span aria-hidden className="text-[13px] leading-none text-amber-400 [text-shadow:0_0_6px_rgba(251,191,36,0.9)]">
-              ★
-            </span>
-            <span aria-hidden>per-day {GEX_KING_DUAL_LABEL}</span>
-          </span>
-        )}
-        {/* Far-dated monthly/quarterly OpEx columns are gold-marked (◆) — where the dominant
-            dealer walls park. Only shown once the axis actually carries a monthly column. */}
-        {monthlyExpiries.length > 0 && (
-          <span className="flex items-center gap-1.5 text-gold/80" title="Standard monthly / quarterly OpEx expiry">
-            <span aria-hidden className="text-gold text-[9px] font-bold">M</span>
-            <span aria-hidden>monthly OpEx</span>
-          </span>
-        )}
-      </div>
-
       {uwDiverged && (
         <p className="mb-2 font-mono text-[9px] leading-snug text-amber-300/90">
           UW oracle diverges {uwCross?.divergence?.toFixed(0)}pt from Polygon walls — treat levels
           as provisional until channels agree.
         </p>
       )}
-      {monthlyExpiries.length > 0 && (
-        <p className="mb-2 font-mono text-[9px] leading-snug text-white/45">
-          Net column sums near-term expiries only; monthly OpEx columns (M) are additive context.
-        </p>
-      )}
-
-      {/* Horizontal-scroll container with a subtle right-edge fade so on
-          phones the mono values scroll instead of colliding. The table gets
-          a min-width so columns keep their breathing room below the fold. */}
-      <p className="mb-2 font-mono text-[10px] text-mute md:hidden">
-        Swipe horizontally to view all expiry columns.
-      </p>
       <div className="relative">
         {/* Bounded scroll box: scrolls horizontally for expiry columns AND
             vertically for strikes (the spot row is centered inside this box via
@@ -3802,24 +3702,6 @@ export function GexHeatmap({
         />
       </div>
 
-      <p className="mt-2 shrink-0 flex flex-wrap items-center gap-x-2 gap-y-1 px-1 font-mono text-[9px] text-cyan-400">
-        <span>
-          {strikes.length} strikes · {expiries.length} expiries · scroll → for more dates
-        </span>
-        {Object.keys(perDayAnchorByExpiry).length > 0 && (
-          <span>
-            · <span className="text-amber-400">★Npt</span> = per-day King node, N points from spot
-          </span>
-        )}
-        <span>· pulsing cell = that day&apos;s highest +/- gamma</span>
-      </p>
-
-      <p className="mt-3 text-[10px] font-mono uppercase tracking-widest text-sky-300/75">
-        {`Net dealer ${vocab.unit} per strike × expiry · ${vocab.pos} / ${vocab.neg} · total `}
-        <span className={clsx(total >= 0 ? posColorClass : "text-bear-text")}>
-          {fmtMoney(total)}
-        </span>
-      </p>
     </div>
   );
 
