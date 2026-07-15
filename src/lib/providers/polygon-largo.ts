@@ -5,7 +5,7 @@
 import { polygonTrackedFetch } from "./polygon-rate-limiter";
 import { polygonConfigured } from "./config";
 import { priorEtYmd, todayEtYmd } from "./spx-session";
-import { withFallbacks, recordDataSourceing } from "@/features/nighthawk/lib/diagnostics";
+import { recordDataSourceing } from "@/features/nighthawk/lib/diagnostics";
 
 const BASE = (process.env.POLYGON_API_BASE ?? "https://api.massive.com").replace(/\/$/, "");
 const KEY = process.env.POLYGON_API_KEY ?? "";
