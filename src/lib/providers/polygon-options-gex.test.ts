@@ -408,7 +408,7 @@ test("resolveExpiryAxis: a far target that never printed a real contract is excl
   assert.ok(!expiries.includes("2026-12-18"));
 });
 
-test("heatmapBandPct: SPX stays tight (±6%), non-SPX widens to ±12% for multi-wall coverage", () => {
+test("heatmapBandPct: SPX stays tight (±6%), non-SPX widens to ±20% for multi-wall coverage", () => {
   const savedSpx = process.env.SPX_GEX_HEATMAP_BAND_PCT;
   const savedGlobal = process.env.GEX_HEATMAP_BAND_PCT;
   delete process.env.SPX_GEX_HEATMAP_BAND_PCT;
@@ -416,15 +416,15 @@ test("heatmapBandPct: SPX stays tight (±6%), non-SPX widens to ±12% for multi-
   try {
     // SPX chain is dense → keep the band tight so its hot payload stays small.
     assert.equal(heatmapBandPct("SPX"), 0.06);
-    // Every other ticker gets the wider default — this is the ASTS "only 1 call/1 put wall" fix:
-    // a $73 name has ~2 net-positive strikes inside ±6% but 4+ inside ±12%.
-    assert.equal(heatmapBandPct("ASTS"), 0.12);
-    assert.equal(heatmapBandPct("NVDA"), 0.12);
+    // Every other ticker gets the wider default so round-number gamma walls on
+    // low-priced names (ASTS 90/100/125 @ $73 spot) are actually fetched.
+    assert.equal(heatmapBandPct("ASTS"), 0.20);
+    assert.equal(heatmapBandPct("NVDA"), 0.20);
     // env override wins, clamped to (0, 0.25].
-    process.env.GEX_HEATMAP_BAND_PCT = "0.2";
-    assert.equal(heatmapBandPct("ASTS"), 0.2);
+    process.env.GEX_HEATMAP_BAND_PCT = "0.15";
+    assert.equal(heatmapBandPct("ASTS"), 0.15);
     process.env.GEX_HEATMAP_BAND_PCT = "0.9"; // out of range → ignored, back to default
-    assert.equal(heatmapBandPct("ASTS"), 0.12);
+    assert.equal(heatmapBandPct("ASTS"), 0.20);
     process.env.SPX_GEX_HEATMAP_BAND_PCT = "0.03";
     assert.equal(heatmapBandPct("SPX"), 0.03);
   } finally {
