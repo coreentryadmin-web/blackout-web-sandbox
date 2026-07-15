@@ -14,7 +14,7 @@ import {
 } from "@/lib/providers/gex-wall-levels";
 import { todayEtYmd } from "@/lib/providers/spx-session";
 import { persistWallSampleDebounced, loadSessionWallHistory } from "./vector-wall-persist";
-import { bucketWallSampleTime, buildWallHistorySample } from "./vector-wall-sample";
+import { bucketWallSampleTime, buildWallHistorySample, wallTrailSampleSecForTicker } from "./vector-wall-sample";
 import {
   RECORDED_WALL_HORIZONS,
   pickNarrowedWallSample,
@@ -57,11 +57,10 @@ type TickerState = {
   /** ET session the in-memory history belongs to — see session reset in buildVectorStreamPayload. */
   sessionYmd: string;
   /**
-   * Last 15s bucket for which the narrowed-horizon (0dte/weekly/monthly) rails were recorded from
-   * this live hub. The hub previously wrote ONLY the "all" rail — narrowed rails were cron-only
-   * (5-min cadence), so a member watching the 0DTE lens saw a frozen rail. Gating the per-horizon
-   * write on a bucket rollover gives viewed narrowed rails the same 15s density as "all" without
-   * recomputing per-expiry walls on every 1s payload build.
+   * Last bucket for which the narrowed-horizon (0dte/weekly/monthly) rails were recorded from
+   * this live hub. Bucket size is ticker-aware (5s for oracle tickers, 15s for others). Gating
+   * the per-horizon write on a bucket rollover gives viewed narrowed rails the same density as
+   * "all" without recomputing per-expiry walls on every 1s payload build.
    */
   lastNarrowedWallBucket: number;
 };
@@ -361,15 +360,11 @@ export async function getVectorGammaFlip(ticker: string = VECTOR_DEFAULT_TICKER)
   return s.cachedFlip;
 }
 
-// ── Narrowed-horizon wall recording (shared by the live 15s hub and the 5-min universe cron) ──
-// Root cause of the "frozen 0DTE rail" bug: narrowed rails (0dte/weekly/monthly) were written ONLY
-// by the universe cron (5-min cadence, best-effort with a silent skip when the per-expiry SPXW
-// reconstruction came back empty), while the live hub wrote only the blended "all" rail. So a
-// member watching the 0DTE lens saw new walls at best every ~5 min — and for SPX far less, because
-// its per-expiry reconstruction empties out on most cron ticks. Both writers now share this path so
-// the rail (a) advances at the live 15s cadence when a ticker is viewed, and (b) FALLS BACK to the
-// blended near-term walls when the per-expiry reconstruction is momentarily empty (the documented
-// "null → blended near-term walls" contract) instead of dropping the bucket.
+// ── Narrowed-horizon wall recording (shared by the live hub and the 5-min universe cron) ──
+// Both writers share this path so the rail (a) advances at the live cadence (5s for oracle tickers,
+// 15s for others) when a ticker is viewed, and (b) FALLS BACK to the blended near-term walls when
+// the per-expiry reconstruction is momentarily empty (the documented "null → blended near-term
+// walls" contract) instead of dropping the bucket.
 
 /**
  * Fetch + build the narrowed-horizon wall samples for a ticker at one bucket time. `blended` is the
@@ -484,8 +479,9 @@ export async function buildVectorStreamPayload(
     // honest-gap semantics documented on buildWallHistorySample). Freshness
     // gating stays here: a lens whose cache is stale contributes nothing this
     // bucket (passed as null), recording an honest gap rather than a stale copy.
+    const tickerBucketSec = wallTrailSampleSecForTicker(t);
     const sample = buildWallHistorySample({
-      time: bucketWallSampleTime(Math.floor(nowMs / 1000)),
+      time: bucketWallSampleTime(Math.floor(nowMs / 1000), tickerBucketSec),
       gexWalls: gexRecordable ? walls : null,
       gammaFlip: gexRecordable ? gammaFlip : null,
       vexWalls: vexRecordable ? vexWalls : null,
@@ -496,13 +492,9 @@ export async function buildVectorStreamPayload(
       persistWallSampleDebounced(sessionYmd, sample, t);
     }
 
-    // Narrowed-horizon rails (0dte/weekly/monthly) at the live 15s cadence. Previously these were
-    // written ONLY by the 5-min universe cron, so a viewed 0DTE lens showed a frozen rail. Gate on
-    // a bucket rollover so the per-expiry walls are computed at most once per 15s bucket, and
-    // fire-and-forget so the hot SSE payload never blocks or breaks on the rail write. `walls` is
-    // this bucket's fresh blended near-term reading — the fallback when a horizon's per-expiry
-    // reconstruction is momentarily empty (keeps the rail advancing instead of dropping the bucket).
-    const narrowedBucket = bucketWallSampleTime(Math.floor(nowMs / 1000));
+    // Narrowed-horizon rails at the ticker-aware cadence (5s for oracle, 15s for others).
+    // Gate on a bucket rollover so per-expiry walls are computed at most once per bucket.
+    const narrowedBucket = bucketWallSampleTime(Math.floor(nowMs / 1000), tickerBucketSec);
     if (gexRecordable && s.lastNarrowedWallBucket !== narrowedBucket) {
       s.lastNarrowedWallBucket = narrowedBucket;
       void buildNarrowedHorizonWallSamples(t, narrowedBucket, { walls, flip: gammaFlip })

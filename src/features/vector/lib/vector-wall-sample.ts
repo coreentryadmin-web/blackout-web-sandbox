@@ -1,9 +1,13 @@
 import type { GexWalls } from "@/lib/providers/gex-wall-levels";
 import { roundFloats } from "@/lib/round-floats";
 import type { WallHistorySample } from "./vector-wall-history";
+import { VECTOR_ORACLE_TICKERS, normalizeVectorTicker } from "./vector-ticker";
 
 /** Reference product cadence — gamma wall bead trail samples (live levels still ~1s). */
 export const DEFAULT_WALL_TRAIL_SAMPLE_SEC = 15;
+
+/** Oracle tickers (SPX/SPY/QQQ) sample at 5s — UW WS delivers real-time GEX. */
+export const ORACLE_WALL_TRAIL_SAMPLE_SEC = 5;
 
 const EMPTY_WALLS: GexWalls = { callWalls: [], putWalls: [] };
 
@@ -43,7 +47,7 @@ export function buildWallHistorySample(input: {
   });
 }
 
-/** Wall-trail bucket size in seconds (env-tunable, min 5s). */
+/** Wall-trail bucket size in seconds (env-tunable, min 5s). Global fallback — prefer wallTrailSampleSecForTicker. */
 export function wallTrailSampleSec(): number {
   const raw =
     process.env.NEXT_PUBLIC_VECTOR_WALL_TRAIL_SAMPLE_SEC ??
@@ -51,6 +55,26 @@ export function wallTrailSampleSec(): number {
     DEFAULT_WALL_TRAIL_SAMPLE_SEC;
   const n = Number(raw);
   return Number.isFinite(n) && n >= 5 ? Math.floor(n) : DEFAULT_WALL_TRAIL_SAMPLE_SEC;
+}
+
+/**
+ * Ticker-aware bucket interval: oracle tickers (SPX/SPY/QQQ) get 5s beads (UW WS
+ * delivers real-time GEX so finer resolution is honest data, not interpolation),
+ * everything else stays at 15s (Polygon heatmap REST caches ~8-20s). An env override
+ * wins for all tickers (testing / rollback).
+ */
+export function wallTrailSampleSecForTicker(ticker?: string | null): number {
+  const envOverride =
+    process.env.NEXT_PUBLIC_VECTOR_WALL_TRAIL_SAMPLE_SEC ??
+    process.env.VECTOR_WALL_TRAIL_SAMPLE_SEC;
+  if (envOverride != null) {
+    const n = Number(envOverride);
+    if (Number.isFinite(n) && n >= 5) return Math.floor(n);
+  }
+  if (ticker && VECTOR_ORACLE_TICKERS.has(normalizeVectorTicker(ticker))) {
+    return ORACLE_WALL_TRAIL_SAMPLE_SEC;
+  }
+  return DEFAULT_WALL_TRAIL_SAMPLE_SEC;
 }
 
 /** Snap an epoch-second timestamp to the wall-trail bucket (15s by default). */

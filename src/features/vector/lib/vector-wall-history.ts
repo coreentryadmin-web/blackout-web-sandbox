@@ -39,8 +39,9 @@ export function hasVexInHistory(history: WallHistorySample[]): boolean {
 
 export type StrikeTrailPoint = { time: number; pct: number; modeled?: boolean };
 
-// ~one RTH session at 15s trail cadence (390 min × 4 ≈ 1560) plus headroom.
-const MAX_HISTORY = 1920;
+// ~one RTH session at 5s trail cadence for oracle tickers (390 min × 12 = 4680) plus headroom.
+// Non-oracle tickers at 15s produce ~1560 samples — well within this cap.
+const MAX_HISTORY = 5760;
 
 /** Max simultaneous strike-keyed bead rows per side on the chart (reference shows ~4–6). */
 export const MAX_STRIKE_TRAILS_PER_SIDE = 8;
@@ -74,9 +75,9 @@ export const DOMINANT_WALLS_PER_BUCKET = 3;
 export const LIVE_TRAIL_LOOKBACK_SEC = 45 * 60;
 
 /**
- * Append a wall reading into the session's history, keyed by the trail bucket time (15s by
- * default — see vector-wall-sample.ts). Replaces in place when the bucket is unchanged so
- * magnitude updates within the same 15s window don't duplicate beads.
+ * Append a wall reading into the session's history, keyed by the trail bucket time (5s for
+ * oracle tickers, 15s for others — see vector-wall-sample.ts). Replaces in place when the
+ * bucket is unchanged so magnitude updates within the same window don't duplicate beads.
  */
 export function recordWallSample(history: WallHistorySample[], sample: WallHistorySample): WallHistorySample[] {
   const last = history[history.length - 1];
@@ -259,8 +260,8 @@ export function trimHistoryForLiveTrails(
 }
 
 /**
- * Resample the 15s wall-history trail to the active chart interval — one bead per candle
- * bucket (last reading in each bucket wins, same alignment as aggregateVectorBars).
+ * Resample the wall-history trail (5s for oracle tickers, 15s for others) to the active
+ * chart interval — one bead per candle bucket (last reading in each bucket wins).
  */
 export function bucketWallHistoryForInterval(
   history: WallHistorySample[],

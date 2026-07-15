@@ -2193,7 +2193,8 @@ export function VectorChart({
             active,
             snap.candle.time,
             wallsForActiveLens(active, prevStruct.gexWalls, prevStruct.vexWalls),
-            flipForActiveLens(active, prevStruct.gammaFlip, prevStruct.vexFlip)
+            flipForActiveLens(active, prevStruct.gammaFlip, prevStruct.vexFlip),
+            ticker
           );
           if (spotEvents.length) {
             setWallEvents((ev) => appendVectorWallEvents(ev, spotEvents));
