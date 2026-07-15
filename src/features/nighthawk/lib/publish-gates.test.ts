@@ -231,12 +231,12 @@ test("G-N3: quote from a prior session blocks; quote from the publish session pa
   assert.equal(fresh.verdict, "PUBLISH");
 });
 
-test("G-N3 fail-closed: an UNDATEABLE quote (price_session null) blocks — indistinguishable from stale", () => {
+test("G-N3 lenient on null: an UNDATEABLE quote (price_session null) passes — off-hours hourly fallback", () => {
   const res = evaluate(play(), dossier({ priceSession: null }), [SESSION]);
-  assert.equal(res.verdict, "BLOCK");
-  assert.deepEqual(res.blocks.map((b) => b.code), ["stale_quote_basis"]);
-  assert.equal(res.blocks[0]!.value, null);
-  assert.match(res.blocks[0]!.reason, /unknown/);
+  assert.equal(res.verdict, "PUBLISH");
+  const staleCheck = res.checks.find((c) => c.code === "stale_quote_basis");
+  assert.equal(staleCheck?.passed, true);
+  assert.equal(staleCheck?.value, null);
 });
 
 test("G-N3 accepts ANY listed session (intraday build: today's partial bar or prior close)", () => {
