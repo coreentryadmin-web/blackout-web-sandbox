@@ -659,6 +659,7 @@ function ExposureProfile({
   flip,
   anchorStrike: anchor,
   lens,
+  ticker,
   showFlow,
   flowPeak,
   darkPoolLevels,
@@ -677,6 +678,7 @@ function ExposureProfile({
    */
   anchorStrike: number | null;
   lens: Lens;
+  ticker: string;
   showFlow: boolean;
   flowPeak: number;
   darkPoolLevels: DarkPoolLevel[] | null;
@@ -726,7 +728,7 @@ function ExposureProfile({
       cancelAnimationFrame(raf1);
       cancelAnimationFrame(raf2);
     };
-  }, [spotRowStrike]);
+  }, [spotRowStrike, ticker]);
 
   // Index of the divider: drawn ABOVE the first row (strikes desc) whose strike < flip.
   const flipBoundary = useMemo(() => {
@@ -3057,7 +3059,8 @@ export function GexHeatmap({
         box.scrollTop = node.offsetTop - box.clientHeight / 2 + node.clientHeight / 2;
       });
     });
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ticker]);
 
   // Profile rows: strikes desc, each carrying its FILTERED net value + role flags + flow
   // overlay. Values + wall flags follow the rank-5 expiry scope so the profile and the
@@ -3443,6 +3446,7 @@ export function GexHeatmap({
         flip={profileFlip}
         anchorStrike={profileAnchorStrike}
         lens={lens}
+        ticker={ticker}
         showFlow={showFlow && hasFlowOverlay}
         flowPeak={flowPeak}
         darkPoolLevels={darkPoolLevels}
