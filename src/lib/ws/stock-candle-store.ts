@@ -1,12 +1,15 @@
 /**
- * Per-ticker 1-minute OHLC candle aggregator for ALL non-SPX stock/ETF tickers,
- * fed tick-by-tick from Polygon stocks WS A (aggregate) events. Mirrors
- * spx-candle-store.ts but generalized to N tickers.
+ * Per-ticker 1-minute OHLC candle aggregator for ALL stocks/ETFs (and non-SPX
+ * indices), fed tick-by-tick from the Polygon stocks WS `A.*` wildcard subscription
+ * (~8 000 symbols, ~430 msgs/sec during RTH).
  *
- * Vector's live chart reads from here via getStockLiveCandle() — zero REST calls,
- * sub-second updates, exactly like SPX gets from spx-candle-store.ts.
+ * Every page on the platform reads spot prices from here via getStockLiveCandle() —
+ * zero REST calls, sub-second updates for any ticker Polygon streams.
  *
- * Cross-replica: the leader writes a per-ticker Redis snapshot; non-leaders read it.
+ * Cross-replica: Redis writes are ON-DEMAND — the leader only pushes a ticker's
+ * snapshot to Redis when that ticker is actively being read (getStockLiveCandle
+ * called). This keeps Redis writes proportional to tickers users are viewing
+ * (~tens), not the full ~8K universe.
  */
 import { todayEtYmd } from "../providers/spx-session";
 import { sharedCacheGet, sharedCacheSet } from "../shared-cache";
@@ -27,6 +30,8 @@ type TickerState = {
   sessionDate: string;
   updatedAt: number;
   lastRedisWriteAt: number;
+  /** True when someone has called getStockLiveCandle() for this ticker recently. */
+  demanded: boolean;
 };
 
 const stores = new Map<string, TickerState>();
@@ -45,7 +50,7 @@ function redisKey(ticker: string): string {
 function getOrCreateState(ticker: string): TickerState {
   let s = stores.get(ticker);
   if (!s) {
-    s = { current: null, sessionDate: "", updatedAt: 0, lastRedisWriteAt: 0 };
+    s = { current: null, sessionDate: "", updatedAt: 0, lastRedisWriteAt: 0, demanded: false };
     stores.set(ticker, s);
   }
   return s;
@@ -76,8 +81,11 @@ export function recordStockTick(ticker: string, price: number, volume?: number, 
   }
   s.updatedAt = Date.now();
 
-  // Throttled Redis write for cross-replica fallback
-  if (s.updatedAt - s.lastRedisWriteAt >= REDIS_WRITE_THROTTLE_MS) {
+  // On-demand Redis write: only push to Redis for tickers someone is actively
+  // reading (getStockLiveCandle sets demanded=true). With A.* we get ~8K tickers;
+  // writing all of them to Redis would be ~8K writes/sec — way too much. This
+  // keeps it proportional to tickers users are actually viewing (~tens).
+  if (s.demanded && s.updatedAt - s.lastRedisWriteAt >= REDIS_WRITE_THROTTLE_MS) {
     s.lastRedisWriteAt = s.updatedAt;
     void sharedCacheSet(
       redisKey(sym),
@@ -114,8 +122,10 @@ function refreshFallback(ticker: string): void {
 /** Read-only snapshot of the currently-forming bar for a stock ticker. */
 export function getStockLiveCandle(ticker: string): CandleSnapshot {
   const sym = ticker.toUpperCase();
-  const s = stores.get(sym);
-  const local: CandleSnapshot | null = s?.current
+  const s = getOrCreateState(sym);
+  // Mark as demanded so recordStockTick writes this ticker to Redis for cross-replica fallback.
+  s.demanded = true;
+  const local: CandleSnapshot | null = s.current
     ? { current: s.current, updatedAt: s.updatedAt }
     : null;
 
@@ -133,6 +143,13 @@ export function getStockLiveCandle(ticker: string): CandleSnapshot {
     return { current: null, updatedAt: best.updatedAt };
   }
   return best;
+}
+
+/** How many tickers are in memory + how many are being written to Redis. */
+export function getStockCandleStoreStats(): { total: number; demanded: number } {
+  let demanded = 0;
+  for (const s of stores.values()) if (s.demanded) demanded++;
+  return { total: stores.size, demanded };
 }
 
 /** Test-only reset. */

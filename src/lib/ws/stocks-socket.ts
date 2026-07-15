@@ -1,8 +1,9 @@
 /**
- * Massive stocks WebSocket — real-time stock aggregates + LULD halt/band feed.
+ * Massive stocks WebSocket — real-time stock aggregates for ALL stocks + LULD.
  *
- * ALWAYS connects for stock price aggregates (A.{TICKER}) — this is how Vector
- * gets sub-second spot updates for every non-index ticker. LULD subscriptions
+ * Subscribes to `A.*` (every stock aggregate, ~8 000 symbols, ~430 msgs/sec
+ * during RTH). This is the site-wide primary spot price source — every page
+ * reads from stock-candle-store which this socket feeds. LULD subscriptions
  * (LULD.{TICKER}) are additionally enabled via STOCKS_WS_ENABLED.
  */
 import { MASSIVE_WS_STOCKS } from "@/lib/polygon-docs-nav";
@@ -16,9 +17,7 @@ import {
   wsLeaderShouldFailOpenWithoutRedis,
 } from "@/lib/ws/leader-lock-shared";
 import { newLockToken, releaseFencedLock, renewFencedLock, type FencedRedis } from "@/lib/ws/leader-lock-fencing";
-import { recordStockTick } from "@/lib/ws/stock-candle-store";
-import { vectorUniverseTickers } from "@/lib/heatmap-allowlist";
-import { isVectorIndexTicker } from "@/features/vector/lib/vector-ticker";
+import { recordStockTick, getStockCandleStoreStats } from "@/lib/ws/stock-candle-store";
 
 const STOCKS_WS_URL = process.env.STOCKS_WS_URL ?? MASSIVE_WS_STOCKS;
 const POLYGON_API_KEY = process.env.POLYGON_API_KEY ?? process.env.MASSIVE_API_KEY ?? "";
@@ -32,11 +31,6 @@ export function luldWsEnabled(): boolean {
 function parseLuldTickerCsv(): string[] {
   const raw = (process.env.LULD_WS_TICKERS ?? "SPY").split(",");
   return [...new Set(raw.map((s) => s.trim().toUpperCase()).filter(Boolean))];
-}
-
-/** Stock (non-index) tickers from the Vector universe that need WS aggregate subs. */
-function stockAggregateTickers(): string[] {
-  return vectorUniverseTickers().filter((t) => !isVectorIndexTicker(t));
 }
 
 const STOCKS_LEADER_KEY = "stocks:ws:leader";
@@ -197,15 +191,11 @@ async function connectStocks() {
           } else if (ev === "auth_success" || (ev === "status" && msg.status === "auth_success")) {
             stocksAuthenticated = true;
             stocksReconnectDelay = 1000;
-            // Always subscribe to stock aggregates for real-time spot prices
-            const aggTickers = stockAggregateTickers();
-            const aggParams = aggTickers.map((t) => `A.${t}`).join(",");
-            // Optionally subscribe to LULD if enabled
             const luldParams = luldWsEnabled()
               ? parseLuldTickerCsv().map((t) => `LULD.${t}`).join(",")
               : "";
-            const params = [aggParams, luldParams].filter(Boolean).join(",");
-            console.log(`[stocks-socket] authenticated — subscribing ${aggTickers.length} agg + ${luldParams ? "LULD" : "no LULD"}`);
+            const params = ["A.*", luldParams].filter(Boolean).join(",");
+            console.log(`[stocks-socket] authenticated — subscribing A.* (all stocks)${luldParams ? " + LULD" : ""}`);
             stocksWs?.send(JSON.stringify({ action: "subscribe", params }));
           } else if (ev === "auth_failed") {
             console.error("[stocks-socket] auth failed");
@@ -270,8 +260,7 @@ export function initStocksSocket(): void {
     reconcileTimer = setInterval(reconcileStocksSocket, 15_000);
     (reconcileTimer as unknown as { unref?: () => void }).unref?.();
   }
-  const aggCount = stockAggregateTickers().length;
-  console.log(`[stocks-socket] initialized — ${aggCount} agg tickers${luldWsEnabled() ? " + LULD" : ""}`);
+  console.log(`[stocks-socket] initialized — A.* (all stocks)${luldWsEnabled() ? " + LULD" : ""}`);
 }
 
 export function shutdownStocksSocket(): void {
@@ -300,8 +289,10 @@ export function shutdownStocksSocket(): void {
 }
 
 export function getStocksSocketStatus() {
+  const candleStats = getStockCandleStoreStats();
   return {
     enabled: true,
+    subscription: "A.*",
     luld_enabled: luldWsEnabled(),
     initialized: stocksInitialized,
     is_leader: stocksIsLeader,
@@ -314,7 +305,8 @@ export function getStocksSocketStatus() {
             ? "connecting"
             : "closed",
     authenticated: stocksAuthenticated,
-    agg_tickers: stockAggregateTickers(),
+    candle_store_tickers: candleStats.total,
+    candle_store_demanded: candleStats.demanded,
     luld_tickers: luldWsEnabled() ? parseLuldTickerCsv() : [],
     last_agg_message_at: lastStocksMessageAt || null,
     luld_updated_at: luldHaltsStore.updatedAt || null,

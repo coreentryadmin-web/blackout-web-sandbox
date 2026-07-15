@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { recordStockTick, getStockLiveCandle, _resetStockCandleStoreForTest } from "./stock-candle-store";
+import { recordStockTick, getStockLiveCandle, getStockCandleStoreStats, _resetStockCandleStoreForTest } from "./stock-candle-store";
 
 test("recordStockTick: first tick opens a bar with open=high=low=close", () => {
   _resetStockCandleStoreForTest();
@@ -110,4 +110,39 @@ test("separate tickers have independent state", () => {
 
   assert.equal(getStockLiveCandle("SPY").current!.close, 605);
   assert.equal(getStockLiveCandle("QQQ").current!.close, 525);
+});
+
+test("getStockLiveCandle marks ticker as demanded for on-demand Redis writes", () => {
+  _resetStockCandleStoreForTest();
+  const atMs = Date.parse("2026-07-15T14:41:00.000Z");
+
+  recordStockTick("TSLA", 280, undefined, atMs);
+  recordStockTick("AAPL", 230, undefined, atMs);
+
+  const stats1 = getStockCandleStoreStats();
+  assert.equal(stats1.total, 2);
+  assert.equal(stats1.demanded, 0);
+
+  getStockLiveCandle("TSLA");
+
+  const stats2 = getStockCandleStoreStats();
+  assert.equal(stats2.total, 2);
+  assert.equal(stats2.demanded, 1);
+
+  getStockLiveCandle("AAPL");
+  const stats3 = getStockCandleStoreStats();
+  assert.equal(stats3.demanded, 2);
+});
+
+test("getStockCandleStoreStats: tracks total tickers in memory", () => {
+  _resetStockCandleStoreForTest();
+  const atMs = Date.parse("2026-07-15T14:42:00.000Z");
+
+  assert.equal(getStockCandleStoreStats().total, 0);
+
+  for (let i = 0; i < 100; i++) {
+    recordStockTick(`T${i}`, 100 + i, undefined, atMs);
+  }
+  assert.equal(getStockCandleStoreStats().total, 100);
+  assert.equal(getStockCandleStoreStats().demanded, 0);
 });
