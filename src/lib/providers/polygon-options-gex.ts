@@ -6,6 +6,8 @@ import { isHeatmapPreset } from "../heatmap-allowlist";
 import { isLiveOdteSession } from "./unusual-whales";
 import { fmtPremium } from "@/lib/fmt-money";
 import { persistGexRegimeEvents } from "./gex-regime-events";
+import { zeroGammaFlip as computeZeroGammaFlip } from "@/lib/providers/gex-cross-validation-core";
+export { zeroGammaFlip as computeZeroGammaFlip } from "@/lib/providers/gex-cross-validation-core";
 
 const BASE = (process.env.POLYGON_API_BASE ?? "https://api.massive.com").replace(/\/$/, "");
 const KEY = process.env.POLYGON_API_KEY ?? "";
@@ -1365,65 +1367,6 @@ async function fetchHeatmapBand(
   return out;
 }
 
-/**
- * Compute the zero-gamma flip from per-strike NET dealer gamma totals.
- *
- * PRIMARY: the strike (linear-interpolated to gamma=0) where per-strike net gamma changes
- * sign — in EITHER direction — choosing the crossing NEAREST spot. Real per-strike gamma
- * profiles are lumpy (OI concentrates in specific strikes), so positive→negative transitions
- * are just as common as negative→positive and can legitimately be the crossing closest to
- * spot; restricting to one direction made the function structurally blind to half of the real
- * crossings, silently picking a farther, wrong-direction level whenever the true nearest
- * crossing ran the other way. This is robust on heavily one-sided books (a deep net-short
- * profile still has a clean sign flip), where the old cumulative-sum crossing returned null
- * because the running total never crossed back through zero.
- * FALLBACK: the legacy cumulative-crossing, then null.
- */
-export function computeZeroGammaFlip(strikeTotals: Record<string, number>, spot = 0): number | null {
-  const rows = Object.entries(strikeTotals)
-    .map(([s, g]) => ({ strike: Number(s), gamma: g }))
-    .filter((r) => Number.isFinite(r.strike) && Number.isFinite(r.gamma))
-    .sort((a, b) => a.strike - b.strike);
-  if (rows.length < 2) return null;
-
-  // Primary: per-strike sign transitions in EITHER direction, interpolated to gamma = 0.
-  const crossings: number[] = [];
-  for (let i = 1; i < rows.length; i++) {
-    const a = rows[i - 1];
-    const b = rows[i];
-    if ((a.gamma < 0 && b.gamma > 0) || (a.gamma > 0 && b.gamma < 0)) {
-      const frac = (0 - a.gamma) / (b.gamma - a.gamma); // 0..1 where gamma crosses 0 (direction-agnostic)
-      crossings.push(Number((a.strike + (b.strike - a.strike) * frac).toFixed(2)));
-    }
-  }
-  if (crossings.length) {
-    return spot > 0
-      ? crossings.reduce((best, c) => (Math.abs(c - spot) < Math.abs(best - spot) ? c : best))
-      : crossings[crossings.length - 1];
-  }
-
-  // Fallback: cumulative-sum crossing (legacy) — for unusual profiles with no clean flip.
-  // Build the running cumulative sum per strike, then scan strictly ADJACENT pairs (cum[i-1],
-  // cum[i]) for a sign change and interpolate across that SAME i-1..i strike segment. (The
-  // prior version updated prevCum after the check, so it compared cum[i] vs cum[i-2] while
-  // interpolating i-1..i — the first segment could never flip.)
-  const cum: number[] = [];
-  let running = 0;
-  for (const r of rows) {
-    running += r.gamma;
-    cum.push(running);
-  }
-  for (let i = 1; i < cum.length; i++) {
-    const prevCum = cum[i - 1];
-    const nextCum = cum[i];
-    if (prevCum !== 0 && nextCum !== 0 && Math.sign(nextCum) !== Math.sign(prevCum)) {
-      const span = rows[i].strike - rows[i - 1].strike;
-      const frac = prevCum / (prevCum - nextCum); // 0..1 along the i-1..i segment
-      return Number((rows[i - 1].strike + span * frac).toFixed(2));
-    }
-  }
-  return null;
-}
 
 // ---------------------------------------------------------------------------
 // SHIFT — intraday gamma migration (positioning-history ring + diff)

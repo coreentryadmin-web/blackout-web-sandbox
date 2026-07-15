@@ -27,6 +27,7 @@ import {
   type GexStrikeLevel,
   type GexWall,
 } from "@/lib/providers/gamma-desk";
+import { kingFromStrikeTotals } from "@/lib/providers/gex-cross-validation-core";
 import { computeIntradayRead } from "@/lib/zerodte/intraday";
 import { etMinutes } from "@/features/spx/lib/spx-play-session-time";
 import {
@@ -185,24 +186,6 @@ function strikeTotalsToLevels(totals: Record<string, number>): GexStrikeLevel[] 
     })
     .filter((l): l is GexStrikeLevel => l != null)
     .sort((a, b) => Math.abs(b.net_gex) - Math.abs(a.net_gex));
-}
-
-/** King strike = argmax |net_gex| — same rule as Heat Maps ANCHOR / desk GEX Anchor. */
-function kingFromStrikeTotals(totals: Record<string, number>): number | null {
-  let king: number | null = null;
-  let best = 0;
-  const entries = Object.entries(totals)
-    .map(([s, v]) => ({ strike: Number(s), value: v }))
-    .filter((e) => Number.isFinite(e.strike))
-    .sort((a, b) => a.strike - b.strike);
-  for (const e of entries) {
-    const mag = Math.abs(e.value);
-    if (mag > best) {
-      best = mag;
-      king = e.strike;
-    }
-  }
-  return king;
 }
 
 function stickyDeskGexFallback(spot: number): CanonicalDeskGexSnapshot {
