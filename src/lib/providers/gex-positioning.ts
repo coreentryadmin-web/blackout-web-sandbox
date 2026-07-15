@@ -4,7 +4,8 @@ import { fetchGexHeatmap, type GexHeatmap } from "@/lib/providers/polygon-option
 import { getGexIntradayAdjusted } from "@/lib/providers/gex-intraday-adjust";
 import type { GexIntradayAdjusted } from "@/lib/providers/gex-intraday-adjust-core";
 import { validateGexAgainstUW, type GexCrossValidationResult } from "@/lib/providers/gex-cross-validation";
-import { resolveNearTermExpiriesForCrossValidation, kingFromStrikeTotals } from "@/lib/providers/gex-cross-validation-core";
+import { resolveNearTermExpiriesForCrossValidation, kingFromStrikeTotals, strikeTotalsFromLadder, wallsFromStrikeTotals } from "@/lib/providers/gex-cross-validation-core";
+import { hasLiveGexStrikeExpiry, getGexStrikeExpiryLadder } from "@/lib/ws/uw-socket";
 import { fmtPremium } from "@/lib/fmt-money";
 
 // ---------------------------------------------------------------------------
@@ -147,6 +148,16 @@ export async function getGexPositioning(
   const hm = await fetchGexHeatmap(root).catch(() => null);
   const base = gexPositioningFromHeatmap(root, hm);
   if (!base) return null;
+
+  // Override wall labels with UW WS when live — same source Vector uses.
+  if (hasLiveGexStrikeExpiry(root)) {
+    const wsLadder = getGexStrikeExpiryLadder(root);
+    if (wsLadder) {
+      const wsWalls = wallsFromStrikeTotals(strikeTotalsFromLadder(wsLadder.ladder));
+      if (wsWalls.callWall != null) base.call_wall = wsWalls.callWall;
+      if (wsWalls.putWall != null) base.put_wall = wsWalls.putWall;
+    }
+  }
 
   // The base contract stays LIGHT by default (pure cache-reader, no extra upstream) so the many
   // consumers that rely on the documented light guarantee (desk / Largo / Night's Watch / the

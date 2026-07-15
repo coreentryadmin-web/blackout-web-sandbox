@@ -7,7 +7,7 @@ import type {
   GexHeatmapOverlays,
 } from "@/lib/providers/polygon-options-gex";
 import { validateGexAgainstUW } from "@/lib/providers/gex-cross-validation";
-import { resolveNearTermExpiriesForCrossValidation } from "@/lib/providers/gex-cross-validation-core";
+import { resolveNearTermExpiriesForCrossValidation, strikeTotalsFromLadder, wallsFromStrikeTotals } from "@/lib/providers/gex-cross-validation-core";
 import { isHeatmapPreset } from "@/lib/heatmap-allowlist";
 import { fetchUwFlowPerStrikeRows, fetchUwDarkPool } from "@/lib/providers/unusual-whales";
 import { isUwCircuitOpen } from "@/lib/providers/uw-rate-limiter";
@@ -17,7 +17,7 @@ import { isHeatmapOverlayAllowed } from "@/lib/heatmap-allowlist";
 import { dbConfigured, fetchLatestNighthawkEdition } from "@/lib/db";
 import { roundFloats, reconcileStrikeTotal } from "@/lib/round-floats";
 import { isEtCashRth } from "@/lib/et-market-hours";
-import { joinGexStrikeExpiryTicker } from "@/lib/ws/uw-socket";
+import { joinGexStrikeExpiryTicker, hasLiveGexStrikeExpiry, getGexStrikeExpiryLadder } from "@/lib/ws/uw-socket";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -287,6 +287,16 @@ export async function GET(req: NextRequest) {
         }
       );
     }
+    // Override heatmap wall labels with UW WS when live — same source Vector and Slayer use.
+    if (heatmap.gex && hasLiveGexStrikeExpiry(ticker)) {
+      const wsLadder = getGexStrikeExpiryLadder(ticker);
+      if (wsLadder) {
+        const wsWalls = wallsFromStrikeTotals(strikeTotalsFromLadder(wsLadder.ladder));
+        if (wsWalls.callWall != null) heatmap.gex.call_wall = wsWalls.callWall;
+        if (wsWalls.putWall != null) heatmap.gex.put_wall = wsWalls.putWall;
+      }
+    }
+
     // Cross-tool overlays (HELIX flow-per-strike + dark-pool), cached per ticker (~30s) so the
     // route never pressures UW's 2-RPS cluster-wide budget regardless of user count.
     const { overlays, at: overlaysAt } = await getOverlays(ticker, heatmap.strikes);
