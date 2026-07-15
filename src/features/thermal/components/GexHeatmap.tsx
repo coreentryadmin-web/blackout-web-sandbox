@@ -2513,12 +2513,12 @@ export function GexHeatmap({
   // string. The subset re-sums cells[strike] over the chosen expiry/expiries entirely
   // client-side (no refetch) and re-derives walls/flip from those filtered totals.
   const [expiryScope, setExpiryScope] = useState<string>("all");
-  const matrixPollMs = usePollIntervalMs(20_000, 60_000);
-  const quotePollMs = usePollIntervalMs(15_000, 60_000);
+  const matrixPollMs = usePollIntervalMs(5_000, 5_000);
+  const quotePollMs = usePollIntervalMs(5_000, 5_000);
 
   // Fast-move bypass: when the live quote diverges from the cached matrix snapshot spot
   // by >0.5%, we append `&force=1` to the matrix key for ONE refetch (then clear it) so
-  // the gamma/vanna profile recomputes immediately instead of waiting out the 20s cache.
+  // the gamma/vanna profile recomputes immediately instead of waiting out the 5s cache.
   // `forceNonce` busts SWR's key on each forced refresh; `fastFlash` drives a header pulse.
   const [forceNonce, setForceNonce] = useState(0);
   const [fastFlash, setFastFlash] = useState(false);
@@ -2568,8 +2568,7 @@ export function GexHeatmap({
 
   // Live spot tape — a SEPARATE, fast (~1.5s) SWR just for the header price. Index
   // spot is true real-time WS; stocks/ETFs are shared-cached REST. The gamma
-  // matrix keeps its own 20s cache above; the header quote polls at 15s to avoid
-  // fan-out load (~10× reduction vs the prior 1.5s interval).
+  // matrix keeps its own 5s cache above; the header quote polls at 5s.
   const { data: quote } = useSWR<QuoteResponse>(
     `/api/market/quote?ticker=${encodeURIComponent(ticker)}`,
     fetchQuote,

@@ -1163,25 +1163,25 @@ function setCachedHeatmap(key: string, entry: { at: number; data: GexHeatmap }):
 }
 
 function gexHeatmapCacheMs(): number {
-  const sec = Number(process.env.GEX_HEATMAP_CACHE_SEC ?? 20);
-  return Number.isFinite(sec) && sec > 0 ? sec * 1000 : 20_000;
+  const sec = Number(process.env.GEX_HEATMAP_CACHE_SEC ?? 5);
+  return Number.isFinite(sec) && sec > 0 ? sec * 1000 : 5_000;
 }
 
-/** SPX Slayer / desk hot path — shorter TTL without warming the whole preset grid. */
+/** SPX Slayer / desk hot path — same 5s TTL as the global default now. */
 function gexHeatmapCacheMsFor(root: string): number {
   if (root === "SPX") {
-    const sec = Number(process.env.SPX_GEX_HEATMAP_CACHE_SEC ?? 8);
-    return Number.isFinite(sec) && sec > 0 ? sec * 1000 : 8_000;
+    const sec = Number(process.env.SPX_GEX_HEATMAP_CACHE_SEC ?? 5);
+    return Number.isFinite(sec) && sec > 0 ? sec * 1000 : 5_000;
   }
   return gexHeatmapCacheMs();
 }
 
 /**
  * Max age of a matrix entry we'll still SERVE while refreshing in the background.
- * Covers the heatmap-warm cron gap (Railway fires once/min; matrix fresh TTL ~20s) so a
- * cold replica or TTL-boundary miss returns the last good matrix instantly instead of
- * blocking 20–35s on a chain rebuild. Always enabled — including preset fast-move — so a
- * shortened accept TTL (5s) never forces every member GET to block on a full chain rebuild
+ * Covers the heatmap-warm cron gap so a cold replica or TTL-boundary miss returns the
+ * last good matrix instantly instead of blocking 20–35s on a chain rebuild. Always
+ * enabled — including preset fast-move — so a cache miss never forces every member GET
+ * to block on a full chain rebuild
  * (live-caught 2026-07-06: SPX /gex-heatmap 502 + dashboard matrix stuck loading).
  */
 function gexHeatmapMaxStaleMs(): number {

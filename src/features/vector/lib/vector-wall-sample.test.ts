@@ -22,22 +22,22 @@ test("bucketWallSampleTime: snaps to 5s floor for oracle cadence", () => {
   assert.equal(bucketWallSampleTime(107, 5), 105);
 });
 
-test("DEFAULT_WALL_TRAIL_SAMPLE_SEC is 15", () => {
-  assert.equal(DEFAULT_WALL_TRAIL_SAMPLE_SEC, 15);
+test("DEFAULT_WALL_TRAIL_SAMPLE_SEC is 5", () => {
+  assert.equal(DEFAULT_WALL_TRAIL_SAMPLE_SEC, 5);
 });
 
 test("ORACLE_WALL_TRAIL_SAMPLE_SEC is 5", () => {
   assert.equal(ORACLE_WALL_TRAIL_SAMPLE_SEC, 5);
 });
 
-test("wallTrailSampleSecForTicker: oracle tickers get 5s, others get 15s", () => {
+test("wallTrailSampleSecForTicker: all tickers get 5s (unified cadence)", () => {
   assert.equal(wallTrailSampleSecForTicker("SPX"), 5);
   assert.equal(wallTrailSampleSecForTicker("SPY"), 5);
   assert.equal(wallTrailSampleSecForTicker("QQQ"), 5);
-  assert.equal(wallTrailSampleSecForTicker("AAPL"), 15);
-  assert.equal(wallTrailSampleSecForTicker("NVDA"), 15);
-  assert.equal(wallTrailSampleSecForTicker(null), 15);
-  assert.equal(wallTrailSampleSecForTicker(undefined), 15);
+  assert.equal(wallTrailSampleSecForTicker("AAPL"), 5);
+  assert.equal(wallTrailSampleSecForTicker("NVDA"), 5);
+  assert.equal(wallTrailSampleSecForTicker(null), 5);
+  assert.equal(wallTrailSampleSecForTicker(undefined), 5);
 });
 
 const CALL = [{ strike: 7575, pct: 4, gex: 3_000_000_000 }];
