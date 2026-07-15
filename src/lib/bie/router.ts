@@ -679,5 +679,9 @@ export function bieFollowups(intent: BieIntent): string[] {
         "What's the setup right now?",
         "Which walls are building vs fading?",
       ];
+    case "record_read":
+      return ["What was today's highest momentum trade?", "Show me the record context", "What was invalidated today?"];
+    default:
+      return [];
   }
 }
