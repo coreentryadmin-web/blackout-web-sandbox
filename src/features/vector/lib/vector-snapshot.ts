@@ -22,7 +22,7 @@ import {
 } from "./vector-narrowed-wall-core";
 import { recordWallSample, type WallHistorySample } from "./vector-wall-history";
 import { roundFloats } from "@/lib/round-floats";
-import { getCachedVectorDarkPool, getCachedVectorDarkPoolWithAge } from "./vector-dark-pool-cache";
+import { getCachedVectorDarkPool, getCachedVectorDarkPoolWithAge, type VectorDarkPoolRead } from "./vector-dark-pool-cache";
 import { getVectorLiveCandle } from "./vector-live-candle";
 import { spyVolumeForMinuteBar } from "./vector-spy-volume";
 import {
@@ -37,6 +37,7 @@ const WALL_SCOPE_REFRESH_MS = 15_000;
 const VEX_WALLS_CACHE_MS = 8_000;
 const WALLS_CACHE_MS = 900;
 const FLIP_CACHE_MS = 5_000;
+const DARK_POOL_LOCAL_CACHE_MS = 30_000;
 
 type TickerState = {
   wallScope: WallScopeState;
@@ -62,6 +63,12 @@ type TickerState = {
    * "all" without recomputing per-expiry walls on every 1s payload build.
    */
   lastNarrowedWallBucket: number;
+  flipRefreshInFlight: boolean;
+  cachedDarkPool: VectorDarkPoolRead;
+  cachedDarkPoolAt: number;
+  darkPoolRefreshInFlight: boolean;
+  cachedSpyVolume: number | undefined;
+  cachedSpyVolumeBarTime: number;
 };
 
 function freshState(): TickerState {
@@ -81,6 +88,12 @@ function freshState(): TickerState {
     wallHistory: [],
     sessionYmd: "",
     lastNarrowedWallBucket: 0,
+    flipRefreshInFlight: false,
+    cachedDarkPool: { levels: [], fetchedAt: 0 },
+    cachedDarkPoolAt: 0,
+    darkPoolRefreshInFlight: false,
+    cachedSpyVolume: undefined,
+    cachedSpyVolumeBarTime: 0,
   };
 }
 
@@ -454,9 +467,27 @@ export async function buildVectorStreamPayload(
   const { current, updatedAt } = await getVectorLiveCandle(t);
   const walls = getVectorGexWalls(t);
   const vexWalls = getVectorVexWalls(t);
-  const gammaFlip = await getVectorGammaFlip(t);
+  // Stale-while-revalidate: use cached flip/darkPool, refresh in the background.
+  // Awaiting these inline (Polygon+UW HTTP every 5s, Redis every tick) regularly
+  // exceeded the 1s hub tick budget, tripping the refreshInFlight guard in
+  // vector-stream-hub and freezing the entire SSE frame — including spot price.
+  const gammaFlip = s.cachedFlip;
+  if (Date.now() - s.cachedFlipAt >= FLIP_CACHE_MS && !s.flipRefreshInFlight) {
+    s.flipRefreshInFlight = true;
+    getGexPositioning(t)
+      .then(pos => { s.cachedFlip = pos?.flip ?? null; })
+      .catch(() => {})
+      .finally(() => { s.cachedFlipAt = Date.now(); s.flipRefreshInFlight = false; });
+  }
   const vexFlip = getVectorVexFlip(t);
-  const darkPool = await getCachedVectorDarkPoolWithAge(t);
+  const darkPool = s.cachedDarkPool;
+  if (Date.now() - s.cachedDarkPoolAt >= DARK_POOL_LOCAL_CACHE_MS && !s.darkPoolRefreshInFlight) {
+    s.darkPoolRefreshInFlight = true;
+    getCachedVectorDarkPoolWithAge(t)
+      .then(dp => { s.cachedDarkPool = dp; })
+      .catch(() => {})
+      .finally(() => { s.cachedDarkPoolAt = Date.now(); s.darkPoolRefreshInFlight = false; });
+  }
   const sessionYmd = todayEtYmd();
 
   // Session boundary: a process surviving close→open (weekend, overnight viewer)
@@ -516,8 +547,15 @@ export async function buildVectorStreamPayload(
 
   let candle = current;
   if (current && t === "SPX") {
-    const volume = await spyVolumeForMinuteBar(current.time);
-    candle = volume != null ? { ...current, volume } : current;
+    // Non-blocking: fire-and-forget the Polygon fetch; use cached volume from
+    // the same bar time, arriving at most 1 tick late.
+    void spyVolumeForMinuteBar(current.time).then(v => {
+      s.cachedSpyVolume = v ?? undefined;
+      s.cachedSpyVolumeBarTime = current.time;
+    }).catch(() => {});
+    if (s.cachedSpyVolumeBarTime === current.time && s.cachedSpyVolume != null) {
+      candle = { ...current, volume: s.cachedSpyVolume };
+    }
   }
 
   return roundVectorStreamPayload({

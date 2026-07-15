@@ -15,14 +15,15 @@
  * Usage: env -u AWS_ACCESS_KEY_ID -u AWS_SECRET_ACCESS_KEY node scripts/vector-dynamic-ws-e2e.mjs
  * Env: T=SPX,SPY,NVDA,VRT,...  STAGING_BASE_URL  SHOT_DIR  POLL_SEC=30 (live GEX poll window)
  */
-import { execSync } from "node:child_process";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { join } from "node:path";
+import { tmpdir } from "node:os";
 import { chromium } from "playwright";
 
 const STAGING = (process.env.STAGING_BASE_URL || "https://staging.blackouttrades.com").replace(/\/$/, "");
-const OUT = process.env.SHOT_DIR || "/tmp/claude-0/-home-user/464bea58-d425-5552-a7bd-de5f2e9c99f9/scratchpad/vector-dynamic-ws-shots";
+const OUT = process.env.SHOT_DIR || mkdtempSync(join(tmpdir(), "vector-dws-"));
 const SECRET_NAME = process.env.STAGING_SECRET_NAME || "blackout-staging/app/env";
 const REGION = process.env.AWS_REGION || "us-east-1";
 const TICKERS = (process.env.T || "SPX,SPY,QQQ,NVDA,TSLA,AAPL,VRT,PLTR,COIN,ARM,MSTR,SOFI").split(",").map(s => s.trim());
@@ -31,7 +32,7 @@ const DTE_PARAM = { "0DTE": "0dte", WEEKLY: "weekly", MONTHLY: "monthly" };
 const TFS = ["1 min", "5 min", "15 min", "1H"];
 const POLL_SEC = Number(process.env.POLL_SEC || 30);
 mkdirSync(OUT, { recursive: true });
-const sh = c => execSync(c, { encoding: "utf8", stdio: ["pipe", "pipe", "pipe"] }).trim();
+const sh = (cmd, args) => execFileSync(cmd, args, { encoding: "utf8", stdio: ["pipe", "pipe", "pipe"] }).trim();
 
 const results = [];
 const tickerTimings = {};
@@ -41,15 +42,14 @@ const rec = (name, ok, detail = "") => {
 };
 
 function cfg() {
-  const s = JSON.parse(sh(`aws secretsmanager get-secret-value --secret-id "${SECRET_NAME}" --region "${REGION}" --query SecretString --output text`));
+  const s = JSON.parse(sh("aws", ["secretsmanager", "get-secret-value", "--secret-id", SECRET_NAME, "--region", REGION, "--query", "SecretString", "--output", "text"]));
   const poolId = s.COGNITO_USER_POOL_ID;
   return { poolId, region: poolId?.includes("_") ? poolId.split("_")[0] : REGION };
 }
 function mkUser(poolId, region, email, pw) {
-  const rf = ` --region "${region}"`;
-  try { sh(`aws cognito-idp admin-create-user --user-pool-id "${poolId}" --username "${email}" --message-action SUPPRESS --user-attributes Name=email,Value="${email}" Name=email_verified,Value=true Name=custom:role,Value=admin Name=custom:tier,Value=premium${rf}`); }
+  try { sh("aws", ["cognito-idp", "admin-create-user", "--user-pool-id", poolId, "--username", email, "--message-action", "SUPPRESS", "--user-attributes", `Name=email,Value=${email}`, "Name=email_verified,Value=true", "Name=custom:role,Value=admin", "Name=custom:tier,Value=premium", "--region", region]); }
   catch (e) { if (!/UsernameExists|already exists/i.test(String(e.stderr ?? e.message))) throw e; }
-  sh(`aws cognito-idp admin-set-user-password --user-pool-id "${poolId}" --username "${email}" --password "${pw}" --permanent${rf}`);
+  sh("aws", ["cognito-idp", "admin-set-user-password", "--user-pool-id", poolId, "--username", email, "--password", pw, "--permanent", "--region", region]);
 }
 async function proxyRoute(ctx) {
   if (!(process.env.HTTPS_PROXY || process.env.https_proxy)) return;
@@ -326,7 +326,7 @@ async function main() {
 
   } finally {
     await browser.close();
-    try { sh(`aws cognito-idp admin-delete-user --user-pool-id "${poolId}" --username "${email}" --region "${region}"`); } catch {}
+    try { sh("aws", ["cognito-idp", "admin-delete-user", "--user-pool-id", poolId, "--username", email, "--region", region]); } catch {}
   }
 
   // ====== TIMING SUMMARY ======
