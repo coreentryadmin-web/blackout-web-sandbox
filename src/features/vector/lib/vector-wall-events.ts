@@ -272,7 +272,8 @@ export function detectSpotStructureEvents(
   lens: VectorWallLens,
   time: number,
   prevWalls?: GexWalls | null,
-  prevFlip?: number | null
+  prevFlip?: number | null,
+  ticker?: string
 ): VectorWallEvent[] {
   if (prevSpot == null || curSpot == null || prevSpot <= 0 || curSpot <= 0) return [];
 
@@ -292,8 +293,8 @@ export function detectSpotStructureEvents(
         kind: "spot_crossed_flip",
         severity: isAbove ? "info" : "warn",
         message: isAbove
-          ? `SPX crossed above ${labels.flip.toLowerCase()} ${fmtStrike(flip)} — supportive dealer hedging`
-          : `SPX crossed below ${labels.flip.toLowerCase()} ${fmtStrike(flip)} — momentum / vol expansion risk`,
+          ? `${ticker ?? "Spot"} crossed above ${labels.flip.toLowerCase()} ${fmtStrike(flip)} — supportive dealer hedging`
+          : `${ticker ?? "Spot"} crossed below ${labels.flip.toLowerCase()} ${fmtStrike(flip)} — momentum / vol expansion risk`,
       });
     }
   }
@@ -307,7 +308,7 @@ export function detectSpotStructureEvents(
       lens,
       kind: "spot_broke_call",
       severity: "warn",
-      message: `SPX broke above ${labels.call.toLowerCase()} ${fmtStrike(callWall)} — resistance gave way`,
+      message: `${ticker ?? "Spot"} broke above ${labels.call.toLowerCase()} ${fmtStrike(callWall)} — resistance gave way`,
     });
   }
 
@@ -320,7 +321,7 @@ export function detectSpotStructureEvents(
       lens,
       kind: "spot_broke_put",
       severity: "warn",
-      message: `SPX broke below ${labels.put.toLowerCase()} ${fmtStrike(putWall)} — support gave way`,
+      message: `${ticker ?? "Spot"} broke below ${labels.put.toLowerCase()} ${fmtStrike(putWall)} — support gave way`,
     });
   }
 

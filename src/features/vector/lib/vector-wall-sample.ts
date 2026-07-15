@@ -1,9 +1,14 @@
 import type { GexWalls } from "@/lib/providers/gex-wall-levels";
 import { roundFloats } from "@/lib/round-floats";
 import type { WallHistorySample } from "./vector-wall-history";
+import { VECTOR_ORACLE_TICKERS, normalizeVectorTicker } from "./vector-ticker";
+import { hasLiveGexStrikeExpiry } from "@/lib/ws/uw-socket";
 
 /** Reference product cadence — gamma wall bead trail samples (live levels still ~1s). */
 export const DEFAULT_WALL_TRAIL_SAMPLE_SEC = 15;
+
+/** Tickers with live UW WS GEX data sample at 5s (real-time, not interpolation). */
+export const ORACLE_WALL_TRAIL_SAMPLE_SEC = 5;
 
 const EMPTY_WALLS: GexWalls = { callWalls: [], putWalls: [] };
 
@@ -43,7 +48,7 @@ export function buildWallHistorySample(input: {
   });
 }
 
-/** Wall-trail bucket size in seconds (env-tunable, min 5s). */
+/** Wall-trail bucket size in seconds (env-tunable, min 5s). Global fallback — prefer wallTrailSampleSecForTicker. */
 export function wallTrailSampleSec(): number {
   const raw =
     process.env.NEXT_PUBLIC_VECTOR_WALL_TRAIL_SAMPLE_SEC ??
@@ -51,6 +56,30 @@ export function wallTrailSampleSec(): number {
     DEFAULT_WALL_TRAIL_SAMPLE_SEC;
   const n = Number(raw);
   return Number.isFinite(n) && n >= 5 ? Math.floor(n) : DEFAULT_WALL_TRAIL_SAMPLE_SEC;
+}
+
+/**
+ * Ticker-aware bucket interval: tickers with a live UW WS gex_strike_expiry
+ * subscription get 5s beads (real-time GEX, not interpolation). Tickers without
+ * live WS data stay at 15s (Polygon heatmap REST caches ~8-20s). The static
+ * oracle set (SPX/SPY/QQQ) is kept as a floor guarantee — those always get 5s
+ * even before the first WS frame lands. An env override wins for all tickers.
+ */
+export function wallTrailSampleSecForTicker(ticker?: string | null): number {
+  const envOverride =
+    process.env.NEXT_PUBLIC_VECTOR_WALL_TRAIL_SAMPLE_SEC ??
+    process.env.VECTOR_WALL_TRAIL_SAMPLE_SEC;
+  if (envOverride != null) {
+    const n = Number(envOverride);
+    if (Number.isFinite(n) && n >= 5) return Math.floor(n);
+  }
+  if (ticker) {
+    const t = normalizeVectorTicker(ticker);
+    if (VECTOR_ORACLE_TICKERS.has(t) || hasLiveGexStrikeExpiry(t)) {
+      return ORACLE_WALL_TRAIL_SAMPLE_SEC;
+    }
+  }
+  return DEFAULT_WALL_TRAIL_SAMPLE_SEC;
 }
 
 /** Snap an epoch-second timestamp to the wall-trail bucket (15s by default). */

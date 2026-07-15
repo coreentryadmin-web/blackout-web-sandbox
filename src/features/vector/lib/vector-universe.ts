@@ -8,7 +8,7 @@ import { vectorUniverseTickers } from "@/lib/heatmap-allowlist";
 import { listDynamicUniverseTickers } from "./vector-dynamic-universe";
 import { normalizeVectorTicker } from "./vector-ticker";
 import { roundFloats } from "@/lib/round-floats";
-import { bucketWallSampleTime, buildWallHistorySample } from "./vector-wall-sample";
+import { bucketWallSampleTime, buildWallHistorySample, wallTrailSampleSecForTicker } from "./vector-wall-sample";
 import { appendSessionWallSample } from "./vector-wall-persist";
 import { VECTOR_WALL_NODES_PER_SIDE } from "./vector-bar-timeframes";
 import { buildNarrowedHorizonWallSamples } from "./vector-snapshot";
@@ -83,10 +83,7 @@ export async function buildVectorUniverseSnapshot(
   const dynamic = recordWallHistory ? await listDynamicUniverseTickers().catch(() => []) : [];
   const tickers = [...new Set([...vectorUniverseTickers(), ...dynamic])];
   const rows: VectorUniverseRow[] = [];
-  // Snap every ticker's sample to ONE shared bucket for this build so a run
-  // produces a single aligned column of beads across strikes (matches the live
-  // path's 15s bucketing), not 21 slightly-staggered timestamps.
-  const sampleTime = bucketWallSampleTime(Math.floor(Date.now() / 1000));
+  const nowSec = Math.floor(Date.now() / 1000);
 
   const results = await Promise.allSettled(
     tickers.map(async (raw) => {
@@ -105,6 +102,8 @@ export async function buildVectorUniverseSnapshot(
         : { callWalls: [], putWalls: [] };
 
       if (recordWallHistory && sessionYmd) {
+        // Each ticker snaps to its own bucket interval (5s for oracle, 15s for others).
+        const sampleTime = bucketWallSampleTime(nowSec, wallTrailSampleSecForTicker(ticker));
         const sample = buildWallHistorySample({
           time: sampleTime,
           gexWalls,

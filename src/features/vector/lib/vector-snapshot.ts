@@ -1,4 +1,4 @@
-import { getGexStrikeExpiryLadder } from "@/lib/ws/uw-socket";
+import { getGexStrikeExpiryLadder, joinGexStrikeExpiryTicker, hasLiveGexStrikeExpiry } from "@/lib/ws/uw-socket";
 import { fetchGexHeatmap } from "@/lib/providers/polygon-options-gex";
 import { getGexPositioning } from "@/lib/providers/gex-positioning";
 import {
@@ -14,7 +14,7 @@ import {
 } from "@/lib/providers/gex-wall-levels";
 import { todayEtYmd } from "@/lib/providers/spx-session";
 import { persistWallSampleDebounced, loadSessionWallHistory } from "./vector-wall-persist";
-import { bucketWallSampleTime, buildWallHistorySample } from "./vector-wall-sample";
+import { bucketWallSampleTime, buildWallHistorySample, wallTrailSampleSecForTicker } from "./vector-wall-sample";
 import {
   RECORDED_WALL_HORIZONS,
   pickNarrowedWallSample,
@@ -22,13 +22,12 @@ import {
 } from "./vector-narrowed-wall-core";
 import { recordWallSample, type WallHistorySample } from "./vector-wall-history";
 import { roundFloats } from "@/lib/round-floats";
-import { getCachedVectorDarkPool, getCachedVectorDarkPoolWithAge } from "./vector-dark-pool-cache";
+import { getCachedVectorDarkPool, getCachedVectorDarkPoolWithAge, type VectorDarkPoolRead } from "./vector-dark-pool-cache";
 import { getVectorLiveCandle } from "./vector-live-candle";
 import { spyVolumeForMinuteBar } from "./vector-spy-volume";
 import {
   normalizeVectorTicker,
   VECTOR_DEFAULT_TICKER,
-  vectorHasWsOracle,
 } from "./vector-ticker";
 import { expiriesForHorizon, type VectorDteHorizon } from "./vector-dte-horizon";
 import { getPerExpiryGexWalls } from "./vector-dte-walls-server";
@@ -38,6 +37,7 @@ const WALL_SCOPE_REFRESH_MS = 15_000;
 const VEX_WALLS_CACHE_MS = 8_000;
 const WALLS_CACHE_MS = 900;
 const FLIP_CACHE_MS = 5_000;
+const DARK_POOL_LOCAL_CACHE_MS = 30_000;
 
 type TickerState = {
   wallScope: WallScopeState;
@@ -57,13 +57,18 @@ type TickerState = {
   /** ET session the in-memory history belongs to — see session reset in buildVectorStreamPayload. */
   sessionYmd: string;
   /**
-   * Last 15s bucket for which the narrowed-horizon (0dte/weekly/monthly) rails were recorded from
-   * this live hub. The hub previously wrote ONLY the "all" rail — narrowed rails were cron-only
-   * (5-min cadence), so a member watching the 0DTE lens saw a frozen rail. Gating the per-horizon
-   * write on a bucket rollover gives viewed narrowed rails the same 15s density as "all" without
-   * recomputing per-expiry walls on every 1s payload build.
+   * Last bucket for which the narrowed-horizon (0dte/weekly/monthly) rails were recorded from
+   * this live hub. Bucket size is ticker-aware (5s for oracle tickers, 15s for others). Gating
+   * the per-horizon write on a bucket rollover gives viewed narrowed rails the same density as
+   * "all" without recomputing per-expiry walls on every 1s payload build.
    */
   lastNarrowedWallBucket: number;
+  flipRefreshInFlight: boolean;
+  cachedDarkPool: VectorDarkPoolRead;
+  cachedDarkPoolAt: number;
+  darkPoolRefreshInFlight: boolean;
+  cachedSpyVolume: number | undefined;
+  cachedSpyVolumeBarTime: number;
 };
 
 function freshState(): TickerState {
@@ -83,6 +88,12 @@ function freshState(): TickerState {
     wallHistory: [],
     sessionYmd: "",
     lastNarrowedWallBucket: 0,
+    flipRefreshInFlight: false,
+    cachedDarkPool: { levels: [], fetchedAt: 0 },
+    cachedDarkPoolAt: 0,
+    darkPoolRefreshInFlight: false,
+    cachedSpyVolume: undefined,
+    cachedSpyVolumeBarTime: 0,
   };
 }
 
@@ -175,7 +186,10 @@ export function getVectorGexWalls(ticker: string = VECTOR_DEFAULT_TICKER): GexWa
   const now = Date.now();
   if (now - s.cachedWallsAt < WALLS_CACHE_MS) return s.cachedWalls;
 
-  if (vectorHasWsOracle(t)) {
+  // Dynamic WS subscription: ANY ticker with a live gex_strike_expiry feed gets
+  // the WS ladder path (5s real-time walls). The static oracle set is no longer
+  // the gate — hasLiveGexStrikeExpiry checks actual in-memory data freshness.
+  if (hasLiveGexStrikeExpiry(t)) {
     const ws = getGexStrikeExpiryLadder(t, s.wallScope.expiries);
     if (ws) {
       s.cachedWalls = computeGexWalls(ws.ladder, { maxPerSide: VECTOR_WALL_NODES_PER_SIDE });
@@ -302,10 +316,10 @@ export async function getVectorGexWallsForHorizon(
     return perExpiry.walls;
   }
 
-  // ORACLE fallback: the UW per-expiry WS ladder sliced to the horizon, if the chain path was
-  // empty (e.g. Polygon options snapshot unavailable for the index root). Better than the
-  // blended aggregate when it exists, and it never regresses below the prior behavior.
-  if (vectorHasWsOracle(t)) {
+  // WS ladder fallback: slice the live per-expiry ladder to the horizon, if the chain path
+  // was empty. Available for ANY ticker with a live WS subscription, not just the static
+  // oracle set. Better than the blended aggregate when it exists.
+  if (hasLiveGexStrikeExpiry(t)) {
     await primeVectorWallScope(t);
     const s = state(t);
     const scoped = expiriesForHorizon(s.wallScope.expiries ?? [], horizon, todayEtYmd());
@@ -361,15 +375,11 @@ export async function getVectorGammaFlip(ticker: string = VECTOR_DEFAULT_TICKER)
   return s.cachedFlip;
 }
 
-// ── Narrowed-horizon wall recording (shared by the live 15s hub and the 5-min universe cron) ──
-// Root cause of the "frozen 0DTE rail" bug: narrowed rails (0dte/weekly/monthly) were written ONLY
-// by the universe cron (5-min cadence, best-effort with a silent skip when the per-expiry SPXW
-// reconstruction came back empty), while the live hub wrote only the blended "all" rail. So a
-// member watching the 0DTE lens saw new walls at best every ~5 min — and for SPX far less, because
-// its per-expiry reconstruction empties out on most cron ticks. Both writers now share this path so
-// the rail (a) advances at the live 15s cadence when a ticker is viewed, and (b) FALLS BACK to the
-// blended near-term walls when the per-expiry reconstruction is momentarily empty (the documented
-// "null → blended near-term walls" contract) instead of dropping the bucket.
+// ── Narrowed-horizon wall recording (shared by the live hub and the 5-min universe cron) ──
+// Both writers share this path so the rail (a) advances at the live cadence (5s for oracle tickers,
+// 15s for others) when a ticker is viewed, and (b) FALLS BACK to the blended near-term walls when
+// the per-expiry reconstruction is momentarily empty (the documented "null → blended near-term
+// walls" contract) instead of dropping the bucket.
 
 /**
  * Fetch + build the narrowed-horizon wall samples for a ticker at one bucket time. `blended` is the
@@ -450,13 +460,34 @@ export async function buildVectorStreamPayload(
   ticker: string = VECTOR_DEFAULT_TICKER
 ): Promise<VectorStreamPayload> {
   const t = normalizeVectorTicker(ticker);
+  // Dynamic WS subscription: ensure this ticker's gex_strike_expiry channel is
+  // joined on the UW socket. Idempotent, leader-only, auto-unsubscribes on idle.
+  joinGexStrikeExpiryTicker(t);
   const s = state(t);
   const { current, updatedAt } = await getVectorLiveCandle(t);
   const walls = getVectorGexWalls(t);
   const vexWalls = getVectorVexWalls(t);
-  const gammaFlip = await getVectorGammaFlip(t);
+  // Stale-while-revalidate: use cached flip/darkPool, refresh in the background.
+  // Awaiting these inline (Polygon+UW HTTP every 5s, Redis every tick) regularly
+  // exceeded the 1s hub tick budget, tripping the refreshInFlight guard in
+  // vector-stream-hub and freezing the entire SSE frame — including spot price.
+  const gammaFlip = s.cachedFlip;
+  if (Date.now() - s.cachedFlipAt >= FLIP_CACHE_MS && !s.flipRefreshInFlight) {
+    s.flipRefreshInFlight = true;
+    getGexPositioning(t)
+      .then(pos => { s.cachedFlip = pos?.flip ?? null; })
+      .catch(() => {})
+      .finally(() => { s.cachedFlipAt = Date.now(); s.flipRefreshInFlight = false; });
+  }
   const vexFlip = getVectorVexFlip(t);
-  const darkPool = await getCachedVectorDarkPoolWithAge(t);
+  const darkPool = s.cachedDarkPool;
+  if (Date.now() - s.cachedDarkPoolAt >= DARK_POOL_LOCAL_CACHE_MS && !s.darkPoolRefreshInFlight) {
+    s.darkPoolRefreshInFlight = true;
+    getCachedVectorDarkPoolWithAge(t)
+      .then(dp => { s.cachedDarkPool = dp; })
+      .catch(() => {})
+      .finally(() => { s.cachedDarkPoolAt = Date.now(); s.darkPoolRefreshInFlight = false; });
+  }
   const sessionYmd = todayEtYmd();
 
   // Session boundary: a process surviving close→open (weekend, overnight viewer)
@@ -484,8 +515,9 @@ export async function buildVectorStreamPayload(
     // honest-gap semantics documented on buildWallHistorySample). Freshness
     // gating stays here: a lens whose cache is stale contributes nothing this
     // bucket (passed as null), recording an honest gap rather than a stale copy.
+    const tickerBucketSec = wallTrailSampleSecForTicker(t);
     const sample = buildWallHistorySample({
-      time: bucketWallSampleTime(Math.floor(nowMs / 1000)),
+      time: bucketWallSampleTime(Math.floor(nowMs / 1000), tickerBucketSec),
       gexWalls: gexRecordable ? walls : null,
       gammaFlip: gexRecordable ? gammaFlip : null,
       vexWalls: vexRecordable ? vexWalls : null,
@@ -496,13 +528,9 @@ export async function buildVectorStreamPayload(
       persistWallSampleDebounced(sessionYmd, sample, t);
     }
 
-    // Narrowed-horizon rails (0dte/weekly/monthly) at the live 15s cadence. Previously these were
-    // written ONLY by the 5-min universe cron, so a viewed 0DTE lens showed a frozen rail. Gate on
-    // a bucket rollover so the per-expiry walls are computed at most once per 15s bucket, and
-    // fire-and-forget so the hot SSE payload never blocks or breaks on the rail write. `walls` is
-    // this bucket's fresh blended near-term reading — the fallback when a horizon's per-expiry
-    // reconstruction is momentarily empty (keeps the rail advancing instead of dropping the bucket).
-    const narrowedBucket = bucketWallSampleTime(Math.floor(nowMs / 1000));
+    // Narrowed-horizon rails at the ticker-aware cadence (5s for oracle, 15s for others).
+    // Gate on a bucket rollover so per-expiry walls are computed at most once per bucket.
+    const narrowedBucket = bucketWallSampleTime(Math.floor(nowMs / 1000), tickerBucketSec);
     if (gexRecordable && s.lastNarrowedWallBucket !== narrowedBucket) {
       s.lastNarrowedWallBucket = narrowedBucket;
       void buildNarrowedHorizonWallSamples(t, narrowedBucket, { walls, flip: gammaFlip })
@@ -519,8 +547,15 @@ export async function buildVectorStreamPayload(
 
   let candle = current;
   if (current && t === "SPX") {
-    const volume = await spyVolumeForMinuteBar(current.time);
-    candle = volume != null ? { ...current, volume } : current;
+    // Non-blocking: fire-and-forget the Polygon fetch; use cached volume from
+    // the same bar time, arriving at most 1 tick late.
+    void spyVolumeForMinuteBar(current.time).then(v => {
+      s.cachedSpyVolume = v ?? undefined;
+      s.cachedSpyVolumeBarTime = current.time;
+    }).catch(() => {});
+    if (s.cachedSpyVolumeBarTime === current.time && s.cachedSpyVolume != null) {
+      candle = { ...current, volume: s.cachedSpyVolume };
+    }
   }
 
   return roundVectorStreamPayload({

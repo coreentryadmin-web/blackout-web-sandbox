@@ -344,6 +344,20 @@ class UwSocketManager {
         this.sendJoin(channel);
       }
     }
+    this.rejoinDynamicGexTickers();
+  }
+
+  /** Re-join dynamically subscribed gex_strike_expiry tickers after a reconnect. */
+  private rejoinDynamicGexTickers() {
+    const ws = this.ws;
+    if (!ws || ws.readyState !== 1) return;
+    for (const sym of dynamicGexTickers) {
+      const wire = `gex_strike_expiry:${sym}`;
+      ws.send(JSON.stringify({ channel: wire, msg_type: "join" }));
+    }
+    if (dynamicGexTickers.size > 0) {
+      console.log(`[uw-socket] re-joined ${dynamicGexTickers.size} dynamic gex_strike_expiry tickers`);
+    }
   }
 
   private dispatch(channel: UwWsChannel, payload: unknown) {
@@ -809,6 +823,68 @@ type GexStrikeExpiryTickerState = {
 
 const gexStrikeExpiryByTicker = new Map<string, GexStrikeExpiryTickerState>();
 
+// ── Dynamic per-ticker gex_strike_expiry subscription ───────────────────────────────────
+// Any ticker opened on Vector dynamically joins `gex_strike_expiry:TICKER` on the
+// multiplexed UW socket (stress-tested: 48 concurrent subscriptions, all acked, no cap).
+// Static tickers from UW_WS_GEX_STRIKE_EXPIRY_TICKERS are always joined at init; dynamic
+// tickers are joined on demand and auto-left after an idle timeout.
+
+const dynamicGexTickers = new Set<string>();
+const dynamicGexLastAccess = new Map<string, number>();
+const DYNAMIC_GEX_IDLE_MS = 120_000;
+const DYNAMIC_GEX_FRESHNESS_MS = 60_000;
+
+function staticGexTickers(): Set<string> {
+  const tickers = parseWsTickerCsv(process.env.UW_WS_GEX_STRIKE_EXPIRY_TICKERS, "SPX");
+  return new Set(tickers);
+}
+
+/**
+ * Dynamically subscribe `gex_strike_expiry:TICKER` on the UW multiplexed socket.
+ * Idempotent — does nothing if the ticker is already joined (static or dynamic).
+ * Only the cluster leader sends join frames; non-leaders silently skip (they fall
+ * back to REST-sourced walls anyway since the in-memory WS store is leader-only).
+ */
+export function joinGexStrikeExpiryTicker(ticker: string): void {
+  const sym = ticker.toUpperCase();
+  dynamicGexLastAccess.set(sym, Date.now());
+  if (staticGexTickers().has(sym)) return;
+  if (dynamicGexTickers.has(sym)) return;
+  dynamicGexTickers.add(sym);
+  if (!uwIsLeader) return;
+  const ws = uwSocket as unknown as { ws: WebSocket | null };
+  const sock = ws.ws;
+  if (!sock || sock.readyState !== 1) return;
+  const wire = `gex_strike_expiry:${sym}`;
+  sock.send(JSON.stringify({ channel: wire, msg_type: "join" }));
+  console.log(`[uw-socket] dynamic join gex_strike_expiry:${sym}`);
+}
+
+/**
+ * True when the in-memory UW WS store has recent per-strike GEX data for this
+ * ticker (static or dynamically subscribed). Callers use this to decide between
+ * the WS ladder (5s walls) and the REST fallback (15s walls).
+ */
+export function hasLiveGexStrikeExpiry(ticker: string): boolean {
+  const sym = ticker.toUpperCase();
+  const state = gexStrikeExpiryByTicker.get(sym);
+  if (!state || state.cells.size === 0) return false;
+  return Date.now() - state.updatedAt <= DYNAMIC_GEX_FRESHNESS_MS;
+}
+
+/** Prune dynamic subscriptions that haven't been accessed recently. */
+function pruneIdleDynamicGexTickers(): void {
+  const now = Date.now();
+  for (const sym of [...dynamicGexTickers]) {
+    const lastAccess = dynamicGexLastAccess.get(sym) ?? 0;
+    if (now - lastAccess > DYNAMIC_GEX_IDLE_MS) {
+      dynamicGexTickers.delete(sym);
+      dynamicGexLastAccess.delete(sym);
+      gexStrikeExpiryByTicker.delete(sym);
+    }
+  }
+}
+
 function gexStrikeExpiryCellKey(expiry: string, strike: number): string {
   return `${expiry}|${strike}`;
 }
@@ -1214,6 +1290,7 @@ async function runUwReconcileTick(): Promise<void> {
   uwSocket.ensureConnected();
   uwSocket.heartbeat();
   uwSocket.reconnectIfStalled(freshestUwMessageAt(), UW_SOCKET_STALL_MS);
+  pruneIdleDynamicGexTickers();
 }
 
 /**
@@ -1288,6 +1365,8 @@ export function getUwSocketHealth() {
       gex_strike_expiry_updated_at: gexStrikeExpiryByTicker.get("SPX")?.updatedAt || null,
       gex_strike_expiry_cells: gexStrikeExpiryByTicker.get("SPX")?.cells.size ?? 0,
       gex_strike_expiry_strikes: getGexStrikeExpiryLadder("SPX")?.ladder.size ?? 0,
+      gex_strike_expiry_dynamic_tickers: dynamicGexTickers.size,
+      gex_strike_expiry_active_tickers: [...gexStrikeExpiryByTicker.keys()],
       price_spx_updated_at: priceByTicker.get("SPX")?.updatedAt || null,
       price_spy_updated_at: priceByTicker.get("SPY")?.updatedAt || null,
       active_halts: Array.from(tradingHaltsStore.halts.values())
