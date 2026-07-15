@@ -1311,19 +1311,17 @@ const CHAIN_BAND_PAGE_GUARD = resolveChainBandPageGuard(process.env.OPTIONS_CHAI
 const SPX_HEATMAP_BAND_PCT = 0.06;
 
 /**
- * Default strike band for every OTHER ticker: ±12%. WHY WIDER: ±6% is measured in PERCENT, but a
- * ticker's wall structure lives in STRIKES, and low-priced / wide-strike-spacing names have very
- * few strikes inside ±6%. Live proof (ASTS @ $73.32, nearest 8 expiries): ±6% captured only 10
- * strikes → just 2 net-positive (call) strikes, so ASTS could NEVER show more than 2 call walls at
- * any timeframe, and its real call walls (90/100/125) sit far outside ±6% and were never even
- * fetched — the "only 1 call / 1 put wall" bug. ±12% captures 22 strikes (4 call / 18 put walls),
- * and matches the Vector chart's own reveal caps (NEAREST_WALL_VIEW_MAX_PCT 0.12 / BEAD_VIEW_MAX_PCT
- * 0.20) so we no longer fetch a NARROWER window than the chart is willing to draw. Env-overridable.
+ * Default strike band for every OTHER ticker: ±20%. ±6% was too narrow for sparse chains (ASTS @
+ * $73: only 10 strikes, 2 call walls — real walls at 90/100/125 never fetched). ±12% improved it
+ * (22 strikes) but still missed round-number gamma walls that sit 20-70% above spot on low-priced
+ * names. ±20% aligns with the Vector chart's BEAD_VIEW_MAX_PCT (0.20) and stays well under the
+ * DTE-scoped path's -30%/+35% band, so the shared heatmap no longer fetches a narrower window than
+ * either the chart or the per-expiry walls are willing to draw. Env-overridable up to 25%.
  */
-const DEFAULT_HEATMAP_BAND_PCT = 0.12;
+const DEFAULT_HEATMAP_BAND_PCT = 0.20;
 
 /** Strike band around spot for the shared heatmap chain pull. SPX stays tight (dense); everything
- *  else uses the wider default so sparse long-tail names (e.g. ASTS) still surface multiple walls. */
+ *  else uses ±20% so sparse/low-priced names surface round-number walls (ASTS 90/100/125 @ $73). */
 function heatmapBandPct(root: string): number {
   const clamp = (n: number) => (Number.isFinite(n) && n > 0 && n <= 0.25 ? n : null);
   if (root === "SPX") {
