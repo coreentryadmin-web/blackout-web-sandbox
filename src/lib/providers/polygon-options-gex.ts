@@ -1133,11 +1133,11 @@ async function resolveSpotSnapshot(
 
 const GEX_HEATMAP_CACHE_PREFIX = "gex-heatmap";
 /**
- * How many NEAR-TERM expiries (the nearest dailies/weeklies, ascending) the matrix keeps — the
- * UNCHANGED legacy "8 nearest" behavior. The far-dated monthly/quarterly columns are ADDED to this
- * block (never replace it), so the near-term view is preserved exactly.
+ * How many NEAR-TERM expiries (the nearest dailies/weeklies, ascending) the matrix keeps. Raised
+ * from 8 → 20 so Thermal shows a dense, premium-grade term-structure grid. The far-dated monthly/
+ * quarterly columns are ADDED to this block (never replace it).
  */
-const NEAR_TERM_EXPIRY_COUNT = 8;
+const NEAR_TERM_EXPIRY_COUNT = 20;
 /** In-memory mirror of the Redis matrix so co-located requests skip Redis too. */
 const cachedHeatmaps = new Map<string, { at: number; data: GexHeatmap }>();
 

@@ -3636,7 +3636,7 @@ export function GexHeatmap({
             aria-label={`${data?.underlying ?? ticker} dealer ${vocab.noun.toLowerCase()} matrix by strike and expiry`}
           >
             <thead className="sticky top-0 z-20 bg-[#08080e]">
-              <tr className="border-b border-white/10 text-[10px] uppercase tracking-wider text-sky-300">
+              <tr className="border-b border-white/10 text-[10px] uppercase tracking-normal text-sky-300">
                 <th className="sticky left-0 z-30 bg-[#08080e] py-1.5 pl-1 pr-2 text-left font-semibold">
                   Strike
                 </th>
@@ -3647,7 +3647,7 @@ export function GexHeatmap({
                       key={e}
                       title={isMonthly ? `${fmtHeatmapExpiry(e)} — monthly OpEx` : fmtHeatmapExpiry(e)}
                       className={clsx(
-                        "py-1.5 px-1 text-center font-semibold whitespace-nowrap",
+                        "py-1.5 px-0.5 text-center font-semibold whitespace-nowrap",
                         isMonthly ? "text-gold" : "text-sky-300"
                       )}
                     >
@@ -3725,7 +3725,7 @@ export function GexHeatmap({
                         <td
                           key={e}
                           className={clsx(
-                            "whitespace-nowrap px-1 py-1 text-center font-bold",
+                            "whitespace-nowrap px-0.5 py-1 text-center font-bold",
                             has && val > 0 && (lens === "gex" ? "text-emerald-300" : posColorClass),
                             has && val < 0 && (lens === "gex" ? "text-rose-300" : "text-bear-text"),
                             !has && "text-sky-300/25"
