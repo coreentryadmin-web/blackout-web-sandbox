@@ -2513,8 +2513,8 @@ export function GexHeatmap({
   // string. The subset re-sums cells[strike] over the chosen expiry/expiries entirely
   // client-side (no refetch) and re-derives walls/flip from those filtered totals.
   const [expiryScope, setExpiryScope] = useState<string>("all");
-  const matrixPollMs = usePollIntervalMs(5_000, 60_000);
-  const quotePollMs = usePollIntervalMs(5_000, 60_000);
+  const matrixPollMs = usePollIntervalMs(5_000, 5_000);
+  const quotePollMs = usePollIntervalMs(5_000, 5_000);
 
   // Fast-move bypass: when the live quote diverges from the cached matrix snapshot spot
   // by >0.5%, we append `&force=1` to the matrix key for ONE refetch (then clear it) so
