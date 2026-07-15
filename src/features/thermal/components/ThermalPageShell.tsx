@@ -18,7 +18,7 @@ export function ThermalPageShell() {
         nativeShell && "thermal-page-shell-native"
       )}
       contentClassName={clsx(
-        nativeShell ? "thermal-page-content-native !py-0" : "!py-6 md:!py-8"
+        nativeShell ? "thermal-page-content-native !py-0" : "!py-2 md:!py-3"
       )}
     >
       <div
@@ -29,13 +29,11 @@ export function ThermalPageShell() {
       >
         {!nativeShell && (
           <PageHeader
-            kicker="Dealer positioning"
             title="BlackOut Thermal"
-            subtitle="Dealer gamma & vanna exposure"
             badge={<ProductMark product="heatmap" size={44} />}
           />
         )}
-        <div className={clsx(nativeShell ? "mt-0" : "mt-6")}>
+        <div className={clsx(nativeShell ? "mt-0" : "mt-2")}>
           <Heatmap nativeShell={nativeShell} />
         </div>
       </div>
