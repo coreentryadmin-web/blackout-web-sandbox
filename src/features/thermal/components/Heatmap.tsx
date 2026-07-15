@@ -30,7 +30,7 @@ const GexHeatmap = dynamic(
  */
 export function Heatmap({ nativeShell = false }: { nativeShell?: boolean }) {
   return (
-    <div className={clsx("desk-layout gex-heatmap-desk space-y-5", nativeShell && "gex-heatmap-desk-native")}>
+    <div className={clsx("desk-layout gex-heatmap-desk space-y-2", nativeShell && "gex-heatmap-desk-native")}>
       <GexHeatmap ticker="SPY" nativeShell={nativeShell} />
     </div>
   );
