@@ -22,6 +22,8 @@ test("vectorPolygonMinuteSymbol maps indices", () => {
 test("oracle and index helpers", () => {
   assert.equal(isVectorIndexTicker("SPX"), true);
   assert.equal(isVectorIndexTicker("AAPL"), false);
+  // vectorHasWsOracle checks the STATIC oracle set (SPX/SPY/QQQ);
+  // dynamic WS subscription via hasLiveGexStrikeExpiry covers any ticker at runtime
   assert.equal(vectorHasWsOracle("SPX"), true);
   assert.equal(vectorHasWsOracle("NVDA"), false);
 });

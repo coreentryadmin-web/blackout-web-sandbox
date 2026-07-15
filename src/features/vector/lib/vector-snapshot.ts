@@ -1,4 +1,4 @@
-import { getGexStrikeExpiryLadder } from "@/lib/ws/uw-socket";
+import { getGexStrikeExpiryLadder, joinGexStrikeExpiryTicker, hasLiveGexStrikeExpiry } from "@/lib/ws/uw-socket";
 import { fetchGexHeatmap } from "@/lib/providers/polygon-options-gex";
 import { getGexPositioning } from "@/lib/providers/gex-positioning";
 import {
@@ -28,7 +28,6 @@ import { spyVolumeForMinuteBar } from "./vector-spy-volume";
 import {
   normalizeVectorTicker,
   VECTOR_DEFAULT_TICKER,
-  vectorHasWsOracle,
 } from "./vector-ticker";
 import { expiriesForHorizon, type VectorDteHorizon } from "./vector-dte-horizon";
 import { getPerExpiryGexWalls } from "./vector-dte-walls-server";
@@ -174,7 +173,10 @@ export function getVectorGexWalls(ticker: string = VECTOR_DEFAULT_TICKER): GexWa
   const now = Date.now();
   if (now - s.cachedWallsAt < WALLS_CACHE_MS) return s.cachedWalls;
 
-  if (vectorHasWsOracle(t)) {
+  // Dynamic WS subscription: ANY ticker with a live gex_strike_expiry feed gets
+  // the WS ladder path (5s real-time walls). The static oracle set is no longer
+  // the gate — hasLiveGexStrikeExpiry checks actual in-memory data freshness.
+  if (hasLiveGexStrikeExpiry(t)) {
     const ws = getGexStrikeExpiryLadder(t, s.wallScope.expiries);
     if (ws) {
       s.cachedWalls = computeGexWalls(ws.ladder, { maxPerSide: VECTOR_WALL_NODES_PER_SIDE });
@@ -301,10 +303,10 @@ export async function getVectorGexWallsForHorizon(
     return perExpiry.walls;
   }
 
-  // ORACLE fallback: the UW per-expiry WS ladder sliced to the horizon, if the chain path was
-  // empty (e.g. Polygon options snapshot unavailable for the index root). Better than the
-  // blended aggregate when it exists, and it never regresses below the prior behavior.
-  if (vectorHasWsOracle(t)) {
+  // WS ladder fallback: slice the live per-expiry ladder to the horizon, if the chain path
+  // was empty. Available for ANY ticker with a live WS subscription, not just the static
+  // oracle set. Better than the blended aggregate when it exists.
+  if (hasLiveGexStrikeExpiry(t)) {
     await primeVectorWallScope(t);
     const s = state(t);
     const scoped = expiriesForHorizon(s.wallScope.expiries ?? [], horizon, todayEtYmd());
@@ -445,6 +447,9 @@ export async function buildVectorStreamPayload(
   ticker: string = VECTOR_DEFAULT_TICKER
 ): Promise<VectorStreamPayload> {
   const t = normalizeVectorTicker(ticker);
+  // Dynamic WS subscription: ensure this ticker's gex_strike_expiry channel is
+  // joined on the UW socket. Idempotent, leader-only, auto-unsubscribes on idle.
+  joinGexStrikeExpiryTicker(t);
   const s = state(t);
   const { current, updatedAt } = await getVectorLiveCandle(t);
   const walls = getVectorGexWalls(t);
