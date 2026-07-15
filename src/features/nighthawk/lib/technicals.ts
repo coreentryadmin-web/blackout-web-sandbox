@@ -122,7 +122,7 @@ function classifySetup(params: {
 
 export async function buildTechnicalCard(ticker: string): Promise<TechnicalCard | null> {
   const mtf = await fetchPolygonMtfTechnicals(ticker);
-  if (!mtf?.price) return null;
+  if (mtf?.price == null) return null;
 
   const dailyBars = mtf.daily_bars?.length ? mtf.daily_bars : [];
   const swings = swingLevels(dailyBars, 45);
