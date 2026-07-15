@@ -9,6 +9,8 @@ import { serverCache } from "@/lib/server-cache";
 import { safeTime } from "@/lib/safe-time";
 import { tapeDedupKey } from "@/lib/tape-dedup-key";
 import { fetchGexHeatmap } from "@/lib/providers/polygon-options-gex";
+import { hasLiveGexStrikeExpiry, getGexStrikeExpiryLadder } from "@/lib/ws/uw-socket";
+import { strikeTotalsFromLadder } from "@/lib/providers/gex-cross-validation-core";
 import { gexPositioningFromHeatmap } from "@/lib/providers/gex-positioning";
 import { dbConfigured, fetchRecentFlows } from "@/lib/db";
 import { markFlowDataFromBriefs, resolveFlowDataAgeMs } from "@/lib/flow-data-freshness";
@@ -191,8 +193,16 @@ function strikeTotalsToLevels(totals: Record<string, number>): GexStrikeLevel[] 
 function stickyDeskGexFallback(spot: number): CanonicalDeskGexSnapshot {
   const flip = lastGoodGammaFlip;
   const gRegime = gammaRegimeWithHysteresis(spot, flip, lastGoodGammaRegime);
-  const wallsFromLevels = lastGoodStrikeLevels.length
-    ? topGexWalls(lastGoodStrikeLevels, spot, GEX_WALL_LADDER_LIMIT)
+  let fallbackLevels = lastGoodStrikeLevels;
+  if (hasLiveGexStrikeExpiry("SPX")) {
+    const wsLadder = getGexStrikeExpiryLadder("SPX");
+    if (wsLadder) {
+      const wsLevels = strikeTotalsToLevels(strikeTotalsFromLadder(wsLadder.ladder));
+      if (wsLevels.length) fallbackLevels = wsLevels;
+    }
+  }
+  const wallsFromLevels = fallbackLevels.length
+    ? topGexWalls(fallbackLevels, spot, GEX_WALL_LADDER_LIMIT)
     : [];
   const finalWalls = wallsFromLevels.length ? wallsFromLevels : lastGoodGexWalls;
   const gexAgeMs = gexDataAgeMs();
@@ -348,7 +358,18 @@ async function resolveCanonicalDeskGex(spot: number): Promise<CanonicalDeskGexSn
   // can't contradict. Intended local spot-vs-flip model — no net-GEX override (see the full-payload
   // note / FINDINGS: local regime at spot ≠ the aggregate net-GEX sign).
   const regime = gammaRegimeWithHysteresis(spot, flip, lastGoodGammaRegime);
-  const walls = levels.length ? topGexWalls(levels, spot, GEX_WALL_LADDER_LIMIT) : [];
+
+  // UW WS ladder is the same 5s real-time source Vector uses for walls.
+  // Prefer it over Polygon heatmap walls so all surfaces show identical strikes.
+  let wallLevels = levels;
+  if (hasLiveGexStrikeExpiry("SPX")) {
+    const wsLadder = getGexStrikeExpiryLadder("SPX");
+    if (wsLadder) {
+      const wsLevels = strikeTotalsToLevels(strikeTotalsFromLadder(wsLadder.ladder));
+      if (wsLevels.length) wallLevels = wsLevels;
+    }
+  }
+  const walls = wallLevels.length ? topGexWalls(wallLevels, spot, GEX_WALL_LADDER_LIMIT) : [];
 
   if (levels.length) {
     lastGoodStrikeLevels = levels;
@@ -1553,7 +1574,15 @@ async function refreshPulseStructureIfNeeded(today: string): Promise<PulseStruct
 
 function gexSnapshotForPrice(price: number) {
   const gammaFlip = lastGoodGammaFlip;
-  const walls = topGexWalls(lastGoodStrikeLevels, price, GEX_WALL_LADDER_LIMIT);
+  let priceLevels = lastGoodStrikeLevels;
+  if (hasLiveGexStrikeExpiry("SPX")) {
+    const wsLadder = getGexStrikeExpiryLadder("SPX");
+    if (wsLadder) {
+      const wsLevels = strikeTotalsToLevels(strikeTotalsFromLadder(wsLadder.ladder));
+      if (wsLevels.length) priceLevels = wsLevels;
+    }
+  }
+  const walls = topGexWalls(priceLevels, price, GEX_WALL_LADDER_LIMIT);
   const finalWalls = walls.length ? walls : lastGoodGexWalls;
   const gRegime = gammaRegimeWithHysteresis(price, gammaFlip, lastGoodGammaRegime);
   return {
