@@ -203,7 +203,7 @@ function buildPlay(
     stop: levels.stop,
     options_play,
     score: scored.score,
-    flow_streak_days: dossier?.flow_streak?.streak_days || undefined,
+    flow_streak_days: dossier?.flow_streak?.streak_days ?? undefined,
     iv_rank: dossier?.iv_rank ?? undefined,
   };
   // Reuse the Claude path's premium-cap stamping so entry_premium / entry_cost_per_contract /

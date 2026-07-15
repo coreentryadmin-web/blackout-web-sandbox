@@ -137,11 +137,11 @@ function pivotPolygonContracts(
       } satisfies ChainStrikeRow);
 
     const quote = (c as { last_quote?: { bid?: number; ask?: number } }).last_quote;
-    const bid = num(quote?.bid) || null;
-    const ask = num(quote?.ask) || null;
-    const delta = num((c as { greeks?: { delta?: number } }).greeks?.delta) || null;
+    const bid = num(quote?.bid) ?? null;
+    const ask = num(quote?.ask) ?? null;
+    const delta = num((c as { greeks?: { delta?: number } }).greeks?.delta) ?? null;
     const oi = num(c.open_interest);
-    const iv = num((c as { implied_volatility?: number }).implied_volatility) || null;
+    const iv = num((c as { implied_volatility?: number }).implied_volatility) ?? null;
 
     if (type === "call") {
       row.call_bid = bid;
@@ -193,11 +193,11 @@ function pivotUwRows(rows: Record<string, unknown>[], spot: number, expiries: st
       } satisfies ChainStrikeRow);
 
     const opt = String(r.type ?? r.option_type ?? "").toLowerCase();
-    const bid = num(r.bid ?? r.call_bid ?? r.put_bid) || null;
-    const ask = num(r.ask ?? r.call_ask ?? r.put_ask) || null;
-    const delta = num(r.delta ?? r.call_delta ?? r.put_delta) || null;
+    const bid = num(r.bid ?? r.call_bid ?? r.put_bid) ?? null;
+    const ask = num(r.ask ?? r.call_ask ?? r.put_ask) ?? null;
+    const delta = num(r.delta ?? r.call_delta ?? r.put_delta) ?? null;
     const oi = num(r.open_interest ?? r.oi);
-    const iv = num(r.iv ?? r.implied_volatility) || null;
+    const iv = num(r.iv ?? r.implied_volatility) ?? null;
 
     if (opt.startsWith("c")) {
       row.call_bid = bid;
