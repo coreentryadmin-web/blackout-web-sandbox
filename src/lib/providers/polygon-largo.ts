@@ -5,6 +5,7 @@
 import { polygonTrackedFetch } from "./polygon-rate-limiter";
 import { polygonConfigured } from "./config";
 import { priorEtYmd, todayEtYmd } from "./spx-session";
+import { recordDataSourceing } from "@/features/nighthawk/lib/diagnostics";
 
 const BASE = (process.env.POLYGON_API_BASE ?? "https://api.massive.com").replace(/\/$/, "");
 const KEY = process.env.POLYGON_API_KEY ?? "";
@@ -219,14 +220,44 @@ export async function fetchPolygonMtfTechnicals(ticker: string) {
   const fromHour = priorEtYmd(30);
   const fromMin = today;
 
-  const [daily, hourly, minute15, prevDay] = await Promise.all([
+  const [daily, hourly, minute15, prevDay, lastTrade, lastNbbo] = await Promise.all([
     fetchAggBars(polygonSym, 1, "day", fromDaily, today, "120"),
     fetchAggBars(polygonSym, 1, "hour", fromHour, today, "500"),
     fetchAggBars(polygonSym, 15, "minute", fromMin, today, "500"),
     fetchPreviousDayBar(polygonSym),
+    fetchStockLastTrade(polygonSym),
+    fetchStockLastNbbo(polygonSym),
   ]);
 
-  const price = daily.at(-1)?.c ?? hourly.at(-1)?.c ?? 0;
+  // Off-hours price fallback chain: daily → hourly → last trade → last NBBO → prior close
+  // Record attempts for diagnostics so we know which source provided the final price
+  const priceAttempts = [
+    { source: "daily_close", ok: !!daily.at(-1)?.c, value: daily.at(-1)?.c ?? null },
+    { source: "hourly_close", ok: !!hourly.at(-1)?.c, value: hourly.at(-1)?.c ?? null },
+    { source: "last_trade", ok: lastTrade?.p != null, value: lastTrade?.p != null ? Number(lastTrade.p) : null },
+    {
+      source: "last_nbbo_mid",
+      ok: lastNbbo != null && typeof lastNbbo.ask === "number" && typeof lastNbbo.bid === "number",
+      value: lastNbbo != null && typeof lastNbbo.ask === "number" && typeof lastNbbo.bid === "number"
+        ? (lastNbbo.ask + lastNbbo.bid) / 2
+        : null,
+    },
+    { source: "prior_day_close", ok: !!prevDay?.c, value: prevDay?.c ?? null },
+  ];
+
+  let price =
+    daily.at(-1)?.c ??
+    hourly.at(-1)?.c ??
+    (lastTrade?.p != null ? Number(lastTrade.p) : null) ??
+    (lastNbbo != null && typeof lastNbbo.ask === "number" && typeof lastNbbo.bid === "number"
+      ? (lastNbbo.ask + lastNbbo.bid) / 2
+      : null) ??
+    prevDay?.c ??
+    0;
+
+  // Record which price source was used
+  const priceSource = priceAttempts.find(a => a.ok);
+  recordDataSourceing(sym, "price_resolution", priceAttempts, price, !priceSource && price === 0 ? "FALLBACK: Using 0 as ultimate default" : undefined);
 
   const [ema20d, ema50d, ema200d, rsi14d, macdD, ema20h, rsi14h, ema20m, rsi14m] = await Promise.all([
     fetchPolygonEma(polygonSym, 20, "day"),
@@ -240,20 +271,53 @@ export async function fetchPolygonMtfTechnicals(ticker: string) {
     fetchPolygonRsi(polygonSym, 14, "minute"),
   ]);
 
+  // Record technical indicator sourcing
+  const technicalAttempts = [
+    { source: "ema20_daily", ok: ema20d != null, value: ema20d },
+    { source: "ema50_daily", ok: ema50d != null, value: ema50d },
+    { source: "ema200_daily", ok: ema200d != null, value: ema200d },
+    { source: "rsi14_daily", ok: rsi14d != null, value: rsi14d },
+    { source: "macd_daily", ok: macdD != null, value: macdD },
+    { source: "ema20_hourly", ok: ema20h != null, value: ema20h },
+    { source: "rsi14_hourly", ok: rsi14h != null, value: rsi14h },
+    { source: "ema20_15m", ok: ema20m != null, value: ema20m },
+    { source: "rsi14_15m", ok: rsi14m != null, value: rsi14m },
+  ];
+  const missingIndicators = technicalAttempts.filter(a => !a.ok).map(a => a.source);
+  recordDataSourceing(sym, "technical_indicators", technicalAttempts, { ema20d, ema50d, ema200d, rsi14d, macdD, ema20h, rsi14h, ema20m, rsi14m }, missingIndicators.length > 0 ? `Missing indicators: ${missingIndicators.join(", ")}` : undefined);
+
   const dailyLv = computeLevelsFromBars(daily, price);
   const hourlyLv = computeLevelsFromBars(hourly, price);
   const minLv = computeLevelsFromBars(minute15, price);
 
+  // ATR14 fallback: daily (preferred) → hourly (off-hours) → prevDay range proxy
   let atr14: number | null = null;
-  if (daily.length >= 15) {
+  const computeAtrFromBars = (bars: AggBar[], window = 14): number | null => {
+    if (bars.length < window) return null;
     const trs: number[] = [];
-    for (let i = 1; i < daily.length; i++) {
-      const cur = daily[i];
-      const prev = daily[i - 1];
+    for (let i = 1; i < bars.length; i++) {
+      const cur = bars[i]!;
+      const prev = bars[i - 1]!;
       trs.push(Math.max(cur.h - cur.l, Math.abs(cur.h - prev.c), Math.abs(cur.l - prev.c)));
     }
-    atr14 = Number((trs.slice(-14).reduce((a, b) => a + b, 0) / 14).toFixed(2));
+    return Number((trs.slice(-window).reduce((a, b) => a + b, 0) / window).toFixed(2));
+  };
+
+  // Record ATR14 sourcing attempts
+  const atrAttempts = [
+    { source: "daily_bars_atr14", ok: daily.length >= 14, value: computeAtrFromBars(daily) },
+    { source: "hourly_bars_atr14", ok: hourly.length >= 14, value: computeAtrFromBars(hourly) },
+  ];
+
+  atr14 = computeAtrFromBars(daily) ?? computeAtrFromBars(hourly);
+  // Off-hours fallback: if hourly data insufficient, estimate ATR from prior day's range
+  if (!atr14 && prevDay) {
+    const prevRange = prevDay.h - prevDay.l;
+    atr14 = Number(prevRange.toFixed(2));
+    atrAttempts.push({ source: "prior_day_range_estimate", ok: true, value: atr14 });
   }
+
+  recordDataSourceing(sym, "atr14_resolution", atrAttempts, atr14, !atr14 ? "CRITICAL: ATR14 unavailable at all fallback tiers" : undefined);
 
   const trendStack =
     price > (ema20d ?? 0) && (ema20d ?? 0) > (ema50d ?? 0)

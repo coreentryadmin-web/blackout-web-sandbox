@@ -103,7 +103,7 @@ export function mapClaudePlayToEdition(play: ClaudePlayRaw, rank: number, dossie
     options_play: String(play.options_play ?? "-"),
     risk_note: String(play.risk_note ?? ""),
     score: pinnedScore,
-    flow_streak_days: dossier?.flow_streak.streak_days || undefined,
+    flow_streak_days: dossier?.flow_streak.streak_days ?? undefined,
     iv_rank: dossier?.iv_rank ?? undefined,
   };
   return applyPremiumCapToPlay(base, play);
