@@ -1057,6 +1057,25 @@ async function liveWsIndexSpot(
 }
 
 /**
+ * Live WS stock spot — reads from the stock-candle-store fed by the stocks WS A.* subscription.
+ * Returns null when no fresh tick exists.
+ */
+async function liveWsStockSpot(
+  ticker: string,
+  now = Date.now()
+): Promise<{ price: number } | null> {
+  try {
+    const { getStockLiveCandle } = await import("../ws/stock-candle-store");
+    const snap = getStockLiveCandle(ticker);
+    if (!snap.current || !(snap.current.close > 0)) return null;
+    if (now - snap.updatedAt >= GEX_INDEX_WS_STALE_MS) return null;
+    return { price: snap.current.close };
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Resolve the underlying SPOT for an options root, choosing the correct snapshot endpoint.
  *
  * CRITICAL: index roots (`I:SPX`, `I:NDX`, …) are NOT on the stocks-snapshot endpoint —
@@ -1078,23 +1097,32 @@ async function resolveSpotSnapshot(
 ): Promise<{ price: number; change_pct: number } | null> {
   const root = optionsRoot.toUpperCase();
   const isIndex = root.startsWith("I:") || Object.values(INDEX_ROOTS).includes(root);
+
+  // --- WS-first: try the live candle store BEFORE any REST call ---
+  // Stocks WS A.* and indices WS both feed into candle stores with sub-second updates.
+  // Use the WS price as primary; fall through to REST only when WS has no fresh tick.
+  if (isIndex) {
+    const ws = await liveWsIndexSpot(root);
+    if (ws) {
+      // REST still needed for change_pct when the WS doesn't carry it authoritatively.
+      const restSnap = await fetchIndexSnapshot(root).catch(() => null);
+      return { price: ws.price, change_pct: ws.change_pct ?? restSnap?.change_pct ?? 0 };
+    }
+  } else {
+    const ws = await liveWsStockSpot(root);
+    if (ws) {
+      const restSnap = await fetchStockSnapshot(root).catch(() => null);
+      return { price: ws.price, change_pct: restSnap?.change_pct ?? 0 };
+    }
+  }
+
+  // Fallback: REST snapshot (Polygon unlimited, no rate-limit concern).
   const snap = isIndex
     ? await fetchIndexSnapshot(root).catch(() => null)
     : await fetchStockSnapshot(root).catch(() => null);
   const restPrice = snap && snap.price > 0 ? snap.price : 0;
-  const restChange = snap?.change_pct ?? 0;
-
-  // Index roots: overlay the fresher live WS price (and its change% when authoritative) on top of
-  // the REST snapshot. Falls back to REST when no fresh WS tick exists.
-  if (isIndex) {
-    const ws = await liveWsIndexSpot(root);
-    if (ws) {
-      return { price: ws.price, change_pct: ws.change_pct ?? restChange };
-    }
-  }
-
   if (!(restPrice > 0)) return null;
-  return { price: restPrice, change_pct: restChange };
+  return { price: restPrice, change_pct: snap?.change_pct ?? 0 };
 }
 
 const GEX_HEATMAP_CACHE_PREFIX = "gex-heatmap";

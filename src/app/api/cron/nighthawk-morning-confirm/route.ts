@@ -77,8 +77,13 @@ function inMorningWindow(force: boolean): boolean {
   return inEtWindow({ targetHour: 9, targetMinute: 10, catchupMin: 35 });
 }
 
-// Fetch pre-market SPX snapshot from Polygon (rate-limited indices batch).
+// Fetch pre-market SPX — WS-first, then REST snapshot.
 async function fetchSpxPremarket(): Promise<number | null> {
+  try {
+    const { getStockLiveCandle } = await import("@/lib/ws/stock-candle-store");
+    const c = getStockLiveCandle("SPX");
+    if (c.current && c.current.close > 0) return c.current.close;
+  } catch { /* fall through */ }
   try {
     const snaps = await fetchIndexSnapshots(["I:SPX"]);
     const spx = snaps["I:SPX"];

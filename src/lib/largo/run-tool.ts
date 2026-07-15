@@ -87,6 +87,7 @@ import {
   fetchVixIvRankPercentile,
   computeVixTermStructure,
 } from "@/lib/providers/polygon";
+import { getStockLiveCandle } from "@/lib/ws/stock-candle-store";
 import { priorEtYmd, todayEtYmd } from "@/lib/providers/spx-session";
 import {
   fetchUwAtmChains,
@@ -220,8 +221,16 @@ function optionsUnderlying(ticker: string): string {
   return uwTicker(ticker);
 }
 
+function wsSpot(ticker: string): number | null {
+  const c = getStockLiveCandle(ticker);
+  return c.current && c.current.close > 0 ? c.current.close : null;
+}
+
 async function resolveSpot(ticker: string): Promise<number> {
   const sym = largoSymbol(ticker);
+  const wsTicker = sym.startsWith("I:") ? sym.replace(/^I:/, "") : sym;
+  const ws = wsSpot(wsTicker);
+  if (ws != null) return ws;
   if (sym.startsWith("I:")) {
     const snap = await fetchIndexSnapshots([sym]);
     return snap[sym]?.price ?? 0;
@@ -244,6 +253,11 @@ function spxDeskSummary(merged: Awaited<ReturnType<typeof getLargoSpxLiveDesk>>)
 
 async function toolQuote(ticker: string) {
   const sym = largoSymbol(ticker);
+  const wsTicker = sym.startsWith("I:") ? sym.replace(/^I:/, "") : sym;
+  const ws = wsSpot(wsTicker);
+  if (ws != null) {
+    return { ticker: sym, price: ws, change_pct: 0, source: "polygon_ws" };
+  }
   if (sym.startsWith("I:")) {
     const snap = await fetchIndexSnapshots([sym]);
     const row = snap[sym];

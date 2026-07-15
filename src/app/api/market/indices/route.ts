@@ -4,6 +4,7 @@ import { fetchIndexSnapshots } from "@/lib/providers/polygon";
 import { polygonConfigured } from "@/lib/providers/config";
 import { serverCache, TTL } from "@/lib/server-cache";
 import { roundFloats } from "@/lib/round-floats";
+import { getStockLiveCandle } from "@/lib/ws/stock-candle-store";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -29,8 +30,15 @@ export async function GET(req: NextRequest) {
       const data = await fetchIndexSnapshots([SPX, VIX]);
       return { snaps: data, fetched_at: new Date().toISOString() };
     });
-    const spx = cached.snaps[SPX];
-    const vix = cached.snaps[VIX];
+    let spx = cached.snaps[SPX];
+    let vix = cached.snaps[VIX];
+
+    // Overlay fresher WS prices when available — getStockLiveCandle reads from Redis
+    // on follower replicas (wsSpotPrice was local-memory-only, always null on followers).
+    const spxCandle = getStockLiveCandle("SPX");
+    if (spxCandle.current && spxCandle.current.close > 0 && spx) spx = { ...spx, price: spxCandle.current.close };
+    const vixCandle = getStockLiveCandle("VIX");
+    if (vixCandle.current && vixCandle.current.close > 0 && vix) vix = { ...vix, price: vixCandle.current.close };
 
     if (!spx && !vix) {
       return NextResponse.json(

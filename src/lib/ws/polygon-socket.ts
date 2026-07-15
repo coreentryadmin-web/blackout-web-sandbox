@@ -3,6 +3,7 @@
  */
 import { getUwCacheRedis } from "@/lib/providers/uw-shared-cache";
 import { etMinutes, etClock } from "@/features/spx/lib/spx-play-session-time";
+import { recordStockTick } from "@/lib/ws/stock-candle-store";
 import { isEtCashRth } from "@/lib/et-market-hours";
 import {
   alertWsLeaderFailClosedOnce,
@@ -420,6 +421,14 @@ async function connectIndices() {
                 open_source: openSource,
                 updatedAt: Date.now(),
               };
+              // Feed non-SPX index tickers into the generalized stock candle store
+              // so Vector gets sub-second live candles for NDX/DJI/RUT too.
+              if (agg.sym !== "I:SPX") {
+                const idxTicker = agg.sym.replace(/^I:/, "");
+                if (Number.isFinite(agg.c) && agg.c > 0) {
+                  recordStockTick(idxTicker, agg.c);
+                }
+              }
               void (async () => {
                 try {
                   const redis = await getUwCacheRedis();
@@ -458,12 +467,14 @@ async function connectIndices() {
                     : prev.change_pct,
                 updatedAt: Date.now(),
               };
-              // Vector live chart: feed the same SPX tick into the 1-minute candle aggregator.
-              // Uses the message's own timestamp (falls back to receipt time) so bars bucket by
-              // actual market time rather than however late this process got to handling it.
+              // Vector live chart: feed ticks into the candle aggregators.
               if (sym === "I:SPX") {
                 const tickAtMs = Number(msg.t);
                 recordSpxTick(val, Number.isFinite(tickAtMs) && tickAtMs > 0 ? tickAtMs : Date.now());
+              } else {
+                // Non-SPX index tickers (NDX, DJI, RUT, VIX) → stock candle store
+                const idxTicker = sym.replace(/^I:/, "");
+                recordStockTick(idxTicker, val);
               }
             }
           }

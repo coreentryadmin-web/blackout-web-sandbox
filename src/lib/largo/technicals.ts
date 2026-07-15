@@ -7,6 +7,7 @@ import {
   fetchTickerEma,
   fetchTickerRsi,
 } from "@/lib/providers/polygon";
+import { getStockLiveCandle } from "@/lib/ws/stock-candle-store";
 import { priorEtYmd, todayEtYmd } from "@/lib/providers/spx-session";
 
 type Bar = { t?: number; o: number; h: number; l: number; c: number; v?: number };
@@ -60,7 +61,12 @@ export async function buildLargoTechnicals(ticker: string) {
 
   let price = 0;
   let changePct = 0;
-  if (isIndex) {
+  const wsTicker = isIndex ? sym.replace(/^I:/, "") : stockSymbol(ticker);
+  const wsCandle = getStockLiveCandle(wsTicker);
+  const ws = wsCandle.current && wsCandle.current.close > 0 ? wsCandle.current.close : null;
+  if (ws != null) {
+    price = ws;
+  } else if (isIndex) {
     const row = quoteRaw?.[sym];
     price = row?.price ?? 0;
     changePct = row?.change_pct ?? 0;

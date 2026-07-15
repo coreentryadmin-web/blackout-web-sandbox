@@ -67,13 +67,13 @@ export async function GET(req: NextRequest) {
 
     let luld_ok = true;
     let luld_detail = "disabled — UW trading_halts only";
-    if (luld.enabled) {
+    if (luld.luld_enabled) {
       if (!rth) {
         luld_detail = "enabled, off-hours — auth not required";
       } else if (!luld.is_leader) {
         luld_detail = "enabled, follower — cluster leader maintains LULD feed";
       } else if (luld.authenticated && luld.ws_state === "open") {
-        luld_detail = `live (${luld.tickers.join(", ")})`;
+        luld_detail = `live (${luld.luld_tickers.join(", ")})`;
       } else {
         luld_ok = false;
         luld_detail = `leader but not authenticated (${luld.ws_state})`;
