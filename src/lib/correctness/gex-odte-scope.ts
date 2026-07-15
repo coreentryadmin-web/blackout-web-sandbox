@@ -1,4 +1,8 @@
 import type { GexHeatmap } from "@/lib/providers/polygon-options-gex";
+import {
+  kingFromStrikeTotals,
+  zeroGammaFlip as computeZeroGammaFlip,
+} from "@/lib/providers/gex-cross-validation-core";
 
 /**
  * Resolve the 0DTE expiry column from a heatmap's expiry axis.
@@ -111,21 +115,8 @@ export function grossAbsFromUwGexRows(rows: Array<Record<string, unknown>>): num
   return gross;
 }
 
-/** Argmax |net| strike — the GEX King node. */
-export function kingFromStrikeTotals(strikeTotals: Record<string, number>): number | null {
-  let king: number | null = null;
-  let maxAbs = -1;
-  for (const [s, gRaw] of Object.entries(strikeTotals)) {
-    const strike = Number(s);
-    const g = Number(gRaw);
-    if (!Number.isFinite(strike) || !Number.isFinite(g)) continue;
-    if (Math.abs(g) > maxAbs) {
-      maxAbs = Math.abs(g);
-      king = strike;
-    }
-  }
-  return king;
-}
+// Re-exported from the canonical shared location for downstream consumers.
+export { kingFromStrikeTotals } from "@/lib/providers/gex-cross-validation-core";
 
 export type ScopedGexLevels = {
   flip: number | null;
@@ -135,50 +126,8 @@ export type ScopedGexLevels = {
   netTotal: number;
 };
 
-/**
- * Zero-gamma flip from per-strike NET dealer gamma totals — mirrors
- * `computeZeroGammaFlip` in polygon-options-gex (neg→pos crossing nearest spot,
- * cumulative-sum fallback, 2-decimal strike).
- */
-export function computeZeroGammaFlip(strikeTotals: Record<string, number>, spot = 0): number | null {
-  const rows = Object.entries(strikeTotals)
-    .map(([s, g]) => ({ strike: Number(s), gamma: g }))
-    .filter((r) => Number.isFinite(r.strike) && Number.isFinite(r.gamma))
-    .sort((a, b) => a.strike - b.strike);
-  if (rows.length < 2) return null;
-
-  const crossings: number[] = [];
-  for (let i = 1; i < rows.length; i++) {
-    const a = rows[i - 1];
-    const b = rows[i];
-    if (a.gamma < 0 && b.gamma > 0) {
-      const frac = (0 - a.gamma) / (b.gamma - a.gamma);
-      crossings.push(Number((a.strike + (b.strike - a.strike) * frac).toFixed(2)));
-    }
-  }
-  if (crossings.length) {
-    return spot > 0
-      ? crossings.reduce((best, c) => (Math.abs(c - spot) < Math.abs(best - spot) ? c : best))
-      : crossings[crossings.length - 1];
-  }
-
-  const cum: number[] = [];
-  let running = 0;
-  for (const r of rows) {
-    running += r.gamma;
-    cum.push(running);
-  }
-  for (let i = 1; i < cum.length; i++) {
-    const prevCum = cum[i - 1];
-    const nextCum = cum[i];
-    if (prevCum !== 0 && nextCum !== 0 && Math.sign(nextCum) !== Math.sign(prevCum)) {
-      const span = rows[i].strike - rows[i - 1].strike;
-      const frac = prevCum / (prevCum - nextCum);
-      return Number((rows[i - 1].strike + span * frac).toFixed(2));
-    }
-  }
-  return null;
-}
+// Re-exported from the canonical shared location (bidirectional: both neg→pos AND pos→neg crossings).
+export { zeroGammaFlip as computeZeroGammaFlip } from "@/lib/providers/gex-cross-validation-core";
 
 /**
  * Walls + flip + king from a scoped strike-total map (0DTE column or near-term aggregate).

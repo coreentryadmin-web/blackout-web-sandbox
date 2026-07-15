@@ -1,5 +1,3 @@
-import { zeroGammaFlip } from "@/lib/providers/gex-intraday-adjust-core";
-
 /**
  * The UW REST fallback (`/spot-exposures/strike`) sums every expiry server-side with no
  * per-expiry field to filter on — it structurally cannot be scoped to match Polygon's
@@ -60,6 +58,68 @@ export function wallsFromStrikeTotals(strikeTotals: Record<string, number>): {
     }
   }
   return { callWall, putWall };
+}
+
+/** Argmax |net| strike — the GEX King node. */
+export function kingFromStrikeTotals(strikeTotals: Record<string, number>): number | null {
+  let king: number | null = null;
+  let maxAbs = -1;
+  for (const [s, gRaw] of Object.entries(strikeTotals)) {
+    const strike = Number(s);
+    const g = Number(gRaw);
+    if (!Number.isFinite(strike) || !Number.isFinite(g)) continue;
+    if (Math.abs(g) > maxAbs) {
+      maxAbs = Math.abs(g);
+      king = strike;
+    }
+  }
+  return king;
+}
+
+/**
+ * Zero-gamma flip: the strike (linear-interpolated to gamma=0) where per-strike net gamma
+ * changes sign — in EITHER direction — choosing the crossing NEAREST spot. Falls back to
+ * cumulative-sum crossing for unusual profiles with no clean per-strike sign flip.
+ */
+export function zeroGammaFlip(strikeTotals: Record<string, number>, spot = 0): number | null {
+  const rows = Object.entries(strikeTotals)
+    .map(([s, g]) => ({ strike: Number(s), gamma: g }))
+    .filter((r) => Number.isFinite(r.strike) && Number.isFinite(r.gamma))
+    .sort((a, b) => a.strike - b.strike);
+  if (rows.length < 2) return null;
+
+  const crossings: number[] = [];
+  for (let i = 1; i < rows.length; i++) {
+    const a = rows[i - 1];
+    const b = rows[i];
+    if ((a.gamma < 0 && b.gamma > 0) || (a.gamma > 0 && b.gamma < 0)) {
+      const frac = (0 - a.gamma) / (b.gamma - a.gamma);
+      crossings.push(Number((a.strike + (b.strike - a.strike) * frac).toFixed(2)));
+    }
+  }
+  if (crossings.length) {
+    return spot > 0
+      ? crossings.reduce((best, c) => (Math.abs(c - spot) < Math.abs(best - spot) ? c : best))
+      : crossings[crossings.length - 1];
+  }
+
+  // Fallback: cumulative-sum crossing for profiles with no clean per-strike sign flip.
+  const cum: number[] = [];
+  let running = 0;
+  for (const r of rows) {
+    running += r.gamma;
+    cum.push(running);
+  }
+  for (let i = 1; i < cum.length; i++) {
+    const prevCum = cum[i - 1];
+    const nextCum = cum[i];
+    if (prevCum !== 0 && nextCum !== 0 && Math.sign(nextCum) !== Math.sign(prevCum)) {
+      const span = rows[i].strike - rows[i - 1].strike;
+      const frac = prevCum / (prevCum - nextCum);
+      return Number((rows[i - 1].strike + span * frac).toFixed(2));
+    }
+  }
+  return null;
 }
 
 export function strikeTotalsFromLadder(ladder: Map<number, number>): Record<string, number> {
