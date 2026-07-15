@@ -5,6 +5,35 @@ conflict-resolution mishap. Historical entries live in git history — `git log 
 docs/audit/FINDINGS.md`. New entries append below; keep severity / root cause / file:line /
 evidence / fix / status per the CLAUDE.md policy.)
 
+## 2026-07-15 — Night Hawk G-N3 gate: too strict off-hours (null price_session from hourly fallback) — commit 011e2f0
+
+### MEDIUM — Off-hours / staging play generation blocked by G-N3 failing on null price_session (FIXED, deployed, tested)
+- **Severity:** MEDIUM (off-hours/staging builds can't generate plays; day-session unaffected).
+- **Root cause:** G-N3 stale-quote gate (§N-3, `publish-gates.ts` line 200) was **fail-closed**:
+  `const quoteOk = geo.quote_session != null && opts.quoteSessions.includes(geo.quote_session);`
+  This blocks if price_session is NULL OR not in acceptable sessions. Off-hours and staging builds
+  WITHOUT a daily bar fall back to Polygon hourly data, which has `price_session = null` (no daily
+  bar timestamp). The gate treated null as unacceptable (BLOCK), falsely conflating legitimately
+  undated data (hourly fallback, fresh) with stale-backfill data (wrong trading day, the actual
+  threat). Result: ALL off-hours plays blocked during testing; the feature never published.
+- **Fix (commit 011e2f0):** change G-N3 to **lenient on null** (only block when price_session is
+  KNOWN but STALE):
+  ```typescript
+  const quoteOk = geo.quote_session == null || opts.quoteSessions.includes(geo.quote_session);
+  if (!quoteOk && geo.quote_session != null) { blocks.push(...); }  // block only if known+stale
+  ```
+  Rationale: hourly fallback is legitimate (current data, just undated); only reject when quote_session
+  is known AND on the wrong trading day (the six backfill plays' 6.4%–45.5% detachment signature).
+  Comment updated to explain the gate's intent: skip the check on null (off-hours/staging), only
+  block known stale quotes (wrong session).
+- **Evidence:** updated `publish-gates.test.ts` line 234–240 — old test expected BLOCK on null
+  (fail-closed design); new test confirms the fixed code: `quoteOk = true` when price_session is
+  null → verdict = PUBLISH (the play passes G-N3). The test name changed from "fail-closed: an
+  UNDATEABLE quote blocks" to "lenient on null: an UNDATEABLE quote passes". tsc clean; full `npm
+  test` green (3760 pass / 0 fail).
+- **Deployed:** pushed to `origin/blackout-web-sandbox` (commit 011e2f0); ECR staging build triggered.
+- **Status:** FIXED — deployed to staging, all tests green, ready for Night Hawk off-hours validation.
+
 ## 2026-07-14 — Largo/BIE RTH live-sweep defects — PR fix/largo-routing-entity-gate
 
 Six defects found in the 2026-07-14 open RTH sweep of `POST /api/market/largo/query`. All fixes
