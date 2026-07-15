@@ -103,27 +103,9 @@ export const GEX_INTRADAY_TOOLTIP =
   "front-expiry (0DTE) intraday net dealer positioning, signed buy-vs-sell from the trade tape " +
   "via the quote rule, to capture same-day gamma that settled OI misses. Front expiry only.";
 
-/** Linear-interpolated zero-gamma flip from per-strike totals (mirrors the matrix flip helper). */
-export function zeroGammaFlip(strikeTotals: Record<string, number>, spot: number): number | null {
-  const rows = Object.entries(strikeTotals)
-    .map(([s, g]) => ({ strike: Number(s), gamma: g }))
-    .filter((r) => Number.isFinite(r.strike) && Number.isFinite(r.gamma))
-    .sort((a, b) => a.strike - b.strike);
-  if (rows.length < 2) return null;
-  const crossings: number[] = [];
-  for (let i = 1; i < rows.length; i++) {
-    const a = rows[i - 1];
-    const b = rows[i];
-    if (a.gamma < 0 && b.gamma > 0) {
-      const frac = (0 - a.gamma) / (b.gamma - a.gamma);
-      crossings.push(Number((a.strike + (b.strike - a.strike) * frac).toFixed(2)));
-    }
-  }
-  if (!crossings.length) return null;
-  return spot > 0
-    ? crossings.reduce((best, c) => (Math.abs(c - spot) < Math.abs(best - spot) ? c : best))
-    : crossings[crossings.length - 1];
-}
+import { zeroGammaFlip } from "@/lib/providers/gex-cross-validation-core";
+// Re-exported from the canonical shared location.
+export { zeroGammaFlip } from "@/lib/providers/gex-cross-validation-core";
 
 /** Largest-positive (call) and largest-negative (put) net-gamma strikes from per-strike totals. */
 export function walls(
