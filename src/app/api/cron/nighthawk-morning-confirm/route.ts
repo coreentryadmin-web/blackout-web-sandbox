@@ -80,9 +80,9 @@ function inMorningWindow(force: boolean): boolean {
 // Fetch pre-market SPX — WS-first, then REST snapshot.
 async function fetchSpxPremarket(): Promise<number | null> {
   try {
-    const { wsSpotPrice } = await import("@/lib/ws/stock-candle-store");
-    const ws = wsSpotPrice("SPX");
-    if (ws != null) return ws;
+    const { getStockLiveCandle } = await import("@/lib/ws/stock-candle-store");
+    const c = getStockLiveCandle("SPX");
+    if (c.current && c.current.close > 0) return c.current.close;
   } catch { /* fall through */ }
   try {
     const snaps = await fetchIndexSnapshots(["I:SPX"]);

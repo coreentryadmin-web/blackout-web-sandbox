@@ -1,5 +1,5 @@
 import { fetchSectorPerformance, fetchIndexDailyBars, fetchIndex5MinBars, fetchIndexSnapshots, fetchVixIvRankPercentile, computeVixTermStructure, fetchDailyMarketSummary, fetchPriorDayCloses, computeMarketBreadthFromSummary, fetchBenzingaAfterHoursMovers, type BenzingaCatalyst, type MarketBreadthMetrics } from "@/lib/providers/polygon";
-import { wsSpotPrice } from "@/lib/ws/stock-candle-store";
+import { getStockLiveCandle } from "@/lib/ws/stock-candle-store";
 import { fetchPolygonMarketNews } from "@/lib/providers/polygon-largo";
 import { macroEventsOnDateLive } from "@/lib/providers/macro-events";
 import { polygonConfigured, uwConfigured } from "@/lib/providers/config";
@@ -110,9 +110,12 @@ function mapBars(
 async function fetchVixTermPreferPolygon(): Promise<Record<string, unknown>[]> {
   if (polygonConfigured()) {
     const snaps = await fetchIndexSnapshots(["I:VIX", "I:VIX9D", "I:VIX3M"]).catch(() => ({} as Awaited<ReturnType<typeof fetchIndexSnapshots>>));
-    const spot = wsSpotPrice("VIX") ?? snaps["I:VIX"]?.price ?? null;
-    const near = wsSpotPrice("VIX9D") ?? snaps["I:VIX9D"]?.price ?? null;
-    const far = wsSpotPrice("VIX3M") ?? snaps["I:VIX3M"]?.price ?? null;
+    const _vix = getStockLiveCandle("VIX");
+    const spot = (_vix.current?.close ?? 0) > 0 ? _vix.current!.close : snaps["I:VIX"]?.price ?? null;
+    const _vix9d = getStockLiveCandle("VIX9D");
+    const near = (_vix9d.current?.close ?? 0) > 0 ? _vix9d.current!.close : snaps["I:VIX9D"]?.price ?? null;
+    const _vix3m = getStockLiveCandle("VIX3M");
+    const far = (_vix3m.current?.close ?? 0) > 0 ? _vix3m.current!.close : snaps["I:VIX3M"]?.price ?? null;
     const term = computeVixTermStructure(spot, near, far);
     if (term.structure !== "unknown") {
       return [
