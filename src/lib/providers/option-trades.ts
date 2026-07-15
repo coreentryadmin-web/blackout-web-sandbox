@@ -194,9 +194,18 @@ function isExcludedTrade(conditions: number[] | undefined): boolean {
   return false;
 }
 
-/** Resolve spot for an options root (index vs equity), null when unavailable. */
+/** Resolve spot for an options root (index vs equity), WS-first then REST fallback. */
 async function spotFor(optionsRoot: string): Promise<number> {
   const isIndex = optionsRoot.startsWith("I:");
+  // WS-first: check the live candle store before making a REST call.
+  try {
+    const { getStockLiveCandle } = await import("@/lib/ws/stock-candle-store");
+    const ticker = isIndex ? optionsRoot.replace(/^I:/, "") : optionsRoot;
+    const ws = getStockLiveCandle(ticker);
+    if (ws.current && ws.current.close > 0 && Date.now() - ws.updatedAt < 60_000) {
+      return ws.current.close;
+    }
+  } catch { /* fall through to REST */ }
   const snap = isIndex
     ? await fetchIndexSnapshot(optionsRoot).catch(() => null)
     : await fetchStockSnapshot(optionsRoot).catch(() => null);
