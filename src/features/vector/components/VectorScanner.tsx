@@ -42,7 +42,7 @@ const PRESETS: Array<{ key: ScreenerPreset; label: string; hint: string }> = [
 
 export function VectorScanner({ activeTicker, onSelect }: Props) {
   const { data, error, isLoading } = useSWR("vector-universe", fetchUniverse, {
-    refreshInterval: 15_000,
+    refreshInterval: 5_000,
     revalidateOnFocus: true,
   });
   const [preset, setPreset] = useState<ScreenerPreset>("all");

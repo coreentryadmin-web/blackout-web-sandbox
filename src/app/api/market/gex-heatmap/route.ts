@@ -17,6 +17,7 @@ import { isHeatmapOverlayAllowed } from "@/lib/heatmap-allowlist";
 import { dbConfigured, fetchLatestNighthawkEdition } from "@/lib/db";
 import { roundFloats, reconcileStrikeTotal } from "@/lib/round-floats";
 import { isEtCashRth } from "@/lib/et-market-hours";
+import { joinGexStrikeExpiryTicker } from "@/lib/ws/uw-socket";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -269,6 +270,10 @@ export async function GET(req: NextRequest) {
     if (lastForceAt.size > 200) lastForceAt.clear();
     lastForceAt.set(ticker, now0);
   }
+
+  // Activate UW WS GEX subscription for this ticker so walls update at WS cadence
+  // (~2-5s) instead of waiting for the Polygon REST cache to expire.
+  joinGexStrikeExpiryTicker(ticker);
 
   try {
     const heatmap = await fetchGexHeatmap(ticker, { forceRefresh });

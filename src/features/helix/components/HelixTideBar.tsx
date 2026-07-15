@@ -19,7 +19,7 @@ function fmtMoney(n: number): string {
  * Zero new API paths: reuses fetchSpxState → /api/market/spx/merged.
  */
 export function HelixTideBar({ className }: { className?: string }) {
-  const { data } = useSWR<SpxState>("helix-tide", fetchSpxState, { refreshInterval: 15_000 });
+  const { data } = useSWR<SpxState>("helix-tide", fetchSpxState, { refreshInterval: 5_000 });
 
   const tideBias = (data?.tide_bias ?? "").toLowerCase();
   const callPrem = data?.tide_call ?? null;

@@ -16,8 +16,8 @@ export const SPX_PLAY_POLL_MS = pollMs("NEXT_PUBLIC_SPX_PLAY_POLL_MS", 2_000);
 /** UW flow tape + GEX strikes overlay — default 2s. */
 export const SPX_FLOW_POLL_MS = pollMs("NEXT_PUBLIC_SPX_FLOW_POLL_MS", 2_000);
 
-/** Full desk rebuild (walls, levels, enrichment) — default 8s. */
-export const SPX_FULL_DESK_POLL_MS = pollMs("NEXT_PUBLIC_SPX_FULL_DESK_POLL_MS", 8_000);
+/** Full desk rebuild (walls, levels, enrichment) — default 5s. */
+export const SPX_FULL_DESK_POLL_MS = pollMs("NEXT_PUBLIC_SPX_FULL_DESK_POLL_MS", 5_000);
 
 /** REST pulse fallback when SSE disconnected — default 1s. */
 export const SPX_PULSE_REST_POLL_MS = pollMs("NEXT_PUBLIC_SPX_PULSE_REST_POLL_MS", 1_000);
@@ -25,8 +25,8 @@ export const SPX_PULSE_REST_POLL_MS = pollMs("NEXT_PUBLIC_SPX_PULSE_REST_POLL_MS
 /** REST pulse when SSE connected (spot still pushes @ 250ms) — default 10s. */
 export const SPX_PULSE_REST_SSE_POLL_MS = pollMs("NEXT_PUBLIC_SPX_PULSE_REST_SSE_POLL_MS", 10_000);
 
-/** Left-rail GEX/VEX matrix during RTH — default 6s (pairs with SPX_GEX_HEATMAP_CACHE_SEC). */
-export const SPX_MATRIX_POLL_RTH_MS = pollMs("NEXT_PUBLIC_SPX_MATRIX_POLL_RTH_MS", 6_000);
+/** Left-rail GEX/VEX matrix during RTH — default 5s (pairs with SPX_GEX_HEATMAP_CACHE_SEC). */
+export const SPX_MATRIX_POLL_RTH_MS = pollMs("NEXT_PUBLIC_SPX_MATRIX_POLL_RTH_MS", 5_000);
 
 /** Matrix off-hours / AH — default 20s. */
 export const SPX_MATRIX_POLL_OFF_MS = pollMs("NEXT_PUBLIC_SPX_MATRIX_POLL_OFF_MS", 20_000);

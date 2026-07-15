@@ -5,7 +5,7 @@ import { VECTOR_ORACLE_TICKERS, normalizeVectorTicker } from "./vector-ticker";
 import { hasLiveGexStrikeExpiry } from "@/lib/ws/uw-socket";
 
 /** Reference product cadence — gamma wall bead trail samples (live levels still ~1s). */
-export const DEFAULT_WALL_TRAIL_SAMPLE_SEC = 15;
+export const DEFAULT_WALL_TRAIL_SAMPLE_SEC = 5;
 
 /** Tickers with live UW WS GEX data sample at 5s (real-time, not interpolation). */
 export const ORACLE_WALL_TRAIL_SAMPLE_SEC = 5;

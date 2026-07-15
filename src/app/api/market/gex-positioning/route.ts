@@ -5,6 +5,7 @@ import { getGexPositioning } from "@/lib/providers/gex-positioning";
 import { fetchPolygonPositioningBundle } from "@/lib/providers/polygon-options-gex";
 import { analyzeStrikeGexRows, computeGammaFlip, gammaRegime, topGexWalls } from "@/lib/providers/gamma-desk";
 import { roundFloats } from "@/lib/round-floats";
+import { joinGexStrikeExpiryTicker } from "@/lib/ws/uw-socket";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -48,6 +49,8 @@ export async function GET(req: NextRequest) {
   // OPT-IN: the 0DTE intraday-adjusted lens (OI + volume model). Default OFF keeps this route the
   // documented LIGHT cache-reader; `?intraday=1` spends the bounded Trades tape + one gamma band.
   const wantIntraday = /^(1|true|yes)$/i.test(req.nextUrl.searchParams.get("intraday") ?? "");
+
+  joinGexStrikeExpiryTicker(ticker);
 
   try {
     const positioning = await getGexPositioning(ticker, {
