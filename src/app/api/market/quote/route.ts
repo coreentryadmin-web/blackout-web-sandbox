@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { authorizeMarketDeskApi } from "@/lib/market-api-auth";
 import { ensureDataSockets } from "@/lib/ws/init-data-sockets";
 import { indexStore } from "@/lib/ws/polygon-socket";
+import { wsSpotPrice } from "@/lib/ws/stock-candle-store";
 import { resolveOptionsRoot } from "@/lib/providers/polygon-options-gex";
 import { fetchStockSnapshot, fetchIndexSnapshot } from "@/lib/providers/polygon";
 import { sharedCacheGet, sharedCacheSet } from "@/lib/shared-cache";
@@ -204,8 +205,24 @@ export async function GET(req: NextRequest) {
       // else: store cold/stale → fall through to the shared-cached index REST snapshot.
     }
 
-    // ── REST path: stocks/ETFs, plus index roots without a live WS feed (NDX/RUT)
-    //    or a cold index store. Shared-cached ~1.5s so 500 users → ~1 upstream/1.5s. ──
+    // ── WS path: stock/ETF tickers from the A.* stock candle store. ──
+    if (!isIndex) {
+      const wsPrice = wsSpotPrice(ticker);
+      if (wsPrice != null) {
+        const payload: QuotePayload = {
+          available: true,
+          ticker,
+          price: wsPrice,
+          change_pct: 0,
+          source: "ws",
+          asof: new Date().toISOString(),
+        };
+        return NextResponse.json(payload, { headers: noStore });
+      }
+    }
+
+    // ── REST path: stocks/ETFs without a live WS tick, plus index roots without
+    //    a live WS feed (NDX/RUT) or a cold index store. ──
     const payload = await getRestQuote(ticker, optionsRoot, isIndex);
     if (payload) return NextResponse.json(payload, { headers: noStore });
 

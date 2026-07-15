@@ -145,6 +145,22 @@ export function getStockLiveCandle(ticker: string): CandleSnapshot {
   return best;
 }
 
+/**
+ * Quick WS spot price check — returns the latest close or null.
+ * Marks the ticker as demanded (enables on-demand Redis writes for cross-replica
+ * fallback) and checks freshness against maxAgeMs (default 60s).
+ * Local-memory only — no Redis roundtrip, no async. Callers should fall through
+ * to REST when this returns null.
+ */
+export function wsSpotPrice(ticker: string, maxAgeMs = 60_000): number | null {
+  const sym = ticker.toUpperCase();
+  const s = stores.get(sym);
+  if (!s?.current || !(s.current.close > 0)) return null;
+  if (Date.now() - s.updatedAt >= maxAgeMs) return null;
+  s.demanded = true;
+  return s.current.close;
+}
+
 /** How many tickers are in memory + how many are being written to Redis. */
 export function getStockCandleStoreStats(): { total: number; demanded: number } {
   let demanded = 0;

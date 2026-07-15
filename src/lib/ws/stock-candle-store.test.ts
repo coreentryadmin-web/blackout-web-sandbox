@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { recordStockTick, getStockLiveCandle, getStockCandleStoreStats, _resetStockCandleStoreForTest } from "./stock-candle-store";
+import { recordStockTick, getStockLiveCandle, getStockCandleStoreStats, wsSpotPrice, _resetStockCandleStoreForTest } from "./stock-candle-store";
 
 test("recordStockTick: first tick opens a bar with open=high=low=close", () => {
   _resetStockCandleStoreForTest();
@@ -145,4 +145,25 @@ test("getStockCandleStoreStats: tracks total tickers in memory", () => {
   }
   assert.equal(getStockCandleStoreStats().total, 100);
   assert.equal(getStockCandleStoreStats().demanded, 0);
+});
+
+test("wsSpotPrice: returns price for fresh ticker", () => {
+  _resetStockCandleStoreForTest();
+  const atMs = Date.parse("2026-07-15T14:43:00.000Z");
+  recordStockTick("MSFT", 460, undefined, atMs);
+  const price = wsSpotPrice("MSFT");
+  assert.equal(price, 460);
+  assert.equal(getStockCandleStoreStats().demanded, 1);
+});
+
+test("wsSpotPrice: returns null for unknown ticker", () => {
+  _resetStockCandleStoreForTest();
+  assert.equal(wsSpotPrice("UNKNOWN"), null);
+});
+
+test("wsSpotPrice: normalizes to uppercase", () => {
+  _resetStockCandleStoreForTest();
+  const atMs = Date.parse("2026-07-15T14:44:00.000Z");
+  recordStockTick("GOOG", 195, undefined, atMs);
+  assert.equal(wsSpotPrice("goog"), 195);
 });

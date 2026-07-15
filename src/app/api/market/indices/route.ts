@@ -4,6 +4,7 @@ import { fetchIndexSnapshots } from "@/lib/providers/polygon";
 import { polygonConfigured } from "@/lib/providers/config";
 import { serverCache, TTL } from "@/lib/server-cache";
 import { roundFloats } from "@/lib/round-floats";
+import { wsSpotPrice } from "@/lib/ws/stock-candle-store";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -29,8 +30,14 @@ export async function GET(req: NextRequest) {
       const data = await fetchIndexSnapshots([SPX, VIX]);
       return { snaps: data, fetched_at: new Date().toISOString() };
     });
-    const spx = cached.snaps[SPX];
-    const vix = cached.snaps[VIX];
+    let spx = cached.snaps[SPX];
+    let vix = cached.snaps[VIX];
+
+    // Overlay fresher WS prices when available (indices WS feeds into the candle store).
+    const wsSpx = wsSpotPrice("SPX");
+    if (wsSpx != null && spx) spx = { ...spx, price: wsSpx };
+    const wsVix = wsSpotPrice("VIX");
+    if (wsVix != null && vix) vix = { ...vix, price: wsVix };
 
     if (!spx && !vix) {
       return NextResponse.json(

@@ -7,6 +7,7 @@ import {
 import { polygonConfigured } from "@/lib/providers/config";
 import { fetchPolygonPositioningBundle } from "@/lib/providers/polygon-options-gex";
 import { fetchStockSnapshot } from "@/lib/providers/polygon";
+import { wsSpotPrice } from "@/lib/ws/stock-candle-store";
 import { getGexPositioning } from "@/lib/providers/gex-positioning";
 
 export type PositioningSummary = {
@@ -129,6 +130,7 @@ export async function fetchPositioningSummary(ticker: string): Promise<Positioni
   }
 
   // No Polygon data — return empty summary with current price.
-  const snapshot = await fetchStockSnapshot(sym).catch(() => null);
-  return buildSummary([], snapshot?.price ?? 0, null, "polygon");
+  const ws = wsSpotPrice(sym);
+  const price = ws ?? (await fetchStockSnapshot(sym).catch(() => null))?.price ?? 0;
+  return buildSummary([], price, null, "polygon");
 }

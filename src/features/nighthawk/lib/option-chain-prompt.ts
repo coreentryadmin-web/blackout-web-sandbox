@@ -5,6 +5,7 @@ import {
   fetchPolygonOiByExpiry,
 } from "@/lib/providers/polygon-options-gex";
 import { fetchStockSnapshot } from "@/lib/providers/polygon";
+import { wsSpotPrice } from "@/lib/ws/stock-candle-store";
 import { fetchUwOptionChains } from "@/lib/providers/unusual-whales";
 import { fetchOptionsUnifiedSnapshot, type OptionSnapshot } from "@/lib/providers/options-snapshot";
 import type { PlaybookPlay } from "./types";
@@ -252,6 +253,8 @@ export function formatChainTableText(ticker: string, price: number, rows: ChainS
 async function resolveSpot(ticker: string, dossier?: TickerDossier): Promise<number> {
   const fromDossier = dossier?.tech?.price;
   if (fromDossier != null && fromDossier > 0) return fromDossier;
+  const ws = wsSpotPrice(ticker);
+  if (ws != null) return ws;
   const snap = await fetchStockSnapshot(ticker).catch(() => null);
   return snap?.price ?? 0;
 }
