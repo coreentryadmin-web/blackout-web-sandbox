@@ -219,14 +219,25 @@ export async function fetchPolygonMtfTechnicals(ticker: string) {
   const fromHour = priorEtYmd(30);
   const fromMin = today;
 
-  const [daily, hourly, minute15, prevDay] = await Promise.all([
+  const [daily, hourly, minute15, prevDay, lastTrade, lastNbbo] = await Promise.all([
     fetchAggBars(polygonSym, 1, "day", fromDaily, today, "120"),
     fetchAggBars(polygonSym, 1, "hour", fromHour, today, "500"),
     fetchAggBars(polygonSym, 15, "minute", fromMin, today, "500"),
     fetchPreviousDayBar(polygonSym),
+    fetchStockLastTrade(polygonSym),
+    fetchStockLastNbbo(polygonSym),
   ]);
 
-  const price = daily.at(-1)?.c ?? hourly.at(-1)?.c ?? 0;
+  // Off-hours price fallback chain: daily → hourly → last trade → last NBBO → prior close
+  let price =
+    daily.at(-1)?.c ??
+    hourly.at(-1)?.c ??
+    (lastTrade?.p != null ? Number(lastTrade.p) : null) ??
+    (lastNbbo != null && typeof lastNbbo.ask === "number" && typeof lastNbbo.bid === "number"
+      ? (lastNbbo.ask + lastNbbo.bid) / 2
+      : null) ??
+    prevDay?.c ??
+    0;
 
   const [ema20d, ema50d, ema200d, rsi14d, macdD, ema20h, rsi14h, ema20m, rsi14m] = await Promise.all([
     fetchPolygonEma(polygonSym, 20, "day"),
@@ -244,15 +255,24 @@ export async function fetchPolygonMtfTechnicals(ticker: string) {
   const hourlyLv = computeLevelsFromBars(hourly, price);
   const minLv = computeLevelsFromBars(minute15, price);
 
+  // ATR14 fallback: daily (preferred) → hourly (off-hours) → prevDay range proxy
   let atr14: number | null = null;
-  if (daily.length >= 15) {
+  const computeAtrFromBars = (bars: AggBar[], window = 14): number | null => {
+    if (bars.length < window) return null;
     const trs: number[] = [];
-    for (let i = 1; i < daily.length; i++) {
-      const cur = daily[i];
-      const prev = daily[i - 1];
+    for (let i = 1; i < bars.length; i++) {
+      const cur = bars[i]!;
+      const prev = bars[i - 1]!;
       trs.push(Math.max(cur.h - cur.l, Math.abs(cur.h - prev.c), Math.abs(cur.l - prev.c)));
     }
-    atr14 = Number((trs.slice(-14).reduce((a, b) => a + b, 0) / 14).toFixed(2));
+    return Number((trs.slice(-window).reduce((a, b) => a + b, 0) / window).toFixed(2));
+  };
+
+  atr14 = computeAtrFromBars(daily) ?? computeAtrFromBars(hourly);
+  // Off-hours fallback: if hourly data insufficient, estimate ATR from prior day's range
+  if (!atr14 && prevDay) {
+    const prevRange = prevDay.h - prevDay.l;
+    atr14 = Number(prevRange.toFixed(2));
   }
 
   const trendStack =
