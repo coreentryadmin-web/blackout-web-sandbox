@@ -22,6 +22,13 @@ export type PlaybookPlay = {
   score?: number;
   flow_streak_days?: number;
   iv_rank?: number;
+  /** PR-N4: true when the morning confirmation INVALIDATED this play and the one-way pull
+   *  latch engaged (nighthawk_play_outcomes.pulled, merged at read time by
+   *  pull-overlay.ts). A pulled play stays visible at its published rank but must be
+   *  presented as PULLED (non-actionable) with its reason — never hidden, never deleted. */
+  pulled?: boolean;
+  /** Member-facing reason the play was pulled (the verdict's evidence sentence). */
+  pulled_reason?: string;
 };
 
 export type PlayExplainRequest = {
@@ -88,15 +95,45 @@ export type NightHawkPlayStatusResponse = {
   summary?: { confirmed: number; degraded: number; invalidated: number };
 };
 
+/** PR-N2: one grading-methodology segment of the record, as served to members. The two
+ *  segments are reported side by side and never aggregated — see analytics.ts's
+ *  NighthawkRecordSegment (this is its rounded wire shape). */
+export type NightHawkRecordSegmentWire = {
+  methodology: string;
+  label: string;
+  resolved: number;
+  scoreable: number;
+  wins: number;
+  losses: number;
+  opens: number;
+  ambiguous: number;
+  unfilled: number;
+  pulled: number;
+  stop_data_unavailable: number;
+  /** null when nothing is scoreable — never a fake 0%. */
+  win_rate_pct: number | null;
+  avg_return_pct: number | null;
+  /** scoreable < LOW_N_THRESHOLD — the UI must badge this segment's ratios. */
+  low_n: boolean;
+};
+
 export type NightHawkRecordResponse = {
   available: boolean;
   window_days: number;
   total_resolved: number;
   pending_count: number;
+  /** PR-N2: headline ratios cover CURRENT-methodology scoreable rows only. */
   win_rate_pct: number;
   profitable_rate_pct: number;
   avg_return_pct: number;
-  by_conviction: Array<{ conviction: string; n: number; win_rate_pct: number }>;
+  /** PR-N2 additive fields — optional so a stale SWR cache of the old payload still
+   *  type-checks; the strip falls back to the legacy rendering when absent. */
+  methodology?: string;
+  unfilled_count?: number;
+  pulled_count?: number;
+  stop_data_unavailable_count?: number;
+  segments?: { current: NightHawkRecordSegmentWire; legacy: NightHawkRecordSegmentWire };
+  by_conviction: Array<{ conviction: string; n: number; win_rate_pct: number; low_n?: boolean }>;
 };
 
 export type AgentFilterValues = Record<string, string | number | boolean>;

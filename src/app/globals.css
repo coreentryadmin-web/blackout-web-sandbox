@@ -8385,6 +8385,21 @@ body::before {
     min-height: 0;
   }
 
+  /* WEB PANEL STRETCH (2026-07-13, member-directed "stretch the three bottom panels"): the
+     site nav is FIXED and cleared by the shell's own padding-top, i.e. the nav clearance
+     lives INSIDE the border box — so min-height must be the full 100dvh for the flex chain
+     (shell → desk-fill → triple) to reach the viewport bottom. The previous
+     calc(100dvh - var(--nav-offset)) double-counted the nav and ended the desk 88px short
+     (dead band under the panels on every screen taller than the content). pb-8's 2rem was
+     likewise dead space on a full-bleed desk — keep a slim 0.75rem edge. This also makes the
+     grid absorb whatever height the (independently compacting) header ribbon gives back:
+     panels grow via flex, not via any header-height assumption. iOS native shell keeps its
+     own --ios-viewport-h fill (ios-native-viewport.css), hence the :not() scope. */
+  html:not(.ios-native-shell) .ios-desk-shell.ios-native-page-spx {
+    min-height: 100dvh;
+    padding-bottom: 0.75rem;
+  }
+
   .spx-sniper-desk-fill {
     @apply flex flex-1 flex-col min-h-0 w-full gap-0;
   }
@@ -8418,8 +8433,13 @@ body::before {
 
   .spx-sniper-desk-fill .spx-sniper-triple {
     @apply flex-1 min-h-0 gap-1;
-    /* flex-1 fills the shell above; keep a viewport floor when chrome math drifts */
-    min-height: min(78vh, calc(100dvh - var(--nav-offset) - 7.5rem));
+    /* flex-1 does the REAL filling now that the shell is a full 100dvh — this floor is only
+       a collapse guard for when chrome math drifts. It must stay BELOW the space actually
+       available under the header + session time bar (even pre-header-compaction), or the
+       floor itself forces page-level scroll at 1080p. In the calc, var(--nav-offset) is the
+       shell's own padding-top; 13rem budgets the header ribbon + time bar + bottom edge
+       (measured 12.1rem with the pre-compaction header — 11rem forced a 2px scroll at 900px). */
+    min-height: min(70vh, calc(100dvh - var(--nav-offset) - 13rem));
   }
 
   /* Compact desk — tighter stats, panel chrome, matrix cells, column gutters */
@@ -8670,6 +8690,111 @@ body::before {
     @apply text-xs;
   }
 
+  /* ── Ribbon single-strip polish (fix/largo-hardening, user spec 2026-07-13) ──
+     APPEND-ONLY additions. One numeric strip across the header top:
+     [EMA][SMA][Session] blocks (compacted to pill height) then the stat pills.
+     Fills the band (no dead middle), one line at ≥1440px, graceful wrap below,
+     never a horizontal scroll. Fluid type keeps values readable without overflow. */
+
+  .spx-desk-top-stats--strip {
+    justify-content: flex-start;
+    align-items: stretch;
+    gap: clamp(0.25rem, 0.4vw, 0.5rem);
+  }
+
+  .spx-desk-top-stats--strip .spx-hero-stat-pill {
+    /* Uniform pill silhouette: consistent height (tap-target floor), centered content. */
+    min-height: 2.5rem;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    padding: 0.25rem clamp(0.375rem, 0.5vw, 0.625rem);
+  }
+
+  .spx-desk-top-stats--strip .spx-hero-stat-label {
+    /* Slightly stronger label contrast; tighter gap to the value line. */
+    font-size: clamp(8px, 0.55vw, 10px);
+    margin-bottom: 0.125rem;
+    color: rgba(186, 230, 253, 0.95);
+  }
+
+  .spx-desk-top-stats--strip .spx-hero-stat-value,
+  .spx-desk-top-stats--strip .spx-hero-metric-row-value {
+    /* Value type steps up with viewport width but can never force overflow. */
+    font-size: clamp(10px, 0.72vw, 14px);
+  }
+
+  .spx-desk-top-stats--strip .spx-hero-metric-row-label {
+    font-size: clamp(8px, 0.55vw, 10px);
+  }
+
+  /* Inline metric group (EMA/SMA/Session compacted to pill height). */
+  .spx-hero-stat-group-row {
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    gap: clamp(0.375rem, 0.6vw, 0.75rem);
+    flex-wrap: nowrap;
+  }
+
+  .spx-hero-stat-group-item {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 0.25rem;
+    white-space: nowrap;
+  }
+
+  @media (max-width: 640px) {
+    /* Phones: the 4-value Session group would exceed ~340px — let items wrap inside
+       the pill instead of ever forcing a horizontal scroll. */
+    .spx-hero-stat-group-row {
+      flex-wrap: wrap;
+      row-gap: 0.125rem;
+    }
+  }
+
+  @media (min-width: 1440px) {
+    /* One line at desktop: no wrap; leftover width distributes between items so the
+       strip spans the whole band instead of hugging one corner. Text pills may
+       shrink/truncate as a last resort; metric groups keep their numbers intact. */
+    .spx-desk-top-stats--strip {
+      /* OVERFLOW-SAFE (2026-07-14): nowrap+space-between spilled ~111px of overflowing
+         content LEFT over the identity block once the spot pill joined the strip
+         (live-measured: first child x=96 vs container x=207 at 1920). Wrap is the
+         safety valve — with the Session group compacted to 2x2 and the slimmer spot
+         pill the strip fits one line at 1920; if a future addition overflows again it
+         wraps cleanly instead of covering the product title. */
+      flex-wrap: wrap;
+      justify-content: flex-start;
+      column-gap: clamp(0.25rem, 0.35vw, 0.45rem);
+    }
+
+    .spx-desk-top-stats--strip .spx-hero-stat-pill {
+      min-width: 0;
+    }
+
+    .spx-desk-top-stats--strip .spx-hero-stat-pill--group {
+      flex: 0 0 auto;
+    }
+  }
+
+  /* Stale-honesty: frozen tape (feed_stalled) dims every value tone — opacity/filter
+     only, zero layout shift — so last-good numbers never wear live-confidence color. */
+  .spx-hero-stats-stale .spx-hero-stat-value,
+  .spx-hero-stats-stale .spx-hero-metric-row-value {
+    opacity: 0.55;
+    filter: saturate(0.5);
+    transition: opacity 200ms ease, filter 200ms ease;
+  }
+
+  /* "VW" affordance on the VWAP pill when the value is truly volume-weighted. */
+  .spx-hero-vw-badge {
+    @apply ml-1 inline-flex items-center rounded-sm border border-emerald-400/40 bg-emerald-400/10 px-0.5 font-mono text-[8px] font-bold tracking-wider text-emerald-300;
+    line-height: 1.2;
+    vertical-align: middle;
+    letter-spacing: 0.08em;
+  }
+
   .spx-sniper-command .spx-sniper-title {
     @apply font-anton text-4xl md:text-6xl leading-none tracking-wide uppercase;
   }
@@ -8799,6 +8924,335 @@ body::before {
 
   .spx-sniper-triple--desk-v2 .spx-trade-alerts-stack--plays {
     @apply gap-0;
+  }
+
+  /* Desk v3 (2026-07-13, member-directed consolidation): Largo | Matrix | embedded SPX Vector
+     chart (chart-only — the Trade Alerts + Slayer terminal columns are gone; NO terminal on SPX
+     Slayer). Applied ON TOP of --desk-v2, which keeps the shared rail styling; v3 only swaps the
+     grid template from four rails to three and styles the vector column. Declared AFTER the v2
+     rules so the equal-specificity template override wins in the cascade. */
+  @media (min-width: 1024px) {
+    .spx-sniper-triple.spx-sniper-triple--desk-v3 {
+      /* Chart is the hero: Largo + matrix stay readable fixed-ish rails, Vector takes the rest.
+         minmax(0, …) on the chart track so the canvas can shrink — no horizontal overflow. */
+      grid-template-columns: minmax(280px, 0.85fr) minmax(300px, 0.95fr) minmax(0, 2.2fr);
+      grid-template-areas: "largo matrix vector";
+    }
+
+    .spx-sniper-triple--desk-v3 .spx-sniper-vector-col {
+      grid-area: vector;
+    }
+  }
+
+  .spx-sniper-triple--desk-v3 .spx-sniper-vector-col {
+    @apply flex flex-col min-h-0 h-full min-w-0 overflow-hidden;
+  }
+
+  /* Fill the desk column instead of the standalone page's viewport-based inline height
+     (calc(100vh - 132px) assumes only the site nav above the chart; the flagship desk adds the
+     Slayer header + banners, so that math overflows here). The flex chain below gives the canvas
+     wrapper a definite height, and !important beats the element's inline style. */
+  .spx-sniper-vector-col .vector-embed-chart-only,
+  .spx-sniper-vector-col .vector-chart-wrap {
+    @apply flex flex-col flex-1 min-h-0 min-w-0;
+  }
+
+  .spx-sniper-vector-col .vector-chart-wrap > .relative {
+    flex: 1 1 0;
+    min-height: 0;
+  }
+
+  .spx-sniper-vector-col .vector-chart-canvas {
+    height: 100% !important;
+    min-height: 420px !important;
+  }
+
+  /* ── SESSION TIME BAR (desk upgrade #2, 2026-07-13): thin full-width RTH timeline under the
+     desk header — playbook/macro window bands (two lanes), Largo event dots, now-cursor. ── */
+  .spx-desk-timebar-row {
+    @apply flex w-full items-center gap-2 min-w-0;
+    /* The desk-fill stack is gap-0 — the bar owns its own slim gutter so the header above
+       and the panel grid below don't butt against it (and nothing more: every extra px
+       here is height the three panels lose). */
+    margin: 0.3rem 0 0.35rem;
+  }
+
+  .spx-desk-timebar {
+    @apply relative flex-1 min-w-0 overflow-hidden rounded border border-white/10;
+    height: 28px;
+    background: rgba(255, 255, 255, 0.03);
+  }
+
+  .spx-desk-timebar-edge {
+    @apply shrink-0 font-mono text-[9px] tabular-nums text-white/40;
+  }
+
+  .spx-desk-timebar-tick {
+    @apply absolute top-0 bottom-0 w-px bg-white/[0.07];
+  }
+
+  .spx-desk-timebar-band {
+    @apply absolute overflow-hidden rounded-[2px] border;
+    top: 2px;
+    height: calc(50% - 3px);
+  }
+
+  .spx-desk-timebar-band[data-lane="1"] {
+    top: calc(50% + 1px);
+  }
+
+  .spx-desk-timebar-band span {
+    @apply block px-1 font-mono text-[8px] font-bold uppercase tracking-[0.08em] leading-[10px] whitespace-nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .spx-desk-timebar-band--or {
+    background: rgba(251, 191, 36, 0.14);
+    border-color: rgba(251, 191, 36, 0.35);
+    color: rgba(252, 211, 77, 0.9);
+  }
+
+  .spx-desk-timebar-band--drift {
+    background: rgba(56, 189, 248, 0.12);
+    border-color: rgba(56, 189, 248, 0.3);
+    color: rgba(125, 211, 252, 0.9);
+  }
+
+  .spx-desk-timebar-band--power {
+    background: rgba(0, 230, 118, 0.12);
+    border-color: rgba(0, 230, 118, 0.32);
+    color: rgba(110, 231, 183, 0.9);
+  }
+
+  .spx-desk-timebar-band--macro {
+    background: rgba(244, 63, 94, 0.13);
+    border-color: rgba(244, 63, 94, 0.35);
+    color: rgba(253, 164, 175, 0.9);
+  }
+
+  .spx-desk-timebar-dot {
+    @apply absolute rounded-full;
+    bottom: 3px;
+    width: 5px;
+    height: 5px;
+    transform: translateX(-50%);
+    background: rgba(125, 211, 252, 0.9);
+  }
+
+  .spx-desk-timebar-dot--bull {
+    background: #00e676;
+    box-shadow: 0 0 4px rgba(0, 230, 118, 0.7);
+  }
+
+  .spx-desk-timebar-dot--bear {
+    background: #ff2d55;
+    box-shadow: 0 0 4px rgba(255, 45, 85, 0.7);
+  }
+
+  .spx-desk-timebar-dot--warn {
+    background: #fbbf24;
+    box-shadow: 0 0 4px rgba(251, 191, 36, 0.7);
+  }
+
+  .spx-desk-timebar-now {
+    @apply absolute top-0 bottom-0 w-px;
+    background: #22d3ee;
+    box-shadow: 0 0 6px rgba(34, 211, 238, 0.8);
+  }
+
+  .spx-desk-timebar-phase {
+    @apply absolute inset-0 flex items-center justify-center font-mono text-[9px] uppercase tracking-[0.16em] text-white/50;
+  }
+
+  .spx-desk-focus-btn {
+    @apply hidden shrink-0 rounded border border-white/15 px-2 py-1 font-mono text-[10px] uppercase tracking-[0.14em] text-sky-300/80 transition-colors lg:inline-flex;
+  }
+
+  .spx-desk-focus-btn:hover {
+    @apply border-cyan-400/50 text-cyan-200;
+  }
+
+  .spx-desk-focus-btn--active {
+    @apply border-cyan-400/70 bg-cyan-500/15 text-cyan-200;
+  }
+
+  /* ── SHARED PRICE AXIS strike ladder (desk upgrade #1): bars extend left(−)/right(+) from a
+     center spine; row y-positions come from the embedded chart's live price scale. ── */
+  .spx-strike-ladder {
+    @apply relative flex-1 min-h-0 overflow-hidden;
+  }
+
+  .spx-strike-ladder-spine {
+    @apply absolute top-0 bottom-0 w-px bg-white/10;
+    left: 50%;
+  }
+
+  .spx-strike-ladder-row {
+    @apply absolute left-0 right-0;
+    height: 0;
+  }
+
+  .spx-strike-ladder-bar {
+    @apply absolute rounded-[1px];
+    top: 0;
+    transform: translateY(-50%);
+  }
+
+  .spx-strike-ladder-bar--pos {
+    left: calc(50% + 1px);
+    background: rgba(52, 211, 153, 0.65);
+  }
+
+  .spx-strike-ladder-bar--neg {
+    right: calc(50% + 1px);
+    background: rgba(251, 113, 133, 0.65);
+  }
+
+  .spx-strike-ladder-bar--vex.spx-strike-ladder-bar--pos {
+    background: rgba(125, 211, 252, 0.65);
+  }
+
+  .spx-strike-ladder-bar--vex.spx-strike-ladder-bar--neg {
+    background: rgba(251, 113, 133, 0.55);
+  }
+
+  .spx-strike-ladder-strike {
+    @apply absolute font-mono text-[9px] tabular-nums text-sky-300/70;
+    left: 2px;
+    top: 0;
+    transform: translateY(-50%);
+    line-height: 1;
+  }
+
+  .spx-strike-ladder-row--king .spx-strike-ladder-strike {
+    @apply font-bold text-amber-300;
+  }
+
+  .spx-strike-ladder-row--king .spx-strike-ladder-bar {
+    box-shadow: 0 0 8px rgba(251, 191, 36, 0.75);
+  }
+
+  .spx-strike-ladder-row--call-wall .spx-strike-ladder-strike {
+    color: rgba(110, 231, 183, 0.95);
+  }
+
+  .spx-strike-ladder-row--put-wall .spx-strike-ladder-strike {
+    color: rgba(253, 164, 175, 0.95);
+  }
+
+  .spx-strike-ladder-king-star {
+    @apply absolute text-[11px] leading-none text-amber-400;
+    right: 2px;
+    top: 0;
+    transform: translateY(-50%);
+    text-shadow: 0 0 6px rgba(251, 191, 36, 0.9);
+  }
+
+  /* ONE spot line across the ladder at the chart's exact spot pixel height. */
+  .spx-strike-ladder-spot {
+    @apply absolute left-0 right-0;
+    top: 0;
+    height: 0;
+    border-top: 1px solid rgba(34, 211, 238, 0.85);
+    box-shadow: 0 0 6px rgba(34, 211, 238, 0.6);
+  }
+
+  .spx-strike-ladder-spot-label {
+    @apply absolute rounded-sm px-1 font-mono text-[9px] font-bold tabular-nums;
+    right: 2px;
+    top: -1px;
+    transform: translateY(-50%);
+    color: #67e8f9;
+    background: rgba(8, 8, 14, 0.9);
+    border: 1px solid rgba(34, 211, 238, 0.4);
+  }
+
+  .spx-strike-ladder-flip {
+    @apply absolute left-0 right-0;
+    top: 0;
+    height: 0;
+    border-top: 1px dashed rgba(34, 211, 238, 0.35);
+  }
+
+  .spx-strike-ladder-flip span {
+    @apply absolute font-mono text-[8px] uppercase tracking-wider;
+    left: 2px;
+    top: 1px;
+    color: rgba(34, 211, 238, 0.6);
+  }
+
+  .spx-strike-ladder-empty {
+    @apply absolute inset-0 flex items-center justify-center text-center px-2;
+  }
+
+  /* ── FOCUS MODE (desk upgrade #3): Largo + ladder collapse to 3rem rails, chart fills.
+     Focus track list keeps the minmax() structure of the base template so supporting
+     browsers interpolate the 200ms grid transition; others snap (acceptable). ── */
+  @media (min-width: 1024px) {
+    .spx-sniper-triple.spx-sniper-triple--desk-v3 {
+      transition: grid-template-columns 200ms ease;
+    }
+
+    .spx-sniper-triple.spx-sniper-triple--desk-v3.spx-sniper-triple--focus {
+      grid-template-columns: minmax(3rem, 0fr) minmax(3rem, 0fr) minmax(0, 1fr);
+    }
+  }
+
+  .spx-largo-focus-rail {
+    @apply relative flex h-full min-h-0 w-full flex-col items-center gap-2 overflow-hidden rounded border border-white/10 py-2;
+    background: rgba(255, 255, 255, 0.02);
+  }
+
+  .spx-largo-focus-rail-label {
+    @apply font-mono text-[8px] font-bold tracking-[0.2em] text-purple-light/70;
+    writing-mode: vertical-rl;
+  }
+
+  .spx-largo-focus-rail-strip {
+    @apply w-1.5 flex-1 rounded-full;
+    background: rgba(148, 163, 184, 0.4);
+  }
+
+  .spx-largo-focus-rail--bullish .spx-largo-focus-rail-strip {
+    background: linear-gradient(180deg, rgba(0, 230, 118, 0.9), rgba(0, 230, 118, 0.25));
+    box-shadow: 0 0 10px rgba(0, 230, 118, 0.45);
+  }
+
+  .spx-largo-focus-rail--bearish .spx-largo-focus-rail-strip {
+    background: linear-gradient(180deg, rgba(255, 45, 85, 0.9), rgba(255, 45, 85, 0.25));
+    box-shadow: 0 0 10px rgba(255, 45, 85, 0.45);
+  }
+
+  .spx-matrix-focus-rail {
+    @apply flex h-full min-h-0 w-full flex-col overflow-hidden rounded border border-white/10 py-1;
+    background: rgba(255, 255, 255, 0.02);
+  }
+
+  .spx-matrix-focus-rail .spx-strike-ladder--focus {
+    @apply flex-1 min-h-0;
+  }
+
+  .spx-strike-ladder-marker {
+    @apply absolute rounded-full;
+    left: 50%;
+    top: 0;
+    width: 8px;
+    height: 8px;
+    transform: translate(-50%, -50%);
+  }
+
+  .spx-strike-ladder-marker--king {
+    background: #fbbf24;
+    box-shadow: 0 0 8px rgba(251, 191, 36, 0.9);
+  }
+
+  .spx-strike-ladder-marker--pos {
+    background: rgba(52, 211, 153, 0.9);
+  }
+
+  .spx-strike-ladder-marker--neg {
+    background: rgba(251, 113, 133, 0.9);
   }
 
   .spx-sniper-plays-col {
@@ -17425,3 +17879,33 @@ body::before {
 .bo-static.bo-nighthawk .nh-sweep{transform:rotate(-32deg)} .bo-static.bo-nighthawk .nh-wedge-fill{opacity:.35}
 .bo-static.bo-spx .bo-scan,.bo-static.bo-grid .bo-scan{opacity:.35}
 .bo-static.bo-heatmap .c.d1,.bo-static.bo-heatmap .c.d2{opacity:.9} .bo-static.bo-heatmap .c.d3{opacity:.6}
+
+/* STRIP SPOT (2026-07-14, user-directed): live SPX price leads the header strip — bigger than
+   pill values (it's the desk's anchor number) but pill-height so the one-line strip holds. */
+.spx-strip-spot { min-width: 8rem; }
+.spx-strip-spot .spx-hero-stat-value-row { align-items: baseline; gap: 0.4rem; }
+.spx-strip-spot-price { font-size: clamp(1.05rem, 1vw + 0.5rem, 1.35rem); font-weight: 700; line-height: 1; }
+.spx-strip-spot-pct { font-size: clamp(0.7rem, 0.5vw + 0.4rem, 0.8rem); font-weight: 600; opacity: 0.9; }
+
+/* MATRIX REFRESH (2026-07-14, user-directed): icon button in the Dealer Gamma Map title bar —
+   revalidates the matrix SWR key only and recenters on spot. Spins while validating. */
+.spx-matrix-refresh-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 1.5rem; height: 1.5rem; border-radius: 0.45rem;
+  border: 1px solid rgba(34, 211, 238, 0.35); color: rgb(34 211 238 / 0.85);
+  font-size: 0.85rem; line-height: 1; transition: color 120ms, border-color 120ms;
+}
+.spx-matrix-refresh-btn:hover { color: rgb(103 232 249); border-color: rgba(103, 232, 249, 0.6); }
+.spx-matrix-refresh-btn--spinning { animation: spx-matrix-refresh-spin 0.9s linear infinite; }
+@keyframes spx-matrix-refresh-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .spx-matrix-refresh-btn--spinning { animation: none; opacity: 0.6; } }
+
+
+  /* Session group as a 2x2 grid inside its pill (HOD/LOD | PDH/PDL) — reclaims ~150px
+     of strip width so the one-line layout fits at 1920 with the spot pill present. */
+  .spx-hero-stat-group-row--grid2 {
+    display: grid;
+    grid-template-columns: auto auto;
+    column-gap: clamp(0.375rem, 0.5vw, 0.625rem);
+    row-gap: 0.0625rem;
+  }

@@ -9,6 +9,7 @@
 import { KNOWN_TICKERS } from "@/lib/largo/question-intent";
 import { lookupGlossary } from "./glossary";
 import { namesUnsupportedHorizon } from "./vector-read-fallback";
+import { parseShift } from "./scenario-read";
 
 export type BieIntent =
   | "zerodte_plays"
@@ -27,7 +28,10 @@ export type BieIntent =
   | "verdict"
   | "compound_lookup"
   | "system_diagnostic"
-  | "record_read";
+  | "record_read"
+  | "cortex_read"
+  | "nighthawk_edition"
+  | "scenario";
 
 export type BieRoute = {
   intent: BieIntent;
@@ -74,6 +78,12 @@ const ADVICE_RE =
   /\b(should i|would you|can i|worth (buying|selling)|buy|sell|hold|trim|into earnings|before earnings|after earnings)\b/i;
 
 const COMPARE_RE = /\b(compare|versus|vs\.?)\b/i;
+/** Comparative cues that make a TWO-ticker question a compare even without a compare/vs keyword —
+ *  "is SPX or NVDA closer to its flip?", "which of SPY or QQQ is stronger?". Deliberately weak on
+ *  its own: the compare branch additionally requires extractCompareTickers to find two DISTINCT
+ *  known tickers, so these common words can never hijack a single-ticker or ticker-less question. */
+const COMPARATIVE_CUE_RE =
+  /\b(closer|closest|nearer|nearest|farther|further|which|more|less|higher|lower|stronger|weaker|better|worse)\b/i;
 
 // Cross-tool VERDICT synthesis (task #59) — the flagship "grade this" question. composeVerdict fans
 // out to the RELEVANT engines (dealer gamma + flow always; earnings/fundamentals for a single-name
@@ -129,7 +139,7 @@ const CONCEPT_RE =
  *  Deliberately status VERBS + product-state nouns, NOT bare "market" (so "what is market structure"
  *  stays a concept). */
 const CONCEPT_LIVE_HINT_RE =
-  /\b(doing|happening|going on|right now|look(ing)? like|the setup|the play|the trade|the bias|the read|tonight|tonight's|today's|latest|current|this week|edition)\b/i;
+  /\b(doing|happening|going on|right now|look(ing)? like|the setup|the play|the trade|the bias|the read|tonight|tonight's|today's|tomorrow|tomorrow's|latest|current|this week|edition|playbook)\b/i;
 /** Teach/opinion/reasoning shapes that belong with Claude, not a glossary lookup. */
 const CONCEPT_TEACH_EXCLUDE_RE =
   /\bin general\b|\bshould i\b|\bwould you\b|\bthink\b|\bworried\b|\bopinion\b|\bpredict\b|\bforecast\b|\bhow\b[^?]{0,40}\bwork/i;
@@ -173,6 +183,122 @@ const DIAGNOSTIC_RE =
 
 function isDiagnosticQuestion(q: string): boolean {
   return DIAGNOSTIC_RE.test(q);
+}
+
+// Cortex read (PR-H) — the deterministic "explain the 0DTE decision" path. Two shapes:
+//  1. an explicit "cortex" mention ("what does cortex say about NVDA", "cortex verdict
+//     on NVDA", terse "cortex nvda") — any cortex ask that survived the concept branch
+//     (a bare/definitional "what is cortex" resolves to the glossary FIRST, so only
+//     live/subject-bearing cortex questions reach this);
+//  2. a decision-WHY ("why did we commit NVDA", "why was TSLA skipped", "why did we
+//     exit MU", "why was the top play picked") — answered from the PINNED records
+//     (entry_context.cortex / exit, the rejection log), live composition otherwise.
+// MUST be classified before REASONING_RE (the "why" would bail to Claude) and before
+// the verdict branch ("cortex verdict on X" contains the verdict trigger word).
+const CORTEX_TERM_RE = /\bcortex\b/i;
+// The "take" verb is negative-lookahead-guarded against "take a hit / take the dive"
+// phrasings — those are market-why questions, not decision-record questions.
+const CORTEX_DECISION_RE =
+  /\bwhy\b[^?]{0,80}\b(was|were|did|didn'?t|wasn'?t)\b[^?]{0,80}\b(commit(?:ted)?|skip(?:ped)?|veto(?:ed|'d)?|blocked|passed(?: on| over)?|pass on|siz(?:e|ed)|picked|exit(?:ed)?|tak(?:e|en)(?!\s+(?:a|an|the|it)\b))\b/i;
+
+function isCortexQuestion(q: string): boolean {
+  return CORTEX_TERM_RE.test(q) || CORTEX_DECISION_RE.test(q);
+}
+
+// Night Hawk EDITION read (PR-N9) — the deterministic "tomorrow's plays" path. Shapes:
+//  1. edition asks: "tomorrow's plays", "tonight's playbook", "what's in the edition",
+//     "what is tonight's Night Hawk edition", terse "playbook" / "nh";
+//  2. pick-WHY: "why was CSX picked (tonight)?", "why was the pick pulled?", "was AMD
+//     pulled?" — answered from the PINNED records (#331: publish_context, the persisted
+//     morning_verdict, the one-way pulled latch), never reconstructed;
+//  3. terse "nh <ticker>" — that pick's full story;
+//  4. morning-check asks: "what did the morning check see?".
+// Placement: AFTER concept/diagnostic (a definitional "what is a pulled play" stays a
+// glossary read; "why isn't the edition loading" stays a diagnostic) and BEFORE the
+// cortex branch — "why was <ticker> picked/pulled" is an OVERNIGHT decision question,
+// while the ticker-less "why was the top play picked" (no NH marker, no ticker subject)
+// deliberately falls through to the 0DTE cortex_read exactly as before (#327's tested
+// shape). Also before REASONING_RE, or the "why" would bail to Claude.
+const NIGHTHAWK_TERM_RE = /\bnight\s?hawk\b/i;
+const NH_EDITION_HINT_RE =
+  /\b(edition|playbook|plays?|picks?|picked|pulled|morning\s+(check|confirm(?:ation)?|verdict))\b/i;
+const NH_OVERNIGHT_MARKER_RE = /\b(tonight'?s?|tomorrow'?s?|overnight|edition|playbook|night\s?hawk)\b/i;
+const NH_TOMORROW_PLAYS_RE = /\b(tomorrow'?s|tonight'?s)\s+(plays?|picks?|playbook|edition|setups?)\b/i;
+const NH_IN_EDITION_RE = /\bwhat'?s?\s+(?:is\s+)?in\s+the\s+(edition|playbook)\b/i;
+const NH_TERSE_TICKER_RE = /^(?:nh|night\s?hawk)\s+\$?([a-z]{1,5})\??\s*$/i;
+const NH_TERSE_EDITION_RE = /^(?:nh|playbook|the\s+playbook|the\s+edition|night\s?hawk\s+edition)\??\s*$/i;
+// "pulled" only counts as the LATCH verb when not followed by a direction word —
+// "price got pulled back / pulled lower" is tape talk, not the morning-confirm latch.
+const NH_PULLED_WORD = /\bpulled\b(?!\s+(?:back|lower|higher|down|up|toward|into|in)\b)/i;
+const NH_PICK_WHY_RE =
+  /\bwhy\b[^?]{0,80}\b(?:was|were|did|didn'?t|wasn'?t|is|isn'?t)\b[^?]{0,80}\b(?:picked|pulled(?!\s+(?:back|lower|higher|down|up|toward|into|in)\b)|chosen|selected)\b/i;
+// The word directly before picked/pulled ("why was CSX picked") — edition tickers are
+// often outside KNOWN_TICKERS (CSX, DELL, PANW…), so the subject capture is the primary
+// ticker source and extractKnownTicker is the fallback.
+const NH_PICK_SUBJECT_RE =
+  /\b(?:was|were|is)\s+(?:the\s+)?\$?([A-Za-z]{1,5})\s+(?:play\s+|pick\s+)?(?:picked|pulled|chosen|selected)\b/i;
+const NH_PICK_STOPWORDS = new Set(["THE", "IT", "WE", "THEY", "THIS", "THAT", "TOP", "A", "AN", "MY", "OUR", "PLAY", "PICK", "ONE", "PLAYS", "PICKS"]);
+// "was X pulled" without a why — pulled is Night Hawk vocabulary (the one-way latch);
+// the NH_PULLED_WORD lookahead keeps "pulled back / pulled lower" (price talk) out.
+const NH_PULLED_STATE_RE =
+  /\b(?:was|were|got|is|why)\b[^?]{0,60}\bpulled\b(?!\s+(?:back|lower|higher|down|up|toward|into|in)\b)/i;
+const NH_MORNING_RE = /\bmorning\s+(check|confirm(?:ation)?|verdict)\b/i;
+
+function nighthawkSubjectTicker(q: string): string | null {
+  const subj = q.match(NH_PICK_SUBJECT_RE)?.[1]?.toUpperCase() ?? null;
+  if (subj && !NH_PICK_STOPWORDS.has(subj)) return subj;
+  return extractKnownTicker(q);
+}
+
+function nighthawkEditionRoute(q: string): BieRoute | null {
+  const terse = q.match(NH_TERSE_TICKER_RE);
+  if (terse) return { intent: "nighthawk_edition", ticker: terse[1]!.toUpperCase() };
+  if (NH_TERSE_EDITION_RE.test(q)) return { intent: "nighthawk_edition", ticker: null };
+  if (NH_PICK_WHY_RE.test(q)) {
+    const ticker = nighthawkSubjectTicker(q);
+    // "picked" needs a ticker subject or an overnight marker, so the ticker-less 0DTE
+    // "why was the top play picked" keeps falling through to cortex_read (tested there).
+    if (NH_PULLED_WORD.test(q) || ticker != null || NH_OVERNIGHT_MARKER_RE.test(q)) {
+      return { intent: "nighthawk_edition", ticker };
+    }
+  }
+  if (NH_PULLED_STATE_RE.test(q)) {
+    return { intent: "nighthawk_edition", ticker: nighthawkSubjectTicker(q) };
+  }
+  if (NH_TOMORROW_PLAYS_RE.test(q) || NH_IN_EDITION_RE.test(q)) {
+    return { intent: "nighthawk_edition", ticker: null };
+  }
+  // "the playbook" / "the edition" (any lead-in) — Night Hawk vocabulary, unless the
+  // question is explicitly about an SPX/0DTE surface (those own their desks' terms).
+  if (
+    /\b(?:the|tonight'?s|tomorrow'?s)\s+(?:playbook|edition)\b/i.test(q) &&
+    !/\b(spx|s&p|es|0\s?dte|zero\s?dte|zerodte)\b/i.test(q)
+  ) {
+    return { intent: "nighthawk_edition", ticker: null };
+  }
+  if (NIGHTHAWK_TERM_RE.test(q) && NH_EDITION_HINT_RE.test(q)) {
+    return { intent: "nighthawk_edition", ticker: extractKnownTicker(q) };
+  }
+  if (NH_MORNING_RE.test(q)) {
+    return { intent: "nighthawk_edition", ticker: extractKnownTicker(q) };
+  }
+  return null;
+}
+
+// SCENARIO what-if (PR-L4c) — "if SPX drops 1%", "what happens if SPY breaks 745", "if we lose the
+// flip", "SPX at 7450 scenario", "what if QQQ rips 2%". A DOUBLE gate authorizes the route, so it can
+// never steal a static read: (1) an explicit hypothetical TRIGGER (if / what if / suppose / imagine /
+// assume / "scenario" / hypothetical), AND (2) a parseShift() that actually pins down a price move
+// (percent / points / absolute level / structural "the flip"|"the wall"). A definitional "what is the
+// flip" (no trigger, no scopeable shift), a verdict "is SPX 7500 good" (no trigger, "7500" isn't a
+// scoped shift), a cortex "why did we commit X" (no trigger) all fail one gate and keep their homes.
+const SCENARIO_TRIGGER_RE =
+  /\b(if|what\s+if|suppose|imagine|assume|were\s+to|scenario|hypothetical(?:ly)?)\b/i;
+
+function scenarioRoute(q: string): BieRoute | null {
+  if (!SCENARIO_TRIGGER_RE.test(q)) return null;
+  if (parseShift(q) == null) return null; // no scopeable price move → not a scenario
+  return { intent: "scenario", ticker: extractKnownTicker(q) ?? "SPX", horizon: extractHorizon(q) };
 }
 
 /** Vector DTE horizon named in the question, defaulting to "all" (whole-chain view). */
@@ -220,26 +346,67 @@ const OUT_OF_SCOPE_RE =
 const REASONING_RE =
   /\b(why|explain|compare|versus|vs\.?|should i|would you|what if|predict|forecast|think|opinion|strategy|teach|how do(es)? .{0,20}work)\b/i;
 
-function extractKnownTicker(question: string): string | null {
-  const matches = question.toUpperCase().match(/\$?\b[A-Z]{1,5}\b/g) ?? [];
+// English function words ("stopwords") that ALSO collide with — or could collide with, if added to
+// KNOWN_TICKERS later — a real ticker symbol. The live gauntlet (PR-L4a) caught "right now" / "…now"
+// resolving to $NOW (ServiceNow): the extractor uppercased the whole question, so the adverb "now"
+// became the ticker "NOW" (which IS in KNOWN_TICKERS), and the staging fallback then answered with a
+// ServiceNow desk verdict. A bare lowercase function word in a sentence must NEVER be read as a
+// ticker — only an explicit `$` prefix or an unambiguous ticker context ("NOW stock", "ticker NOW")
+// promotes it. This is deliberately the FUNCTION-WORD set only: content-noun tickers (ARM, CAT) are
+// left alone because a capitalised "ARM"/"CAT" is far more often a genuine ticker reference, and
+// over-restricting them would drop legitimate member mentions. Today only "NOW" intersects
+// KNOWN_TICKERS, so the guard is surgical; the wider list future-proofs the allowlist.
+const STOPWORD_TICKERS = new Set([
+  "NOW", "ALL", "ARE", "OR", "BE", "GO", "SO", "AT", "ON", "IT", "IN", "OF", "TO",
+  "THE", "AN", "AS", "IS", "IF", "BY", "WE", "US", "HE", "NO", "UP", "MY", "ME",
+  "DO", "AND", "FOR", "BUT", "NOT", "YOU", "OUR", "OUT", "WHY", "HOW", "WHO", "ANY",
+]);
+
+/**
+ * Unambiguous ticker context around a stopword-collision token: a "ticker/symbol/shares of" lead-in
+ * or a "stock/shares/calls/puts/chart/equity" trailer. Case-SENSITIVE on the token (it must be the
+ * UPPERCASE symbol, e.g. `NOW`), so "right now stock is cheap" (lowercase "now") can never trip the
+ * trailer rule, while "NOW stock", "ticker NOW" and (via the `$` short-circuit) "$NOW" all promote.
+ */
+function hasTickerContext(question: string, symbol: string): boolean {
+  const T = symbol.toUpperCase();
+  const lead = new RegExp(`\\b(?:ticker|symbol|shares? of|share of)\\s+\\$?${T}\\b`).test(question);
+  const trail = new RegExp(`\\b${T}\\s+(?:stock|shares|share|equity|calls?|puts?|chart|ticker)\\b`).test(question);
+  return lead || trail;
+}
+
+/** True when a matched candidate is a real ticker reference (not a bare English stopword). Applies
+ *  the stopword-collision guard: NOW/… only count with a `$` prefix or explicit ticker context. */
+function acceptTicker(question: string, raw: string): string | null {
+  const hadDollar = raw.startsWith("$");
+  const cand = raw.replace(/^\$/, "").toUpperCase();
+  if (!hadDollar && !KNOWN_TICKERS.has(cand)) return null;
+  if (!hadDollar && STOPWORD_TICKERS.has(cand) && !hasTickerContext(question, cand)) return null;
+  return cand;
+}
+
+/** Accepted tickers in question order (case preserved so "right now" ≠ "$NOW"). */
+function acceptedTickers(question: string): string[] {
+  // Match on the ORIGINAL string (case intact) — the whole-question toUpperCase() the old extractor
+  // used is exactly what let the adverb "now" masquerade as the ticker "NOW".
+  const matches = question.match(/\$?\b[A-Za-z]{1,5}\b/g) ?? [];
+  const out: string[] = [];
   for (const m of matches) {
-    const hadDollar = m.startsWith("$");
-    const cand = m.replace(/^\$/, "");
-    if (hadDollar || KNOWN_TICKERS.has(cand)) return cand;
+    const t = acceptTicker(question, m);
+    if (t) out.push(t);
   }
-  return null;
+  return out;
+}
+
+function extractKnownTicker(question: string): string | null {
+  return acceptedTickers(question)[0] ?? null;
 }
 
 /** Up to two known tickers for compare routing. */
 export function extractCompareTickers(question: string): [string, string] | null {
-  const matches = question.toUpperCase().match(/\$?\b[A-Z]{1,5}\b/g) ?? [];
   const found: string[] = [];
-  for (const m of matches) {
-    const hadDollar = m.startsWith("$");
-    const cand = m.replace(/^\$/, "");
-    if (hadDollar || KNOWN_TICKERS.has(cand)) {
-      if (!found.includes(cand)) found.push(cand);
-    }
+  for (const t of acceptedTickers(question)) {
+    if (!found.includes(t)) found.push(t);
     if (found.length >= 2) break;
   }
   return found.length >= 2 ? [found[0]!, found[1]!] : null;
@@ -268,6 +435,35 @@ export function classifyBieIntent(question: string, ledgerTickers: Set<string>):
   // than falling through to Claude or a generic answer.
   if (OUT_OF_SCOPE_RE.test(q)) return null;
 
+  // "tomorrow's plays" / "tonight's playbook" / "why was <ticker> picked/pulled" /
+  // "what did the morning check see" / terse "nh <ticker>" → the Night Hawk EDITION
+  // read (PR-N9), answered from the pinned publish/verdict/pull records. Before the
+  // cortex branch (which owns commit/skip/exit — the 0DTE decision verbs) and before
+  // REASONING_RE; the ticker-less "why was the top play picked" still falls to cortex.
+  {
+    const nh = nighthawkEditionRoute(q);
+    if (nh) return nh;
+  }
+
+  // "cortex <ticker>" / "what does cortex say about X" / "why did we commit/skip/exit X"
+  // → the Cortex decision read (pinned commit/skip records first, live composition
+  // otherwise). Before the SPX-why/verdict branches on purpose: "why did we skip SPX"
+  // is a DECISION question (not a desk read), and "cortex verdict on NVDA" must not be
+  // stolen by the verdict trigger word. A ticker-less decision-why ("why was the top
+  // play picked") still routes — the composer answers with the session's decisions.
+  if (isCortexQuestion(q)) return { intent: "cortex_read", ticker: extractKnownTicker(q) };
+
+  // "if SPX drops 1%" / "what happens if SPY breaks 745" / "if we lose the flip" / "SPX at 7450
+  // scenario" → the deterministic SCENARIO what-if read (PR-L4c). Placed after concept/diagnostic/
+  // nighthawk/cortex (a definitional/decision question keeps its home) and BEFORE the SPX/vector
+  // structure branches and REASONING_RE (a bare "if" is not in REASONING_RE, but "what if" is — this
+  // must win first so the hypothetical isn't bailed to Claude or answered as a static structure read).
+  // Double-gated (trigger + parseable shift) so it only fires on a real hypothetical price move.
+  {
+    const scenario = scenarioRoute(q);
+    if (scenario) return scenario;
+  }
+
   // An explicitly UNSUPPORTED horizon (LEAP / multi-year / quarterly) can't be scoped by any desk.
   // Route to the Vector composer, which returns an HONEST "unsupported horizon" message rather than
   // letting the SPX desk / Vector "all" answer the whole-chain aggregate as if it were the LEAP.
@@ -290,7 +486,14 @@ export function classifyBieIntent(question: string, ledgerTickers: Set<string>):
   // (excluded in isVerdictQuestion) still falls through to the lighter ticker_advice path.
   if (isVerdictQuestion(q)) return { intent: "verdict", ticker: extractKnownTicker(q) };
 
-  if (COMPARE_RE.test(q)) {
+  // Explicit compare keyword, OR a comparative question naming TWO known tickers ("Is SPX or NVDA
+  // closer to its gamma flip?", "which of SPY or QQQ is stronger?") — the live-battery miss (PR-L1):
+  // without a compare/versus/vs keyword the SPX structure branch stole the two-ticker question and
+  // answered for SPX alone, never naming the second name. The two-DISTINCT-known-tickers gate
+  // (extractCompareTickers) is what authorizes the route — a bare cue word ("which", "closer") with
+  // zero or one ticker never routes here, so single-ticker questions keep their existing homes
+  // (same single-word steal-risk discipline as the #334 alias rules).
+  if (COMPARE_RE.test(q) || COMPARATIVE_CUE_RE.test(q)) {
     const pair = extractCompareTickers(q);
     if (pair) return { intent: "ticker_compare", ticker: pair[0], ticker_b: pair[1] };
   }
@@ -365,6 +568,22 @@ export function classifyBieStagingFallback(question: string): BieRoute {
   if (isConceptQuestion(q)) return { intent: "concept_read", ticker: null };
   if (isUniversalLookup(q)) return { intent: "universal_lookup", ticker: extractKnownTicker(q) };
   if (isDiagnosticQuestion(q)) return { intent: "system_diagnostic", ticker: extractKnownTicker(q) };
+  // Same Night Hawk edition branch as the primary classifier (same placement: after
+  // concept/diagnostic, before the cortex branch — "why was X picked/pulled" is an
+  // overnight decision question).
+  {
+    const nh = nighthawkEditionRoute(q);
+    if (nh) return nh;
+  }
+  // Same Cortex decision-read branch as the primary classifier (and same placement:
+  // before the verdict/SPX branches so "cortex verdict on X" isn't stolen).
+  if (isCortexQuestion(q)) return { intent: "cortex_read", ticker: extractKnownTicker(q) };
+  // Same SCENARIO branch as the primary classifier (same placement: after cortex, before the vector/
+  // SPX structure reads) — a hypothetical price-move question is a scenario, not a static desk dump.
+  {
+    const scenario = scenarioRoute(q);
+    if (scenario) return scenario;
+  }
   if (VECTOR_RE.test(q)) {
     return { intent: "vector_read", ticker: extractKnownTicker(q) ?? "SPX", horizon: extractHorizon(q) };
   }
@@ -450,5 +669,15 @@ export function bieFollowups(intent: BieIntent): string[] {
       return ["Ask a single question for the full read", "What's the SPX setup right now?", "What is a King node?"];
     case "system_diagnostic":
       return ["Is the flow pipeline healthy?", "Why isn't SPX GEX updating?", "What's the SPX setup right now?"];
+    case "cortex_read":
+      return ["Show today's 0DTE plays", "What is a Cortex veto?", "What does Cortex say about SPY?"];
+    case "nighthawk_edition":
+      return ["Show tonight's playbook", "What is publish context?", "What is the morning confirmation?"];
+    case "scenario":
+      return [
+        "What if it moves the other way?",
+        "What's the setup right now?",
+        "Which walls are building vs fading?",
+      ];
   }
 }

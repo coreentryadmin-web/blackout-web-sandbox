@@ -2,7 +2,7 @@
 
 import { clsx } from "clsx";
 import type { SpxDeskPayload } from "@/features/spx/lib/spx-desk";
-import { fmtPremium, fmtPrice } from "@/lib/api";
+import { fmtPct, fmtPremium, fmtPrice } from "@/lib/api";
 import { ProductMark } from "@/components/marks/ProductMark";
 import { SpxLiveSpotPrice, priceVsLevel, PriceLevelIndicator } from "./SpxLiveSpotPrice";
 
@@ -51,6 +51,27 @@ export function SpxSniperHeader({ desk, live, nativeShell = false }: Props) {
   );
 }
 
+/** Plain-English tooltips for every ribbon metric — deterministic, no data claims. */
+const METRIC_TIPS = {
+  vix: "CBOE Volatility Index — the market's 30-day implied-volatility gauge. Higher = bigger expected swings.",
+  vwap: "Volume-weighted average price for today's session — the fair-value line institutions track.",
+  vwapVW: "True volume-weighted via SPY minute volume.",
+  gex: "Net dealer gamma exposure — positive dampens moves, negative amplifies them.",
+  regime: "Trend regime read from price vs the 20/50-day EMAs.",
+  flip: "Strike where net dealer gamma flips sign — above it dealers dampen moves, below it they amplify.",
+  maxPain: "Strike where the most option value expires worthless — a common pin magnet into the close.",
+  ivRank: "Where implied volatility sits inside its 1-year range (0–100).",
+  ema: "Exponential moving averages (20/50/200-day) — trend guide rails; recent price weighs more.",
+  sma: "Simple moving averages (50/200-day) — slower structural trend lines.",
+  session: "Session structure — today's high/low and the prior day's high/low.",
+  hod: "High of day",
+  lod: "Low of day",
+  pdh: "Prior-day high",
+  pdl: "Prior-day low",
+  gexStale: "Dealer positioning feed is stale — walls/flip are last-good, not live.",
+  stalled: "Index feed stalled — values shown are the last live prints, dimmed until the feed recovers.",
+} as const;
+
 function DeskTopStatsRow({
   desk,
   showValues,
@@ -62,13 +83,60 @@ function DeskTopStatsRow({
   spot: number | null;
   live?: boolean;
 }) {
+  // Stale-honesty: a frozen tape (feed_stalled) dims every value tone — CSS-only, no
+  // layout shift — so last-good numbers are never presented with live-confidence color.
+  const stalled = Boolean(live && desk?.feed_stalled);
   return (
-    <div className="spx-desk-top-stats-stack">
-      <div className="spx-desk-top-stats spx-desk-top-stats--compact spx-desk-top-stats--primary">
+    <div
+      className={clsx("spx-desk-top-stats-stack", stalled && "spx-hero-stats-stale")}
+      title={stalled ? METRIC_TIPS.stalled : undefined}
+    >
+      {/* Single numeric strip (user spec 2026-07-13): EMA · SMA · Session blocks first,
+          then the stat pills — one line at desktop, graceful two-line wrap below 1440.
+          Live SPX spot LEADS the strip (user-directed 2026-07-14: moved here from the matrix
+          column so the Dealer Gamma Map gets the full panel height; no snapshot caption —
+          the strip's stale-dimming carries frozen-tape honesty). */}
+      <div className="spx-desk-top-stats spx-desk-top-stats--compact spx-desk-top-stats--strip">
+        <StripSpot desk={desk} showValues={showValues} />
+        <InlineMetricGroup
+          title="EMA"
+          tone="orange"
+          tip={METRIC_TIPS.ema}
+          spot={spot}
+          items={[
+            { label: "20", value: showValues ? fmtPrice(desk?.ema20 ?? null) : "—", tone: "orange", level: desk?.ema20 ?? null, tip: "20-day exponential moving average" },
+            { label: "50", value: showValues ? fmtPrice(desk?.ema50 ?? null) : "—", tone: "magenta", level: desk?.ema50 ?? null, tip: "50-day exponential moving average" },
+            { label: "200", value: showValues ? fmtPrice(desk?.ema200 ?? null) : "—", tone: "cyan", level: desk?.ema200 ?? null, tip: "200-day exponential moving average" },
+          ]}
+        />
+        <InlineMetricGroup
+          title="SMA"
+          tone="violet"
+          tip={METRIC_TIPS.sma}
+          spot={spot}
+          items={[
+            { label: "50", value: showValues ? fmtPrice(desk?.sma50 ?? null) : "—", tone: "orange", level: desk?.sma50 ?? null, tip: "50-day simple moving average" },
+            { label: "200", value: showValues ? fmtPrice(desk?.sma200 ?? null) : "—", tone: "cyan", level: desk?.sma200 ?? null, tip: "200-day simple moving average" },
+          ]}
+        />
+        <InlineMetricGroup
+          title="Session"
+          tone="bull"
+          grid2
+          tip={METRIC_TIPS.session}
+          spot={spot}
+          items={[
+            { label: "HOD", value: showValues ? fmtPrice(desk?.hod ?? null) : "—", tone: "resistance", level: desk?.hod ?? null, tip: METRIC_TIPS.hod },
+            { label: "LOD", value: showValues ? fmtPrice(desk?.lod ?? null) : "—", tone: "support", level: desk?.lod ?? null, tip: METRIC_TIPS.lod },
+            { label: "PDH", value: showValues ? fmtPrice(desk?.pdh ?? null) : "—", tone: "resistance", level: desk?.pdh ?? null, tip: METRIC_TIPS.pdh },
+            { label: "PDL", value: showValues ? fmtPrice(desk?.pdl ?? null) : "—", tone: "support", level: desk?.pdl ?? null, tip: METRIC_TIPS.pdl },
+          ]}
+        />
         <StatPill
           label="VIX"
           value={showValues && desk?.vix != null ? fmtPrice(desk.vix, 2) : "—"}
           tone="orange"
+          title={METRIC_TIPS.vix}
         />
         <StatPill
           label="VWAP"
@@ -76,17 +144,25 @@ function DeskTopStatsRow({
           tone={desk?.above_vwap ? "bull" : "bear"}
           level={desk?.vwap ?? null}
           spot={spot}
+          title={
+            desk?.vwap_volume_weighted
+              ? `${METRIC_TIPS.vwap} ${METRIC_TIPS.vwapVW}`
+              : METRIC_TIPS.vwap
+          }
+          vw={desk?.vwap_volume_weighted === true}
         />
         <StatPill
           label="GEX"
           value={showValues && desk?.gex_net != null ? fmtPremium(desk.gex_net) : "—"}
           tone={(desk?.gex_net ?? 0) >= 0 ? "bull" : "bear"}
+          title={METRIC_TIPS.gex}
         />
         <StatPill
           label="Regime"
           value={showValues ? (desk?.regime ?? "—") : "—"}
           tone="violet"
           capitalize
+          title={METRIC_TIPS.regime}
         />
         <StatPill
           label="γ Flip"
@@ -94,6 +170,7 @@ function DeskTopStatsRow({
           tone="magenta"
           level={desk?.gamma_flip ?? null}
           spot={spot}
+          title={METRIC_TIPS.flip}
         />
         <StatPill
           label="Max Pain"
@@ -101,38 +178,22 @@ function DeskTopStatsRow({
           tone="cyan"
           level={desk?.max_pain ?? null}
           spot={spot}
+          title={METRIC_TIPS.maxPain}
         />
         <StatPill
           label="IV Rank"
           value={showValues && desk?.uw_iv_rank != null ? fmtPrice(desk.uw_iv_rank, 0) : "—"}
           tone="gold"
+          title={METRIC_TIPS.ivRank}
         />
         {live && desk?.gex_stale && (
-          <span className="spx-hero-stat-pill border-amber-400/35 bg-amber-400/10 px-2 py-1.5 font-mono text-[9px] uppercase tracking-wider text-amber-200 self-stretch flex items-center">
+          <span
+            className="spx-hero-stat-pill border-amber-400/35 bg-amber-400/10 px-2 py-1.5 font-mono text-[9px] uppercase tracking-wider text-amber-200 self-stretch flex items-center"
+            title={METRIC_TIPS.gexStale}
+          >
             GEX stale
           </span>
         )}
-      </div>
-      <div className="spx-desk-top-stats spx-desk-top-stats--compact spx-desk-top-stats--secondary">
-        <MetricBlock title="EMA" tone="orange">
-          <MetricRow label="20" value={showValues ? fmtPrice(desk?.ema20 ?? null) : "—"} tone="orange" level={desk?.ema20 ?? null} spot={spot} />
-          <MetricRow label="50" value={showValues ? fmtPrice(desk?.ema50 ?? null) : "—"} tone="magenta" level={desk?.ema50 ?? null} spot={spot} />
-          <MetricRow label="200" value={showValues ? fmtPrice(desk?.ema200 ?? null) : "—"} tone="cyan" level={desk?.ema200 ?? null} spot={spot} />
-        </MetricBlock>
-        <MetricBlock title="SMA" tone="violet">
-          <MetricRow label="50" value={showValues ? fmtPrice(desk?.sma50 ?? null) : "—"} tone="orange" level={desk?.sma50 ?? null} spot={spot} />
-          <MetricRow label="200" value={showValues ? fmtPrice(desk?.sma200 ?? null) : "—"} tone="cyan" level={desk?.sma200 ?? null} spot={spot} />
-        </MetricBlock>
-        <MetricBlock title="Session" tone="bull">
-          <div className="spx-hero-metric-pair">
-            <MetricRow label="HOD" value={showValues ? fmtPrice(desk?.hod ?? null) : "—"} tone="resistance" compact level={desk?.hod ?? null} spot={spot} />
-            <MetricRow label="PDH" value={showValues ? fmtPrice(desk?.pdh ?? null) : "—"} tone="resistance" compact level={desk?.pdh ?? null} spot={spot} />
-          </div>
-          <div className="spx-hero-metric-pair">
-            <MetricRow label="LOD" value={showValues ? fmtPrice(desk?.lod ?? null) : "—"} tone="support" compact level={desk?.lod ?? null} spot={spot} />
-            <MetricRow label="PDL" value={showValues ? fmtPrice(desk?.pdl ?? null) : "—"} tone="support" compact level={desk?.pdl ?? null} spot={spot} />
-          </div>
-        </MetricBlock>
       </div>
     </div>
   );
@@ -164,54 +225,82 @@ const VALUE_TONE: Record<string, string> = {
   neutral: "text-white",
 };
 
-const BLOCK_BORDER: Record<string, string> = {
-  bull: "border-emerald-500/35",
-  orange: "border-orange-500/35",
-  violet: "border-violet-500/40",
+type InlineMetric = {
+  label: string;
+  value: string;
+  tone: string;
+  level: number | null;
+  tip?: string;
 };
 
-function MetricBlock({
-  title,
-  tone = "bull",
-  children,
-}: {
-  title: string;
-  tone?: string;
-  children: React.ReactNode;
-}) {
+/**
+ * Pill-height metric group for the single-strip ribbon: block title on top, all values
+ * inline beneath — same silhouette as StatPill so EMA/SMA/Session sit flush with the
+ * stat pills on one line. Every value keeps its tone color + PriceLevelIndicator arrow.
+ */
+/** Live SPX spot as the strip's lead element — price + day % in the pill silhouette.
+ *  Deliberately caption-free ("last session snapshot" line removed, user-directed 2026-07-14);
+ *  the strip-level stale dimming already communicates a frozen tape. */
+function StripSpot({ desk, showValues }: { desk?: SpxDeskPayload; showValues: boolean }) {
+  const bull = (desk?.spx_change_pct ?? 0) >= 0;
   return (
-    <div className={clsx("spx-hero-metric-block", BLOCK_BORDER[tone] ?? BLOCK_BORDER.bull)}>
-      <p className="spx-hero-metric-block-title">{title}</p>
-      <div className="spx-hero-metric-block-body">{children}</div>
+    <div
+      className={clsx("spx-hero-stat-pill spx-strip-spot", bull ? "border-emerald-500/40" : "border-rose-500/40")}
+      title="Live SPX spot — index level and day change"
+      aria-label="SPX spot price"
+    >
+      <p className="spx-hero-stat-label">SPX</p>
+      <div className="spx-hero-stat-value-row">
+        <p className={clsx("spx-strip-spot-price t-num", bull ? "text-bull" : "text-bear-text")}>
+          {showValues ? fmtPrice(desk?.price ?? null, 2) : "—"}
+        </p>
+        <p className={clsx("spx-strip-spot-pct t-num", bull ? "text-bull" : "text-bear-text")}>
+          {showValues ? fmtPct(desk?.spx_change_pct ?? null) : ""}
+        </p>
+      </div>
     </div>
   );
 }
 
-function MetricRow({
-  label,
-  value,
-  tone = "neutral",
-  compact,
+function InlineMetricGroup({
+  title,
+  tone = "bull",
+  tip,
+  items,
   spot,
-  level,
+  grid2 = false,
 }: {
-  label: string;
-  value: string;
+  title: string;
   tone?: string;
-  compact?: boolean;
-  spot?: number | null;
-  level?: number | null;
+  tip?: string;
+  items: InlineMetric[];
+  spot: number | null;
+  /** 2x2 grid layout inside the pill (Session group) — reclaims strip width so the
+   *  one-line header fits at 1920 with the spot pill present (2026-07-14). */
+  grid2?: boolean;
 }) {
-  const direction = priceVsLevel(spot, level);
   return (
-    <div className={clsx("spx-hero-metric-row", compact && "spx-hero-metric-row-compact")}>
-      <span className="spx-hero-metric-row-label">{label}</span>
-      <span className="spx-hero-metric-row-value-wrap">
-        <PriceLevelIndicator direction={direction} />
-        <span className={clsx("spx-hero-metric-row-value t-num", VALUE_TONE[tone] ?? VALUE_TONE.neutral)}>
-          {value}
-        </span>
-      </span>
+    <div
+      className={clsx("spx-hero-stat-pill spx-hero-stat-pill--group", PILL_BORDER[tone] ?? PILL_BORDER.neutral)}
+      title={tip}
+    >
+      <p className="spx-hero-stat-label">{title}</p>
+      <div className={clsx("spx-hero-stat-group-row", grid2 && "spx-hero-stat-group-row--grid2")}>
+        {items.map((it) => (
+          <span key={it.label} className="spx-hero-stat-group-item" title={it.tip}>
+            <span className="spx-hero-metric-row-label">{it.label}</span>
+            <PriceLevelIndicator direction={priceVsLevel(spot, it.level)} />
+            <span
+              className={clsx(
+                "spx-hero-metric-row-value t-num",
+                VALUE_TONE[it.tone] ?? VALUE_TONE.neutral
+              )}
+            >
+              {it.value}
+            </span>
+          </span>
+        ))}
+      </div>
     </div>
   );
 }
@@ -223,6 +312,8 @@ function StatPill({
   capitalize: cap,
   spot,
   level,
+  title,
+  vw,
 }: {
   label: string;
   value: string;
@@ -230,11 +321,22 @@ function StatPill({
   capitalize?: boolean;
   spot?: number | null;
   level?: number | null;
+  /** Plain-English tooltip explaining the metric (deterministic copy). */
+  title?: string;
+  /** True volume-weighted VWAP affordance (staging SPY-volume proxy). */
+  vw?: boolean;
 }) {
   const direction = priceVsLevel(spot, level);
   return (
-    <div className={clsx("spx-hero-stat-pill", PILL_BORDER[tone] ?? PILL_BORDER.neutral)}>
-      <p className="spx-hero-stat-label">{label}</p>
+    <div className={clsx("spx-hero-stat-pill", PILL_BORDER[tone] ?? PILL_BORDER.neutral)} title={title}>
+      <p className="spx-hero-stat-label">
+        {label}
+        {vw && (
+          <span className="spx-hero-vw-badge" title="true volume-weighted via SPY minute volume">
+            VW
+          </span>
+        )}
+      </p>
       <div className="spx-hero-stat-value-row">
         {level != null && <PriceLevelIndicator direction={direction} />}
         <p

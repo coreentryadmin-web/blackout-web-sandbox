@@ -116,6 +116,12 @@ import {
   type VectorTimeframeMinutes,
 } from "@/features/vector/lib/vector-bar-timeframes";
 import { mergeSpyVolumeRows } from "@/features/vector/lib/vector-spy-volume-merge";
+import {
+  createRenderThrottle,
+  priceScaleMapChanged,
+  type PriceScaleSnapshot,
+  type VectorPriceScaleMap,
+} from "@/features/vector/lib/vector-price-scale-map";
 
 export type VectorBar = {
   time: UTCTimestamp;
@@ -217,11 +223,31 @@ type Props = {
   onAlertsFired?: (fired: FiredAlert[]) => void;
   /** Compact page title + ticker cluster, rendered at the far left of the chart toolbar row. */
   leadSlot?: React.ReactNode;
+  /** Rendered in the toolbar right cluster immediately before the Replay controls (host desks). */
+  replayLeadSlot?: React.ReactNode;
   /** Freshness/status chip, rendered at the far right of the toolbar row. */
   trailSlot?: React.ReactNode;
   /** Regime banner (or similar), rendered as a thin strip between the toolbar and the canvas so it
    *  still leads the chart without a tall separate header block above the whole page. */
   regimeSlot?: React.ReactNode;
+  /** Initial DTE horizon override (host-desk seam, 2026-07-13): the SPX Slayer dashboard embed
+   *  opens on 0DTE (SPX day-trading desk) while the standalone /vector page keeps WEEKLY. Initial
+   *  state only — the member's toggle still rules after mount. */
+  defaultDteHorizon?: VectorDteHorizon;
+  /** Initial candle interval override (same seam): the dashboard embed opens on 3-minute candles;
+   *  the standalone page keeps 1-minute. Initial state only. */
+  defaultTimeframe?: VectorTimeframeMinutes;
+  /**
+   * SHARED PRICE AXIS seam (SPX desk, 2026-07-13): reports the price pane's live y-mapping
+   * (series.priceToCoordinate + visible price range + pane height + viewport top) so a host
+   * desk can render sibling panels — the SPX strike ladder — on the SAME y-scale as the
+   * candles. Emitted only when the scale actually changes, throttled to ~250ms (a 250ms poll
+   * + change-compare, because lightweight-charts has no public "autoscale changed" event;
+   * pan/zoom additionally triggers via subscribeVisibleLogicalRangeChange for responsiveness).
+   * Strictly optional: when undefined (the standalone /vector page) no poller is created and
+   * behavior is byte-identical.
+   */
+  onPriceScaleRender?: (map: VectorPriceScaleMap) => void;
 };
 
 function lensVisuals(lens: VectorWallLens) {
@@ -879,12 +905,23 @@ export function VectorChart({
   alertRules,
   onAlertsFired,
   leadSlot,
+  replayLeadSlot,
   trailSlot,
   regimeSlot,
+  defaultDteHorizon,
+  defaultTimeframe,
+  onPriceScaleRender,
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const seriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
+  // Shared-price-axis seam: latest callback in a ref (the mount effect is []-dep), plus the
+  // last emitted snapshot so the 250ms poll only calls back when the scale actually moved.
+  const onPriceScaleRenderRef = useRef(onPriceScaleRender);
+  const lastPriceScaleSnapRef = useRef<PriceScaleSnapshot | null>(null);
+  useEffect(() => {
+    onPriceScaleRenderRef.current = onPriceScaleRender;
+  });
   const volumeSeriesRef = useRef<ISeriesApi<"Histogram"> | null>(null);
   // Always-on technicals narration (VWAP/EMA/RSI/MACD/pocket/structure) → terminal, computed on
   // every paint from the shown bars regardless of which overlays are toggled. `onTechnicalsChangeRef`
@@ -1055,7 +1092,9 @@ export function VectorChart({
   // Default WEEKLY: "All" is no longer a member-facing option (2026-07-13), and 0DTE is empty
   // mid-week for most single names (only SPX/SPY/QQQ have daily expiries) — weekly always has a
   // real chain to scope to. SPX day-traders tap 0DTE once; the choice persists per session.
-  const [dteHorizon, setDteHorizon] = useState<VectorDteHorizon>("weekly");
+  // Host desks may override the OPENING horizon (defaultDteHorizon — the SPX Slayer embed opens
+  // on 0DTE); after mount the member's toggle rules either way.
+  const [dteHorizon, setDteHorizon] = useState<VectorDteHorizon>(defaultDteHorizon ?? "weekly");
   // Per-expiry walls are now computed from the Polygon options chain for EVERY ticker
   // (per-contract expiry + OI + IV → BSM GEX ladder at spot), not just the 3 UW-oracle
   // names, so the horizon toggle is real everywhere. Vector only ever loads optionable
@@ -1076,7 +1115,9 @@ export function VectorChart({
   );
   const [gexAsOf, setGexAsOf] = useState<number | null>(null);
   const [vexAsOf, setVexAsOf] = useState<number | null>(null);
-  const [timeframe, setTimeframe] = useState<VectorTimeframeMinutes>(1);
+  // 1m is the seed resolution; host desks may open on a coarser preset (defaultTimeframe — the
+  // SPX Slayer embed opens on 3-minute candles). Aggregation is client-side from the same 1m bars.
+  const [timeframe, setTimeframe] = useState<VectorTimeframeMinutes>(defaultTimeframe ?? 1);
   const [chartReady, setChartReady] = useState(false);
   // Enabled overlay indicators (default none — the chart stays clean until the member opts in).
   const [indicators, setIndicators] = useState<Set<VectorIndicatorId>>(() => new Set());
@@ -1443,13 +1484,20 @@ export function VectorChart({
   // Lazy prior-day OHLC fetch: only when a prior-day/pivot level is enabled, and only once per
   // ticker. The PDH/PDL/PDC + floor-pivot lines need the prior session's high/low/close, which the
   // session bars don't carry. On success, repaint so the lines appear without waiting for a tick.
+  // `anchor=sessionYmd` pins "prior day" to the session the chart is DISPLAYING: off-hours the
+  // latest seeded session is (say) Friday while the wall clock says Sat/Sun/Mon-pre-open, and an
+  // unanchored fetch returned Friday's own H/L/C — PDH/PDL drawn on the displayed session's own
+  // extremes, pivots computed from the very session being viewed. During RTH anchor == today.
   useEffect(() => {
     const needsPrior = VECTOR_LEVELS.some((l) => l.needsPriorDay && indicators.has(l.id));
     if (!needsPrior || (priorDayTickerRef.current === ticker && priorDayRef.current)) return;
     let cancelled = false;
     void (async () => {
       try {
-        const res = await fetch(`/api/market/vector/prior-day?ticker=${encodeURIComponent(ticker)}`);
+        const res = await fetch(
+          `/api/market/vector/prior-day?ticker=${encodeURIComponent(ticker)}` +
+            `&anchor=${encodeURIComponent(sessionYmd)}`
+        );
         if (cancelled || !res.ok) return;
         const d = (await res.json()) as { pdh: number | null; pdl: number | null; pdc: number | null };
         if (cancelled) return;
@@ -1466,7 +1514,7 @@ export function VectorChart({
     return () => {
       cancelled = true;
     };
-  }, [indicators, ticker, paintOverlays]);
+  }, [indicators, ticker, sessionYmd, paintOverlays]);
 
   // Lazy options-flow fetch: ONLY when the "Options flow" toggle is enabled (the underlying pull is a
   // bounded Massive/Polygon per-OCC trades fan-out — don't spend it on members who never opt in). Re-
@@ -2357,10 +2405,63 @@ export function VectorChart({
       });
     });
 
+    // SHARED PRICE AXIS seam — only wired when a host asked for it at mount (the SPX desk
+    // passes a stable setState from its first render; the standalone /vector page never sets
+    // the prop, so no interval/subscription is created there and behavior is unchanged).
+    let priceScaleTimer: ReturnType<typeof setInterval> | null = null;
+    let priceScaleThrottle: ReturnType<typeof createRenderThrottle> | null = null;
+    if (onPriceScaleRenderRef.current) {
+      const emitPriceScale = () => {
+        const cb = onPriceScaleRenderRef.current;
+        // Read through the refs (not the effect locals) so a mid-teardown tick no-ops.
+        const liveChart = chartRef.current;
+        const liveSeries = seriesRef.current;
+        const el = containerRef.current;
+        if (!cb || !liveChart || !liveSeries || !el) return;
+        const height = liveChart.paneSize(0).height;
+        if (!(height > 0)) return;
+        // Visible price range = the prices at the pane's pixel edges (no public API exposes
+        // the autoscaled range directly; inverting the coordinate map is exact).
+        const top = liveSeries.coordinateToPrice(0);
+        const bottom = liveSeries.coordinateToPrice(height);
+        if (top == null || bottom == null || !(top > bottom)) return;
+        const snap: PriceScaleSnapshot = {
+          rangeMin: bottom as number,
+          rangeMax: top as number,
+          height,
+          // paneTop in viewport coords: pane 0 starts at the canvas container's top (time
+          // axis + sub-panes are below it), so the container rect top IS the pane top.
+          paneTop: el.getBoundingClientRect().top,
+        };
+        if (!priceScaleMapChanged(lastPriceScaleSnapRef.current, snap)) return;
+        lastPriceScaleSnapRef.current = snap;
+        cb({
+          ...snap,
+          // Guarded through the ref so a host calling priceToY after unmount gets null
+          // instead of a disposed-series throw.
+          priceToY: (price: number) => {
+            const s = seriesRef.current;
+            if (s !== liveSeries || s == null) return null;
+            const y = s.priceToCoordinate(price);
+            return y == null ? null : (y as number);
+          },
+        });
+      };
+      priceScaleThrottle = createRenderThrottle(emitPriceScale, 250);
+      // Poll catch-all (autoscale/data paints have no public event) + immediate response to
+      // pan/zoom via the logical-range subscription; both funnel through the same throttle.
+      priceScaleTimer = setInterval(() => priceScaleThrottle!.call(), 250);
+      chart.timeScale().subscribeVisibleLogicalRangeChange(() => priceScaleThrottle?.call());
+      emitPriceScale();
+    }
+
     if (liveSession) connectLive();
 
     return () => {
       stopReplayTimer();
+      if (priceScaleTimer != null) clearInterval(priceScaleTimer);
+      priceScaleThrottle?.cancel();
+      lastPriceScaleSnapRef.current = null;
       connRef.current?.close();
       chart.remove();
       chartRef.current = null;
@@ -2750,6 +2851,7 @@ export function VectorChart({
         onClearIndicators={clearIndicators}
         barCount={displayBarCount}
         leadSlot={leadSlot}
+        replayLeadSlot={replayLeadSlot}
         trailSlot={trailSlot}
       />
 

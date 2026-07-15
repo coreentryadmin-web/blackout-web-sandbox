@@ -96,19 +96,65 @@ export function sessionHeat(etMinutes: number, isTradingDay: boolean): SessionHe
  * find's own plan flags — the same "no new plays after 15:00 ET" cutoff every
  * consumer of a fresh find must apply consistently. `heatState` undefined is
  * treated as closed (matches sessionHeat()'s own "no session today" fallback).
+ *
+ * NEVER "OPEN" (P0 fix — the one-way commit door): a fresh find has NOT been
+ * committed to the session ledger — its gate/plan/liquidity read is re-derived
+ * from scratch on every ~5s scan build, so any label it wears here can flap on
+ * the next tick (entry_status flips to MOVED, the spread widens to illiquid, a
+ * gate re-evaluation blocks). This function used to return "OPEN" for a clean
+ * RTH find, which rendered indistinguishably from a committed open position and
+ * then visibly regressed to a watch/SKIP card seconds later. OPEN is reserved
+ * for LEDGER rows (the desk's durable commit, written only after the full gate +
+ * Cortex stack passed at persist time); until that row exists a find is at most
+ * WATCH — a candidate, explicitly not a position.
  */
 export function resolveFreshFindStatus(
   heatState: SessionHeatState | undefined,
   moved: boolean,
   illiquid: boolean
-): "OPEN" | "SKIP" {
+): "WATCH" | "SKIP" {
   const pastCutoff =
     heatState === "POWER_HOUR" ||
     heatState === "LATE_SESSION" ||
     heatState === "CLOSED" ||
     heatState === undefined;
-  return moved || pastCutoff || illiquid ? "SKIP" : "OPEN";
+  return moved || pastCutoff || illiquid ? "SKIP" : "WATCH";
 }
+
+// ── Polygon symbol mapping for index option roots ─────────────────────────────────
+// The scan's mandate explicitly admits index products (SPY/SPX/NDX/QQQ…), and UW
+// tape rows carry the OPTION ROOT as the ticker (SPXW, NDXP, …). Polygon's stock
+// aggs endpoint returns an EMPTY result set (status OK, resultsCount 0) for those
+// roots — the index itself prices under the `I:` namespace. Live-verified
+// 2026-07-13: /v2/aggs/ticker/SPXW/range/1/day/2026-07-10/2026-07-10 → 0 results,
+// I:SPX → o 7547.64 / c 7575.39. Without this mapping, an SPXW/SPX/NDX ledger row
+// silently gets close=null at grading time and is stamped graded with a null
+// direction grade FOREVER (fetchAggBars succeeds, so the retry path never fires),
+// and the intraday-edge read (VWAP/opening-range/5m-trend) never attaches for
+// index setups. ETF wrappers (SPY/QQQ/IWM) are real equities and pass through.
+const POLYGON_INDEX_SPOT: Record<string, string> = {
+  SPX: "I:SPX",
+  SPXW: "I:SPX", // weekly/0DTE SPX root — same underlying index
+  NDX: "I:NDX",
+  NDXP: "I:NDX", // PM-settled NDX root
+  RUT: "I:RUT",
+  RUTW: "I:RUT",
+  XSP: "I:XSP",
+  VIX: "I:VIX",
+};
+
+/** Polygon aggs symbol for a flow/ledger ticker — index option roots map to the
+ *  `I:` index namespace; everything else (equities, ETFs) passes through as-is. */
+export function polygonSpotTicker(ticker: string): string {
+  const upper = ticker.toUpperCase();
+  return POLYGON_INDEX_SPOT[upper] ?? upper;
+}
+
+/** The index option roots the mapping above covers — exported for the P-6 regrade
+ *  backfill (zerodte/regrade.ts), which must select EXACTLY the tickers whose
+ *  historical null grades this mapping fixes. Single source of truth: derived from
+ *  the map, never a second hand-maintained list. */
+export const INDEX_OPTION_ROOTS: readonly string[] = Object.keys(POLYGON_INDEX_SPOT);
 
 // ── Single-name 0DTE flow setups (evidence, not fabricated plays) ────────────────
 
@@ -205,11 +251,32 @@ export type ZeroDteGateFailure =
   | "min_dominance"
   | "max_itm_pct"
   | "no_dominant_strike"
-  | "no_underlying_price";
+  | "no_underlying_price"
+  // ── Hard entry-gate stack (G-1/G-2/G-3/G-5, docs/audit/NIGHTHAWK-0DTE-DECISION.md §2) —
+  // evaluated in ./gates.ts AFTER the four evidence gates above, i.e. only for candidates
+  // that already qualified as setups. Persisted through the same rejection log so "why
+  // didn't ticker X commit" is one queryable surface for both gate families.
+  | "tape_alignment" // G-1: direction fights the SPY session bias
+  | "no_market_bias" // G-1 fail-closed: bias read missing or stale
+  | "opening_window" // G-2: no new commits before 10:30 ET
+  | "score_floor" // G-3: post-edge-layer score below 65
+  | "governor_max_concurrent" // G-5: 3 plans already open
+  | "governor_session_stops" // G-5: 3 stops today — halted for the session
+  | "governor_reentry_lock" // G-5: same-direction re-entry within 20m of that ticker's stop
+  | "correlated_conflict" // G-5/B-3: opposes an OPEN plan on a correlated ticker
+  | "gate_context_unavailable" // fail-closed: gate inputs (ledger/governor) unreadable
+  // ── Night Hawk Cortex layer (./cortex-gate.ts, NIGHTHAWK-CORTEX-DESIGN.md §2) —
+  // evaluated on gate SURVIVORS only, i.e. only after every hard gate above passed.
+  // The <source> suffix names the Cortex source that vetoed (e.g. "cortex_veto:flow-quality").
+  | `cortex_veto:${string}` // a Cortex source hard-vetoed the entry
+  | "cortex_net_negative"; // no veto, but the evidence score nets < 0 — doesn't print
 
 export type ZeroDteGateRejection = {
   ticker: string;
   gate_failed: ZeroDteGateFailure;
+  /** Human-readable block sentence (hard-gate rows; the UI's SKIP card copy). Null for
+   *  the four evidence gates, whose numeric columns already carry the whole story. */
+  reason?: string | null;
   /** The real threshold constant this candidate was measured against (cited live,
    *  same discipline buildZeroDteAuditRow uses, so a future threshold tune can't
    *  retroactively relabel a historical rejection). `null` for the structural
@@ -610,6 +677,12 @@ export function rankEngineCards(
 import { computeFibLevels, nearestFibNote, type FibNote } from "./fib";
 import type { ContractPlan } from "./plan";
 import type { IntradayRead } from "./intraday";
+// Type-only (erased at compile time — no runtime cycle with ./gates, which imports
+// only types back from this module).
+import type { ZeroDteGateVerdict } from "./gates";
+// Type-only for the same reason: ./cortex-gate's runtime deps (the Cortex barrel)
+// never enter this module's load graph.
+import type { ZeroDteCortexAssessment } from "./cortex-gate";
 
 /** Structural subset of TickerDossier the enrichment reads (keeps this module
  *  provider-import-free and the merge testable with plain objects). */
@@ -704,6 +777,16 @@ export type EnrichedZeroDteSetup = ZeroDteSetup & {
   /** Entry/exit contract plan (premium band + exits) — attached by the scan when a
    *  live quote or real fill exists; null = evidence only, never a guessed plan. */
   plan: ContractPlan | null;
+  /** Hard-gate verdict for a FRESH find (./gates.ts): BLOCKED setups stay visible
+   *  as WATCH/SKIP cards with every failing gate's reason (+ unlock time when the
+   *  block is clock-based). Null = not evaluated (already-committed ticker, or the
+   *  gate context couldn't be built — persist fails closed on that). */
+  gate: ZeroDteGateVerdict | null;
+  /** Night Hawk Cortex assessment (./cortex-gate.ts) — evaluated ONLY for a fresh
+   *  find that survived the hard gate stack. Null = Cortex never ran for this
+   *  setup this cycle (gate-blocked before the Cortex layer, or an
+   *  already-committed refresh ticker) — never a fabricated neutral. */
+  cortex: ZeroDteCortexAssessment | null;
   halted: boolean;
   /** Reports today/next session — a 0DTE into an earnings print is a different trade. */
   earnings: EarningsFlag | null;
@@ -896,6 +979,8 @@ export function enrichSetup(
     analyst_note: dossier?.price_target ?? null,
     fib_note: fibNote,
     plan: null,
+    gate: null,
+    cortex: null,
     halted: dossier?.trading_halt === true,
     earnings: extras?.earnings ?? null,
     news_hot: extras?.news_hot ?? null,

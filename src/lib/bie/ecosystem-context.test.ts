@@ -50,6 +50,20 @@ let fullStateCalls = 0;
 mock.module("../db", {
   namedExports: {
     dbConfigured: () => true,
+    // Faithful copy of db.ts's isoDateString (a pure normalizer) — ecosystem-context
+    // imports it from "@/lib/db", which this wholesale module mock replaces, so it
+    // must exist here AND behave like the real one for the DATE-normalization test
+    // below to prove anything.
+    isoDateString: (value: unknown): string => {
+      if (value instanceof Date && !Number.isNaN(value.getTime())) {
+        return value.toISOString().slice(0, 10);
+      }
+      const s = String(value ?? "");
+      if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
+      const reparsed = new Date(s);
+      if (!Number.isNaN(reparsed.getTime())) return reparsed.toISOString().slice(0, 10);
+      return s.slice(0, 10);
+    },
     // The 5 pre-existing ecosystem-context queries (zerodte/nighthawk/audit/
     // flow/anomalies) all go through dbQuery — none of them matter for the
     // spx_play assertions below, so a single empty-rows stub covers all of them.
@@ -651,6 +665,17 @@ test("mapNighthawkEchoRows: null score stays null, not 0", () => {
     { ticker: "NVDA", edition_for: "2026-07-02", direction: "short", conviction: "medium", outcome: "pending", score: null },
   ]);
   assert.equal(map.get("NVDA")?.score, null);
+});
+
+test("mapNighthawkEchoRows: pg DATE edition_for (a JS Date object) normalizes to YYYY-MM-DD", () => {
+  // node-postgres returns DATE columns as Date objects; pre-fix this mapped via
+  // String(Date) and the member-visible 0DTE board's nighthawk_echo shipped
+  // "Fri Jul 10 2026 00:00:00 GMT+0000 (Coordinated Universal Time)" (live-caught
+  // 2026-07-13 on staging /api/market/zerodte/board).
+  const map = mapNighthawkEchoRows([
+    { ticker: "META", edition_for: new Date("2026-07-10T00:00:00Z"), direction: "LONG", conviction: "A", outcome: "pending", score: 55 },
+  ]);
+  assert.equal(map.get("META")?.edition_for, "2026-07-10");
 });
 
 test("mapNighthawkEchoRows: empty input returns empty map", () => {

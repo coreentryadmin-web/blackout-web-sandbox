@@ -33,6 +33,13 @@ import { rankCandidates, regimeContextFromMarket, type ScoredCandidate } from ".
 import { rescoreDossier } from "./hunt-builder";
 import { DOSSIER_BATCH_SIZE, EDITION_SYNTHESIS_POOL, EDITION_TARGET_PLAYS, MAX_CANDIDATES, MAX_DOSSIER_STOCKS } from "./constants";
 import { backfillThinEditionPlays } from "./play-backfill";
+import { buildNighthawkPublishContexts } from "./publish-context";
+import {
+  acceptableQuoteSessionsEt,
+  applyNighthawkPublishGates,
+  publishGateRecapReason,
+  type NighthawkPublishGateResult,
+} from "./publish-gates";
 import { partitionPlaysByGeometry } from "./play-constraints";
 import { nextTradingDayEt, todayEt } from "./session";
 import { notifyOpsDiscord } from "@/features/spx/lib/spx-play-notify";
@@ -808,6 +815,64 @@ export async function buildEveningEdition(opts?: {
       }
     }
 
+    // PR-N3 PUBLISH GATES (docs/audit/NIGHTHAWK-OVERNIGHT-DECISION.md §N-3): band-vs-spot,
+    // achievable target, stale-quote basis, fail-closed on unknown geometry — evaluated on
+    // the SAME in-memory dossiers the publish-context pin reads, strictly AFTER backfill so
+    // the backfill class that shipped the six 6.4%–45.5% detached plays cannot slip past.
+    // BLOCKED plays never publish: they persist as nighthawk_rejected audit rows (their ONLY
+    // record — counterfactual-gradeable later, same skip-grading philosophy as 0DTE), and
+    // every play's gate result (PASSES with margins included) is pinned into
+    // publish_context.gates below as the threshold-calibration substrate.
+    let gateResults: Record<string, NighthawkPublishGateResult> = {};
+    {
+      const { passing, blocked, results } = applyNighthawkPublishGates({
+        plays: finalPlays,
+        dossiers,
+        quoteSessions: acceptableQuoteSessionsEt(),
+      });
+      gateResults = results;
+      if (blocked.length) {
+        console.warn(
+          "[nighthawk/edition] publish gates BLOCKED:",
+          blocked.map((b) => `${b.ticker}: ${b.result.blocks.map((x) => x.code).join(",")}`)
+        );
+        // Durable rejection rows FIRST — recorded regardless of whether anything publishes
+        // below (same unconditional/fire-and-forget semantics as the synthesis-stage rows).
+        recordNighthawkStageRejectedAuditTrail(
+          blocked.map((b) => ({
+            ticker: b.ticker,
+            play: b.play,
+            detail: { stage: "publish_gate" as const, blocks: b.result.blocks },
+            scored: b.scored,
+          })),
+          editionFor
+        );
+        finalPlays = passing;
+        funnel.critic_passed = finalPlays.length;
+      }
+      if (!finalPlays.length) {
+        // The gates zeroed the edition — publish an HONEST recap-only edition (the doc's
+        // rule: zero honest plays beats one unfillable play; tonight's real 7/14 edition
+        // was already honestly zero-play). Mirrors the synthesis/critic-zeroed exits.
+        const reason = publishGateRecapReason(blocked);
+        console.warn(`[nighthawk/edition] publish gates zeroed — recap-only fallback: ${reason}`);
+        funnel.published = 0;
+        logFunnel(editionFor, funnel);
+        await alertRecapOnlyIfAnomalous(editionFor, funnel, reason);
+        await publishRecapOnlyEdition({ editionFor, ctx, reason, candidates: candidates.length, checkpointing, force: Boolean(opts?.force) });
+        return {
+          ok: true,
+          edition_for: editionFor,
+          plays_count: 0,
+          candidates: candidates.length,
+          recap_only: true,
+          duration_ms: Date.now() - started,
+          job_status: "published",
+          current_stage: "published",
+        };
+      }
+    }
+
     // WRITE-SIDE INVARIANT (#77): never persist a "normal" edition with zero plays. The five funnel
     // exits above already route an empty funnel to publishRecapOnlyEdition (recap_only:true in meta).
     // This last-resort guard catches any way finalPlays could arrive empty here — a stale/old
@@ -906,7 +971,27 @@ export async function buildEveningEdition(opts?: {
     // rescue. Outcome-sync failure self-heals the same way (sync is idempotent).
     try {
       const sectorByTicker = Object.fromEntries(topDossiers.map((d) => [d.ticker.toUpperCase(), d.sector ?? null]));
-      await syncNighthawkPlayOutcomes(editionFor, finalPlays, sectorByTicker);
+      // PR-N4 evidence pin: what the builder saw for each play, captured from the SAME
+      // in-memory context/dossiers this build published from — never re-fetched. The
+      // builder is fail-soft by contract (per-play failures pin null + warn), so the
+      // worst case is an un-pinned row, never a blocked outcome sync or publish.
+      const publishContexts = buildNighthawkPublishContexts({
+        plays: finalPlays,
+        dossiers,
+        market: {
+          regime: regimeContextFromMarket(ctx),
+          market_breadth: ctx.market_breadth,
+          tomorrow_earnings: ctx.tomorrow_earnings,
+          tomorrow: ctx.tomorrow,
+          vix_close: ctx.vix_bars.at(-1)?.c ?? null,
+          spx_close: ctx.spx_bars.at(-1)?.c ?? null,
+        },
+        builtAt: new Date().toISOString(),
+        // PR-N3: pin each published play's gate verdict + PASS margins — the exact
+        // objects that gated this publish, never re-evaluated.
+        gateResults,
+      });
+      await syncNighthawkPlayOutcomes(editionFor, finalPlays, sectorByTicker, publishContexts);
 
       if (checkpointing) {
         await upsertNighthawkJob(editionFor, {

@@ -5,9 +5,11 @@ import {
   fetchLatestNighthawkEdition,
   fetchLatestPlayableNighthawkEdition,
   fetchNighthawkEditionByDate,
+  fetchNighthawkPulledPlays,
 } from "@/lib/db";
 import { authorizeCronOrTierApi } from "@/lib/market-api-auth";
 import { rowToNightHawkEdition } from "@/features/nighthawk/lib/edition-builder";
+import { applyNighthawkPullOverlay } from "@/features/nighthawk/lib/pull-overlay";
 import { convictionFromScore } from "@/features/nighthawk/lib/scorer";
 import { isBeforeOrAtMarketCloseEt, nextTradingDayEt, priorEt, todayEt } from "@/features/nighthawk/lib/session";
 import { requireToolApi } from "@/lib/tool-access-server";
@@ -108,6 +110,23 @@ async function fetchLegacyPlays(): Promise<NightHawkEdition | null> {
   }
 }
 
+// PR-N4: merge the morning-confirm PULLED latch (nighthawk_play_outcomes.pulled) onto
+// the served payload — an INVALIDATED play is presented as PULLED with its reason, at
+// its published rank, on every serve path (never hidden, never deleted; the edition row
+// itself stays unmutated). Fail-soft: a latch-read failure serves the edition unstamped
+// (the play-status Redis badge still carries the INVALIDATED signal for the UI) —
+// members must never lose the whole edition because the overlay lookup errored.
+async function withPullOverlay(edition: NightHawkEdition): Promise<NightHawkEdition> {
+  if (!edition.edition_for || !edition.plays?.length) return edition;
+  try {
+    const pulledRows = await fetchNighthawkPulledPlays(edition.edition_for);
+    return applyNighthawkPullOverlay(edition, pulledRows);
+  } catch (err) {
+    console.warn("[nighthawk/edition] pull-overlay read failed — serving unstamped:", err);
+    return edition;
+  }
+}
+
 export async function GET(req: NextRequest) {
   const authResult = await authorizeCronOrTierApi(req, "premium");
   if (authResult instanceof Response) return authResult;
@@ -132,13 +151,15 @@ export async function GET(req: NextRequest) {
     const edition = rowToNightHawkEdition(activePlayable);
     edition.carry_until_close = true;
     edition.served_for = activePlayable.edition_for;
-    return NextResponse.json(roundFloats(edition), { headers: NO_STORE_HEADERS });
+    return NextResponse.json(roundFloats(await withPullOverlay(edition)), { headers: NO_STORE_HEADERS });
   }
 
   // Exact requested edition — fresh for the requested session when it has published.
   const exact = await fetchNighthawkEditionByDate(editionFor);
   if (exact) {
-    return NextResponse.json(roundFloats(rowToNightHawkEdition(exact)), { headers: NO_STORE_HEADERS });
+    return NextResponse.json(roundFloats(await withPullOverlay(rowToNightHawkEdition(exact))), {
+      headers: NO_STORE_HEADERS,
+    });
   }
 
   // Requested edition isn't published yet. Fall back to the latest stored edition ONLY if it is
@@ -154,7 +175,7 @@ export async function GET(req: NextRequest) {
       edition.stale = true;
       edition.served_for = edition.edition_for;
     }
-    return NextResponse.json(roundFloats(edition), { headers: NO_STORE_HEADERS });
+    return NextResponse.json(roundFloats(await withPullOverlay(edition)), { headers: NO_STORE_HEADERS });
   }
 
   const legacy = await fetchLegacyPlays();

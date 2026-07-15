@@ -187,7 +187,7 @@ test("evaluatePlayGates: grade below B blocks BUY", () => {
   assert.match(result.blocks.join(" "), /below minimum/i);
 });
 
-test("evaluatePlayGates: opening range blocks BUY before ~9:50", () => {
+test("evaluatePlayGates: opening range blocks BUY before 9:45 (user-directed 2026-07-13 — was 9:50)", () => {
   mockHaltBlock = { block: false, reason: null };
   mockEtMinutes = 9 * 60 + 35;
   const result = evaluatePlayGates(
@@ -198,6 +198,24 @@ test("evaluatePlayGates: opening range blocks BUY before ~9:50", () => {
     { entry_intent: "buy" }
   );
   assert.match(result.blocks.join(" "), /Opening range/i);
+  assert.match(result.blocks.join(" "), /9:45/);
+});
+
+test("evaluatePlayGates: 9:45–9:50 BUY is no longer opening-range blocked (user-directed 2026-07-13)", () => {
+  // Previously blocked (9:30 + SPX_PLAY_OPENING_RANGE_MINUTES=20 → 9:50). The user
+  // chose the 9:45 boundary knowingly — restrict only the first 15 minutes; the
+  // 9:45–10:30 band is measured by the calibration loop (entry_context.
+  // committed_at_et) so it can be revisited with per-play evidence.
+  mockHaltBlock = { block: false, reason: null };
+  mockEtMinutes = 9 * 60 + 47;
+  const result = evaluatePlayGates(
+    baseDesk(),
+    baseConfluence(),
+    emptySession,
+    passingConfirmations,
+    { entry_intent: "buy" }
+  );
+  assert.doesNotMatch(result.blocks.join(" "), /Opening range/i);
 });
 
 test("evaluatePlayGates: macro CPI window blocks during release", () => {

@@ -23,20 +23,59 @@ type LedgerRow = Record<string, unknown>;
 
 const state = {
   ledgerRows: [] as LedgerRow[],
+  /** When true, fetchZeroDteSetupLog throws — drives the P0 ledger-read-failure tests. */
+  ledgerReadFails: false,
   liveMark: null as number | null,
   updateCalls: [] as Array<{ session_date: string; ticker: string; patch: unknown }>,
+  // gradeZeroDteLedger wiring (index-root mapping test below)
+  ungradedRows: [] as LedgerRow[],
+  gradeCalls: [] as Array<{ sessionDate: string; ticker: string; grade: Record<string, unknown> }>,
+  aggBarCalls: [] as Array<{ symbol: string; timespan: string }>,
+  dailyBars: new Map<string, Array<{ t: number; o: number; h: number; l: number; c: number }>>(),
+  // persistZeroDteScan wiring (PR-F commit-time tier stamp test below)
+  upsertRows: [] as Array<Record<string, unknown>>,
 };
 
 function resetState() {
   state.ledgerRows = [];
+  state.ledgerReadFails = false;
   state.liveMark = null;
   state.updateCalls = [];
+  state.ungradedRows = [];
+  state.gradeCalls = [];
+  state.aggBarCalls = [];
+  state.dailyBars = new Map();
+  state.upsertRows = [];
 }
+
+// scan.ts's exit-engine wiring (./exit-sync) imports ./live-marks, which reaches
+// @/lib/et-market-hours → @/lib/et-date → `import "server-only"` — same stub the
+// platform service tests use for the same boundary.
+mock.module("server-only", { namedExports: {} });
+
+// The exit engine's thesis-break check fetches Cortex evidence for OPEN rows
+// (bounded + fail-soft). Hermetic stand-in: a throwing fetch degrades to
+// "evidence unavailable → thesis check skipped" — the fail-soft contract itself —
+// so no real reader fan-out (or its 2.5s per-source budgets) ever runs in here.
+// CORTEX_SOURCE_TIMEOUT_MS must exist too: the cortex barrel re-exports it from
+// this same module, and ESM linking checks every re-exported name.
+mock.module("../nighthawk/cortex/fetch", {
+  namedExports: {
+    fetchCortexInputs: async () => {
+      throw new Error("hermetic: no cortex reads in scan.test.ts");
+    },
+    CORTEX_SOURCE_TIMEOUT_MS: 2_500,
+  },
+});
 
 mock.module("../db", {
   namedExports: {
     dbConfigured: () => true,
-    fetchZeroDteSetupLog: async () => state.ledgerRows,
+    stampZeroDteExitContext: async () => {},
+    fetchZeroDteSetupLog: async () => {
+      if (state.ledgerReadFails) throw new Error("hermetic: simulated ledger read failure");
+      return state.ledgerRows;
+    },
     updateZeroDteLiveState: async (session_date: string, ticker: string, patch: unknown) => {
       state.updateCalls.push({ session_date, ticker, patch });
     },
@@ -44,12 +83,27 @@ mock.module("../db", {
     // from "@/lib/db" (which resolves to this same mocked file) — must exist or the
     // ESM import throws "does not provide an export named ...".
     fetchLatestNighthawkEdition: async () => null,
+    fetchOpenSpxPlay: async () => null,
     fetchRecentFlows: async () => [],
-    fetchUngradedZeroDteRows: async () => [],
-    gradeZeroDteSetupRow: async () => {},
+    fetchUngradedZeroDteRows: async () => state.ungradedRows,
+    gradeZeroDteSetupRow: async (sessionDate: string, ticker: string, grade: Record<string, unknown>) => {
+      state.gradeCalls.push({ sessionDate, ticker, grade });
+    },
     insertAlertAuditLog: async () => {},
     updateZeroDtePlanOutcome: async () => {},
-    upsertZeroDteSetupLog: async () => new Set<string>(),
+    upsertZeroDteSetupLog: async (rows: Array<Record<string, unknown>>) => {
+      state.upsertRows.push(...rows);
+      return new Set<string>();
+    },
+  },
+});
+
+// scan.ts's G-6 calibration context reads the Night Hawk echo through
+// @/lib/bie/ecosystem-context, whose real import graph reaches @/lib/db and beyond —
+// stubbed to an empty map (no takes → no conflicts), same wholesale idiom as below.
+mock.module("../bie/ecosystem-context", {
+  namedExports: {
+    fetchNighthawkEchoForTickers: async () => new Map(),
   },
 });
 
@@ -64,11 +118,24 @@ mock.module("../../features/nighthawk/lib/session", {
   namedExports: {
     todayEt: () => "2026-07-06",
     etNowParts: () => ({ hour: 11, minute: 30 }),
+    // ./exit-sync pulls ./live-marks into scan.ts's graph, which reaches
+    // @/lib/et-market-hours and @/features/spx/lib/spx-play-session-guards — both
+    // real modules importing these names from this (mocked) module.
+    isTradingDayEt: () => true,
+    formatEtDate: (d: Date) => d.toISOString().slice(0, 10),
   },
 });
 
 mock.module("../providers/polygon-largo", {
-  namedExports: { fetchAggBars: async () => [] },
+  namedExports: {
+    // Mirrors the real provider's failure mode this suite guards against: an
+    // unknown/unmapped symbol does NOT throw — Polygon answers status OK with an
+    // EMPTY result set. Only symbols seeded into state.dailyBars return bars.
+    fetchAggBars: async (symbol: string, _mult: number, timespan: string) => {
+      state.aggBarCalls.push({ symbol, timespan });
+      return state.dailyBars.get(symbol) ?? [];
+    },
+  },
 });
 
 mock.module("../providers/options-snapshot", {
@@ -91,6 +158,11 @@ mock.module("../ws/options-socket", {
     // Never actually invoked by zeroDtePlaysFeed/syncLedgerLiveState (they read occ
     // straight off plan_json) — stubbed only so the module-scope import resolves.
     buildOcc: () => null,
+    // ./live-marks (pulled in via ./exit-sync) imports these at module scope; the
+    // exit path only READS the lane's in-memory store, never the WS pool itself.
+    getLiveOptionMark: async () => null,
+    subscribeContracts: () => {},
+    unsubscribeContracts: () => {},
   },
 });
 
@@ -129,8 +201,13 @@ function baseRow(overrides: Partial<LedgerRow> = {}): LedgerRow {
     score_max: 80,
     spike: false,
     underlying_at_flag: 140,
-    first_flagged_at: "2026-07-06T14:00:00.000Z",
-    last_seen_at: "2026-07-06T14:00:00.000Z",
+    // Recent relative to the REAL clock: the exit engine's flat-timeout ages a row
+    // off first_flagged_at vs Date.now(), and a fixture stamped hours/days in the
+    // past would read as ≥45min of flat theta bleed and (correctly) exit — these
+    // tests are about the sync/grade paths, not the timeout rule (covered in
+    // exit-engine.test.ts / exit-sync.test.ts).
+    first_flagged_at: new Date(Date.now() - 10 * 60_000).toISOString(),
+    last_seen_at: new Date(Date.now() - 10 * 60_000).toISOString(),
     entry_premium: 4.2,
     last_mark: 4.2,
     status: "OPEN",
@@ -210,4 +287,177 @@ test("zeroDtePlaysFeed: a graded CLOSED play surfaces its result string unchange
   assert.equal(feed.plays[0]!.status, "CLOSED");
   assert.equal(feed.plays[0]!.result, "doubled +100%");
   assert.equal(state.updateCalls.length, 0, "a CLOSED row must never be re-synced");
+});
+
+// ── P0 one-way commit door: readZeroDteLedgerChecked's last-good latch ────────────
+// The old readZeroDteLedger swallowed ANY read failure into [], indistinguishable
+// from "no plays committed today" — one transient DB blip made every committed play
+// vanish from the board payload, and (because committed tickers usually still rank
+// in the scan's fresh finds) a member's OPEN card re-rendered as an uncommitted
+// watch card. These prove: failure serves the last-good same-session snapshot, and
+// a failure with NO snapshot says committed_known:false so consumers fail closed.
+
+test("readZeroDteLedgerChecked: a transient read failure serves the last-good same-session snapshot (committed rows never vanish)", async () => {
+  resetState();
+  const { readZeroDteLedgerChecked, _resetZeroDteLedgerLatchForTest } = await mod();
+  _resetZeroDteLedgerLatchForTest();
+
+  state.ledgerRows = [baseRow({ status: "OPEN" })];
+  const first = await readZeroDteLedgerChecked();
+  assert.equal(first.committed_known, true);
+  assert.equal(first.rows.length, 1);
+
+  // Next build: the DB read blips. Pre-fix this returned [] — the OPEN play gone.
+  state.ledgerReadFails = true;
+  const second = await readZeroDteLedgerChecked();
+  assert.equal(second.committed_known, true, "a same-session snapshot stands in — the committed set is still knowable");
+  assert.equal(second.rows.length, 1, "the committed row survives the blip");
+  assert.equal(second.rows[0]!.ticker, "NVDA");
+});
+
+test("readZeroDteLedgerChecked: failure with NO same-session snapshot is committed_known:false — never a lying empty ledger", async () => {
+  resetState();
+  const { readZeroDteLedgerChecked, _resetZeroDteLedgerLatchForTest } = await mod();
+  _resetZeroDteLedgerLatchForTest();
+
+  state.ledgerReadFails = true;
+  const read = await readZeroDteLedgerChecked();
+  assert.equal(read.committed_known, false);
+  assert.deepEqual(read.rows, []);
+});
+
+test("readZeroDteLedger: delegates through the checked read (empty on unknowable, latched rows on a blip)", async () => {
+  resetState();
+  const { readZeroDteLedger, _resetZeroDteLedgerLatchForTest } = await mod();
+  _resetZeroDteLedgerLatchForTest();
+
+  state.ledgerRows = [baseRow({ status: "HOLD" })];
+  assert.equal((await readZeroDteLedger()).length, 1);
+  state.ledgerReadFails = true;
+  assert.equal((await readZeroDteLedger()).length, 1, "latched snapshot serves through the legacy read too");
+});
+
+test("gradeZeroDteLedger: an index-root row (SPXW) fetches its close from I:SPX and gets a REAL direction grade", async () => {
+  resetState();
+  // Prior-session SPXW row, plan already graded (plan_outcome set) so only the
+  // direction grade runs. Live numbers from the 2026-07-13 audit: flagged at
+  // 7564.68, I:SPX closed 7575.39 → long direction_hit = true.
+  state.ungradedRows = [
+    baseRow({
+      ticker: "SPXW",
+      session_date: "2026-07-03",
+      underlying_at_flag: 7564.68,
+      plan_outcome: "stopped",
+      plan_pnl_pct: -50,
+      plan_json: { occ: "O:SPXW260703C07565000" },
+    }),
+  ];
+  // Polygon has NO daily bars under the raw root "SPXW" — only under I:SPX.
+  // Pre-fix, the scan asked for "SPXW", got [], and stamped a permanent null grade.
+  state.dailyBars.set("I:SPX", [{ t: 1751500800000, o: 7547.64, h: 7579.93, l: 7508.16, c: 7575.39 }]);
+
+  const { gradeZeroDteLedger } = await mod();
+  const graded = await gradeZeroDteLedger(true);
+
+  assert.equal(graded, 1);
+  const daily = state.aggBarCalls.filter((c) => c.timespan === "day");
+  assert.deepEqual(
+    daily.map((c) => c.symbol),
+    ["I:SPX"],
+    "the daily-close fetch must use the mapped index symbol, never the raw option root"
+  );
+  assert.equal(state.gradeCalls.length, 1);
+  const grade = state.gradeCalls[0]!.grade as { close_price: number | null; direction_hit: boolean | null; move_pct: number | null };
+  assert.equal(grade.close_price, 7575.39, "close must come from the I:SPX bar");
+  assert.equal(grade.direction_hit, true, "long from 7564.68 into a 7575.39 close is a hit");
+  assert.ok(grade.move_pct != null && grade.move_pct > 0);
+});
+
+// ── PR-F commit-time tier stamp (persistZeroDteScan → entry_context.tier) ──────────
+// The #325 PR body promised exactly this wiring: "one assignZeroDteTier call at
+// commit". buildZeroDteEntryContext (REAL here, like the rest of ./entry-context's
+// pure half) pins the tier by feeding the just-built blob through
+// tierFromEntryContext, so the ledger row the upsert receives must carry the
+// {tier, factors} assignment computed from the SAME values being pinned.
+
+test("persistZeroDteScan: a fresh COMMIT's upserted row pins entry_context.tier from the same pinned evidence", async () => {
+  resetState();
+  // Day-open VIX 16.1 — the F-1 calm band (15-17). The session-context fetch reads
+  // it through the same mocked Polygon provider as everything else in this file.
+  state.dailyBars.set("I:VIX", [{ t: Date.parse("2026-07-06T13:30:00Z"), o: 16.1, h: 17, l: 15.8, c: 16.5 }]);
+
+  const setup = {
+    ticker: "NVDA",
+    direction: "long" as const,
+    top_strike: 145,
+    expiry: "2026-07-06",
+    score: 78, // prime band (75-84) — the best measured band
+    dossier_score: null,
+    conviction: null,
+    gross_premium: 2_000_000,
+    spike: false,
+    underlying_price: 140,
+    top_strike_avg_fill: 4.2,
+    plan: null,
+    gamma_regime: null,
+    // Clean multi-source Cortex support at commit (assessment shape — the real
+    // cortexEntryContextFor flattens it into the blob the tier engine reads).
+    cortex: {
+      abstained: false as const,
+      decision: "PASS" as const,
+      verdict: {
+        ticker: "NVDA",
+        direction: "long" as const,
+        asOf: "2026-07-06T15:00:00.000Z",
+        score: 2.1,
+        conviction: "A" as const,
+        vetoes: [],
+        supports: [
+          { source: "gex-walls", stance: "supports", weight: 1.0, halfLifeSec: 900, asOf: "2026-07-06T15:00:00.000Z", detail: "path clear" },
+          { source: "wall-trend", stance: "supports", weight: 1.1, halfLifeSec: 900, asOf: "2026-07-06T15:00:00.000Z", detail: "wall growing" },
+        ],
+        opposes: [],
+        absent: [],
+        narrative: [],
+      },
+    },
+    gate: {
+      verdict: "COMMIT" as const,
+      blocks: [],
+      calibration: {
+        score_at_commit: 78,
+        market_bias: "up",
+        committed_at_et: "11:30",
+        g4_vix: { day_open_vix: 16.1, tier: "calm", would_block: false, would_halve_size: false, note: "calm" },
+        g6_conflict: { conflict: false, against: [], would_block: false, note: "No cross-system conflict." },
+      },
+    },
+    earnings: null,
+    news_hot: null,
+    halted: false,
+    fib_note: null,
+    direction_confirmed: null,
+  };
+
+  const { persistZeroDteScan } = await mod();
+  const logged = await persistZeroDteScan([setup as never]);
+
+  assert.equal(logged, 1);
+  assert.equal(state.upsertRows.length, 1);
+  const ctx = state.upsertRows[0]!.entry_context as {
+    score: number | null;
+    vix_open: number | null;
+    tier: { tier: string; factors: Array<{ label: string; direction: string }> } | null;
+  };
+  assert.equal(ctx.score, 78);
+  assert.equal(ctx.vix_open, 16.1);
+  // Prime score (+2) + calm VIX (+2) + clean Cortex (+2) ≥ the A bar even with the
+  // early-window penalty (committed_at_et is stamped from the REAL clock, so the
+  // F-4 factor's presence depends on when this test runs — the tier does not).
+  assert.ok(ctx.tier, "the commit-time tier must be pinned alongside the evidence it ranks");
+  assert.equal(ctx.tier!.tier, "A");
+  const labels = ctx.tier!.factors.map((f) => f.label);
+  for (const expected of ["Prime score band", "VIX calm band", "Clean Cortex support"]) {
+    assert.ok(labels.includes(expected), `factor "${expected}" must argue the tier (got: ${labels.join(", ")})`);
+  }
 });

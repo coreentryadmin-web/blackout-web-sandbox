@@ -16,6 +16,7 @@
 import {
   dbConfigured,
   fetchLatestNighthawkEdition,
+  fetchOpenSpxPlay,
   fetchRecentFlows,
   fetchUngradedZeroDteRows,
   fetchZeroDteSetupLog,
@@ -27,6 +28,7 @@ import {
   type ZeroDteSetupLogRow,
   type ZeroDteSetupLogUpsert,
 } from "@/lib/db";
+import { fetchNighthawkEchoForTickers } from "@/lib/bie/ecosystem-context";
 import { LEVERAGED_ETP_SET } from "@/features/nighthawk/lib/constants";
 import { createDossierBuildCache, fetchTickerDossier } from "@/features/nighthawk/lib/dossier";
 import { etNowParts, todayEt } from "@/features/nighthawk/lib/session";
@@ -39,13 +41,25 @@ import {
   computeLedgerGrade,
   deriveZeroDteSetups,
   enrichSetup,
+  polygonSpotTicker,
   type EarningsFlag,
   type EnrichedZeroDteSetup,
   type NewsHeat,
   type SetupDossierView,
   type ZeroDteGateRejection,
 } from "./board";
+import { buildZeroDteEntryContext, fetchZeroDteSessionContext } from "./entry-context";
+import { evaluateLedgerRowExit } from "./exit-sync";
+import { cortexEntryContextFor, cortexGateBlocks, evaluateCortexForCommit } from "./cortex-gate";
 import { persistZeroDteRejections } from "./rejections";
+import { evaluateZeroDteGates, gateRejectionFor, recentNighthawkTake } from "./gates";
+import {
+  deriveGovernorFromLedger,
+  loadRecordedGovernorStops,
+  mergeGovernorStops,
+  recordGovernorStops,
+  type GovernorSnapshot,
+} from "./governor";
 import {
   computeIntradayRead,
   intradayScoreAdjust,
@@ -53,6 +67,7 @@ import {
   marketBias,
   timeOfDayFactor,
   type IntradayRead,
+  type MarketBias,
 } from "./intraday";
 import {
   buildContractPlan,
@@ -190,7 +205,11 @@ export async function scanZeroDteBoard(flags?: {
   );
 
   await attachContractPlans(setups);
-  await attachIntradayEdge(setups);
+  const tape = await attachIntradayEdge(setups);
+  // Hard-gate verdicts LAST — G-3 judges the final post-edge-layer score, and G-1
+  // reuses the same SPY read the edge layer just fetched (one bias per scan cycle,
+  // scoring and gating can never disagree about what the tape said).
+  await attachGateVerdicts(setups, tape.bias, tape.biasAsOfMs);
 
   return { setups, nighthawk_covered: nighthawkCovered, upstream_ok: upstreamOk, rejections };
 }
@@ -199,7 +218,9 @@ export async function scanZeroDteBoard(flags?: {
 async function intradayReadFor(ticker: string, today: string): Promise<IntradayRead | null> {
   return within(
     withServerCache<IntradayRead>(`zerodte:intraday:${ticker}:${today}`, 3 * 60 * 1000, async () => {
-      const bars = await fetchAggBars(ticker, 1, "minute", today, today, "1000");
+      // Index roots (SPXW/SPX/NDX…) only price under Polygon's I: namespace —
+      // unmapped they return zero bars and the read silently degrades to nulls.
+      const bars = await fetchAggBars(polygonSpotTicker(ticker), 1, "minute", today, today, "1000");
       return computeIntradayRead(
         bars
           .filter((b) => b.t != null && Number.isFinite(b.t))
@@ -213,9 +234,13 @@ async function intradayReadFor(ticker: string, today: string): Promise<IntradayR
 /** The "is it working RIGHT NOW" layer: each top play's own minute-bar read
  *  (session VWAP / opening range / 5m trend), SPY as the market tape, and the
  *  time-of-day edge window — all folded into the score, with hard intraday
- *  conflicts flagged for the A-tier gate. Best-effort: missing bars = no adjust. */
-async function attachIntradayEdge(setups: EnrichedZeroDteSetup[]): Promise<void> {
-  if (setups.length === 0) return;
+ *  conflicts flagged for the A-tier gate. Best-effort: missing bars = no adjust.
+ *  Returns the SPY bias (+ its freshness) so the hard-gate layer judges the SAME
+ *  tape read the scores were adjusted with. */
+async function attachIntradayEdge(
+  setups: EnrichedZeroDteSetup[]
+): Promise<{ bias: MarketBias | null; biasAsOfMs: number | null }> {
+  if (setups.length === 0) return { bias: null, biasAsOfMs: null };
   const today = todayEt();
   const { hour, minute } = etNowParts();
   const nowEt = hour * 60 + minute;
@@ -238,6 +263,119 @@ async function attachIntradayEdge(setups: EnrichedZeroDteSetup[]): Promise<void>
     s.tod_label = tod.label;
     s.score = Math.max(0, Math.min(100, s.score + adj.delta + align + tod.delta));
   });
+  return { bias, biasAsOfMs: spyRead?.last_bar_ms ?? null };
+}
+
+/** Hard-gate verdicts (G-1.. — ./gates.ts) for every FRESH find this cycle.
+ *  Already-committed ledger tickers are refreshes and are never re-gated (a printed
+ *  play is managed to its exit, not retro-blocked). If the committed set can't be
+ *  read, gates stay null and persistZeroDteScan fails closed on every fresh commit —
+ *  the same "unreadable input is a block, not a pass" rule the evidence gates follow. */
+async function attachGateVerdicts(
+  setups: EnrichedZeroDteSetup[],
+  bias: MarketBias | null,
+  biasAsOfMs: number | null
+): Promise<void> {
+  if (setups.length === 0) return;
+  const today = todayEt();
+  const { hour, minute } = etNowParts();
+  const nowEtMinutes = hour * 60 + minute;
+  const nowMs = Date.now();
+  const ledgerRows = dbConfigured()
+    ? await fetchZeroDteSetupLog(today).catch(() => null)
+    : ([] as ZeroDteSetupLogRow[]);
+  if (ledgerRows == null) return; // gates stay null → fresh commits fail closed downstream
+  const committed = new Set(ledgerRows.map((r) => r.ticker.toUpperCase()));
+
+  // G-5 snapshot: open/stop counts from the shared Postgres ledger (authoritative),
+  // stop timestamps from the Redis record (best-effort — see governor.ts's model).
+  const recordedStops = await loadRecordedGovernorStops(today).catch(() => []);
+  const ledgerGovernor = deriveGovernorFromLedger(ledgerRows);
+  const governor: GovernorSnapshot = {
+    open_plans: ledgerGovernor.open_plans,
+    stops: mergeGovernorStops(ledgerGovernor.stops, recordedStops),
+  };
+
+  // G-4/G-6 calibration context — all best-effort (calibration LOGS, never blocks,
+  // so a missing input degrades to an honest "unknown"/no-conflict verdict, never a
+  // stalled scan): day-open VIX cached per session, Slayer's live play briefly,
+  // Night Hawk takes in one batched echo query for just the fresh tickers.
+  const freshTickers = setups.map((s) => s.ticker.toUpperCase()).filter((t) => !committed.has(t));
+  const [vixDayOpen, slayerLive, nhEcho] = await Promise.all([
+    within(
+      withServerCache<number | null>(`zerodte:vix-open:${today}`, 10 * 60 * 1000, async () => {
+        const bars = await fetchAggBars("I:VIX", 1, "day", today, today);
+        const open = bars.length ? bars[0]!.o : null;
+        return open != null && Number.isFinite(open) ? open : null;
+      }),
+      2_500
+    ),
+    dbConfigured()
+      ? within(
+          withServerCache<{ direction: "long" | "short" } | null>(
+            `zerodte:slayer-live:${today}`,
+            30_000,
+            async () => {
+              const play = await fetchOpenSpxPlay(today).catch(() => null);
+              return play ? { direction: play.direction } : null;
+            }
+          ),
+          2_500
+        )
+      : null,
+    freshTickers.length > 0 && dbConfigured()
+      ? fetchNighthawkEchoForTickers(freshTickers).catch(
+          () => new Map<string, { direction: string; edition_for: string }>()
+        )
+      : new Map<string, { direction: string; edition_for: string }>(),
+  ]);
+
+  // Setups arrive score-ranked, so the concurrency budget goes to the best finds:
+  // committedThisCycle carries earlier accepted fresh commits within this same pass
+  // (both for the cap and the correlated-conflict check).
+  const committedThisCycle: Array<{ ticker: string; direction: "long" | "short" }> = [];
+  for (const s of setups) {
+    if (committed.has(s.ticker.toUpperCase())) continue;
+    s.gate = evaluateZeroDteGates({
+      ticker: s.ticker,
+      direction: s.direction,
+      score: s.score,
+      nowEtMinutes,
+      nowMs,
+      bias,
+      biasAsOfMs,
+      governor,
+      committedThisCycle,
+      vixDayOpen,
+      slayerLive,
+      nighthawkTake: recentNighthawkTake(nhEcho.get(s.ticker.toUpperCase()) ?? null, today),
+    });
+    if (s.gate.verdict !== "COMMIT") continue;
+
+    // ── Night Hawk Cortex layer (NIGHTHAWK-CORTEX-DESIGN.md §2, wired by PR-B) ──
+    // Runs on gate SURVIVORS only — the hard gates are the cheap fail-closed floor;
+    // the Cortex is the expensive precision layer on top, so it never spends its
+    // provider budget arguing about a find the gates already killed. The loop stays
+    // sequential ON PURPOSE: a Cortex block must keep this find OUT of
+    // committedThisCycle (it will not print), and later finds' governor verdicts
+    // (concurrency cap, correlated-conflict) depend on that set being accurate.
+    // Latency is bounded: fetchCortexInputs is per-read time-budgeted (2.5s, cache-
+    // first readers) and survivors per cycle are few (the governor caps open risk).
+    // evaluateCortexForCommit never throws — total Cortex outage degrades to an
+    // ABSTAIN (commit proceeds on gates alone; see cortex-gate.ts for the WHY).
+    s.cortex = await evaluateCortexForCommit(s.ticker, s.direction, new Date(nowMs));
+    const cortexBlocks = cortexGateBlocks(s.cortex);
+    if (cortexBlocks.length > 0) {
+      // A Cortex veto / net-negative blocks EXACTLY like a hard-gate block: the
+      // verdict flips to BLOCKED carrying the Cortex blocks, so the SKIP card, the
+      // zerodte_scan_rejections row (code cortex_veto:<source>/cortex_net_negative
+      // + evidence sentences) and the fail-closed persist lane all reuse the
+      // existing gate plumbing untouched. Gate blocks were empty here (COMMIT).
+      s.gate = { ...s.gate, verdict: "BLOCKED", blocks: cortexBlocks };
+      continue;
+    }
+    committedThisCycle.push({ ticker: s.ticker, direction: s.direction });
+  }
 }
 
 /** One batched quote snapshot for every find's top-strike contract, then a pure
@@ -279,18 +417,60 @@ async function attachContractPlans(setups: EnrichedZeroDteSetup[]): Promise<void
 }
 
 /** Persist a scan's finds into the session ledger (no-op without a database).
+ *
+ *  Two lanes, split against the committed set:
+ *  - REFRESH (ticker already in today's ledger): always upserted — a committed play
+ *    is managed to its exit, never retro-blocked, and the upsert's COALESCE pins
+ *    keep its plan/entry immutable anyway.
+ *  - FRESH commit: must clear the hard gate stack (setup.gate, ./gates.ts). Blocked
+ *    finds are persisted to zerodte_scan_rejections (machine code + human sentence)
+ *    instead — visible SKIP, never a silent drop. A missing verdict (gate context
+ *    unreadable) fails closed, and an unreadable committed set fails the whole
+ *    persist closed (can't tell fresh from committed → nothing new may print).
+ *
  *  After the 15:00 ET cutoff only EXISTING plays are refreshed — a fresh flag in
- *  power hour never opens a new 0DTE play. */
+ *  power hour never opens a new 0DTE play (this predates and stays alongside the
+ *  gate stack's own opening-window rule). */
 export async function persistZeroDteScan(setups: EnrichedZeroDteSetup[]): Promise<number> {
   if (!dbConfigured() || setups.length === 0) return 0;
   const today = todayEt();
   const { hour, minute } = etNowParts();
-  let eligible = setups;
-  if (hour * 60 + minute >= NEW_PLAY_CUTOFF_ET_MINUTES) {
-    const existing = new Set((await fetchZeroDteSetupLog(today).catch(() => [])).map((r) => r.ticker));
-    eligible = setups.filter((s) => existing.has(s.ticker));
-    if (eligible.length === 0) return 0;
+  const pastCutoff = hour * 60 + minute >= NEW_PLAY_CUTOFF_ET_MINUTES;
+
+  const existingRows = await fetchZeroDteSetupLog(today).catch(() => null);
+  if (existingRows == null) return 0; // fail closed: fresh vs committed is unknowable
+  const existing = new Set(existingRows.map((r) => r.ticker.toUpperCase()));
+
+  const refresh = setups.filter((s) => existing.has(s.ticker.toUpperCase()));
+  const freshCandidates = pastCutoff ? [] : setups.filter((s) => !existing.has(s.ticker.toUpperCase()));
+
+  const committedFresh: EnrichedZeroDteSetup[] = [];
+  const gateRejections: import("./board").ZeroDteGateRejection[] = [];
+  for (const s of freshCandidates) {
+    if (s.gate?.verdict === "COMMIT") committedFresh.push(s);
+    else gateRejections.push(gateRejectionFor(s, s.gate));
   }
+  if (gateRejections.length > 0) {
+    // Fail-visible half of the block: best-effort durable record (same throttled
+    // write path the evidence-gate near-misses use), logged loudly on failure but
+    // never allowed to break the scan itself.
+    void persistZeroDteRejections(gateRejections).catch((err) => {
+      console.warn("[zerodte-gates] failed to persist gate rejections:", err);
+    });
+  }
+
+  const eligible = [...committedFresh, ...refresh];
+  if (eligible.length === 0) return 0;
+
+  // Context-at-entry (C-2): one cached session read per scan (day-open VIX + SPY
+  // bias), merged per-row with the name's own gamma regime + committed score. The
+  // upsert pins it at FIRST flag, so refresh ticks sending fresh context never
+  // re-stamp an existing row. Best-effort: null context never blocks a commit.
+  // MERGE NOTE (gate lanes × entry_context): this runs on the post-gate `eligible`
+  // set only — a hard-gate-BLOCKED fresh find goes to zerodte_scan_rejections and
+  // never writes a ledger row, so it never receives an entry_context either.
+  const sessionCtx = await fetchZeroDteSessionContext().catch(() => null);
+  const committedAtMs = Date.now();
   const rows: ZeroDteSetupLogUpsert[] = eligible.map((s) => ({
     session_date: today,
     ticker: s.ticker,
@@ -309,6 +489,21 @@ export async function persistZeroDteScan(setups: EnrichedZeroDteSetup[]): Promis
     entry_premium: resolveLedgerEntryPremium(s.plan?.entry_max, s.top_strike_avg_fill),
     flow_avg_fill: s.top_strike_avg_fill,
     plan_json: s.plan ? ({ ...s.plan } as unknown as Record<string, unknown>) : null,
+    // G-4/G-6 calibration verdict at commit (C-2 context columns). Refresh-lane
+    // setups carry gate=null and pass null here — the upsert's COALESCE pin keeps
+    // the original commit-time verdict untouched either way.
+    gate_calibration_json: s.gate ? ({ ...s.gate.calibration } as unknown as Record<string, unknown>) : null,
+    // entry_context.cortex pins the FULL evidence vector (or the honest abstain
+    // record) at commit — the §3.1 calibration loop's raw material. Refresh-lane
+    // setups never ran the Cortex (s.cortex null → blob field null), and the
+    // upsert's COALESCE pin keeps the original commit-time context untouched
+    // either way. Blocked finds never reach this map at all — they went to
+    // zerodte_scan_rejections above and never write entry_context.
+    entry_context: buildZeroDteEntryContext(
+      { score: s.score, gamma_regime: s.gamma_regime, cortex: cortexEntryContextFor(s.cortex) },
+      sessionCtx,
+      committedAtMs
+    ) as unknown as Record<string, unknown>,
     flags_json: {
       ...(s.earnings ? { earnings: s.earnings } : {}),
       ...(s.news_hot ? { news_hot: s.news_hot.title } : {}),
@@ -376,7 +571,11 @@ export async function gradeZeroDteLedger(force = false): Promise<number> {
           plan_pnl_pct: planGrade.pnl_pct,
         });
       }
-      const bars = await fetchAggBars(row.ticker, 1, "day", row.session_date, row.session_date);
+      // polygonSpotTicker: an index-root row (SPXW/SPX/NDX…) must fetch its close
+      // from the I: index symbol — the raw root "succeeds" with 0 results, which
+      // would stamp the row graded with a permanent null direction grade (the
+      // catch-and-retry path only covers thrown fetches, not empty ones).
+      const bars = await fetchAggBars(polygonSpotTicker(row.ticker), 1, "day", row.session_date, row.session_date);
       const close = bars.length ? bars[bars.length - 1]!.c : null;
       const grade = computeLedgerGrade(row.direction, row.underlying_at_flag, close ?? null);
       await gradeZeroDteSetupRow(row.session_date, row.ticker, grade);
@@ -407,10 +606,54 @@ export async function warmZeroDteBoard(): Promise<{ found: number; logged: numbe
   return { found: setups.length, logged };
 }
 
-/** Today's ledger for the board's "flagged today" lane (empty without a database). */
+/** Last successful ledger read this session (per replica) — the presentation half
+ *  of the one-way commit door. See readZeroDteLedgerChecked for WHY. */
+let lastGoodLedger: { date: string; rows: ZeroDteSetupLogRow[] } | null = null;
+
+export type ZeroDteLedgerRead = {
+  rows: ZeroDteSetupLogRow[];
+  /** True when `rows` is a trustworthy committed set for today (a fresh read, or a
+   *  same-session snapshot standing in for one transient failed read). False ONLY
+   *  when the read failed AND this replica has never seen today's ledger — the
+   *  committed set is unknowable, and consumers must fail closed on anything that
+   *  needs to tell "fresh find" apart from "committed play". */
+  committed_known: boolean;
+};
+
+/** Today's ledger with an explicit "could we actually read it?" signal.
+ *
+ *  WHY (P0 — "OPEN regressed to Watch"): the old read swallowed any DB failure
+ *  into an empty array, indistinguishable from "no plays committed today". One
+ *  transient blip made every committed play VANISH from the board payload for a
+ *  cache window — and because committed tickers usually still rank in the scan's
+ *  fresh finds, the member saw their OPEN position card demoted to a fresh-find
+ *  watch card. Commit is a one-way door: a committed row may never be re-presented
+ *  as an uncommitted find, so a failed read (a) falls back to this replica's
+ *  last-good same-session snapshot (slightly stale marks beat vanished positions;
+ *  the 5s board cache already tolerates that staleness), and (b) when no snapshot
+ *  exists, says so via committed_known=false instead of lying "empty". */
+export async function readZeroDteLedgerChecked(): Promise<ZeroDteLedgerRead> {
+  if (!dbConfigured()) return { rows: [], committed_known: true };
+  const today = todayEt();
+  try {
+    const rows = await fetchZeroDteSetupLog(today);
+    lastGoodLedger = { date: today, rows };
+    return { rows, committed_known: true };
+  } catch {
+    if (lastGoodLedger?.date === today) return { rows: lastGoodLedger.rows, committed_known: true };
+    return { rows: [], committed_known: false };
+  }
+}
+
+/** Today's ledger for the board's "flagged today" lane (empty without a database).
+ *  Failure degrades to the last-good same-session snapshot (see the checked read). */
 export async function readZeroDteLedger(): Promise<ZeroDteSetupLogRow[]> {
-  if (!dbConfigured()) return [];
-  return fetchZeroDteSetupLog(todayEt()).catch(() => []);
+  return (await readZeroDteLedgerChecked()).rows;
+}
+
+/** Test-only: reset the last-good ledger latch between cases. */
+export function _resetZeroDteLedgerLatchForTest(): void {
+  lastGoodLedger = null;
 }
 
 /**
@@ -437,6 +680,11 @@ export async function syncLedgerLiveState(rows: ZeroDteSetupLogRow[]): Promise<Z
   const { hour, minute } = etNowParts();
   const nowEtMinutes = hour * 60 + minute;
 
+  // G-5 input: stop transitions observed THIS pass (a row flipping to CLOSED/
+  // stopped) get their timestamp recorded to the shared governor state — Postgres
+  // has no stop-time column, and the 20-minute re-entry lock needs one.
+  const stopEvents: Array<{ ticker: string; direction: "long" | "short"; at_ms: number }> = [];
+
   const updated = await Promise.all(
     rows.map(async (r) => {
       // CLOSED is terminal; every other row gets a state pass — rows with no plan/
@@ -454,12 +702,45 @@ export async function syncLedgerLiveState(rows: ZeroDteSetupLogRow[]): Promise<Z
         trough,
         nowEtMinutes,
       });
-      if (dbConfigured()) {
-        await updateZeroDteLiveState(r.session_date, r.ticker, { status: state.status, mark }).catch(() => {});
+      // ── 0DTE exit engine (B-8, ./exit-engine.ts) — runs AFTER derivePlayStatus so
+      // the plan's own latched stop/target/time-stop machinery is untouched; the
+      // engine only ADDS exits on rows the plan still considers live: profit-ratchet
+      // floors (green never finishes red), thesis break (Cortex evidence turned
+      // against the play — unconditional, fires even at a loss), flat timeout
+      // (45min inside ±10% = theta bleed), and fresh-lane-mark stop breaches the
+      // ~2.5s snapshot above hasn't seen yet. Fail-soft by contract: any missing
+      // input (no mark, no evidence) → null → the row proceeds exactly as before.
+      const exit =
+        state.status !== "CLOSED"
+          ? await evaluateLedgerRowExit(r, { syncMark: mark, status: state.status }).catch(() => null)
+          : null;
+      const status = exit ? ("CLOSED" as const) : state.status;
+      const finalMark = exit ? exit.mark : mark;
+      // Governor stop accounting: a plan-stop exit IS a stop wherever it was
+      // detected (latch or fresher lane mark). Ratchet/thesis/flat exits are
+      // deliberately NOT counted — the governor's halt counts busted plans, and a
+      // breakeven-floor scratch or a banked runner is not one.
+      if (
+        (state.status === "CLOSED" && state.closed_reason === "stopped") ||
+        exit?.decision.reason === "plan_stop"
+      ) {
+        stopEvents.push({ ticker: r.ticker, direction: r.direction, at_ms: Date.now() });
       }
-      return { ...r, status: state.status, last_mark: mark ?? r.last_mark, peak_premium: peak, trough_premium: trough };
+      if (dbConfigured()) {
+        await updateZeroDteLiveState(r.session_date, r.ticker, { status, mark: finalMark }).catch(() => {});
+      }
+      // Widen the returned latches with the exit mark too (the lane mark can sit
+      // outside the snapshot mark) — mirrors the DB write's GREATEST/LEAST.
+      const peakOut = finalMark != null ? Math.max(peak, finalMark) : peak;
+      const troughOut = finalMark != null ? Math.min(trough, finalMark) : trough;
+      return { ...r, status, last_mark: finalMark ?? r.last_mark, peak_premium: peakOut, trough_premium: troughOut };
     })
   );
+  if (stopEvents.length > 0) {
+    // Best-effort (first-write-wins per ticker inside recordGovernorStops): a Redis
+    // failure only softens the timed lock — the ledger stop still counts to the halt.
+    void recordGovernorStops(todayEt(), stopEvents).catch(() => {});
+  }
   return updated;
 }
 

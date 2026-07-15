@@ -10,6 +10,13 @@
  * `vector-market-structure` numerics the chart draws, so the terminal can never disagree with a
  * toggled-on overlay). Every field is independently null-safe: a study that can't compute at the
  * current bar count simply doesn't contribute a line — honest, never fabricated.
+ *
+ * Session-scoping note (multi-session seed, TARGET_SEED_SESSIONS = 3): VWAP is session-anchored
+ * and resets at each ET day boundary inside vwapSeries (#305). EMA/RSI/MACD are continuous by
+ * definition — extra prior-session history only improves their warm-up. The golden pocket and
+ * market structure are WINDOW-scoped BY DESIGN (dominant swing / pivots over everything displayed,
+ * matching the chart's fib-auto + structure overlays) — deliberately NOT sliced to the last
+ * session, because a swing or BOS that started in a prior seeded day is real context.
  */
 
 import { vwapSeries, emaSeries, rsiSeries, macdSeries } from "./vector-indicators";

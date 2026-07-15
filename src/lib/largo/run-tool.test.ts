@@ -138,6 +138,9 @@ function nighthawkRow(overrides: Partial<NighthawkPlayOutcomeRow>): NighthawkPla
     hit_stop: false,
     outcome: "target",
     created_at: "2026-06-30T09:00:00Z",
+    // PR-N2: current-methodology by default — run-tool filters rows through the shared
+    // isNighthawkOutcomeScoreable predicate, which quarantines legacy-tagged grades.
+    grade_methodology: "v2_fillability",
     ...overrides,
   };
 }
@@ -191,6 +194,30 @@ describe("runLargoTool: get_spx_vs_nighthawk_comparison", () => {
     // never left for the model to subtract itself.
     assert.equal(result.win_rate_delta, 2 / 3 - 0.5);
     assert.equal(result.signal_count_delta, 3 - 3);
+  });
+
+  test("quarantines legacy-methodology and pulled Night Hawk grades out of the quoted win rate (PR-N2)", async () => {
+    mockSpxRows = [];
+    // 1 honest current-rules win + 1 honest current-rules stop, PLUS a legacy phantom
+    // "target" (pre-fillability grade) and a pulled would-have-won. Largo must quote
+    // 50%, not 3/4 or 2/3 — the same anti-blend rule as the record strip.
+    mockNighthawkRows = [
+      nighthawkRow({ id: 1, outcome: "target" }),
+      nighthawkRow({ id: 2, outcome: "stop" }),
+      nighthawkRow({ id: 3, outcome: "target", grade_methodology: "v1_level_touch" }),
+      nighthawkRow({ id: 4, outcome: "target", pulled: true }),
+    ];
+    mockNighthawkPendingCount = 0;
+
+    const result = (await runLargoTool("get_spx_vs_nighthawk_comparison", { days: 7 })) as Record<
+      string,
+      unknown
+    >;
+
+    assert.equal(result.nighthawk_signal_count, 2);
+    assert.equal(result.nighthawk_wins, 1);
+    assert.equal(result.nighthawk_losses, 1);
+    assert.equal(result.nighthawk_win_rate, 0.5);
   });
 
   test("defaults to a 7-day rolling window when days is omitted", async () => {

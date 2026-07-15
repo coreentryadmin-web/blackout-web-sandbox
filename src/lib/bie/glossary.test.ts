@@ -84,6 +84,39 @@ describe("lookupGlossary", () => {
     assert.doesNotMatch(largo.definition, /evening swing-pick/i); // not the Night Hawk def
   });
 
+  // PR-L1 — live-battery substance gaps. "What does positive/negative gamma mean" resolves to the
+  // Gamma regime entry, whose text previously spoke only the long/short-gamma register: a member
+  // asking in the positive/negative vocabulary got an answer that never used their words nor the
+  // suppress/stabilize (resp. amplify/accelerate) mechanics. The definition now answers in BOTH
+  // registers — pin the exact vocabulary so it can't regress to jargon-only.
+  test("positive/negative gamma questions get the suppress/amplify mechanics in the member's own vocabulary", () => {
+    const pos = lookupGlossary("what does positive gamma mean for the market?")!;
+    assert.match(pos.term, /Gamma regime/i);
+    assert.match(pos.definition, /positive gamma/i);
+    assert.match(pos.definition, /suppress/i);
+    assert.match(pos.definition, /stabiliz/i);
+    assert.match(pos.definition, /pins|pin\b/i);
+
+    const neg = lookupGlossary("what does negative gamma mean?")!;
+    assert.match(neg.term, /Gamma regime/i);
+    assert.match(neg.definition, /negative gamma/i);
+    assert.match(neg.definition, /amplif/i);
+    assert.match(neg.definition, /accelerate/i);
+    assert.match(neg.definition, /volatility feeds on itself/i);
+  });
+
+  // PR-L1 — reported live: "what is Thermal" answered with the DARK-POOL definition. The matcher
+  // itself was never the culprit (the collision was the question-less answer-cache key, see
+  // platform-cache.test.ts) — but pin the matcher level too so an alias regression can't recreate
+  // the same member-visible symptom from a second direction.
+  test("REGRESSION (PR-L1): 'what is Thermal' resolves to Thermal, never the dark-pool entry", () => {
+    const hit = lookupGlossary("what is Thermal")!;
+    assert.equal(hit.term, "Thermal");
+    assert.doesNotMatch(hit.definition, /dark[- ]pool/i);
+    // And the dark-pool question keeps its own entry — no swap in either direction.
+    assert.match(lookupGlossary("what is a dark pool level?")!.term, /Dark pool/i);
+  });
+
   test("plural + alias tolerance", () => {
     assert.match(lookupGlossary("what are call walls")!.term, /Call wall/i);
     assert.match(lookupGlossary("explain the flip")!.term, /Gamma flip/i);
@@ -110,5 +143,113 @@ describe("lookupGlossary", () => {
     for (const e of BLACKOUT_GLOSSARY) {
       assert.ok(text.includes(e.term), `knowledge text missing ${e.term}`);
     }
+  });
+});
+
+describe("Cortex / 0DTE decision-layer concepts (PR-H)", () => {
+  test("every new decision-layer concept resolves via a natural question", () => {
+    const probes: Array<[string, RegExp]> = [
+      ["what is the cortex?", /Cortex/],
+      ["what is a cortex veto", /veto/i],
+      ["what is veto asymmetry", /asymmetry/i],
+      ["what is evidence decay", /decay/i],
+      ["explain the evidence half-life", /decay|half-life/i],
+      ["what is the opening harvest", /Opening harvest/i],
+      ["what is a thesis-break exit", /Thesis-break/i],
+      ["what is the profit ratchet", /Profit ratchet/i],
+      ["what is gate calibration", /Gate calibration/i],
+      ["what is counterfactual skip grading", /skip grading/i],
+      ["what are merit tiers", /Merit tiers/i],
+      ["what are conviction bands", /Merit tiers/i],
+    ];
+    for (const [q, termRe] of probes) {
+      const hit = lookupGlossary(q);
+      assert.ok(hit, `expected a glossary hit for: ${q}`);
+      assert.match(hit!.term, termRe, `wrong term for: ${q} (got ${hit!.term})`);
+    }
+  });
+
+  test("each new entry is member-plain and carries a concrete example", () => {
+    const terms = [
+      "Cortex (Night Hawk Cortex)",
+      "Evidence veto (Cortex veto)",
+      "Veto asymmetry",
+      "Evidence decay (half-life)",
+      "Opening harvest",
+      "Thesis-break exit",
+      "Profit ratchet",
+      "Gate calibration",
+      "Counterfactual skip grading",
+      "Merit tiers (conviction bands)",
+    ];
+    for (const term of terms) {
+      const entry = BLACKOUT_GLOSSARY.find((e) => e.term === term);
+      assert.ok(entry, `missing glossary entry: ${term}`);
+      assert.ok(entry!.definition.length > 120, `${term}: definition too thin`);
+      assert.match(entry!.definition, /Example:/, `${term}: needs a concrete example`);
+    }
+  });
+
+  test("key semantics are pinned: asymmetry direction, 3-half-life absence, green-never-finishes-red, conservative counterfactuals", () => {
+    assert.match(
+      lookupGlossary("veto asymmetry")!.definition,
+      /one loud bearish fact can kill an entry, while one loud bullish signal can never buy one/i
+    );
+    assert.match(lookupGlossary("evidence decay")!.definition, /three half-lives/i);
+    assert.match(lookupGlossary("profit ratchet")!.definition, /green never finishes red/i);
+    assert.match(lookupGlossary("counterfactual skip grading")!.definition, /conservatively AGAINST/i);
+    assert.match(lookupGlossary("what is a thesis-break exit")!.definition, /even at a loss/i);
+  });
+
+  test("longest-alias precedence: 'cortex veto' resolves to the veto entry, not the Cortex product entry", () => {
+    assert.match(lookupGlossary("what is a cortex veto")!.term, /Evidence veto/i);
+    assert.match(lookupGlossary("what is the cortex")!.term, /^Cortex/);
+  });
+});
+
+describe("Night Hawk overnight-edition concepts (PR-N9)", () => {
+  test("every new overnight concept resolves via a natural question", () => {
+    const probes: Array<[string, RegExp]> = [
+      ["what is publish context?", /Publish context/i],
+      ["what is the publish pin", /Publish context/i],
+      ["what is evidence pinning", /Publish context/i],
+      ["what is the morning confirmation?", /Morning confirmation/i],
+      ["what is the morning check", /Morning confirmation/i],
+      ["what is a morning verdict", /Morning confirmation/i],
+      ["what is a pulled play", /Pulled play/i],
+      ["what is the pull latch", /Pulled play/i],
+      ["what is an unfilled grade", /Unfilled/i],
+      ["what is fillability", /Unfilled/i],
+      ["what are the publish gates", /Publish gates/i],
+      ["what is the band sanity gate", /Publish gates/i],
+      ["what is the Night Audit", /Night Audit/i],
+    ];
+    for (const [q, termRe] of probes) {
+      const hit = lookupGlossary(q);
+      assert.ok(hit, `expected a glossary hit for: ${q}`);
+      assert.match(hit!.term, termRe, `wrong term for: ${q} (got ${hit!.term})`);
+    }
+  });
+
+  test("key semantics are pinned: first-write-wins, binding INVALIDATED, both-directions exclusion, fillability rule", () => {
+    assert.match(lookupGlossary("publish context")!.definition, /FIRST-WRITE-WINS/i);
+    assert.match(lookupGlossary("publish context")!.definition, /never reconstructed/i);
+    assert.match(lookupGlossary("morning confirmation")!.definition, /INVALIDATED is BINDING/i);
+    assert.match(lookupGlossary("morning confirmation")!.definition, /DEGRADED stays advisory/i);
+    assert.match(lookupGlossary("pulled play")!.definition, /BOTH directions/i);
+    assert.match(lookupGlossary("pulled play")!.definition, /never hidden or deleted/i);
+    assert.match(lookupGlossary("unfilled grade")!.definition, /session LOW reached the top of the band/i);
+  });
+
+  test("HONESTY: in-progress work is described as in progress, never as shipped", () => {
+    // The publish gates ship in a sibling PR — the entry must say the gates are not live yet.
+    assert.match(lookupGlossary("publish gates")!.definition, /ship in a sibling PR|not yet block/i);
+    // The Night Audit is planned work — the entry must say so plainly.
+    assert.match(lookupGlossary("night audit")!.definition, /IN PROGRESS, not shipped/i);
+  });
+
+  test("longest-alias precedence: the edition concepts don't steal the Night Hawk product entry (and vice versa)", () => {
+    assert.match(lookupGlossary("what does Night Hawk do")!.term, /^Night Hawk$/);
+    assert.match(lookupGlossary("what is the Night Audit")!.term, /Night Audit/i);
   });
 });

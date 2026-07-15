@@ -4,25 +4,9 @@ import { canAccessTool } from "@/lib/tool-access-server";
 import { ComingSoon } from "@/components/ComingSoon";
 import {
   VectorPageShell,
-  backfillRailPrefix,
-  fetchVectorSeedBars,
-  getVectorDarkPoolLevels,
-  getVectorGammaFlip,
-  getVectorGexWalls,
-  getVectorVexFlip,
-  getVectorVexWalls,
-  getVectorWallHistory,
-  loadSessionWallHistory,
-  mergeWallHistory,
+  loadVectorSeedProps,
   normalizeVectorTicker,
-  primeVectorWallScope,
-  reconstructSessionRail,
-  seedWallHistoryForDisplay,
-  type WallHistorySample,
 } from "@/features/vector";
-import { isEtCashRth } from "@/lib/et-market-hours";
-import { todayEt } from "@/features/nighthawk/lib/session";
-import { ensureDataSockets } from "@/lib/ws/init-data-sockets";
 
 export const metadata: Metadata = {
   title: "Vector · BlackOut",
@@ -40,75 +24,11 @@ export default async function VectorPage({ searchParams }: PageProps) {
   const { ticker: rawTicker } = await searchParams;
   const ticker = normalizeVectorTicker(rawTicker);
 
-  ensureDataSockets();
-  await primeVectorWallScope(ticker);
-  const [{ bars, sessionYmd }, walls, vexWalls, gammaFlip, vexFlip, darkPoolLevels] =
-    await Promise.all([
-      fetchVectorSeedBars(ticker),
-      Promise.resolve(getVectorGexWalls(ticker)),
-      Promise.resolve(getVectorVexWalls(ticker)),
-      getVectorGammaFlip(ticker),
-      Promise.resolve(getVectorVexFlip(ticker)),
-      getVectorDarkPoolLevels(ticker),
-    ]);
-  const persistedHistory = await loadSessionWallHistory(sessionYmd, ticker).catch(
-    () => [] as WallHistorySample[]
-  );
-  const today = todayEt();
-  const liveSession = sessionYmd === today && isEtCashRth();
+  // Shared seed loader (2026-07-13, member-directed desk consolidation): the SPX Slayer dashboard
+  // embeds this same Vector surface, so ALL seed logic (bars, wall scope, observed-rail merge,
+  // modeled-prefix backfill, empty-case seeding) lives in loadVectorSeedProps — one code path for
+  // both routes, zero drift.
+  const seed = await loadVectorSeedProps(ticker);
 
-  // Observed rail first — exactly what the live recorder captured point-in-time during RTH:
-  // genuinely dynamic walls that shift/build/fade with the tape (in-memory + persisted Redis/PG
-  // rows). `sessionYmd` comes from fetchVectorSeedBars, which walks back to the most recent day
-  // that actually HAS price bars — so off-hours (weekend/overnight) this is the last RTH session,
-  // and loadSessionWallHistory(sessionYmd) returns THAT session's real recorded beads. The bars
-  // and the rail therefore always describe the same session and align on the time axis.
-  const combined = mergeWallHistory(getVectorWallHistory(ticker), persistedHistory);
-
-  // UNIVERSE PARITY (2026-07-13, user-directed): Vector must behave the same for EVERY optionable
-  // ticker, not just the pre-recorded ~20-name universe. A ticker with no viewer has no recorded
-  // rail before its first view, so the first member of the day saw single beads. Backfill ONLY the
-  // missing PREFIX (before the first observed sample) from the reconstruction: today's published OI
-  // with gamma recomputed along the session's REAL spot path — genuinely time-varying, and now
-  // rendered through the per-bucket DOMINANCE filter so it shows honest staggered births, not the
-  // flat axis-to-axis underlay that got the model removed on 2026-07-12 (that flatness was the
-  // dominance bug, since fixed). Modeled beads draw as faint ghosts (MODELED_ALPHA_SCALE) under
-  // solid observed ones, and the model never overwrites or extends past a real sample — a member
-  // can always tell recorded structure from reconstructed context. Redis-cached per ticker+session;
-  // best-effort (a reconstruction failure just leaves the honest gap).
-  const firstObserved = combined[0]?.time ?? Number.POSITIVE_INFINITY;
-  const firstBar = bars[0]?.time;
-  const needsPrefix =
-    bars.length > 0 && firstBar != null && firstObserved - firstBar > 20 * 60;
-  const modeledRail = needsPrefix
-    ? await reconstructSessionRail({ ticker, sessionYmd }).catch(() => [] as WallHistorySample[])
-    : ([] as WallHistorySample[]);
-  const backfilled = backfillRailPrefix(combined, modeledRail, firstBar);
-
-  // Empty-case fallback: a single as-of-close snapshot at the last bar when there is genuinely
-  // nothing recorded OR reconstructable for this session. No-ops whenever the rail already has
-  // samples. Never a full-day fabrication.
-  const initialWallHistory = seedWallHistoryForDisplay(
-    backfilled,
-    bars.map((b) => b.time),
-    walls,
-    gammaFlip,
-    vexWalls,
-    vexFlip
-  );
-
-  return (
-    <VectorPageShell
-      ticker={ticker}
-      initialBars={bars}
-      initialWalls={walls}
-      initialVexWalls={vexWalls}
-      initialWallHistory={initialWallHistory}
-      initialGammaFlip={gammaFlip}
-      initialVexFlip={vexFlip}
-      initialDarkPoolLevels={darkPoolLevels}
-      sessionYmd={sessionYmd}
-      liveSession={liveSession}
-    />
-  );
+  return <VectorPageShell {...seed} />;
 }

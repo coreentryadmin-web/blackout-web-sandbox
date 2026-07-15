@@ -179,7 +179,20 @@ export type NighthawkRejectionDetail =
       min_open_interest: number;
     }
   | { stage: "ungrounded"; issues: Array<{ check: string; detail: string }> }
-  | { stage: "sector_concentration"; sector: string; already_filled: number; max_per_sector: number };
+  | { stage: "sector_concentration"; sector: string; already_filled: number; max_per_sector: number }
+  // PR-N3 (docs/audit/NIGHTHAWK-OVERNIGHT-DECISION.md §N-3): STAGE 6 publish gates —
+  // band-vs-spot / achievable-target / stale-quote / fail-closed geometry_unknown
+  // (publish-gates.ts). `blocks` is the gate result's own block list verbatim, so the
+  // audit row records exactly why the play didn't publish, with the live numbers.
+  | {
+      stage: "publish_gate";
+      blocks: Array<{
+        code: string;
+        reason: string;
+        threshold: number | string | null;
+        value: number | string | null;
+      }>;
+    };
 
 // Exported (task #145) so nighthawk/analytics.ts can invert this map — the admin funnel/
 // rejection-rate panel groups `alert_audit_log.trigger_reason` rows (a plain TEXT column,
@@ -193,6 +206,8 @@ export const REJECTION_TRIGGER_REASON: Record<NighthawkRejectionDetail["stage"],
   ungrounded:
     "rejected at synthesis — claimed level(s)/contract did not ground against real chain or dossier data",
   sector_concentration: "rejected at synthesis — sector-concentration cap reached for this edition",
+  publish_gate:
+    "rejected at publish — failed the publish-time sanity gates (detached band / unreachable target / stale quote basis / unknown geometry)",
 };
 
 function decisionTraceForRejection(
@@ -240,6 +255,15 @@ function decisionTraceForRejection(
           threshold: detail.max_per_sector,
         },
       ];
+    case "publish_gate":
+      // One trace entry per failed gate (a DELL-class play carries band_detached AND
+      // target_unreachable) — value/threshold verbatim from the gate evaluation.
+      return detail.blocks.map((block) => ({
+        check: block.code,
+        passed: false,
+        value: block.value ?? block.reason,
+        threshold: block.threshold,
+      }));
   }
 }
 
@@ -256,8 +280,10 @@ function decisionTraceForRejection(
  *  duplicated here; that full context is what `nighthawk_scoring_history`/
  *  `get_nighthawk_dossier` remain the source of truth for (task #129) — this is a
  *  same-row SUMMARY so a rejection's audit row is self-explaining without a second
- *  lookup, not a second copy of the archive. */
-function confluenceSnapshot(scored: ScoredCandidate | null | undefined): Record<string, unknown> | null {
+ *  lookup, not a second copy of the archive. Exported for PR-N4: publish-context.ts
+ *  pins this exact shape as `publish_context.confluence` on every published play —
+ *  one snapshot format for rejected AND published candidates, same honesty rules. */
+export function confluenceSnapshot(scored: ScoredCandidate | null | undefined): Record<string, unknown> | null {
   if (!scored) return null;
   return {
     total_score: scored.score,
@@ -333,6 +359,8 @@ function inputSnapshotForRejection(
         already_filled: detail.already_filled,
         max_per_sector: detail.max_per_sector,
       };
+    case "publish_gate":
+      return { ...base, gate_blocks: detail.blocks, options_play: play.options_play };
   }
 }
 
@@ -446,7 +474,12 @@ function recordNighthawkAuditTrail(
 export async function syncNighthawkPlayOutcomes(
   editionFor: string,
   plays: PlaybookPlay[],
-  sectors: Record<string, string | null | undefined> = {}
+  sectors: Record<string, string | null | undefined> = {},
+  // PR-N4: ticker → publish-time decision pin (publish-context.ts), threaded to the
+  // upsert where it lands COALESCE first-write-wins. Optional + per-ticker nullable so
+  // a pinning failure (or an older caller) degrades to an un-pinned row, never a
+  // blocked sync — the pin is evidence, not a publish dependency.
+  publishContexts: Record<string, Record<string, unknown> | null> = {}
 ): Promise<void> {
   const rows = plays.map((play) => {
     const ticker = String(play.ticker ?? "").toUpperCase();
@@ -463,6 +496,7 @@ export async function syncNighthawkPlayOutcomes(
       stop: levels.stop,
       score: Number(play.score ?? 0),
       sector: sectors[ticker] ?? null,
+      publish_context: publishContexts[ticker] ?? null,
     };
   });
 
@@ -624,4 +658,27 @@ export async function resolvePendingNighthawkOutcomes(opts?: {
   }
 
   return { resolved, skipped, errors };
+}
+
+/** Cron honesty (PR-N1): the run's health verdict from its per-row error ledger.
+ *
+ *  Before this, the outcomes cron logged `ok: true` unconditionally on the happy
+ *  path — the 12 H-1 constraint-violation failures sat in `meta.errors` while
+ *  cron-health showed green for four straight days (a red loop that never paged
+ *  anyone; see docs/audit/NIGHTHAWK-OVERNIGHT-DECISION.md §0.1). Rule: errors with
+ *  content ⇒ the run is NOT ok. logCronRun maps `ok: false` to status `failed`,
+ *  which also fires the ops-Discord ping — exactly the paging this class of bug
+ *  needed. Pure so it's unit-testable without the route harness. */
+export function nighthawkOutcomesRunHealth(result: {
+  resolved: number;
+  skipped: number;
+  errors: string[];
+}): { ok: boolean; error?: string } {
+  if (result.errors.length === 0) return { ok: true };
+  const shown = result.errors.slice(0, 3).join("; ");
+  const more = result.errors.length > 3 ? ` (+${result.errors.length - 3} more)` : "";
+  return {
+    ok: false,
+    error: `${result.errors.length} grade write(s) failed: ${shown}${more}`,
+  };
 }

@@ -137,3 +137,42 @@ describe("verdict-core: assembleVerdictEnvelope structure", () => {
     assert.ok(!env.sections.some((s) => /short interest/i.test(s.title)));
   });
 });
+
+// ── Cortex citation leg (PR-H) — cited alongside the verdict's own inputs ─────
+describe("verdict-core: Cortex evidence section (PR-H)", () => {
+  test("a pinned citation renders as a section + FACT evidence with the pinned source label", () => {
+    const env = assembleVerdictEnvelope(
+      fullInputs({
+        cortex: {
+          mode: "pinned",
+          headline: "Cortex PASS (pinned at commit, 2026-07-14): score +1.85, conviction A",
+          lines: ["+1.05 [wall-trend] call wall grew 3 samples."],
+          asOf: "2026-07-14T14:31:00Z",
+        },
+      })
+    );
+    const s = env.sections.find((x) => x.title === "Cortex evidence (0DTE)");
+    assert.ok(s, "cortex section present");
+    assert.match(s!.body, /score \+1\.85, conviction A/);
+    assert.match(s!.body, /wall-trend/);
+    assert.equal(s!.provenance?.source, "Night Hawk Cortex (pinned at commit)");
+    const ev = env.evidence.find((e) => e.text.includes("Cortex PASS"));
+    assert.equal(ev?.kind, "fact"); // pinned record = fact
+  });
+
+  test("a live citation is tagged calc (derived now, not a record)", () => {
+    const env = assembleVerdictEnvelope(
+      fullInputs({
+        cortex: { mode: "live", headline: "Cortex (live, long): net score +1.2, conviction B", lines: [], asOf: null },
+      })
+    );
+    const ev = env.evidence.find((e) => e.text.includes("net score +1.2"));
+    assert.equal(ev?.kind, "calc");
+    assert.equal(env.sections.find((x) => x.title === "Cortex evidence (0DTE)")?.provenance?.source, "Night Hawk Cortex (live)");
+  });
+
+  test("no citation → no cortex section, envelope unchanged (regression)", () => {
+    const env = assembleVerdictEnvelope(fullInputs());
+    assert.equal(env.sections.find((x) => x.title === "Cortex evidence (0DTE)"), undefined);
+  });
+});

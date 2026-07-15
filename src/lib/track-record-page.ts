@@ -1,7 +1,15 @@
-import { fetchNighthawkOutcomeAnalytics, type NighthawkPlayOutcomeRow } from "@/lib/db";
+import {
+  fetchNighthawkOutcomeAnalytics,
+  fetchZeroDteSetupLogRange,
+  type NighthawkPlayOutcomeRow,
+  type ZeroDteSetupLogRow,
+} from "@/lib/db";
 import { fetchPlayOutcomeStats, type PlayOutcomeStats } from "@/features/spx/lib/spx-play-outcomes";
 import { buildPublicTrackRecord, formatPercent } from "@/lib/track-record-public";
 import { entryRangeMid } from "@/features/nighthawk/lib/entry-range";
+import { formatEtDate, todayEt } from "@/features/nighthawk/lib/session";
+import { isCurrentGradeMethodology } from "@/features/nighthawk/lib/grade-methodology";
+import { buildZeroDteRecord, type ZeroDteRecordBucket } from "@/lib/zerodte/record";
 
 /** Shape returned by GET /api/track-record — shared with TrackRecordView. */
 export type TrackRecordPagePayload = {
@@ -28,6 +36,27 @@ export type TrackRecordPagePayload = {
      */
     unresolved?: number;
   };
+  /**
+   * 0DTE Command's multi-day plan-outcome record (P-3) — a THIRD, separately-labeled
+   * methodology: option-premium plan grades (-50%/+100%/15:30), never blended with
+   * Slayer pnl-points or Night Hawk stock-move percentages. Optional/additive like
+   * nightHawk.unresolved: undefined on older cached payloads means "not computed."
+   * Buckets carry low_n (n<5) so the UI can badge thin evidence.
+   */
+  zerodte?: {
+    windowDays: number;
+    totalFlagged: number;
+    graded: number;
+    ungraded: number;
+    wins: number;
+    losses: number;
+    winRatePct: number | null;
+    avgPnlPct: number | null;
+    byOutcome: ZeroDteRecordBucket[];
+    byTimeOfDay: ZeroDteRecordBucket[];
+    byDirection: ZeroDteRecordBucket[];
+    byScoreBand: ZeroDteRecordBucket[];
+  };
   methodology: string;
   liveData: boolean;
   available?: boolean;
@@ -38,9 +67,13 @@ const METHODOLOGY =
   "Night Hawk results are resolved target/stop outcomes from published editions. " +
   "Night Hawk returns reflect next-day underlying stock price movement from the published entry range midpoint — " +
   "not option-premium returns. Actual option P&L will differ based on strike selection, expiry, and implied volatility at entry. " +
+  "0DTE Command results are plan-outcome grades on the printed contract plan (stop -50% / trim +100% / hard exit 15:30 ET) " +
+  "against the option's own premium, from the scanner ledger (every committed setup). " +
+  "The three methodologies measure different things and are never blended into one win rate. " +
   "Scratch/breakeven counts appear in the embed and desk panels where applicable.";
 
 const NH_WINDOW_DAYS = 90;
+const ZERODTE_WINDOW_DAYS = 30;
 
 function spxFromStats(stats: PlayOutcomeStats | null): TrackRecordPagePayload["spxSlayer"] {
   if (!stats || stats.total_closed <= 0) {
@@ -63,7 +96,25 @@ export function isNighthawkOutcomeScoreable(r: NighthawkPlayOutcomeRow): boolean
   // 'unfilled' (session never traded back into the entry band) has no fill to
   // win or lose — excluded like stop_data_unavailable so gap-away plays can't
   // book phantom wins/losses from an unfillable entry.
-  return r.outcome !== "pending" && r.outcome !== "unfilled" && !nhStopDataUnavailable(r);
+  // PR-N4: a PULLED play (morning confirm INVALIDATED it pre-open; one-way latch) was
+  // withdrawn from the actionable surface at 9:15 — its grade is a COUNTERFACTUAL
+  // ("what would have happened"), kept on the row for gate calibration but never
+  // counted in the headline record, in either direction: a pulled play that would have
+  // hit target must not pad the win rate, and one that would have stopped must not
+  // book a loss the member was told not to take.
+  // PR-N2: a row still graded under a superseded methodology (grade_methodology ≠
+  // current — the pre-fillability "level touch" grades, incl. the gap-away phantom
+  // wins) is quarantined out of EVERY headline surface sharing this predicate (public
+  // track-record page, /api/track-record/plays, signal accuracy) until the admin
+  // legacy regrade re-verifies it under current rules and promotes it. Same anti-blend
+  // rule as getNighthawkMetrics' segments — keep the two in lockstep.
+  return (
+    r.outcome !== "pending" &&
+    r.outcome !== "unfilled" &&
+    r.pulled !== true &&
+    isCurrentGradeMethodology(r.grade_methodology) &&
+    !nhStopDataUnavailable(r)
+  );
 }
 
 function nhEntryMid(row: NighthawkPlayOutcomeRow): number | null {
@@ -129,20 +180,56 @@ export function nhFromRows(rows: NighthawkPlayOutcomeRow[]): TrackRecordPagePayl
   };
 }
 
+/** The zerodte section from ledger rows — pure (unit-testable), delegating every
+ *  number to buildZeroDteRecord so this section and /api/market/zerodte/record can
+ *  never disagree (single aggregation path, the pageSpxMatchesPublic lesson). */
+export function zerodteFromRows(
+  rows: ZeroDteSetupLogRow[],
+  window: { since: string; through: string; days: number }
+): NonNullable<TrackRecordPagePayload["zerodte"]> {
+  const record = buildZeroDteRecord(rows, window);
+  return {
+    windowDays: window.days,
+    totalFlagged: record.total_flagged,
+    graded: record.graded,
+    ungraded: record.ungraded,
+    wins: record.wins,
+    losses: record.losses,
+    winRatePct: record.win_rate_pct,
+    avgPnlPct: record.avg_pnl_pct,
+    byOutcome: record.by_outcome,
+    byTimeOfDay: record.by_time_of_day,
+    byDirection: record.by_direction,
+    byScoreBand: record.by_score_band,
+  };
+}
+
 /**
  * Build the /track-record page payload from the SAME ledgers as the public embed
- * and SPX desk (spx_play_outcomes + nighthawk_play_outcomes). Never throws.
+ * and SPX desk (spx_play_outcomes + nighthawk_play_outcomes + zerodte_setup_log).
+ * Never throws.
  */
 export async function buildTrackRecordPagePayload(): Promise<TrackRecordPagePayload> {
   try {
-    const [stats, nh] = await Promise.all([
+    const zdSince = formatEtDate(new Date(Date.now() - ZERODTE_WINDOW_DAYS * 24 * 60 * 60 * 1000));
+    const [stats, nh, zdRows] = await Promise.all([
       fetchPlayOutcomeStats().catch(() => null),
       fetchNighthawkOutcomeAnalytics(NH_WINDOW_DAYS).catch(() => ({ rows: [], pending_count: 0 })),
+      // Fail-open to an empty ledger (zerodte reads as 0-graded/unavailable) rather
+      // than failing the whole page — same resilience as the other two legs.
+      fetchZeroDteSetupLogRange(zdSince, ZERODTE_WINDOW_DAYS * 20).catch(
+        () => [] as ZeroDteSetupLogRow[]
+      ),
     ]);
 
     return {
       spxSlayer: spxFromStats(stats),
       nightHawk: nhFromRows(nh.rows),
+      zerodte: zerodteFromRows(zdRows, {
+        since: zdSince,
+        through: todayEt(),
+        days: ZERODTE_WINDOW_DAYS,
+      }),
       methodology: METHODOLOGY,
       liveData: true,
     };

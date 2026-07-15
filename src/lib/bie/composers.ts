@@ -37,7 +37,7 @@ import {
 export type ComposeBieOpts = { question?: string };
 
 /** Deterministic answer plus the raw source payload for Layer 4 claim verification. */
-import type { BieComposed } from "@/lib/bie/composers-shared";
+import { tierLine, type BieComposed } from "@/lib/bie/composers-shared";
 export type { BieComposed };
 
 const fmt = (n: unknown, digits = 2): string =>
@@ -56,6 +56,10 @@ type LargoPlay = {
   peak_score: number;
   action: string;
   intel: string;
+  /** Commit-time merit tier (PR-F, entry_context.tier passthrough on the board
+   *  row) — opaque blob, read structurally by tierLine below; absent/null on rows
+   *  committed before the tier wiring shipped. */
+  tier?: { tier?: unknown; factors?: unknown } | null;
   graded: { outcome: string; pnl_pct: number | null } | null;
 };
 
@@ -67,7 +71,7 @@ function playLine(p: LargoPlay): string {
       : p.live_pnl_pct != null
         ? `${p.live_pnl_pct >= 0 ? "+" : ""}${p.live_pnl_pct}%`
         : "";
-  return `**${p.status}** · **${contract}**${p.entry_premium != null ? ` @ $${fmt(p.entry_premium)}` : ""}${state ? ` (${state})` : ""}\n  ${p.action} — ${p.intel}`;
+  return `**${p.status}** · **${contract}**${p.entry_premium != null ? ` @ $${fmt(p.entry_premium)}` : ""}${state ? ` (${state})` : ""}\n  ${p.action} — ${p.intel}${tierLine(p.tier)}`;
 }
 
 async function composeZeroDtePlays(): Promise<BieComposed | null> {
@@ -85,12 +89,28 @@ async function composeZeroDtePlays(): Promise<BieComposed | null> {
       context: board,
     };
   }
+  // PR-H: cite the pinned commit-time Cortex evidence per play (the WHY of record) —
+  // one ledger read for the whole board, fail-soft to an empty map (list still renders).
+  let cortexLines = new Map<string, string>();
+  try {
+    const { pinnedCortexLinesForSession } = await import("@/lib/bie/cortex-read");
+    cortexLines = await pinnedCortexLinesForSession();
+  } catch {
+    /* plays render without cortex lines */
+  }
   const lines: string[] = ["**Today's 0DTE Command plays** (live board — /grid):", ""];
-  for (const p of plays.slice(0, 10)) lines.push(`- ${playLine(p)}`);
+  for (const p of plays.slice(0, 10)) {
+    lines.push(`- ${playLine(p)}`);
+    const cx = cortexLines.get(p.ticker.toUpperCase());
+    if (cx) lines.push(`  ${cx}`);
+  }
   if (fresh.length) {
     lines.push("", "**Fresh finds (not yet plays):**");
     for (const f of fresh.slice(0, 4))
       lines.push(`- ${f.ticker} ${f.direction === "long" ? "calls" : "puts"} ${fmt(f.strike)} (score ${f.score}) — ${f.intel}`);
+  }
+  if (plays.length > 0 && cortexLines.size > 0) {
+    lines.push("", `_Ask "why did we commit <ticker>" for the full pinned Cortex evidence table._`);
   }
   if (board.rules) lines.push("", `_${board.rules}_`);
   return { answer: lines.join("\n"), context: board };
@@ -100,9 +120,26 @@ async function composeTickerPlayState(ticker: string): Promise<BieComposed | nul
   const board = (await zeroDtePlaysForLargo()) as { plays?: LargoPlay[] };
   const play = (board.plays ?? []).find((p) => p.ticker === ticker.toUpperCase());
   if (!play) return null;
+  let answer = `**${play.ticker} play — ${play.status}**\n\n${playLine(play)}\n\n_Live state from the 0DTE Command board; statuses re-derive automatically every scan._`;
+  // PR-N9: when the same ticker is ALSO in the current Night Hawk edition, cite the
+  // pinned overnight take (publish pin + pulled/verdict state) — pinned-only and one
+  // ledger read, so the hot path stays cheap. Fail-soft: no record → no block.
+  let nighthawkEdition: unknown = null;
+  try {
+    const { nighthawkEditionCitationFor, renderNighthawkEditionCitation } = await import(
+      "@/lib/bie/nighthawk-edition-read"
+    );
+    const citation = await nighthawkEditionCitationFor(ticker);
+    if (citation) {
+      nighthawkEdition = citation;
+      answer = `${answer}\n\n${renderNighthawkEditionCitation(citation)}`;
+    }
+  } catch {
+    /* play state renders without the edition block */
+  }
   return {
-    answer: `**${play.ticker} play — ${play.status}**\n\n${playLine(play)}\n\n_Live state from the 0DTE Command board; statuses re-derive automatically every scan._`,
-    context: play,
+    answer,
+    context: { play, nighthawk_edition: nighthawkEdition },
   };
 }
 
@@ -167,14 +204,29 @@ async function composeSpxDeskRead(question?: string): Promise<BieComposed | null
   // Strip the {{value}} grounding markers so the member sees the number, not the marker — the SPX
   // desk brief lines wrap every figure in {{…}} for the strict grounding guard, and the non-stream
   // Largo path was shipping them literally (live audit: "above γflip {{7,496}}").
-  const answer = stripGroundingTokens(
+  let answer = stripGroundingTokens(
     [`**SPX Live Desk read**`, "", `**${brief.headline}**`, "", brief.body, knowledge ? `\n\n${knowledge}` : ""]
       .filter(Boolean)
       .join("\n")
   );
+  // PR-H: the SPX why/desk path cites the PINNED Cortex verdict when an SPX-family
+  // 0DTE play exists on this session's ledger (one cheap ledger read). Deliberately
+  // pinned-only — no live Cortex composition on the flagship question's hot path;
+  // "cortex SPX" gets the full live evidence read. Fail-soft: no record → no block.
+  let cortexCitation: unknown = null;
+  try {
+    const { cortexCitationFor, renderCortexCitation } = await import("@/lib/bie/cortex-read");
+    const citation = await cortexCitationFor("SPX", { allowLive: false });
+    if (citation) {
+      cortexCitation = citation;
+      answer = `${answer}\n\n${renderCortexCitation(citation)}`;
+    }
+  } catch {
+    /* desk read renders without the cortex block */
+  }
   return {
     answer,
-    context: { desk, confluence, brief, platform },
+    context: { desk, confluence, brief, platform, cortex: cortexCitation },
   };
 }
 
@@ -502,11 +554,46 @@ async function composeTickerEcosystem(ticker: string): Promise<BieComposed | nul
 
 async function composeTickerAdvice(ticker: string, question: string): Promise<BieComposed | null> {
   const { fetchEcosystemContext } = await import("@/lib/bie/ecosystem-context");
-  const ctx = await fetchEcosystemContext(ticker);
+  // PR-H: advice on a 0DTE-relevant ticker cites the Cortex alongside the ecosystem
+  // read — PINNED commit-time evidence when a play exists this session, the LIVE
+  // composition otherwise. Fetched in parallel (both cache-first) and fail-soft: a
+  // Cortex outage yields an honest "unavailable" line, never a stalled/failed answer.
+  // PR-N9: advice on a ticker that is ALSO in the current Night Hawk edition cites the
+  // pinned overnight take (publish pin + pulled/verdict state) — pinned-only and ONE
+  // ledger read (no live composition), so the hot path stays cheap. Fetched in
+  // parallel with the other reads; fail-soft: no record → no block.
+  const [ctx, cortex, nighthawkEdition] = await Promise.all([
+    fetchEcosystemContext(ticker),
+    (async () => {
+      try {
+        const { cortexCitationFor, directionFromQuestion } = await import("@/lib/bie/cortex-read");
+        return await cortexCitationFor(ticker, { direction: directionFromQuestion(question), allowLive: true });
+      } catch {
+        return null;
+      }
+    })(),
+    (async () => {
+      try {
+        const { nighthawkEditionCitationFor } = await import("@/lib/bie/nighthawk-edition-read");
+        return await nighthawkEditionCitationFor(ticker);
+      } catch {
+        return null;
+      }
+    })(),
+  ]);
   const verdict = await synthesizeTickerVerdict(ctx, question);
+  let answer = formatTickerVerdictMarkdown(verdict);
+  if (cortex) {
+    const { renderCortexCitation } = await import("@/lib/bie/cortex-read");
+    answer = `${answer}\n\n${renderCortexCitation(cortex)}`;
+  }
+  if (nighthawkEdition) {
+    const { renderNighthawkEditionCitation } = await import("@/lib/bie/nighthawk-edition-read");
+    answer = `${answer}\n\n${renderNighthawkEditionCitation(nighthawkEdition)}`;
+  }
   return {
-    answer: formatTickerVerdictMarkdown(verdict),
-    context: { ecosystem: ctx, verdict },
+    answer,
+    context: { ecosystem: ctx, verdict, cortex, nighthawk_edition: nighthawkEdition },
   };
 }
 
@@ -647,6 +734,9 @@ function headlineForRoute(route: BieRoute): string {
     system_diagnostic: `${t}diagnosis`,
     zerodte_plays: "0DTE plays",
     ticker_play_state: `${t}play`,
+    cortex_read: `${t}Cortex read`,
+    nighthawk_edition: `${t}Night Hawk edition`,
+    scenario: `${t}scenario`,
   };
   return map[route.intent] ?? "BIE read";
 }
@@ -698,6 +788,31 @@ async function composeBieAnswerUncached(route: BieRoute, opts?: ComposeBieOpts):
       case "system_diagnostic": {
         const { composeDiagnostic } = await import("@/lib/bie/diagnostic");
         return await composeDiagnostic(route.ticker ?? "SPX", opts?.question ?? "");
+      }
+      case "cortex_read": {
+        // BIE × Cortex bridge (PR-H) — "why did we commit/skip/exit X" from the PINNED
+        // ledger/rejection records, "what does cortex say" via live composition. Returns
+        // a fully-populated BieAnswerEnvelope directly (never null — honest no-verdict
+        // envelopes on outage), so the shim leaves it untouched.
+        const { composeCortexRead } = await import("@/lib/bie/cortex-read");
+        return await composeCortexRead(route.ticker, opts?.question ?? "");
+      }
+      case "nighthawk_edition": {
+        // BIE × Night Hawk edition bridge (PR-N9) — "tomorrow's plays" / "why was X
+        // picked/pulled" / "what did the morning check see", answered from the #331
+        // pinned records (publish_context, morning_verdict, the pulled latch). Returns
+        // a fully-populated envelope directly (honest empty/miss envelopes included).
+        const { composeNighthawkEditionRead } = await import("@/lib/bie/nighthawk-edition-read");
+        return await composeNighthawkEditionRead(route.ticker, opts?.question ?? "");
+      }
+      case "scenario": {
+        // Largo SCENARIO what-if (PR-L4c) — "if SPX drops 1%", "what if QQQ rips 2%",
+        // "if we lose the flip". Recomputes regime / walls / max-pain at the SHIFTED spot
+        // from the SAME live Vector state, and returns a fully-populated envelope directly
+        // (honest "can't scope" envelopes when the shift is unparseable / data absent).
+        // The shift is parsed from the member's question text.
+        const { composeScenario } = await import("@/lib/bie/scenario-read");
+        return await composeScenario(route.ticker ?? "SPX", opts?.question ?? "", { horizon: route.horizon ?? "all" });
       }
       default:
         return null;

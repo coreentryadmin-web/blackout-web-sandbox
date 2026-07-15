@@ -30,8 +30,14 @@ import {
   writeGexHeatmapSessionCache,
 } from "@/lib/gex-heatmap-session-cache";
 import { SpxMatrixTapeStrip } from "./SpxMatrixTapeStrip";
+import { SpxStrikeLadderAxis } from "./SpxStrikeLadderAxis";
 import { scrollRowIntoViewCenter } from "@/features/spx/lib/spx-matrix-scroll";
 import type { SpxTapeItem } from "@/features/spx/lib/spx-desk";
+import type { VectorPriceScaleMap } from "@/features/vector/lib/vector-price-scale-map";
+
+/** Persisted matrix view mode — ladder (shared chart axis, default) vs the dense table. */
+const MATRIX_VIEW_STORAGE_KEY = "spx-matrix-view-mode";
+type MatrixViewMode = "ladder" | "table";
 
 const MATRIX_POLL_RTH_MS = SPX_MATRIX_POLL_RTH_MS;
 const MATRIX_POLL_OFF_MS = SPX_MATRIX_POLL_OFF_MS;
@@ -104,6 +110,12 @@ type DeskProps = {
   flow0dteNet?: number | null;
   flow0dteCallPrem?: number | null;
   flow0dtePutPrem?: number | null;
+  /** SHARED PRICE AXIS (2026-07-13): the embedded Vector chart's live y-mapping — the ladder
+   *  view renders strikes/spot at the SAME pixel heights as the chart. Null → linear fallback. */
+  priceScaleMap?: VectorPriceScaleMap | null;
+  /** FOCUS MODE (2026-07-13): collapse to a 48px king-strike rail on the shared axis. Data
+   *  hooks keep running so exiting focus restores the full panel instantly. */
+  focus?: boolean;
 };
 
 function nearestStrike(axis: number[], price: number): number | null {
@@ -125,8 +137,29 @@ export function SpxGexMatrixHeatmap({
   flow0dteNet,
   flow0dteCallPrem,
   flow0dtePutPrem,
+  priceScaleMap,
+  focus,
 }: DeskProps) {
   const [lens, setLens] = useState<GexHeatmapLens>("gex");
+  // Ladder is the default view (flagship shared-axis upgrade); the dense table stays one
+  // click away. Hydrated from localStorage after mount so SSR markup is deterministic.
+  const [view, setView] = useState<MatrixViewMode>("ladder");
+  useEffect(() => {
+    try {
+      const saved = window.localStorage.getItem(MATRIX_VIEW_STORAGE_KEY);
+      if (saved === "table" || saved === "ladder") setView(saved);
+    } catch {
+      /* storage unavailable — keep the default */
+    }
+  }, []);
+  const pickView = (next: MatrixViewMode) => {
+    setView(next);
+    try {
+      window.localStorage.setItem(MATRIX_VIEW_STORAGE_KEY, next);
+    } catch {
+      /* best-effort persistence */
+    }
+  };
   const pollMs = useDeskSessionPollIntervalMs(
     sessionActive ?? deskLive,
     MATRIX_POLL_RTH_MS,
@@ -135,7 +168,7 @@ export function SpxGexMatrixHeatmap({
   const matrixKey = "/api/market/gex-heatmap?ticker=SPX";
   const cachedMatrix = useMemo(() => readGexHeatmapSessionCache<GexHeatmapResponse>("SPX"), []);
 
-  const { data, isLoading, error, isValidating } = useSWR<GexHeatmapResponse>(
+  const { data, isLoading, error, isValidating, mutate } = useSWR<GexHeatmapResponse>(
     matrixKey,
     fetchGexHeatmap,
     {
@@ -342,6 +375,30 @@ export function SpxGexMatrixHeatmap({
     uwCross.divergence > 5 &&
     !(uwCross.callWallMatch && uwCross.putWallMatch && uwCross.flipMatch);
 
+  const ladderTotals = block?.strike_totals ?? {};
+  const ladderKing = lens === "gex" ? (odteLevels.king ?? null) : null;
+
+  // FOCUS MODE rail — after all hooks (SWR keeps polling while collapsed, so exiting focus
+  // restores a live panel, not a stale one). Only king/wall markers + spot on the shared axis.
+  if (focus) {
+    return (
+      <div className="spx-matrix-focus-rail" aria-label="Ladder focus rail">
+        <SpxStrikeLadderAxis
+          variant="focus"
+          strikes={strikesAxis}
+          totals={ladderTotals}
+          spot={overlaySpot > 0 ? overlaySpot : null}
+          king={ladderKing}
+          callWall={odteLevels.callWall ?? null}
+          putWall={odteLevels.putWall ?? null}
+          flip={odteLevels.flip ?? null}
+          lens={lens}
+          map={priceScaleMap ?? null}
+        />
+      </div>
+    );
+  }
+
   return (
     <Panel
       accent={panelAccent}
@@ -349,7 +406,6 @@ export function SpxGexMatrixHeatmap({
       title="Dealer gamma map"
       actions={
         <span className="flex items-center gap-2 font-mono text-[10px] tabular-nums text-sky-300">
-          {isValidating && !isLoading && <span className="text-cyan-400">↻</span>}
           <span
             className={clsx("badge-live-dot", feedLive ? "opacity-100" : "opacity-40")}
             aria-hidden
@@ -358,14 +414,33 @@ export function SpxGexMatrixHeatmap({
             <span className="text-amber-300/90 uppercase tracking-wider">GEX stale</span>
           )}
           {asofLabel ? <span>{asofLabel} ET</span> : null}
+          {/* Manual refresh (user-directed 2026-07-14): revalidates ONLY this panel's SWR key
+              (matrix data — no page reload) and recenters the ladder/table on spot when the
+              fresh payload lands. Replaces the old bottom "Recenter on spot" button. */}
+          <button
+            type="button"
+            className={clsx(
+              "spx-matrix-refresh-btn",
+              isValidating && "spx-matrix-refresh-btn--spinning"
+            )}
+            onClick={() => {
+              userPinnedScrollRef.current = false;
+              void mutate().finally(() => centerSpotRow("smooth"));
+            }}
+            title="Refresh gamma map data and recenter on spot"
+            aria-label="Refresh dealer gamma map"
+          >
+            ↻
+          </button>
         </span>
       }
       className="spx-odte-matrix-panel spx-gex-matrix-heatmap flex flex-1 min-h-0 flex-col overflow-hidden"
       bodyClassName="spx-odte-matrix-body !px-1 !py-2 flex flex-1 min-h-0 flex-col overflow-hidden"
     >
       <div className="mb-2 shrink-0 space-y-2 px-1">
+        <div className="flex items-center gap-1.5">
         <div
-          className="flex gap-1.5"
+          className="flex gap-1.5 flex-1 min-w-0"
           role="tablist"
           aria-label="Exposure lens"
           onKeyDown={(e) => {
@@ -401,6 +476,36 @@ export function SpxGexMatrixHeatmap({
               </button>
             );
           })}
+        </div>
+        {/* Ladder (shared chart axis) ↔ dense table — one click each way, persisted. */}
+        <div
+          className="flex gap-0.5 shrink-0"
+          role="group"
+          aria-label="Matrix view mode"
+        >
+          {(["ladder", "table"] as const).map((mode) => (
+            <button
+              key={mode}
+              type="button"
+              id={`spx-matrix-view-${mode}`}
+              aria-pressed={view === mode}
+              onClick={() => pickView(mode)}
+              title={
+                mode === "ladder"
+                  ? "Strike ladder on the chart's price axis"
+                  : "Dense per-expiry table"
+              }
+              className={clsx(
+                "spx-matrix-view-toggle rounded border px-1.5 py-1 font-mono text-[9px] font-bold uppercase tracking-[0.14em]",
+                view === mode
+                  ? "border-cyan-400/60 bg-cyan-500/15 text-cyan-200"
+                  : "border-white/10 text-sky-300/60 hover:text-sky-200"
+              )}
+            >
+              {mode === "ladder" ? "Axis" : "Table"}
+            </button>
+          ))}
+        </div>
         </div>
         <div className="grid grid-cols-2 gap-x-2 gap-y-1 font-mono text-[10px]">
           <div>
@@ -465,6 +570,22 @@ export function SpxGexMatrixHeatmap({
           aria-labelledby={`spx-matrix-tab-${lens}`}
           className="flex flex-1 min-h-0 flex-col"
         >
+        {view === "ladder" ? (
+          // SHARED PRICE AXIS ladder — same data as the table (block strike_totals +
+          // 0DTE-scoped king/walls/flip), positioned by the embedded chart's live y-scale.
+          <SpxStrikeLadderAxis
+            variant="full"
+            strikes={strikesAxis}
+            totals={ladderTotals}
+            spot={overlaySpot > 0 ? overlaySpot : null}
+            king={ladderKing}
+            callWall={odteLevels.callWall ?? null}
+            putWall={odteLevels.putWall ?? null}
+            flip={odteLevels.flip ?? null}
+            lens={lens}
+            map={priceScaleMap ?? null}
+          />
+        ) : (
         <div
           ref={scrollBoxRef}
           className="spx-gex-matrix-scroll flex-1 min-h-0 overflow-y-scroll overflow-x-auto overscroll-contain"
@@ -628,6 +749,7 @@ export function SpxGexMatrixHeatmap({
             </tbody>
           </table>
         </div>
+        )}
 
         <SpxMatrixTapeStrip
           seed={unifiedTape}
@@ -635,16 +757,8 @@ export function SpxGexMatrixHeatmap({
           flowCallPrem={flow0dteCallPrem}
           flowPutPrem={flow0dtePutPrem}
         />
-        <button
-          type="button"
-          className="spx-gex-matrix-recenter mt-1 shrink-0 self-center font-mono text-[9px] uppercase tracking-[0.14em] text-cyan-400/80 hover:text-cyan-300"
-          onClick={() => {
-            userPinnedScrollRef.current = false;
-            centerSpotRow("smooth");
-          }}
-        >
-          Recenter on spot
-        </button>
+        {/* Bottom "Recenter on spot" removed (user-directed 2026-07-14) — the header refresh
+            button now recenters after revalidating, and the row goes back to the panels. */}
         </div>
       )}
     </Panel>

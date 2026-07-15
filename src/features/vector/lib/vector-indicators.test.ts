@@ -38,6 +38,41 @@ test("vwapSeries: session-cumulative typical×volume; null before any volume", (
   approx(out[1], (10 * 100 + 20 * 300) / 400); // 17.5
 });
 
+test("vwapSeries: RESETS at ET session boundary — multi-day bars must not blend into one VWAP", () => {
+  // Regression for the desk/terminal VWAP mismatch (2026-07-13): the multi-day chart seed fed
+  // 3 sessions into one accumulation, so the terminal read a 3-day VWAP (7,542.28) while the
+  // desk's session VWAP read 7,529.98. Day 2's VWAP must be computed from day-2 bars ONLY.
+  const d1 = 1783949400; // 2026-07-13 09:30 ET (epoch s)
+  const d2 = d1 + 24 * 3600; // next ET day
+  const bars = [
+    { time: d1, high: 10, low: 10, close: 10, volume: 100 },
+    { time: d1 + 60, high: 20, low: 20, close: 20, volume: 300 },
+    { time: d2, high: 50, low: 50, close: 50, volume: 100 }, // new session → reset
+    { time: d2 + 60, high: 60, low: 60, close: 60, volume: 100 },
+  ];
+  const out = vwapSeries(bars);
+  approx(out[1], 17.5); // day-1 unchanged
+  approx(out[2], 50); // NOT (10*100+20*300+50*100)/500 = 24 — day-1 must not leak in
+  approx(out[3], 55);
+});
+
+test("vwapSeries: same-ET-day bars do NOT reset (intraday accumulation preserved)", () => {
+  const t0 = 1783949400; // 09:30 ET
+  const bars = [
+    { time: t0, high: 10, low: 10, close: 10, volume: 100 },
+    { time: t0 + 6.5 * 3600 - 60, high: 20, low: 20, close: 20, volume: 300 }, // 15:59 ET same day
+  ];
+  approx(vwapSeries(bars)[1], 17.5);
+});
+
+test("vwapSeries: bars without time keep legacy continuous accumulation", () => {
+  const bars = [
+    { high: 10, low: 10, close: 10, volume: 100 },
+    { high: 20, low: 20, close: 20, volume: 300 },
+  ];
+  approx(vwapSeries(bars)[1], 17.5);
+});
+
 test("vwapSeries: no volume anywhere → null (never substituted with price)", () => {
   const bars = [
     { high: 10, low: 9, close: 9.5 },

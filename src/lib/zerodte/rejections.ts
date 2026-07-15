@@ -115,6 +115,7 @@ export async function persistZeroDteRejections(rejections: ZeroDteGateRejection[
       prints: r.prints,
       first_seen: r.first_seen,
       last_seen: r.last_seen,
+      reason: r.reason ?? null,
     });
   }
   await saveRejectionCursor(today, cursor);
@@ -136,6 +137,7 @@ export type ZeroDteRejectionRow = {
   prints: number | null;
   first_seen: string | null;
   last_seen: string | null;
+  reason: string | null;
 };
 
 /** Read path shared by the Largo tool below (and any future admin surface):
@@ -170,6 +172,7 @@ export async function zeroDteRejectionsForLargo(ticker?: string, limit = 20): Pr
       ticker: r.ticker,
       observed_at: r.observed_at,
       gate_failed: r.gate_failed,
+      reason: r.reason,
       threshold: r.threshold,
       gross_premium: r.gross_premium,
       aggression: r.aggression,

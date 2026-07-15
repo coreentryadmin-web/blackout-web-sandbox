@@ -1,7 +1,16 @@
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 import { requireDatabaseInProduction } from "@/lib/db";
-import { resolvePendingNighthawkOutcomes } from "@/features/nighthawk/lib/play-outcomes";
+import {
+  nighthawkOutcomesRunHealth,
+  resolvePendingNighthawkOutcomes,
+} from "@/features/nighthawk/lib/play-outcomes";
+import {
+  runNighthawkDebriefPass,
+  runNighthawkRejectionCounterfactuals,
+  type NighthawkDebriefPassResult,
+  type NighthawkRejectionCfResult,
+} from "@/features/nighthawk/lib/debrief-persist";
 import { inEtWindow } from "@/features/nighthawk/lib/et-window";
 import { logCronRun } from "@/lib/cron-run";
 import { isCronAuthorized } from "@/lib/market-api-auth";
@@ -47,14 +56,50 @@ export async function GET(req: NextRequest) {
     const rawDays = Number(req.nextUrl.searchParams.get("days") ?? "7");
     const lookbackDays = Number.isFinite(rawDays) && rawDays > 0 ? rawDays : 7;
     const result = await resolvePendingNighthawkOutcomes({ lookbackDays });
-    const payload = { ok: true, ...result };
+    // Cron honesty (PR-N1): per-row grade-write failures used to be tucked into
+    // meta.errors under an unconditional ok:true — the H-1 constraint clobber failed
+    // 12 grades for four straight days while cron-health stayed green. errors with
+    // content ⇒ the run FAILED (health record + ops ping via logCronRun) and the HTTP
+    // status says so too.
+    const health = nighthawkOutcomesRunHealth(result);
+
+    // PR-N10: the Debrief pass, strictly AFTER grading — pins the per-play post-mortem
+    // onto newly-graded rows and counterfactually grades PR-N3's publish-gate-blocked
+    // plays on the same daily-bar path. FAIL-SOFT BY CONTRACT: both passes report their
+    // own honest ledgers in the payload/meta, but neither can fail the grading run —
+    // `health` above (the run's ok + HTTP status) is computed from grading alone, and
+    // the belt-and-suspenders catch here covers even a pass that throws unexpectedly.
+    const nowMs = Date.now();
+    const debrief: NighthawkDebriefPassResult = await runNighthawkDebriefPass({ nowMs }).catch((err) => ({
+      ok: false,
+      scanned: 0,
+      pinned: 0,
+      already_pinned: 0,
+      skipped: 0,
+      errors: [err instanceof Error ? err.message : String(err)],
+    }));
+    const rejectionCf: NighthawkRejectionCfResult = await runNighthawkRejectionCounterfactuals({
+      nowMs,
+    }).catch((err) => ({
+      ok: false,
+      scanned: 0,
+      graded: 0,
+      ungradeable: 0,
+      skipped_no_bar: 0,
+      errors: [err instanceof Error ? err.message : String(err)],
+    }));
+
+    const payload = { ok: health.ok, ...result, debrief, rejection_counterfactuals: rejectionCf };
     await logCronRun("nighthawk-outcomes", started, {
-      ok: true,
+      ok: health.ok,
+      error: health.error,
       resolved: result.resolved,
       skipped_count: result.skipped,
       errors: result.errors,
+      debrief,
+      rejection_counterfactuals: rejectionCf,
     });
-    return NextResponse.json(payload);
+    return NextResponse.json(payload, health.ok ? undefined : { status: 500 });
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);
     console.error("[cron/nighthawk-outcomes]", error);

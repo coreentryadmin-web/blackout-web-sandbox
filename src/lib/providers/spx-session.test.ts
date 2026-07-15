@@ -90,6 +90,29 @@ describe("priorDayFromDailyBars", () => {
     });
   });
 
+  it("displayed-session anchor: returns the session strictly BEFORE the anchor, never the anchor session itself", () => {
+    // Weekend / pre-open case behind the Vector prior-day fix (2026-07-14): the chart displays
+    // FRIDAY as its latest seeded session. Anchoring the walk-back to the real wall-clock date
+    // (Sat "2026-07-11") returns Friday — the displayed session's own H/L/C, drawing PDH/PDL on
+    // the very candles being viewed. Anchoring to the DISPLAYED session ("2026-07-10", the
+    // chart's sessionYmd) returns Thursday, the genuine prior day.
+    const bars = [
+      bar("2026-07-09", 7472.11, 7401.55, 7455.02), // Thu
+      bar("2026-07-10", 7508.29, 7438.04, 7499.36), // Fri — the displayed session
+    ];
+    assert.deepEqual(priorDayFromDailyBars(bars, "2026-07-10"), {
+      pdh: 7472.11,
+      pdl: 7401.55,
+      pdc: 7455.02,
+    });
+    // The unanchored (wall-clock Saturday) walk-back that motivated the anchor param:
+    assert.deepEqual(priorDayFromDailyBars(bars, "2026-07-11"), {
+      pdh: 7508.29,
+      pdl: 7438.04,
+      pdc: 7499.36,
+    });
+  });
+
   it("falls back to bars[length-2] when timestamps are absent", () => {
     const bars = [
       { o: 0, h: 10, l: 5, c: 8 },

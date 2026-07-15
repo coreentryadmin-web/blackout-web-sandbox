@@ -1,5 +1,12 @@
 import { Pool, type PoolClient, type QueryResultRow } from "pg";
 import { isTransientPgError } from "@/lib/db-transient";
+// PR-N2: grading-methodology version tags (dependency-free leaf — safe to import here).
+// db.ts stamps every grade write with the CURRENT tag and boot-backfills unstamped
+// resolved rows with the LEGACY tag; analytics/display segment on the same constants.
+import {
+  GRADE_METHODOLOGY_CURRENT,
+  GRADE_METHODOLOGY_LEGACY,
+} from "@/features/nighthawk/lib/grade-methodology";
 
 // Deliberately NOT importing rateLimiterEnvNumber from provider-rate-limiter-shared.ts here: that
 // module's dynamic `import("@/lib/redis-pubsub")` drags `ioredis` (and `node:diagnostics_channel`)
@@ -418,6 +425,14 @@ async function runMigrations(): Promise<void> {
     CREATE INDEX IF NOT EXISTS idx_spx_play_outcomes_entry_path
     ON spx_play_outcomes(entry_path, outcome);
   `);
+  // Context-at-entry (decision doc C-2), mirrored from zerodte_setup_log: day-open
+  // VIX + SPY session bias + ET stamp captured by the outcome writer at entry.
+  // Placed AFTER the CREATE TABLE above (unlike the playbook_id ALTERs) so a fresh
+  // bootstrap can't ALTER a table that doesn't exist yet.
+  await p.query(`
+    ALTER TABLE spx_play_outcomes
+    ADD COLUMN IF NOT EXISTS entry_context JSONB;
+  `);
   await p.query(`
     CREATE TABLE IF NOT EXISTS lotto_plays (
       id BIGSERIAL PRIMARY KEY,
@@ -537,6 +552,73 @@ async function runMigrations(): Promise<void> {
     CREATE INDEX IF NOT EXISTS idx_nighthawk_play_outcomes_resolved
     ON nighthawk_play_outcomes(edition_for DESC) WHERE outcome <> 'pending';
   `);
+  // PR-N4 (docs/audit/NIGHTHAWK-OVERNIGHT-DECISION.md §3.5 / C-2): publish-time decision
+  // context, pinned per play at edition publish — what the builder actually saw (spot,
+  // band-vs-spot geometry, regime/breadth, catalyst flags, score components). Mirrors the
+  // 0DTE entry_context idiom (zerodte_setup_log below): additive JSONB, COALESCE
+  // first-write-wins in the upsert so a force-rebuild refresh can never overwrite the
+  // original publish-time pin. Idempotent ALTER so existing prod tables pick it up.
+  await p.query(`
+    ALTER TABLE nighthawk_play_outcomes ADD COLUMN IF NOT EXISTS publish_context JSONB;
+  `);
+  // PR-N4: the 9:15 ET morning-confirm verdict, persisted per play (previously Redis-only,
+  // 24h TTL — verdict history evaporated daily, so confirm-vs-outcome calibration was
+  // impossible; decision doc N-7). COALESCE first-write-wins like publish_context: the
+  // FIRST verdict of the session is the calibration datum, a forced re-run never rewrites it.
+  await p.query(`
+    ALTER TABLE nighthawk_play_outcomes ADD COLUMN IF NOT EXISTS morning_verdict JSONB;
+  `);
+  // PR-N4: the INVALIDATED pull latch — one-way (SET-only, same latch discipline as the
+  // 0DTE status latch, #326): an INVALIDATED play is presented as PULLED on the member
+  // surface for the rest of its session and its grade becomes counterfactual-only (never
+  // counted in the headline record). A later re-run that computes a softer verdict can
+  // never un-pull (pulled = pulled OR new, reason/at COALESCE-pinned).
+  await p.query(`
+    ALTER TABLE nighthawk_play_outcomes ADD COLUMN IF NOT EXISTS pulled BOOLEAN NOT NULL DEFAULT FALSE;
+  `);
+  await p.query(`
+    ALTER TABLE nighthawk_play_outcomes ADD COLUMN IF NOT EXISTS pulled_reason TEXT;
+  `);
+  await p.query(`
+    ALTER TABLE nighthawk_play_outcomes ADD COLUMN IF NOT EXISTS pulled_at TIMESTAMPTZ;
+  `);
+  // PR-N2 (decision doc §2.1/N-2, methodology blend): which resolveOutcome rule set graded
+  // this row. Every grade write through updateNighthawkPlayOutcome stamps the CURRENT tag;
+  // the legacy regrade path (regradeLegacyNighthawkOutcome below) promotes old rows after
+  // re-verifying them under current rules. Analytics segments on this column and NEVER
+  // aggregates the two segments into one win rate.
+  await p.query(`
+    ALTER TABLE nighthawk_play_outcomes ADD COLUMN IF NOT EXISTS grade_methodology TEXT;
+  `);
+  // PR-N2: the pre-regrade grade, preserved verbatim when a legacy row is re-graded under
+  // current rules — history is quarantined, never destroyed (§3.5: both must stay visible).
+  // COALESCE first-write-wins in the regrade UPDATE, same pinning discipline as
+  // publish_context/morning_verdict above.
+  await p.query(`
+    ALTER TABLE nighthawk_play_outcomes ADD COLUMN IF NOT EXISTS legacy_grade JSONB;
+  `);
+  // PR-N10 (the Debrief): the automated end-of-session post-mortem pinned per play by
+  // the outcomes cron AFTER grading (features/nighthawk/lib/debrief.ts — fill quality,
+  // MFE/MAE from the fill edge, thesis scorecard, one failure-mode tag). COALESCE
+  // first-write-wins in pinNighthawkPlayDebrief below, same pinning discipline as
+  // publish_context/morning_verdict: the debrief written against the grading-time bars
+  // is the datum; a later pass never rewrites it. Idempotent ALTER.
+  await p.query(`
+    ALTER TABLE nighthawk_play_outcomes ADD COLUMN IF NOT EXISTS debrief JSONB;
+  `);
+  // PR-N2 boot backfill: a resolved row with no methodology stamp was, by construction,
+  // graded before stamping existed (every post-PR-N2 grade write stamps at write time), so
+  // its provenance is unprovable from the row — tag it LEGACY. Deliberately conservative:
+  // the 12 rows the PR-N1 stuck-outcome repair graded under current rules land here too,
+  // because "probably current" is not a record-keeping standard; the admin legacy regrade
+  // re-runs them under current rules (idempotent — same persisted bars in, same grade out)
+  // and promotes them with the old grade pinned in legacy_grade. Idempotent per boot: only
+  // NULL-stamp resolved rows match, and after one pass none remain NULL.
+  await p.query(`
+    UPDATE nighthawk_play_outcomes
+    SET grade_methodology = '${GRADE_METHODOLOGY_LEGACY}'
+    WHERE outcome <> 'pending' AND grade_methodology IS NULL;
+  `);
   await p.query(`
     CREATE TABLE IF NOT EXISTS nighthawk_jobs (
       id BIGSERIAL PRIMARY KEY,
@@ -647,6 +729,25 @@ async function runMigrations(): Promise<void> {
   `);
   await p.query(`
     ALTER TABLE zerodte_setup_log ADD COLUMN IF NOT EXISTS trough_premium NUMERIC;
+  `);
+  // Context-at-entry (decision doc C-2): day-open VIX, SPY session bias, gamma
+  // regime, commit-time score, ET commit stamp — pinned at FIRST flag like the
+  // plan columns, because the whole point is what the desk looked like when the
+  // play committed. The 7/13 forensics' strongest factor (day-open VIX band) was
+  // only derivable day-level because nothing persisted context per-play.
+  await p.query(`
+    ALTER TABLE zerodte_setup_log ADD COLUMN IF NOT EXISTS entry_context JSONB;
+  `);
+  // Hard-gate calibration verdicts (G-4 VIX throttle / G-6 cross-system conflict, decision doc
+  // NIGHTHAWK-0DTE-DECISION.md §2 "calibration mode") — computed and PINNED at commit time on
+  // every fresh row so 30 sessions from now the "harden or drop" call is made on per-play data
+  // that actually exists (the C-2 lesson: none of regime/VIX/score-at-entry existed per-play
+  // anywhere, which is what made the original forensics so painful). Never blocks; never
+  // re-written by later refresh ticks (COALESCE-pinned like plan_json). Sits alongside
+  // entry_context above: entry_context = what the DESK looked like, gate_calibration_json =
+  // what the GATES said about it.
+  await p.query(`
+    ALTER TABLE zerodte_setup_log ADD COLUMN IF NOT EXISTS gate_calibration_json JSONB;
   `);
   // BLACKOUT Intelligence Engine — every answered question logged with its route
   // (deterministic router vs Claude fallback) and numeric-claim verification, so
@@ -780,12 +881,12 @@ async function runMigrations(): Promise<void> {
     CREATE INDEX IF NOT EXISTS idx_admin_audit_log_created
     ON admin_audit_log(created_at DESC);
   `);
-  await p.query(`
-    ALTER TABLE nighthawk_play_outcomes DROP CONSTRAINT IF EXISTS nighthawk_play_outcomes_outcome_check;
-  `);
-  await p.query(`
-    ALTER TABLE nighthawk_play_outcomes ADD CONSTRAINT nighthawk_play_outcomes_outcome_check CHECK (outcome IN ('target', 'stop', 'open', 'ambiguous', 'pending'));
-  `);
+  // PR-N1 (P0): a stale pre-'unfilled' copy of the nighthawk_play_outcomes_outcome_check
+  // DROP+ADD used to live HERE — running later in ensureSchema than the correct re-issue
+  // above (see the 'unfilled' block near the table's CREATE), it clobbered the constraint
+  // back to the 5-value set on every boot, so every `outcome = 'unfilled'` grade write threw
+  // and 12 rows sat "pending" forever. The outcome CHECK must be issued exactly ONCE in this
+  // function (db.test.ts pins this) — never re-add a second copy.
   await p.query(`
     DO $$
     BEGIN
@@ -953,6 +1054,17 @@ async function runMigrations(): Promise<void> {
     CREATE UNIQUE INDEX IF NOT EXISTS idx_alert_audit_log_nighthawk_rejected_dedup
       ON alert_audit_log (alert_type, ticker, (source_key->>'edition_for'))
       WHERE alert_type = 'nighthawk_rejected';
+
+    -- PR-N10 (the Debrief): counterfactual grade for a REJECTED play, pinned onto its
+    -- audit row by the debrief pass (features/nighthawk/lib/debrief-persist.ts) — what a
+    -- publish-gate-blocked play WOULD have done, graded on the same next-session daily
+    -- bar the real grader uses. Deliberately NOT written into the existing outcome
+    -- column: fetchResolvedAlertAuditRows feeds BIE precedent ingestion from outcome
+    -- without excluding 'nighthawk_rejected', so a counterfactual there would masquerade
+    -- as a real published-alert result. A dedicated JSONB keeps counterfactuals
+    -- machine-readable and invisible to every real-record consumer by construction
+    -- (same isolation idiom as zerodte_scan_rejections.counterfactual_json).
+    ALTER TABLE alert_audit_log ADD COLUMN IF NOT EXISTS counterfactual_json JSONB;
 
     -- SPX Slayer SHADOW-MODE factor observations (docs/audit/FINDINGS.md, "SPX Slayer
     -- shadow signal framework"). Logs what a candidate factor WOULD have contributed
@@ -1218,6 +1330,12 @@ async function runMigrations(): Promise<void> {
       ON zerodte_scan_rejections (observed_at DESC);
     CREATE INDEX IF NOT EXISTS idx_zerodte_scan_rejections_ticker
       ON zerodte_scan_rejections (ticker, observed_at DESC);
+    -- Human-readable block sentence (hard-gate stack, decision doc NIGHTHAWK-0DTE-DECISION.md
+    -- section 2): gate_failed stays the machine-readable code; reason is the member-facing
+    -- sentence the board's SKIP cards render verbatim ("blocked, and here is exactly why" --
+    -- visible discipline, never a silent drop). NULL for the original 4 evidence gates, whose
+    -- rows predate the hard-gate stack and whose numeric columns already tell the whole story.
+    ALTER TABLE zerodte_scan_rejections ADD COLUMN IF NOT EXISTS reason TEXT;
 
     -- gex_regime_events (task #136): durable log of BlackOut Thermal's GEX
     -- regime/flip/wall-crossing events, detected by computeGexEvents() (src/lib/
@@ -1970,8 +2088,15 @@ function parseDate(value: string | null | undefined): string | null {
  * BOTH shapes: a Date object (read its UTC Y-M-D — DATE has no timezone, midnight-UTC is the day) and
  * an already-ISO string (slice). Falls back to the raw stringified first 10 chars only if neither
  * matches, so callers always get a stable value.
+ *
+ * Exported (2026-07-13 Night Hawk 0DTE audit): ecosystem-context.ts runs its own
+ * raw dbQuery()s against DATE columns (nighthawk_play_outcomes.edition_for,
+ * zerodte_setup_log.session_date) and was re-introducing the exact String(Date)
+ * garbage this helper exists to prevent — live-caught on the 0DTE board's
+ * nighthawk_echo ("Fri Jul 10 2026 00:00:00 GMT+0000 (Coordinated Universal
+ * Time)"). Any raw-query consumer of a DATE column must funnel through here.
  */
-function isoDateString(value: unknown): string {
+export function isoDateString(value: unknown): string {
   if (value instanceof Date && !Number.isNaN(value.getTime())) {
     return value.toISOString().slice(0, 10);
   }
@@ -2949,6 +3074,8 @@ export async function insertZeroDteScanRejection(row: {
   prints: number;
   first_seen: string | null;
   last_seen: string | null;
+  /** Human-readable block sentence (hard-gate rows only; evidence-gate rows pass null). */
+  reason?: string | null;
 }): Promise<void> {
   await ensureSchema();
   await (await getPool()).query(
@@ -2956,9 +3083,9 @@ export async function insertZeroDteScanRejection(row: {
     INSERT INTO zerodte_scan_rejections (
       session_date, ticker, gate_failed, threshold, gross_premium,
       aggression, side_dominance, otm_pct, direction, prints,
-      first_seen, last_seen
+      first_seen, last_seen, reason
     )
-    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
     `,
     [
       row.session_date,
@@ -2973,6 +3100,7 @@ export async function insertZeroDteScanRejection(row: {
       row.prints,
       row.first_seen,
       row.last_seen,
+      row.reason ?? null,
     ]
   );
 }
@@ -2993,6 +3121,7 @@ export async function fetchZeroDteScanRejections(opts?: { ticker?: string; limit
     prints: number | null;
     first_seen: string | null;
     last_seen: string | null;
+    reason: string | null;
   }>
 > {
   await ensureSchema();
@@ -3000,7 +3129,7 @@ export async function fetchZeroDteScanRejections(opts?: { ticker?: string; limit
   const ticker = opts?.ticker?.toUpperCase();
   const cols = `id, observed_at, session_date, ticker, gate_failed, threshold,
            gross_premium, aggression, side_dominance, otm_pct, direction, prints,
-           first_seen, last_seen`;
+           first_seen, last_seen, reason`;
   const res = ticker
     ? await (await getPool()).query(
         `SELECT ${cols} FROM zerodte_scan_rejections WHERE ticker = $1 ORDER BY observed_at DESC LIMIT $2`,
@@ -3025,6 +3154,7 @@ export async function fetchZeroDteScanRejections(opts?: { ticker?: string; limit
     prints: r.prints != null ? Number(r.prints) : null,
     first_seen: r.first_seen != null ? String(r.first_seen) : null,
     last_seen: r.last_seen != null ? String(r.last_seen) : null,
+    reason: r.reason != null ? String(r.reason) : null,
   }));
 }
 
@@ -3403,6 +3533,9 @@ export async function insertOpenSpxPlay(
     option_ticket: unknown;
     playbook_id?: string | null;
     playbook_instance_id?: string | null;
+    /** Context-at-entry blob (C-2) — optional/additive so existing callers compile
+     *  unchanged; null persists as SQL NULL. */
+    entry_context?: Record<string, unknown> | null;
   }
 ): Promise<{ id: number; created: boolean }> {
   await ensureSchema();
@@ -3460,9 +3593,9 @@ export async function insertOpenSpxPlay(
     INSERT INTO spx_play_outcomes (
       open_play_id, session_date, direction, entry_path, grade, score, confidence,
       entry_price, stop, target, headline, factors, confirmations, mtf, claude,
-      option_ticket, opened_at, outcome, playbook_id, playbook_instance_id
+      option_ticket, opened_at, outcome, playbook_id, playbook_instance_id, entry_context
     )
-    VALUES ($1,$2::date,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12::jsonb,$13::jsonb,$14::jsonb,$15::jsonb,$16::jsonb,$17,'open',$18,$19)
+    VALUES ($1,$2::date,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12::jsonb,$13::jsonb,$14::jsonb,$15::jsonb,$16::jsonb,$17,'open',$18,$19,$20::jsonb)
     ON CONFLICT (open_play_id) WHERE outcome = 'open' DO NOTHING
     RETURNING id
     `,
@@ -3486,6 +3619,10 @@ export async function insertOpenSpxPlay(
             row.opened_at,
             outcome.playbook_id ?? row.playbook_id ?? null,
             outcome.playbook_instance_id ?? row.playbook_instance_id ?? null,
+            // C-2 context-at-entry — JSON.stringify like the other jsonb params
+            // (top-level pg param serialization of objects is fine, but stay
+            // consistent with this INSERT's existing ::jsonb convention).
+            JSON.stringify(outcome.entry_context ?? null),
           ]
         );
         if (!outcomeRes.rows[0]?.id) {
@@ -3607,6 +3744,8 @@ export async function insertPlayOutcomeEntry(row: {
   option_ticket: unknown;
   opened_at: string;
   playbook_instance_id?: string | null;
+  /** Context-at-entry blob (C-2) — optional/additive, mirrors insertOpenSpxPlay. */
+  entry_context?: Record<string, unknown> | null;
 }): Promise<number> {
   await ensureSchema();
   const res = await (await getPool()).query<{ id: string }>(
@@ -3614,9 +3753,9 @@ export async function insertPlayOutcomeEntry(row: {
     INSERT INTO spx_play_outcomes (
       open_play_id, session_date, direction, entry_path, grade, score, confidence,
       entry_price, stop, target, headline, factors, confirmations, mtf, claude,
-      option_ticket, opened_at, outcome, playbook_instance_id
+      option_ticket, opened_at, outcome, playbook_instance_id, entry_context
     )
-    VALUES ($1,$2::date,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12::jsonb,$13::jsonb,$14::jsonb,$15::jsonb,$16::jsonb,$17,'open',$18)
+    VALUES ($1,$2::date,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12::jsonb,$13::jsonb,$14::jsonb,$15::jsonb,$16::jsonb,$17,'open',$18,$19::jsonb)
     ON CONFLICT (open_play_id) WHERE outcome = 'open' DO NOTHING
     RETURNING id
     `,
@@ -3639,6 +3778,7 @@ export async function insertPlayOutcomeEntry(row: {
       JSON.stringify(row.option_ticket ?? null),
       row.opened_at,
       row.playbook_instance_id ?? null,
+      JSON.stringify(row.entry_context ?? null),
     ]
   );
   return Number(res.rows[0]?.id ?? 0);
@@ -4235,6 +4375,12 @@ export type ZeroDteSetupLogRow = {
   last_mark: number | null;
   peak_premium: number | null;
   trough_premium: number | null;
+  /** G-4/G-6 calibration verdict + bias/score context, pinned at commit time (never blocks). */
+  gate_calibration_json: Record<string, unknown> | null;
+  /** Context-at-entry (C-2): vix_open / spy_bias / gamma_regime / score /
+   *  committed_at_et as of FIRST flag — see zerodte/entry-context.ts. NULL on
+   *  every row committed before the column shipped; consumers must not assume it. */
+  entry_context: Record<string, unknown> | null;
 };
 
 export type ZeroDteSetupLogUpsert = {
@@ -4253,14 +4399,19 @@ export type ZeroDteSetupLogUpsert = {
   entry_premium: number | null;
   flow_avg_fill: number | null;
   plan_json: Record<string, unknown> | null;
+  gate_calibration_json: Record<string, unknown> | null;
+  /** Context-at-entry blob (C-2). Optional so existing callers/tests are untouched;
+   *  pinned at first flag by the upsert below (never re-stamped by a refresh tick). */
+  entry_context?: Record<string, unknown> | null;
 };
 
 /** Upsert scanner finds — one row per (session, ticker). First sighting pins
  *  underlying_at_flag/first_flagged_at/direction/top_strike/expiry/entry_premium/
- *  flow_avg_fill/plan_json forever (that's the exact contract+price that gets
- *  graded and shown as the ledger's entry); later scans only refresh conviction/
- *  scoring signals (score, dossier_score, conviction, gross_premium, spike,
- *  underlying_latest, flags_json) and ratchet score_max.
+ *  flow_avg_fill/plan_json/gate_calibration_json forever (that's the exact
+ *  contract+price+gate-context that gets graded and shown as the ledger's entry);
+ *  later scans only refresh conviction/scoring signals (score, dossier_score,
+ *  conviction, gross_premium, spike, underlying_latest, flags_json) and ratchet
+ *  score_max.
  *
  *  Returns the tickers that were a FRESH INSERT this call (first flag of the
  *  session), detected via the `xmax = 0` Postgres idiom (xmax is unset on a
@@ -4279,8 +4430,8 @@ export async function upsertZeroDteSetupLog(rows: ZeroDteSetupLogUpsert[]): Prom
         session_date, ticker, direction, top_strike, expiry, score, score_max,
         dossier_score, conviction, gross_premium, spike, underlying_at_flag,
         underlying_latest, flags_json, entry_premium, flow_avg_fill, plan_json,
-        first_flagged_at, last_seen_at
-      ) VALUES ($1,$2,$3,$4,$5,$6,$6,$7,$8,$9,$10,$11,$11,$12,$13,$14,$15,NOW(),NOW())
+        gate_calibration_json, entry_context, first_flagged_at, last_seen_at
+      ) VALUES ($1,$2,$3,$4,$5,$6,$6,$7,$8,$9,$10,$11,$11,$12,$13,$14,$15,$16,$17,NOW(),NOW())
       ON CONFLICT (session_date, ticker) DO UPDATE SET
         score = EXCLUDED.score,
         score_max = GREATEST(zerodte_setup_log.score_max, EXCLUDED.score),
@@ -4301,6 +4452,13 @@ export async function upsertZeroDteSetupLog(rows: ZeroDteSetupLogUpsert[]): Prom
         entry_premium = COALESCE(zerodte_setup_log.entry_premium, EXCLUDED.entry_premium),
         flow_avg_fill = COALESCE(zerodte_setup_log.flow_avg_fill, EXCLUDED.flow_avg_fill),
         plan_json = COALESCE(zerodte_setup_log.plan_json, EXCLUDED.plan_json),
+        -- G-4/G-6 calibration verdict is the verdict AT COMMIT — a refresh tick must
+        -- never re-litigate it with later VIX/conflict context (same no-hindsight rule
+        -- as plan_json above).
+        gate_calibration_json = COALESCE(zerodte_setup_log.gate_calibration_json, EXCLUDED.gate_calibration_json),
+        -- entry_context is PINNED with the plan fields: "what did the desk look like
+        -- at commit" must never be re-stamped by a later refresh tick (C-2).
+        entry_context = COALESCE(zerodte_setup_log.entry_context, EXCLUDED.entry_context),
         last_seen_at = NOW()
       RETURNING (xmax = 0) AS inserted
       `,
@@ -4320,6 +4478,8 @@ export async function upsertZeroDteSetupLog(rows: ZeroDteSetupLogUpsert[]): Prom
         r.entry_premium,
         r.flow_avg_fill,
         r.plan_json,
+        r.gate_calibration_json,
+        r.entry_context ?? null,
       ]
     );
     if (res.rows[0]?.inserted === true) freshlyFlagged.add(ticker);
@@ -4854,6 +5014,8 @@ function mapZeroDteLogRow(r: QueryResultRow): ZeroDteSetupLogRow {
     last_mark: r.last_mark != null ? Number(r.last_mark) : null,
     peak_premium: r.peak_premium != null ? Number(r.peak_premium) : null,
     trough_premium: r.trough_premium != null ? Number(r.trough_premium) : null,
+    gate_calibration_json: (r.gate_calibration_json as Record<string, unknown>) ?? null,
+    entry_context: (r.entry_context as Record<string, unknown>) ?? null,
   };
 }
 
@@ -4895,6 +5057,63 @@ export async function fetchUngradedZeroDteRows(beforeDate: string, limit = 12): 
   return res.rows.map(mapZeroDteLogRow);
 }
 
+/**
+ * P-6 backfill: un-stamp `graded_at` on historical index-root rows that carry the
+ * null-grade signature of the pre-polygonSpotTicker bug (graded_at set, close_price
+ * NULL — see zerodte/regrade.ts's needsIndexRootRegrade, the executable spec this
+ * WHERE clause mirrors), so the EXISTING lazy grader re-grades them through the
+ * fixed mapping. Nothing else is touched: move_pct/direction_hit are already NULL
+ * on every matching row, and the grader owns re-stamping.
+ *
+ * Idempotent (a cleared row has graded_at NULL and can never match again) and
+ * bounded (LIMIT inside the CTE; deterministic oldest-first order). dry_run runs
+ * the identical SELECT without the UPDATE so an admin can preview the blast radius.
+ */
+export async function resetNullGradedZeroDteRows(opts: {
+  tickers: readonly string[];
+  beforeDate: string;
+  limit: number;
+  dryRun: boolean;
+}): Promise<{ rows: Array<{ session_date: string; ticker: string }>; cleared: number }> {
+  await ensureSchema();
+  const normalized = normalizeIsoDateInput(opts.beforeDate);
+  if (!normalized || opts.tickers.length === 0 || opts.limit <= 0) return { rows: [], cleared: 0 };
+  const tickers = opts.tickers.map((t) => t.toUpperCase());
+  const pool = await getPool();
+  const selectSql = `
+    SELECT session_date, ticker FROM zerodte_setup_log
+    WHERE graded_at IS NOT NULL
+      AND close_price IS NULL
+      AND ticker = ANY($1::text[])
+      AND session_date < $2::date
+    ORDER BY session_date ASC, ticker ASC
+    LIMIT $3`;
+  if (opts.dryRun) {
+    const res = await pool.query<QueryResultRow>(selectSql, [tickers, normalized, opts.limit]);
+    return {
+      rows: res.rows.map((r) => ({
+        session_date: isoDateString(r.session_date),
+        ticker: String(r.ticker),
+      })),
+      cleared: 0,
+    };
+  }
+  const res = await pool.query<QueryResultRow>(
+    `WITH target AS (${selectSql} FOR UPDATE SKIP LOCKED)
+     UPDATE zerodte_setup_log z
+     SET graded_at = NULL
+     FROM target t
+     WHERE z.session_date = t.session_date AND z.ticker = t.ticker
+     RETURNING z.session_date, z.ticker`,
+    [tickers, normalized, opts.limit]
+  );
+  const rows = res.rows.map((r) => ({
+    session_date: isoDateString(r.session_date),
+    ticker: String(r.ticker),
+  }));
+  return { rows, cleared: rows.length };
+}
+
 export async function gradeZeroDteSetupRow(
   sessionDate: string,
   ticker: string,
@@ -4910,7 +5129,27 @@ export async function gradeZeroDteSetupRow(
 }
 
 /** Latch a play's live state: peak/trough only ever widen (GREATEST/LEAST), so a
- *  stop stays a stop even if the premium bounces; status is the derived lifecycle. */
+ *  stop stays a stop even if the premium bounces; status is the derived lifecycle.
+ *
+ *  STATUS IS MONOTONIC at the SQL level (the one-way commit door, P0 fix — see
+ *  FINDINGS.md "OPEN regressed to Watch"). The real ladder, per derivePlayStatus
+ *  (zerodte/plan.ts): OPEN ↔ HOLD are the same "live" rung (the mark drifting in
+ *  and out of the ±10% entry band — both directions legitimate every tick), then
+ *  TRIM (sticky once the latched peak ever tagged +100%), then CLOSED (terminal).
+ *  Guards, and WHY each exists:
+ *  - CLOSED is TERMINAL (#321): exit-engine closes (ratchet floor / thesis break /
+ *    flat timeout — zerodte/exit-engine.ts) are NOT re-derivable from the peak/
+ *    trough latches the way plan stops are, so a concurrent writer working from a
+ *    ≤10s-stale active set (the live-marks lane) could otherwise flip an
+ *    engine-closed row back to HOLD and reopen a play the engine just protected.
+ *  - TRIM never regresses to OPEN/HOLD: TRIM is derived from the latched peak, but
+ *    each WRITER carries its own copy of that latch (live-marks' per-replica
+ *    latchMemo, the cron sync's just-read row on another replica) — a writer whose
+ *    latch predates the target tag derives HOLD and would demote a play members
+ *    were already told to trim. The row's own peak_premium column is the shared
+ *    truth, so a lower-rung write from a stale latch is dropped here, not raced.
+ *  A regressing write still lands its mark and widens peak/trough (real quote
+ *  data), it just cannot move the status rung backwards. */
 export async function updateZeroDteLiveState(
   sessionDate: string,
   ticker: string,
@@ -4919,7 +5158,11 @@ export async function updateZeroDteLiveState(
   await ensureSchema();
   await (await getPool()).query(
     `UPDATE zerodte_setup_log SET
-       status = $3,
+       status = CASE
+         WHEN status = 'CLOSED' THEN status
+         WHEN status = 'TRIM' AND $3 IN ('OPEN','HOLD') THEN status
+         ELSE $3
+       END,
        last_mark = COALESCE($4, last_mark),
        peak_premium = CASE
          WHEN $4 IS NOT NULL THEN GREATEST(COALESCE(peak_premium, $4), $4)
@@ -4931,6 +5174,29 @@ export async function updateZeroDteLiveState(
        END
      WHERE session_date = $1::date AND ticker = $2`,
     [sessionDate, ticker.toUpperCase(), s.status, s.mark]
+  );
+}
+
+/**
+ * Stamp the exit-engine's counterfactual record onto a row as entry_context.exit
+ * (zerodte/exit-engine.ts's ZeroDteExitContext: reason/detail/mark/pnl_pct/
+ * peak_pnl_pct/at). Deliberately a JSONB merge into the EXISTING entry_context
+ * column — no migration, and the entry blob + exit blob travel together for the
+ * calibration/record consumers. FIRST-WRITE-WINS: the `exit` key is the decision
+ * that actually closed the play; a later tick (or a racing replica) re-deciding
+ * against fresher marks must never rewrite history, so the WHERE guards re-stamps.
+ */
+export async function stampZeroDteExitContext(
+  sessionDate: string,
+  ticker: string,
+  exit: Record<string, unknown>
+): Promise<void> {
+  await ensureSchema();
+  await (await getPool()).query(
+    `UPDATE zerodte_setup_log
+     SET entry_context = COALESCE(entry_context, '{}'::jsonb) || jsonb_build_object('exit', $3::jsonb)
+     WHERE session_date = $1::date AND ticker = $2 AND (entry_context -> 'exit') IS NULL`,
+    [sessionDate, ticker.toUpperCase(), JSON.stringify(exit)]
   );
 }
 
@@ -5665,6 +5931,29 @@ export type NighthawkPlayOutcomeRow = {
   hit_stop: boolean;
   outcome: "target" | "stop" | "open" | "ambiguous" | "pending" | "unfilled";
   created_at: string;
+  // PR-N4 additive fields — OPTIONAL (not `| null` required) so the many existing test
+  // fixtures that build full row literals keep compiling; the mapper always sets them.
+  /** One-way INVALIDATED pull latch (see the ALTERs in runMigrations). A pulled play's
+   *  grade is counterfactual-only and must never count in the headline record. */
+  pulled?: boolean;
+  pulled_reason?: string | null;
+  /** Publish-time decision context pinned at edition publish (first-write-wins). */
+  publish_context?: Record<string, unknown> | null;
+  /** Persisted 9:15 morning-confirm verdict blob (first-write-wins). */
+  morning_verdict?: Record<string, unknown> | null;
+  // PR-N2 additive fields — same optionality convention as the PR-N4 block above.
+  /** Which resolveOutcome rule set graded this row (grade-methodology.ts tags). NULL only
+   *  on 'pending' rows — the boot backfill stamps every resolved row, and every grade
+   *  write stamps at write time. Analytics treats anything ≠ CURRENT as legacy. */
+  grade_methodology?: string | null;
+  /** The superseded grade a legacy regrade preserved (outcome/hit flags/old tag),
+   *  COALESCE-pinned first-write-wins — never overwritten, never deleted. */
+  legacy_grade?: Record<string, unknown> | null;
+  // PR-N10 additive field — same optionality convention as the PR-N4/N2 blocks above.
+  /** The pinned end-of-session debrief (debrief.ts PlayDebrief + debriefed_at), written
+   *  first-write-wins by the outcomes cron after grading. NULL until the debrief pass
+   *  visits the graded row. */
+  debrief?: Record<string, unknown> | null;
 };
 
 function mapNighthawkPlayOutcomeRow(r: QueryResultRow): NighthawkPlayOutcomeRow {
@@ -5688,6 +5977,13 @@ function mapNighthawkPlayOutcomeRow(r: QueryResultRow): NighthawkPlayOutcomeRow 
     hit_stop: Boolean(r.hit_stop),
     outcome: String(r.outcome) as NighthawkPlayOutcomeRow["outcome"],
     created_at: new Date(String(r.created_at)).toISOString(),
+    pulled: Boolean(r.pulled),
+    pulled_reason: r.pulled_reason != null ? String(r.pulled_reason) : null,
+    publish_context: (r.publish_context as Record<string, unknown>) ?? null,
+    morning_verdict: (r.morning_verdict as Record<string, unknown>) ?? null,
+    grade_methodology: r.grade_methodology != null ? String(r.grade_methodology) : null,
+    legacy_grade: (r.legacy_grade as Record<string, unknown>) ?? null,
+    debrief: (r.debrief as Record<string, unknown>) ?? null,
   };
 }
 
@@ -5712,6 +6008,11 @@ export async function upsertNighthawkPlayOutcomes(
     stop: number | null;
     score: number;
     sector: string | null;
+    /** PR-N4: publish-time decision context, pinned FIRST-WRITE-WINS (COALESCE below) —
+     *  a force-rebuild refresh updates levels but can never rewrite what the builder saw
+     *  at the ORIGINAL publish. Omit/null when the pinning builder failed (fail-soft:
+     *  a missing pin must never block the outcome row itself). */
+    publish_context?: Record<string, unknown> | null;
   }>
 ): Promise<Set<string>> {
   if (!rows.length) return new Set();
@@ -5719,11 +6020,11 @@ export async function upsertNighthawkPlayOutcomes(
   const pool = await getPool();
 
   // Single multi-row INSERT (one round-trip) instead of an awaited per-row loop (N round-trips).
-  // Each row contributes 10 bound params; outcome is the 'pending' literal as before.
+  // Each row contributes 11 bound params; outcome is the 'pending' literal as before.
   const params: Array<string | number | null> = [];
   const tuples = rows
     .map((row, i) => {
-      const b = i * 10;
+      const b = i * 11;
       params.push(
         row.edition_for,
         row.ticker,
@@ -5734,9 +6035,10 @@ export async function upsertNighthawkPlayOutcomes(
         row.target,
         row.stop,
         row.score,
-        row.sector
+        row.sector,
+        row.publish_context != null ? JSON.stringify(row.publish_context) : null
       );
-      return `($${b + 1}::date, $${b + 2}, $${b + 3}, $${b + 4}, $${b + 5}, $${b + 6}, $${b + 7}, $${b + 8}, $${b + 9}, $${b + 10}, 'pending')`;
+      return `($${b + 1}::date, $${b + 2}, $${b + 3}, $${b + 4}, $${b + 5}, $${b + 6}, $${b + 7}, $${b + 8}, $${b + 9}, $${b + 10}, $${b + 11}::jsonb, 'pending')`;
     })
     .join(", ");
 
@@ -5744,7 +6046,7 @@ export async function upsertNighthawkPlayOutcomes(
     `
     INSERT INTO nighthawk_play_outcomes (
       edition_for, ticker, direction, conviction,
-      entry_range_low, entry_range_high, target, stop, score, sector, outcome
+      entry_range_low, entry_range_high, target, stop, score, sector, publish_context, outcome
     ) VALUES ${tuples}
     ON CONFLICT (edition_for, ticker) DO UPDATE SET
       direction = EXCLUDED.direction,
@@ -5755,6 +6057,10 @@ export async function upsertNighthawkPlayOutcomes(
       stop = EXCLUDED.stop,
       score = EXCLUDED.score,
       sector = EXCLUDED.sector,
+      -- PR-N4 context pin: first-write-wins, mirroring zerodte_setup_log.entry_context.
+      -- The whole point is "what did the builder see when this play FIRST published" —
+      -- a later force-rebuild's fresher read must never replace the original evidence.
+      publish_context = COALESCE(nighthawk_play_outcomes.publish_context, EXCLUDED.publish_context),
       updated_at = NOW()
     WHERE nighthawk_play_outcomes.outcome = 'pending'
     RETURNING ticker, (xmax = 0) AS inserted
@@ -5799,7 +6105,9 @@ export async function fetchPendingNighthawkOutcomes(lookbackDays = 7): Promise<N
     SELECT id, edition_for, ticker, direction, conviction,
            entry_range_low, entry_range_high, target, stop, score, sector,
            next_day_open, next_day_close, session_high, session_low,
-           hit_target, hit_stop, outcome, created_at
+           hit_target, hit_stop, outcome, created_at,
+           pulled, pulled_reason, publish_context, morning_verdict,
+           grade_methodology, legacy_grade, debrief
     FROM nighthawk_play_outcomes
     WHERE outcome = 'pending'
       AND edition_for >= ((NOW() AT TIME ZONE 'America/New_York')::date - ($1::int || ' days')::interval)
@@ -5833,6 +6141,12 @@ export async function updateNighthawkPlayOutcome(
         hit_target = $6,
         hit_stop = $7,
         outcome = $8,
+        -- PR-N2: every grade written through this path (outcomes cron + PR-N1 stuck-row
+        -- repair) comes from the CURRENT resolveOutcome — stamp it so the record can
+        -- segment by rule set instead of silently blending methodologies. Grading a row
+        -- back to 'pending' (no verdict yet) does not stamp: an ungraded row has no
+        -- methodology to claim.
+        grade_methodology = CASE WHEN $8 = 'pending' THEN grade_methodology ELSE '${GRADE_METHODOLOGY_CURRENT}' END,
         updated_at = NOW()
     WHERE id = $1 AND outcome = 'pending'
     `,
@@ -5847,6 +6161,291 @@ export async function updateNighthawkPlayOutcome(
       patch.outcome,
     ]
   );
+}
+
+/** PR-N2: resolved rows still carrying a non-current grade methodology — the honest-
+ *  regrade work queue. Selector matches analytics' segmentation rule exactly
+ *  (isCurrentGradeMethodology): anything not explicitly stamped CURRENT is legacy,
+ *  including NULL (defensive — the boot backfill stamps those, but a row inserted
+ *  between backfill and read must still quarantine as legacy, never as current). */
+export async function fetchLegacyGradedNighthawkOutcomes(
+  windowDays = 90
+): Promise<NighthawkPlayOutcomeRow[]> {
+  await ensureSchema();
+  const safeWindowDays = Number.isFinite(windowDays) && windowDays > 0 ? Math.trunc(windowDays) : 90;
+  const res = await (await getPool()).query(
+    `
+    SELECT id, edition_for, ticker, direction, conviction,
+           entry_range_low, entry_range_high, target, stop, score, sector,
+           next_day_open, next_day_close, session_high, session_low,
+           hit_target, hit_stop, outcome, created_at,
+           pulled, pulled_reason, publish_context, morning_verdict,
+           grade_methodology, legacy_grade, debrief
+    FROM nighthawk_play_outcomes
+    WHERE outcome <> 'pending'
+      AND (grade_methodology IS NULL OR grade_methodology <> '${GRADE_METHODOLOGY_CURRENT}')
+      AND edition_for >= ((NOW() AT TIME ZONE 'America/New_York')::date - ($1::int || ' days')::interval)
+    ORDER BY edition_for ASC, ticker ASC
+    `,
+    [safeWindowDays]
+  );
+  return res.rows.map(mapNighthawkPlayOutcomeRow);
+}
+
+/** PR-N2: re-grade one LEGACY-resolved row under current rules, preserving the old grade.
+ *
+ *  Three invariants, all enforced in the SQL itself (not caller discipline):
+ *  - `legacy_grade` is COALESCE first-write-wins and captures the row's PRE-UPDATE
+ *    outcome/hit flags/tag (jsonb_build_object over the old column values evaluates
+ *    against the pre-UPDATE tuple) — the superseded grade stays visible forever (§3.5:
+ *    honest re-grade means BOTH grades remain inspectable, never history destruction).
+ *  - Guarded to non-current-methodology resolved rows only: once a row is stamped
+ *    CURRENT it can never match again — the regrade is idempotent by construction, the
+ *    same discipline as updateNighthawkPlayOutcome's WHERE outcome='pending'.
+ *  - Bars are NOT touched: the re-grade re-runs resolveOutcome over the bars already
+ *    persisted on the row (same inputs ⇒ deterministic re-verdict); rewriting bar data
+ *    here could silently change what the re-grade claims to have re-graded.
+ *
+ *  Returns true when the row was promoted this call (rowCount 1), false when it no
+ *  longer matched (already current — the idempotent second run). */
+export async function regradeLegacyNighthawkOutcome(
+  id: number,
+  verdict: {
+    hit_target: boolean;
+    hit_stop: boolean;
+    outcome: "target" | "stop" | "open" | "ambiguous" | "unfilled";
+  }
+): Promise<boolean> {
+  await ensureSchema();
+  const res = await (await getPool()).query(
+    `
+    UPDATE nighthawk_play_outcomes
+    SET legacy_grade = COALESCE(legacy_grade, jsonb_build_object(
+          'outcome', outcome,
+          'hit_target', hit_target,
+          'hit_stop', hit_stop,
+          'grade_methodology', COALESCE(grade_methodology, '${GRADE_METHODOLOGY_LEGACY}'),
+          'preserved_at', NOW()
+        )),
+        hit_target = $2,
+        hit_stop = $3,
+        outcome = $4,
+        grade_methodology = '${GRADE_METHODOLOGY_CURRENT}',
+        updated_at = NOW()
+    WHERE id = $1
+      AND outcome <> 'pending'
+      AND (grade_methodology IS NULL OR grade_methodology <> '${GRADE_METHODOLOGY_CURRENT}')
+    `,
+    [id, verdict.hit_target, verdict.hit_stop, verdict.outcome]
+  );
+  return (res.rowCount ?? 0) > 0;
+}
+
+/** PR-N4: persist one morning-confirm verdict onto its play's outcome row.
+ *
+ *  Two pinning rules, both deliberate:
+ *  - `morning_verdict` is COALESCE first-write-wins — the FIRST verdict of the session
+ *    (the 9:15 read) is the calibration datum; a forced re-run later in the day computes
+ *    different numbers and must not overwrite the record of what was knowable at 9:15.
+ *  - `pulled` is a ONE-WAY latch (pulled OR new): once INVALIDATED has pulled a play it
+ *    stays pulled even if a re-run computes a softer verdict — same no-flapping discipline
+ *    as the 0DTE status latch (#326). reason/at are COALESCE-pinned to the first pull.
+ *
+ *  Returns per-row facts so the caller (the morning-confirm cron) can log honestly:
+ *  matched=false ⇒ no outcome row exists for this edition/ticker (sync failed at publish —
+ *  the verdict has nowhere durable to live; the Redis blob still carries it for the UI). */
+export async function recordNighthawkMorningVerdict(row: {
+  edition_for: string;
+  ticker: string;
+  verdict: Record<string, unknown>;
+  /** True when the verdict is INVALIDATED — engages the pull latch. */
+  pull: boolean;
+  pull_reason: string | null;
+}): Promise<{ matched: boolean; verdict_written: boolean; pulled: boolean }> {
+  await ensureSchema();
+  const res = await (await getPool()).query<{
+    wrote_verdict: boolean;
+    pulled: boolean;
+  }>(
+    `
+    WITH before AS (
+      SELECT id, (morning_verdict IS NULL) AS was_empty
+      FROM nighthawk_play_outcomes
+      WHERE edition_for = $1::date AND ticker = $2
+    )
+    UPDATE nighthawk_play_outcomes o
+    SET morning_verdict = COALESCE(o.morning_verdict, $3::jsonb),
+        pulled = o.pulled OR $4::boolean,
+        pulled_reason = CASE WHEN $4::boolean THEN COALESCE(o.pulled_reason, $5) ELSE o.pulled_reason END,
+        pulled_at = CASE WHEN $4::boolean THEN COALESCE(o.pulled_at, NOW()) ELSE o.pulled_at END,
+        updated_at = NOW()
+    FROM before
+    WHERE o.id = before.id
+    RETURNING before.was_empty AS wrote_verdict, o.pulled
+    `,
+    [row.edition_for, row.ticker.toUpperCase(), JSON.stringify(row.verdict), row.pull, row.pull_reason]
+  );
+  const r = res.rows[0];
+  if (!r) return { matched: false, verdict_written: false, pulled: false };
+  return { matched: true, verdict_written: Boolean(r.wrote_verdict), pulled: Boolean(r.pulled) };
+}
+
+export type NighthawkPulledPlay = {
+  ticker: string;
+  pulled_reason: string | null;
+  pulled_at: string | null;
+};
+
+/** PR-N4: the pulled plays for one edition — the read half of the pull latch, merged onto
+ *  the member edition payload at read time (the edition row itself is never mutated). */
+export async function fetchNighthawkPulledPlays(editionFor: string): Promise<NighthawkPulledPlay[]> {
+  await ensureSchema();
+  const res = await (await getPool()).query(
+    `
+    SELECT ticker, pulled_reason, pulled_at
+    FROM nighthawk_play_outcomes
+    WHERE edition_for = $1::date AND pulled = TRUE
+    ORDER BY ticker ASC
+    `,
+    [editionFor]
+  );
+  return res.rows.map((r) => ({
+    ticker: String(r.ticker).toUpperCase(),
+    pulled_reason: r.pulled_reason != null ? String(r.pulled_reason) : null,
+    pulled_at: r.pulled_at != null ? new Date(String(r.pulled_at)).toISOString() : null,
+  }));
+}
+
+/** PR-N10: graded rows still missing a debrief pin — the debrief pass's work queue.
+ *  Bounded (window + limit) and idempotent by construction: once pinned, a row can
+ *  never match again. Ordered oldest-first so a backlog drains deterministically. */
+export async function fetchNighthawkDebriefPendingOutcomes(
+  lookbackDays = 60,
+  limit = 200
+): Promise<NighthawkPlayOutcomeRow[]> {
+  await ensureSchema();
+  const safeLookbackDays =
+    Number.isFinite(lookbackDays) && lookbackDays > 0 ? Math.trunc(lookbackDays) : 60;
+  const safeLimit = Math.min(500, Math.max(1, Number.isFinite(limit) ? Math.trunc(limit) : 200));
+  const res = await (await getPool()).query(
+    `
+    SELECT id, edition_for, ticker, direction, conviction,
+           entry_range_low, entry_range_high, target, stop, score, sector,
+           next_day_open, next_day_close, session_high, session_low,
+           hit_target, hit_stop, outcome, created_at,
+           pulled, pulled_reason, publish_context, morning_verdict,
+           grade_methodology, legacy_grade, debrief
+    FROM nighthawk_play_outcomes
+    WHERE outcome <> 'pending'
+      AND debrief IS NULL
+      AND edition_for >= ((NOW() AT TIME ZONE 'America/New_York')::date - ($1::int || ' days')::interval)
+    ORDER BY edition_for ASC, ticker ASC
+    LIMIT $2
+    `,
+    [safeLookbackDays, safeLimit]
+  );
+  return res.rows.map(mapNighthawkPlayOutcomeRow);
+}
+
+/** PR-N10: pin one play's debrief — COALESCE first-write-wins (the debrief computed
+ *  against the grading-time row is the datum; a re-run never rewrites it) and graded
+ *  rows only (a pending row has no post-mortem to pin). Returns per-row facts so the
+ *  cron pass can count honestly: matched=false ⇒ no such graded row; written=false ⇒
+ *  a pin already existed (first-write-wins left it untouched). */
+export async function pinNighthawkPlayDebrief(
+  id: number,
+  debrief: Record<string, unknown>
+): Promise<{ matched: boolean; written: boolean }> {
+  await ensureSchema();
+  const res = await (await getPool()).query<{ wrote: boolean }>(
+    `
+    WITH before AS (
+      SELECT id, (debrief IS NULL) AS was_empty
+      FROM nighthawk_play_outcomes
+      WHERE id = $1 AND outcome <> 'pending'
+    )
+    UPDATE nighthawk_play_outcomes o
+    SET debrief = COALESCE(o.debrief, $2::jsonb),
+        updated_at = NOW()
+    FROM before
+    WHERE o.id = before.id
+    RETURNING before.was_empty AS wrote
+    `,
+    [id, JSON.stringify(debrief)]
+  );
+  const r = res.rows[0];
+  if (!r) return { matched: false, written: false };
+  return { matched: true, written: Boolean(r.wrote) };
+}
+
+export type NighthawkPublishGateRejectionRow = {
+  id: number;
+  ticker: string;
+  /** From source_key->>'edition_for' — the session the blocked play would have graded on. */
+  edition_for: string;
+  direction: "LONG" | "SHORT";
+  fired_at: string;
+  /** The rejection's decision-time snapshot (levels + gate_blocks), read structurally
+   *  by the caller — this fetch never parses it. */
+  input_snapshot: Record<string, unknown> | null;
+  /** The pinned counterfactual grade (PR-N10), null until the debrief pass grades it. */
+  counterfactual_json: Record<string, unknown> | null;
+};
+
+/** PR-N10: the publish-gate-blocked plays (PR-N3's `publish_gate` nighthawk_rejected
+ *  audit rows) for counterfactual gate validation. Identified structurally by the
+ *  gate_blocks key the publish_gate stage alone writes into input_snapshot — never by
+ *  matching the human-readable trigger_reason sentence (which lives in the feature
+ *  layer and would be a cycle to import here). */
+export async function fetchNighthawkPublishGateRejections(
+  windowDays = 30,
+  opts: { ungradedOnly?: boolean; limit?: number } = {}
+): Promise<NighthawkPublishGateRejectionRow[]> {
+  await ensureSchema();
+  const safeWindowDays =
+    Number.isFinite(windowDays) && windowDays > 0 ? Math.trunc(windowDays) : 30;
+  const safeLimit = Math.min(1000, Math.max(1, Math.trunc(opts.limit ?? 500)));
+  const res = await (await getPool()).query(
+    `
+    SELECT id, ticker, direction, fired_at, input_snapshot, counterfactual_json,
+           source_key->>'edition_for' AS edition_for
+    FROM alert_audit_log
+    WHERE alert_type = 'nighthawk_rejected'
+      AND input_snapshot ? 'gate_blocks'
+      AND (source_key->>'edition_for')::date >= ((NOW() AT TIME ZONE 'America/New_York')::date - ($1::int || ' days')::interval)
+      ${opts.ungradedOnly ? "AND counterfactual_json IS NULL" : ""}
+    ORDER BY (source_key->>'edition_for') ASC, ticker ASC
+    LIMIT $2
+    `,
+    [safeWindowDays, safeLimit]
+  );
+  return res.rows.map((r) => ({
+    id: Number(r.id),
+    ticker: String(r.ticker).toUpperCase(),
+    edition_for: String(r.edition_for ?? "").slice(0, 10),
+    direction: String(r.direction) === "SHORT" ? "SHORT" : "LONG",
+    fired_at: new Date(String(r.fired_at)).toISOString(),
+    input_snapshot: (r.input_snapshot as Record<string, unknown>) ?? null,
+    counterfactual_json: (r.counterfactual_json as Record<string, unknown>) ?? null,
+  }));
+}
+
+/** PR-N10: pin a rejection's counterfactual grade — COALESCE first-write-wins, same
+ *  discipline as every other pin in this file. Returns whether THIS call wrote it. */
+export async function setNighthawkRejectionCounterfactual(
+  id: number,
+  counterfactual: Record<string, unknown>
+): Promise<boolean> {
+  await ensureSchema();
+  const res = await (await getPool()).query(
+    `
+    UPDATE alert_audit_log
+    SET counterfactual_json = COALESCE(counterfactual_json, $2::jsonb)
+    WHERE id = $1 AND alert_type = 'nighthawk_rejected' AND counterfactual_json IS NULL
+    `,
+    [id, JSON.stringify(counterfactual)]
+  );
+  return (res.rowCount ?? 0) > 0;
 }
 
 export async function fetchNighthawkOutcomeAnalytics(windowDays = 30): Promise<{
@@ -5866,7 +6465,9 @@ export async function fetchNighthawkOutcomeAnalytics(windowDays = 30): Promise<{
       SELECT o.id, o.edition_for, o.ticker, o.direction, o.conviction,
              o.entry_range_low, o.entry_range_high, o.target, o.stop, o.score, o.sector,
              o.next_day_open, o.next_day_close, o.session_high, o.session_low,
-             o.hit_target, o.hit_stop, o.outcome, o.created_at
+             o.hit_target, o.hit_stop, o.outcome, o.created_at,
+             o.pulled, o.pulled_reason, o.publish_context, o.morning_verdict,
+             o.grade_methodology, o.legacy_grade, o.debrief
       FROM nighthawk_play_outcomes o
       INNER JOIN nighthawk_editions e ON e.edition_for = o.edition_for
       WHERE o.outcome <> 'pending'

@@ -17,6 +17,7 @@ import { fetchPolygonMacroBackdrop } from "@/lib/providers/polygon-macro";
 import { fetchMarketBreadthBundle } from "@/lib/bie/market-breadth";
 import { fetchRelatedCompanies } from "@/lib/providers/polygon-related";
 import { normalizeVectorTicker } from "@/features/vector/lib/vector-ticker";
+import { cortexCitationFor, directionFromQuestion } from "@/lib/bie/cortex-read";
 import {
   planVerdictLegs,
   assembleVerdictEnvelope,
@@ -41,7 +42,10 @@ export async function composeVerdict(ticker: string, question: string): Promise<
   const unavailable: BieUnavailableSource[] = [];
 
   // Gamma + flow anchor every verdict; the arsenal legs run ONLY when the plan warrants them.
-  const [pos, flowSummary, earnings, fundamentals, macro, breadth, related] = await Promise.all([
+  // PR-H: the Cortex leg runs on EVERY verdict — pinned commit-time evidence when a
+  // 0DTE play/skip exists this session, live composition otherwise (cortexCitationFor
+  // never throws; an outage arrives as mode "unavailable" and is surfaced, not hidden).
+  const [pos, flowSummary, earnings, fundamentals, macro, breadth, related, cortexCitation] = await Promise.all([
     safe(() => getGexPositioning(T)),
     plan.flow ? safe(() => getFlowTapeSummary({ ticker: T, limit: 50 })) : Promise.resolve(null),
     plan.earnings ? safe(() => fetchNextEarningsDate(T)) : Promise.resolve(null),
@@ -49,6 +53,7 @@ export async function composeVerdict(ticker: string, question: string): Promise<
     plan.macro ? safe(() => fetchPolygonMacroBackdrop()) : Promise.resolve(null),
     plan.breadth ? safe(() => fetchMarketBreadthBundle()) : Promise.resolve(null),
     plan.related ? safe(() => fetchRelatedCompanies(T)) : Promise.resolve(null),
+    safe(() => cortexCitationFor(T, { direction: directionFromQuestion(question), allowLive: true })),
   ]);
 
   // Positioning → regime.
@@ -106,6 +111,15 @@ export async function composeVerdict(ticker: string, question: string): Promise<
 
   const relatedList: string[] | null = plan.related ? related?.related ?? (unavailable.push({ source: "peers", reason: "none found" }), null) : null;
 
+  // Cortex leg: an "unavailable" citation (outage / all sources absent) is surfaced in
+  // unavailableSources instead of rendered as evidence — honest, never fabricated.
+  const cortex: VerdictInputs["cortex"] =
+    cortexCitation == null
+      ? null
+      : cortexCitation.mode === "unavailable"
+        ? (unavailable.push({ source: "Night Hawk Cortex", reason: cortexCitation.headline }), null)
+        : cortexCitation;
+
   const inputs: VerdictInputs = {
     ticker: T,
     question,
@@ -120,6 +134,7 @@ export async function composeVerdict(ticker: string, question: string): Promise<
     macro: macroSummary,
     breadth: breadthSummary,
     related: relatedList,
+    cortex,
     unavailable,
   };
 

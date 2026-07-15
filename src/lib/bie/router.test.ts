@@ -62,6 +62,67 @@ describe("router: vector_read intent", () => {
   });
 });
 
+describe("router: scenario intent (PR-L4c)", () => {
+  test("the live gauntlet question routes to scenario for SPX", () => {
+    const r = classifyBieIntent(
+      "If SPX drops 1% at tomorrow's open, what happens to the dealer positioning — does the regime flip, and which walls become live?",
+      NO_LEDGER
+    );
+    assert.equal(r?.intent, "scenario");
+    assert.equal(r?.ticker, "SPX");
+  });
+
+  test("shift-form variants all route to scenario with the right ticker", () => {
+    const cases: Array<[string, string]> = [
+      ["if SPX drops 1%", "SPX"],
+      ["what happens if SPY breaks 745", "SPY"],
+      ["if we lose the flip", "SPX"], // no ticker → defaults to the flagship SPX
+      ["SPX at 7450 scenario", "SPX"],
+      ["what if QQQ rips 2%", "QQQ"],
+      ["suppose NVDA falls 3%", "NVDA"],
+      ["if SPX breaks the call wall", "SPX"],
+      ["imagine SPY down 40 points", "SPY"],
+    ];
+    for (const [q, ticker] of cases) {
+      const r = classifyBieIntent(q, NO_LEDGER);
+      assert.equal(r?.intent, "scenario", `expected scenario for: ${q}`);
+      assert.equal(r?.ticker, ticker, `expected ticker ${ticker} for: ${q}`);
+    }
+  });
+
+  test("scenario requires BOTH a hypothetical trigger AND a scopeable shift — neither alone fires", () => {
+    // Trigger but no scopeable move → NOT scenario.
+    assert.notEqual(classifyBieIntent("what if the market opens green", NO_LEDGER)?.intent, "scenario");
+    // Scopeable move but no hypothetical trigger → NOT scenario (stays a static read).
+    assert.notEqual(classifyBieIntent("SPX drops 1% today", NO_LEDGER)?.intent, "scenario");
+  });
+
+  test("existing intents are NOT stolen by scenario (regression table)", () => {
+    // concept — definitional, no trigger/shift.
+    assert.equal(classifyBieIntent("what is the gamma flip", NO_LEDGER)?.intent, "concept_read");
+    // cortex — decision-why, no scopeable shift.
+    assert.equal(classifyBieIntent("why did we commit NVDA", NO_LEDGER)?.intent, "cortex_read");
+    // nighthawk edition — no shift.
+    assert.equal(classifyBieIntent("what's in tonight's edition", NO_LEDGER)?.intent, "nighthawk_edition");
+    // verdict — grade shape, "7500" is not a scoped target, no trigger.
+    assert.equal(classifyBieIntent("is SPX 7500 a good play today", NO_LEDGER)?.intent, "verdict");
+    // compare — two tickers, no shift.
+    assert.equal(classifyBieIntent("compare SPX vs NVDA", NO_LEDGER)?.intent, "ticker_compare");
+  });
+
+  test("staging fallback also routes the gauntlet scenario to scenario", () => {
+    assert.equal(classifyBieStagingFallback("if SPX drops 1% does the regime flip").intent, "scenario");
+    assert.equal(classifyBieStagingFallback("what if QQQ rips 2%").intent, "scenario");
+    // And still protects a definitional ask.
+    assert.equal(classifyBieStagingFallback("what is a gamma flip").intent, "concept_read");
+  });
+
+  test("bieFollowups has a scenario branch", () => {
+    const f = bieFollowups("scenario");
+    assert.ok(Array.isArray(f) && f.length === 3);
+  });
+});
+
 describe("router: concept_read intent", () => {
   test("definitional questions route to concept_read", () => {
     for (const q of [
@@ -246,6 +307,26 @@ describe("router: verdict intent (cross-tool synthesis, task #59)", () => {
     assert.equal(classifyBieIntent("compare NVDA vs AMD", NO_LEDGER)?.intent, "ticker_compare");
   });
 
+  // PR-L1: comparative phrasing WITHOUT a compare/versus/vs keyword. The live battery proved
+  // "Is SPX or NVDA closer to its gamma flip?" was stolen by the SPX structure branch and answered
+  // for SPX alone — a two-ticker comparative question must reach the compare composer.
+  test("REGRESSION (PR-L1): 'is X or Y closer to its gamma flip' routes to ticker_compare with both tickers", () => {
+    const r = classifyBieIntent("Is SPX or NVDA closer to its gamma flip?", NO_LEDGER);
+    assert.equal(r?.intent, "ticker_compare");
+    assert.equal(r?.ticker, "SPX");
+    assert.equal(r?.ticker_b, "NVDA");
+    assert.equal(classifyBieIntent("which of SPY or QQQ is stronger right now", NO_LEDGER)?.intent, "ticker_compare");
+  });
+
+  test("BOUNDARY (PR-L1): a comparative cue with only ONE ticker is NOT stolen by compare", () => {
+    // Single-ticker "closer" questions keep their existing homes — the cue alone never routes;
+    // two DISTINCT known tickers are required (the #334 single-word steal-risk discipline).
+    const single = classifyBieIntent("Is SPX closer to its gamma flip?", NO_LEDGER);
+    assert.notEqual(single?.intent, "ticker_compare");
+    // Ticker-less comparative questions are untouched too.
+    assert.notEqual(classifyBieIntent("which way is the market leaning?", NO_LEDGER)?.intent, "ticker_compare");
+  });
+
   test("staging fallback also routes verdict questions to verdict", () => {
     assert.equal(classifyBieStagingFallback("is SPX 7500 0DTE good today").intent, "verdict");
     assert.equal(classifyBieStagingFallback("hold NVDA into earnings").intent, "verdict");
@@ -290,5 +371,300 @@ describe("router: SPX weekly/monthly horizon-scope (never present a 0DTE number 
     assert.equal(classifyBieStagingFallback("SPX monthly max pain").horizon, "monthly");
     // A bare SPX structure ask still falls to the SPX desk read in staging.
     assert.equal(classifyBieStagingFallback("SPX gamma flip").intent, "spx_desk_read");
+  });
+});
+
+describe("router: cortex_read intent (PR-H — BIE × Cortex bridge)", () => {
+  test("decision-WHY questions route to cortex_read with the ticker", () => {
+    for (const [q, ticker] of [
+      ["why did we commit NVDA today?", "NVDA"],
+      ["why was TSLA skipped?", "TSLA"],
+      ["why did we exit COIN?", "COIN"],
+      ["why was AMD vetoed?", "AMD"],
+      ["why didn't we take PLTR?", "PLTR"],
+    ] as const) {
+      const r = classifyBieIntent(q, NO_LEDGER);
+      assert.equal(r?.intent, "cortex_read", `route: ${q}`);
+      assert.equal(r?.ticker, ticker, `ticker: ${q}`);
+    }
+  });
+
+  test("explicit cortex questions route to cortex_read", () => {
+    for (const q of [
+      "what does cortex say about NVDA?",
+      "cortex verdict on NVDA", // must NOT be stolen by the verdict trigger word
+      "run the cortex on TSLA",
+      "what would the cortex say about SPY right now",
+    ]) {
+      assert.equal(classifyBieIntent(q, NO_LEDGER)?.intent, "cortex_read", q);
+    }
+  });
+
+  test("terse forms route (the #57 terse shape): 'cortex nvda'", () => {
+    for (const [q, ticker] of [
+      ["cortex nvda", "NVDA"],
+      ["cortex SPY", "SPY"],
+      ["cortex on HOOD?", "HOOD"],
+    ] as const) {
+      const r = classifyBieIntent(q, NO_LEDGER);
+      assert.equal(r?.intent, "cortex_read", q);
+      assert.equal(r?.ticker, ticker, q);
+    }
+  });
+
+  test("a ticker-less decision-WHY still routes (session overview shape)", () => {
+    const r = classifyBieIntent("why was the top play picked?", NO_LEDGER);
+    assert.equal(r?.intent, "cortex_read");
+    assert.equal(r?.ticker, null);
+  });
+
+  test("definitional cortex asks stay on the glossary path — concept_read, not a live read", () => {
+    assert.equal(classifyBieIntent("what is the cortex?", NO_LEDGER)?.intent, "concept_read");
+    assert.equal(classifyBieIntent("cortex", NO_LEDGER)?.intent, "concept_read"); // bare term
+    assert.equal(classifyBieIntent("what is a cortex veto", NO_LEDGER)?.intent, "concept_read");
+    assert.equal(classifyBieIntent("what is veto asymmetry", NO_LEDGER)?.intent, "concept_read");
+  });
+
+  test("staging fallback routes the same cortex shapes", () => {
+    assert.equal(classifyBieStagingFallback("cortex nvda").intent, "cortex_read");
+    assert.equal(classifyBieStagingFallback("why was TSLA skipped?").intent, "cortex_read");
+    assert.equal(classifyBieStagingFallback("cortex verdict on NVDA").intent, "cortex_read");
+  });
+
+  test("bieFollowups has a cortex_read branch", () => {
+    assert.equal(bieFollowups("cortex_read").length, 3);
+  });
+
+  // REGRESSION TABLE — the pre-existing intents must still route exactly as before
+  // (the cortex branch sits between diagnostic and the vector/verdict branches; this
+  // table proves nothing upstream/downstream of it got stolen).
+  test("regression: existing intents still route unchanged", () => {
+    const table: Array<[string, string]> = [
+      ["what is GEX?", "concept_read"],
+      ["pull /api/market/gex-positioning?ticker=SPY", "universal_lookup"],
+      ["why isn't NVDA GEX forming?", "system_diagnostic"],
+      ["what's the vector setup on NVDA right now", "vector_read"],
+      ["SPX weekly flip", "vector_read"],
+      ["give me the verdict on NVDA", "verdict"],
+      ["is SPX 7500 a good play today", "verdict"],
+      ["hold NVDA into earnings?", "verdict"],
+      ["compare NVDA vs AMD", "ticker_compare"],
+      ["should I buy NVDA calls into earnings?", "ticker_advice"],
+      ["any unusual flow right now?", "flow_tape"],
+      ["how are today's plays doing?", "zerodte_plays"],
+      ["where's the SPX gamma flip", "spx_structure"],
+      ["what's the SPX setup right now?", "spx_desk_read"],
+      ["what would invalidate the SPX setup?", "spx_invalidation"],
+      ["what's the market doing today?", "market_context"],
+      ["what's going on with SPY?", "ticker_ecosystem"],
+    ];
+    for (const [q, intent] of table) {
+      assert.equal(classifyBieIntent(q, NO_LEDGER)?.intent, intent, `regression: ${q}`);
+    }
+  });
+});
+
+describe("router: nighthawk_edition intent (PR-N9 — BIE × Night Hawk edition bridge)", () => {
+  test("edition asks route to nighthawk_edition (ticker-less)", () => {
+    for (const q of [
+      "what are tomorrow's plays?",
+      "tonight's playbook",
+      "show tonight's playbook",
+      "tomorrow's picks",
+      "what's in the edition?",
+      "what's in the playbook",
+      "what is tonight's Night Hawk edition", // previously fell through to Claude
+      "how did the night hawk plays do?",
+    ]) {
+      const r = classifyBieIntent(q, NO_LEDGER);
+      assert.equal(r?.intent, "nighthawk_edition", `route: ${q}`);
+      assert.equal(r?.ticker ?? null, null, `ticker-less: ${q}`);
+    }
+  });
+
+  test("pick-WHY routes with the ticker — including edition names OUTSIDE the known-ticker set (CSX)", () => {
+    for (const [q, ticker] of [
+      ["why was CSX picked tonight?", "CSX"],
+      ["why was CSX picked?", "CSX"],
+      ["why was DELL chosen for the edition?", "DELL"],
+      ["why was NVDA pulled?", "NVDA"],
+      ["why was AMD pulled this morning?", "AMD"],
+    ] as const) {
+      const r = classifyBieIntent(q, NO_LEDGER);
+      assert.equal(r?.intent, "nighthawk_edition", `route: ${q}`);
+      assert.equal(r?.ticker, ticker, `ticker: ${q}`);
+    }
+  });
+
+  test("ticker-less pulled asks still route (the composer answers from the edition)", () => {
+    const r = classifyBieIntent("why was the pick pulled?", NO_LEDGER);
+    assert.equal(r?.intent, "nighthawk_edition");
+    assert.equal(r?.ticker, null);
+    assert.equal(classifyBieIntent("was the play pulled?", NO_LEDGER)?.intent, "nighthawk_edition");
+  });
+
+  test("terse forms route: 'nh <ticker>' / 'playbook' / 'nh'", () => {
+    for (const [q, ticker] of [
+      ["nh csx", "CSX"],
+      ["nh SPY", "SPY"],
+      ["night hawk asts?", "ASTS"],
+    ] as const) {
+      const r = classifyBieIntent(q, NO_LEDGER);
+      assert.equal(r?.intent, "nighthawk_edition", q);
+      assert.equal(r?.ticker, ticker, q);
+    }
+    assert.equal(classifyBieIntent("playbook", NO_LEDGER)?.intent, "nighthawk_edition");
+    assert.equal(classifyBieIntent("nh", NO_LEDGER)?.intent, "nighthawk_edition");
+  });
+
+  test("morning-check asks route to nighthawk_edition", () => {
+    assert.equal(classifyBieIntent("what did the morning check see?", NO_LEDGER)?.intent, "nighthawk_edition");
+    assert.equal(classifyBieIntent("did the morning confirmation flag anything on NVDA?", NO_LEDGER)?.ticker, "NVDA");
+  });
+
+  test("BOUNDARY: the 0DTE cortex decision shapes are NOT stolen", () => {
+    // Ticker-less "top play picked" stays the cortex session overview (tested above).
+    assert.equal(classifyBieIntent("why was the top play picked?", NO_LEDGER)?.intent, "cortex_read");
+    // The cortex verbs (commit/skip/exit/veto) stay cortex.
+    assert.equal(classifyBieIntent("why did we commit NVDA today?", NO_LEDGER)?.intent, "cortex_read");
+    assert.equal(classifyBieIntent("why was TSLA skipped?", NO_LEDGER)?.intent, "cortex_read");
+    assert.equal(classifyBieIntent("cortex verdict on NVDA", NO_LEDGER)?.intent, "cortex_read");
+  });
+
+  test("BOUNDARY: definitional Night Hawk / pin / pull asks stay concept_read (glossary)", () => {
+    assert.equal(classifyBieIntent("what does Night Hawk do", NO_LEDGER)?.intent, "concept_read");
+    assert.equal(classifyBieIntent("what is publish context?", NO_LEDGER)?.intent, "concept_read");
+    assert.equal(classifyBieIntent("what is a pulled play", NO_LEDGER)?.intent, "concept_read");
+    assert.equal(classifyBieIntent("what is the morning confirmation?", NO_LEDGER)?.intent, "concept_read");
+    assert.equal(classifyBieIntent("what is the Night Audit?", NO_LEDGER)?.intent, "concept_read");
+  });
+
+  test("BOUNDARY: 'pulled back / pulled lower' price talk is NOT the pull latch", () => {
+    // "pulled back" is tape talk — the SPX why branch keeps it, never the edition read.
+    assert.equal(classifyBieIntent("why did SPX get pulled back below VWAP?", NO_LEDGER)?.intent, "spx_desk_read");
+    assert.notEqual(classifyBieIntent("why was SPY pulled lower today?", NO_LEDGER)?.intent, "nighthawk_edition");
+  });
+
+  test("BOUNDARY: today's-plays 0DTE shapes stay zerodte_plays", () => {
+    assert.equal(classifyBieIntent("how are today's plays doing?", NO_LEDGER)?.intent, "zerodte_plays");
+    assert.equal(classifyBieIntent("show me the plays", NO_LEDGER)?.intent, "zerodte_plays");
+  });
+
+  test("staging fallback routes the same edition shapes", () => {
+    assert.equal(classifyBieStagingFallback("tonight's playbook").intent, "nighthawk_edition");
+    assert.equal(classifyBieStagingFallback("why was CSX picked tonight?").intent, "nighthawk_edition");
+    assert.equal(classifyBieStagingFallback("why was CSX picked tonight?").ticker, "CSX");
+    assert.equal(classifyBieStagingFallback("nh csx").intent, "nighthawk_edition");
+    assert.equal(classifyBieStagingFallback("why was the pick pulled?").intent, "nighthawk_edition");
+    // The cortex shapes keep their staging routes too.
+    assert.equal(classifyBieStagingFallback("why was TSLA skipped?").intent, "cortex_read");
+  });
+
+  test("bieFollowups has a nighthawk_edition branch", () => {
+    assert.equal(bieFollowups("nighthawk_edition").length, 3);
+  });
+
+  // REGRESSION TABLE — every pre-existing intent must still route exactly as before
+  // (the nighthawk_edition branch sits between diagnostic and cortex; this table —
+  // #327's 17 rows plus the cortex rows that landed with it — proves nothing
+  // upstream/downstream of the new branch got stolen).
+  test("regression: existing intents still route unchanged with the nighthawk branch in place", () => {
+    const table: Array<[string, string]> = [
+      // The cortex routes that landed with #327 — the new branch sits directly above them.
+      ["why did we commit NVDA today?", "cortex_read"],
+      ["why was TSLA skipped?", "cortex_read"],
+      ["cortex nvda", "cortex_read"],
+      ["cortex verdict on NVDA", "cortex_read"],
+      ["why was the top play picked?", "cortex_read"],
+      ["what is GEX?", "concept_read"],
+      ["pull /api/market/gex-positioning?ticker=SPY", "universal_lookup"],
+      ["why isn't NVDA GEX forming?", "system_diagnostic"],
+      ["what's the vector setup on NVDA right now", "vector_read"],
+      ["SPX weekly flip", "vector_read"],
+      ["give me the verdict on NVDA", "verdict"],
+      ["is SPX 7500 a good play today", "verdict"],
+      ["hold NVDA into earnings?", "verdict"],
+      ["compare NVDA vs AMD", "ticker_compare"],
+      ["should I buy NVDA calls into earnings?", "ticker_advice"],
+      ["any unusual flow right now?", "flow_tape"],
+      ["how are today's plays doing?", "zerodte_plays"],
+      ["where's the SPX gamma flip", "spx_structure"],
+      ["what's the SPX setup right now?", "spx_desk_read"],
+      ["what would invalidate the SPX setup?", "spx_invalidation"],
+      ["what's the market doing today?", "market_context"],
+      ["what's going on with SPY?", "ticker_ecosystem"],
+    ];
+    for (const [q, intent] of table) {
+      assert.equal(classifyBieIntent(q, NO_LEDGER)?.intent, intent, `regression: ${q}`);
+    }
+  });
+});
+
+// ── PR-L4a (live gauntlet P1): "now" / "right now" must NOT resolve to the ticker $NOW (ServiceNow).
+// The old extractor uppercased the whole question so the adverb "now" became the ticker "NOW", and
+// the staging fallback then answered with a ServiceNow desk verdict. Bare stopword-tickers only count
+// with a `$` prefix or an unambiguous ticker context.
+describe("router: NOW / stopword-ticker extraction collision (PR-L4a)", () => {
+  const TICKER_ROUTES = new Set(["ticker_advice", "ticker_ecosystem", "verdict", "ticker_play_state", "ticker_compare"]);
+
+  test("gauntlet Q1 — 'honest Night Hawk record right now' does NOT become a NOW ticker verdict", () => {
+    const q = "What is our honest Night Hawk record right now, and why did the headline number change recently?";
+    // Primary classifier falls through to Claude (null) → reaches get_nighthawk_outcomes (the honest
+    // 11.1% record). It must NOT be a ticker-scoped route for $NOW.
+    const r = classifyBieIntent(q, NO_LEDGER);
+    if (r) assert.notEqual(r.ticker, "NOW", `must not extract $NOW: got ${JSON.stringify(r)}`);
+    // Staging fallback (never null) previously returned ticker_advice for NOW — now must not.
+    const f = classifyBieStagingFallback(q);
+    assert.notEqual(f.ticker, "NOW", `staging fallback still extracts $NOW: ${JSON.stringify(f)}`);
+    assert.ok(!TICKER_ROUTES.has(f.intent) || f.ticker !== "NOW", `staging fallback ServiceNow verdict: ${JSON.stringify(f)}`);
+  });
+
+  test("gauntlet Q2 — 'Where is the crowd wrong right now?' does NOT become a NOW ticker verdict", () => {
+    const q = "Where is the crowd wrong right now?";
+    const f = classifyBieStagingFallback(q);
+    assert.notEqual(f.ticker, "NOW", `staging fallback extracts $NOW: ${JSON.stringify(f)}`);
+  });
+
+  test("bare 'now' / 'right now' in a sentence never extracts $NOW", () => {
+    const qs = [
+      "what's the SPX setup right now",
+      "is the market risk-on now",
+      "how are today's plays doing now",
+      "now what should I watch",
+    ];
+    for (const q of qs) {
+      const f = classifyBieStagingFallback(q);
+      assert.notEqual(f.ticker, "NOW", `"${q}" wrongly extracted $NOW: ${JSON.stringify(f)}`);
+    }
+  });
+
+  test("explicit ticker contexts DO resolve $NOW", () => {
+    // $-prefix, "NOW stock", "ticker NOW" are unambiguous ServiceNow references.
+    assert.equal(classifyBieStagingFallback("what's the read on $NOW").ticker, "NOW");
+    assert.equal(classifyBieStagingFallback("give me the verdict on NOW stock").ticker, "NOW");
+    assert.equal(classifyBieStagingFallback("pull the flow on ticker NOW").ticker, "NOW");
+  });
+
+  test("battery of English stopwords that are (or could be) tickers never extract from a sentence", () => {
+    // Sentences that contain the bare word but mean the ENGLISH word, not the symbol.
+    const sentences = [
+      "are we still in the SPX play",
+      "should I hold or fold this",
+      "let it ride into the close",
+      "go flat before the print",
+      "so what's the plan",
+      "look at the tape now",
+    ];
+    const banned = new Set(["NOW", "ARE", "OR", "IT", "GO", "SO", "ALL", "ON", "AT", "BE", "IN", "OF", "TO"]);
+    for (const q of sentences) {
+      const f = classifyBieStagingFallback(q);
+      if (f.ticker) assert.ok(!banned.has(f.ticker), `"${q}" extracted stopword ticker ${f.ticker}`);
+    }
+  });
+
+  test("real content-noun tickers are NOT over-restricted (ARM/CAT still resolve)", () => {
+    // Surgical guard: only function-words are gated; a capitalised content-noun ticker still routes.
+    assert.equal(classifyBieStagingFallback("what's going on with ARM").ticker, "ARM");
+    assert.equal(classifyBieStagingFallback("what's happening with NVDA").ticker, "NVDA");
   });
 });

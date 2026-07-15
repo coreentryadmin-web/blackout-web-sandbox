@@ -10,6 +10,7 @@ import {
   enrichSetup,
   matchEarnings,
   matchHotNews,
+  polygonSpotTicker,
   SETUP_MIN_GROSS,
   SETUP_MIN_AGGR_SHARE,
   SETUP_MIN_DOMINANCE,
@@ -49,8 +50,14 @@ test("heat: pre-market meter warms toward the open", () => {
 // mergePlays() (the UI) and zerodte-service.ts's zeroDtePlaysForLargo() (Largo/BIE),
 // which previously re-derived its own copy that skipped this cutoff entirely (FINDINGS.md).
 
-test("resolveFreshFindStatus: OPEN during RTH with no moved/illiquid flags", () => {
-  assert.equal(resolveFreshFindStatus("RTH", false, false), "OPEN");
+test("resolveFreshFindStatus: WATCH during RTH with no moved/illiquid flags — NEVER OPEN (P0 one-way commit door)", () => {
+  // Regression guard for the live P0: this used to return "OPEN" for a clean RTH
+  // fresh find, so an UNCOMMITTED candidate rendered exactly like a live position
+  // and then visibly regressed to a watch/SKIP card when the next scan tick's
+  // re-derived plan/gate flapped (MOVED/illiquid/gate verdicts are recomputed from
+  // scratch every ~5s board build). OPEN is reserved for committed ledger rows.
+  assert.equal(resolveFreshFindStatus("RTH", false, false), "WATCH");
+  assert.equal(resolveFreshFindStatus("OPENING_DRIVE", false, false), "WATCH");
 });
 
 test("resolveFreshFindStatus: SKIP once POWER_HOUR/LATE_SESSION/CLOSED starts — the entry cutoff", () => {
@@ -850,6 +857,18 @@ test("intel: OPEN play says ADD with entry/stop numbers from the plan", () => {
   assert.match(note.reason, /stop \$2\.10/);
 });
 
+test("intel: WATCH (uncommitted fresh find) never says ADD or 'Enter ≤' — candidate language only", () => {
+  // P0 pre-commit honesty: the fresh-find lane used to feed status "OPEN" here,
+  // which produced action:"ADD" with a live entry instruction for a play the desk
+  // had NOT committed. WATCH must read as a candidate, never an actionable entry.
+  const s = enrichSetup(baseSetup(), fakeDossier());
+  const note = buildIntelNote({ status: "WATCH", setup: s, plan: s.plan, entryPremium: 4.2, livePnlPct: null, planOutcome: null, planPnlPct: null });
+  assert.equal(note.action, "WATCH");
+  assert.doesNotMatch(note.reason, /Enter ≤/);
+  assert.match(note.reason, /NOT committed/);
+  assert.match(note.reason, /do not enter/i);
+});
+
 test("intel: illiquid market is a PASS with the spread named", () => {
   const note = buildIntelNote({
     status: "SKIP", setup: null,
@@ -1051,4 +1070,27 @@ test("audit row: intraday_conflict gate recorded and fails when conflict is true
   assert.ok(conflict);
   assert.equal(conflict!.passed, false);
   assert.equal(conflict!.value, true);
+});
+
+// ── polygonSpotTicker (index-root → I: namespace mapping) ─────────────────────────
+// Live-verified 2026-07-13: Polygon /v2/aggs for "SPXW"/"SPX"/"NDX" returns status
+// OK with resultsCount 0 (no throw), while "I:SPX"/"I:NDX" return real bars — so an
+// unmapped index-root ledger row was stamped graded with a permanent null direction
+// grade, and its intraday read silently degraded to nulls.
+
+test("polygonSpotTicker: index option roots map to the I: index namespace", () => {
+  assert.equal(polygonSpotTicker("SPXW"), "I:SPX");
+  assert.equal(polygonSpotTicker("SPX"), "I:SPX");
+  assert.equal(polygonSpotTicker("NDX"), "I:NDX");
+  assert.equal(polygonSpotTicker("NDXP"), "I:NDX");
+  assert.equal(polygonSpotTicker("RUT"), "I:RUT");
+  assert.equal(polygonSpotTicker("VIX"), "I:VIX");
+});
+
+test("polygonSpotTicker: equities and ETF wrappers pass through unchanged (case-normalized)", () => {
+  assert.equal(polygonSpotTicker("NVDA"), "NVDA");
+  assert.equal(polygonSpotTicker("SPY"), "SPY"); // ETF, real equity aggs — must NOT map
+  assert.equal(polygonSpotTicker("QQQ"), "QQQ");
+  assert.equal(polygonSpotTicker("spxw"), "I:SPX");
+  assert.equal(polygonSpotTicker("meta"), "META");
 });
