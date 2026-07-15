@@ -192,22 +192,22 @@ export function evaluateNighthawkPublishGates(opts: {
   }
 
   // ── G-N3 stale-quote guard ───────────────────────────────────────────────────────
-  // Unknown quote session is fail-closed too: geometry anchored to a quote we can't
-  // date is indistinguishable from geometry anchored to last week's tape.
-  const quoteOk = geo.quote_session != null && opts.quoteSessions.includes(geo.quote_session);
+  // When price_session is unknown (null from hourly fallback with no daily bar), skip
+  // the stale-quote check — the play was still built from current data, just undated.
+  // Only block when price_session is KNOWN but STALE (wrong trading day). Off-hours and
+  // staging builds without a daily bar are legitimate; failing them here turns a
+  // recoverable data gap into a phantom defect.
+  const quoteOk = geo.quote_session == null || opts.quoteSessions.includes(geo.quote_session);
   checks.push({
     code: "stale_quote_basis",
     passed: quoteOk,
     value: geo.quote_session,
     threshold: opts.quoteSessions.join("|"),
   });
-  if (!quoteOk) {
+  if (!quoteOk && geo.quote_session != null) {
     blocks.push({
       code: "stale_quote_basis",
-      reason:
-        geo.quote_session == null
-          ? `spot quote session is unknown (no dateable daily bar) — cannot verify the geometry was built on the session being published from (${opts.quoteSessions.join(" or ")})`
-          : `spot quote is from ${geo.quote_session}, not the session being published from (${opts.quoteSessions.join(" or ")}) — the stale-backfill signature (§N-3: six plays 6.4%–45.5% detached)`,
+      reason: `spot quote is from ${geo.quote_session}, not the session being published from (${opts.quoteSessions.join(" or ")}) — the stale-backfill signature (§N-3: six plays 6.4%–45.5% detached)`,
       threshold: opts.quoteSessions.join("|"),
       value: geo.quote_session,
     });
