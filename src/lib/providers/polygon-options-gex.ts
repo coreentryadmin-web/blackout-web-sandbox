@@ -90,6 +90,10 @@ let cachedOdteBundle: {
   maxPain: number | null;
 } | null = null;
 
+// Single-flight guard: concurrent callers share one in-progress build instead of
+// each independently hitting the Polygon API. Mirrors heatmapInflight above.
+let odteBundleInflight: Promise<{ rows: Record<string, unknown>[]; maxPain: number | null }> | null = null;
+
 const POLYGON_ODTE_CACHE_KEY = "polygon:odte_gex_bundle";
 
 /**
@@ -218,28 +222,30 @@ export async function fetchPolygonOdteDeskBundle(
     /* redis optional */
   }
 
-  const contracts = await loadOdteContracts(spot, expiry);
-  if (!contracts.length) {
-    // Same class of noise already fixed for uw-gex-fallback: `expiry` defaults to TODAY, so on
-    // a non-trading day (holiday/weekend) there is NO listed 0DTE contract at all — 0 results is
-    // completely expected, not a sign the API key is misconfigured. Only warn (and suggest
-    // checking the key) when this happens during a real trading session; otherwise it's routine
-    // and the "verify POLYGON_API_KEY" hint would be actively misleading.
-    if (isLiveOdteSession()) {
-      console.warn(`[polygon-gex] 0 I:SPX contracts for ${expiry} @ ${spot} via ${hostOf(BASE)} — GEX walls will be empty. Verify POLYGON_API_KEY is a valid ${hostOf(BASE)} key with options-chain access (set POLYGON_API_BASE if your key is from a different provider, e.g. https://api.polygon.io).`);
-    } else {
-      console.info(`[polygon-gex] 0 I:SPX contracts for ${expiry} @ ${spot} — off-hours/holiday, expected (no listed 0DTE expiry today).`);
+  if (odteBundleInflight) return odteBundleInflight;
+
+  const build = (async () => {
+    const contracts = await loadOdteContracts(spot, expiry);
+    if (!contracts.length) {
+      if (isLiveOdteSession()) {
+        console.warn(`[polygon-gex] 0 I:SPX contracts for ${expiry} @ ${spot} via ${hostOf(BASE)} — GEX walls will be empty. Verify POLYGON_API_KEY is a valid ${hostOf(BASE)} key with options-chain access (set POLYGON_API_BASE if your key is from a different provider, e.g. https://api.polygon.io).`);
+      } else {
+        console.info(`[polygon-gex] 0 I:SPX contracts for ${expiry} @ ${spot} — off-hours/holiday, expected (no listed 0DTE expiry today).`);
+      }
     }
-  }
-  const rows = aggregateGexRows(contracts, spot);
-  const maxPain = computeMaxPainFromChain(contracts);
-  if (rows.length) {
-    cachedOdteBundle = { at: now, spot, rows, maxPain };
-    void import("../shared-cache").then(({ sharedCacheSet }) =>
-      sharedCacheSet(POLYGON_ODTE_CACHE_KEY, cachedOdteBundle, Math.ceil(polygonGexCacheMs() / 1000))
-    );
-  }
-  return { rows, maxPain };
+    const rows = aggregateGexRows(contracts, spot);
+    const maxPain = computeMaxPainFromChain(contracts);
+    if (rows.length) {
+      cachedOdteBundle = { at: now, spot, rows, maxPain };
+      void import("../shared-cache").then(({ sharedCacheSet }) =>
+        sharedCacheSet(POLYGON_ODTE_CACHE_KEY, cachedOdteBundle, Math.ceil(polygonGexCacheMs() / 1000))
+      );
+    }
+    return { rows, maxPain };
+  })().finally(() => { odteBundleInflight = null; });
+
+  odteBundleInflight = build;
+  return build;
 }
 
 // ---------------------------------------------------------------------------
