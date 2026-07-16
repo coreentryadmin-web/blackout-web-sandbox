@@ -13,7 +13,7 @@ type TickerHub = {
   latestFullFrame: string | null;
   /**
    * Same payload with wallHistory trimmed to the latest sample — the steady-state
-   * frame. Shipping the FULL history (up to 1920 samples ≈ ~1MB by late session)
+   * frame. Shipping the FULL history (up to 5760 samples at 5s cadence by late session)
    * to every connection every second was the dominant egress cost and tripped
    * slow clients' backpressure kill exactly when frames were biggest; the client
    * already unions samples via mergeWallHistory, so the tail is all it needs.

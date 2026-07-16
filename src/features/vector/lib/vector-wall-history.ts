@@ -39,8 +39,8 @@ export function hasVexInHistory(history: WallHistorySample[]): boolean {
 
 export type StrikeTrailPoint = { time: number; pct: number; modeled?: boolean };
 
-// ~one RTH session at 15s trail cadence (390 min × 4 ≈ 1560) plus headroom.
-const MAX_HISTORY = 1920;
+// ~one RTH session at 5s trail cadence (390 min × 12 ≈ 4680) plus headroom for pre/post.
+const MAX_HISTORY = 5760;
 
 /** Max simultaneous strike-keyed bead rows per side on the chart (reference shows ~4–6). */
 export const MAX_STRIKE_TRAILS_PER_SIDE = 8;

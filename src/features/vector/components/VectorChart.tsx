@@ -201,6 +201,9 @@ type Props = {
   onRegimeChange?: (regime: VectorRegime) => void;
   onProximityChange?: (proximity: WallProximity | null) => void;
   onMagnetChange?: (magnet: GammaMagnet | null) => void;
+  /** Fires on every SSE tick with the latest candle.close so sibling panels (GEX ladder) can show
+   *  a 1s-fresh spot badge without waiting for their own REST poll. */
+  onSpotChange?: (spot: number) => void;
   /** Ranked confluence callouts (pre-formatted strings) for the desk terminal; null = no zones. */
   onConfluenceChange?: (callouts: string[] | null) => void;
   onWallIntegrityChange?: (integrity: { call: WallIntegrity | null; put: WallIntegrity | null }) => void;
@@ -891,6 +894,7 @@ export function VectorChart({
   onRegimeChange,
   onProximityChange,
   onMagnetChange,
+  onSpotChange,
   onConfluenceChange,
   onWallIntegrityChange,
   onLensChange,
@@ -2196,6 +2200,7 @@ export function VectorChart({
           }
         }
         spotRef.current = curSpot;
+        onSpotChange?.(curSpot);
         minuteBarsRef.current = upsertBar(minuteBarsRef.current, snap.candle as VectorBar);
         setSessionBars(minuteBarsRef.current);
         if (!inReplay) {

@@ -34,6 +34,9 @@ type Props = {
   liveSession: boolean;
   /** SSR-seeded spot so the header + empty state aren't blank before the first fetch. */
   initialSpot?: number | null;
+  /** Live spot from the 1s SSE stream — overrides the REST-polled spot for display so the badge
+   *  updates every second rather than waiting for the 5s ladder poll. */
+  liveSpot?: number | null;
   /** DTE horizon from the chart's toggle — the ladder re-scopes to the SAME expiries so it matches
    *  the walls on the chart. "all" = near-term aggregate (default). */
   dteHorizon?: VectorDteHorizon;
@@ -50,7 +53,7 @@ type LadderResponse = { spot: number | null; asOf: string | null; ladder: GexLad
  * ladder is DENSE — every material strike across the fetched chain (Skylit parity), scrolling within
  * the rail — so the panel renders whatever rows the API returns (no client-side row cap).
  */
-export function VectorGexLadder({ ticker, liveSession, initialSpot = null, dteHorizon = "all" }: Props) {
+export function VectorGexLadder({ ticker, liveSession, initialSpot = null, liveSpot, dteHorizon = "all" }: Props) {
   const [ladder, setLadder] = useState<GexLadder>(() => buildGexLadder(null, initialSpot));
   const [spot, setSpot] = useState<number | null>(initialSpot);
   const [asOf, setAsOf] = useState<string | null>(null);
@@ -90,8 +93,8 @@ export function VectorGexLadder({ ticker, liveSession, initialSpot = null, dteHo
     };
 
     void load();
-    // Live: refresh with the walls cadence (15s). Off-hours: one fetch — the ladder is static.
-    const id = liveSession ? setInterval(load, 15_000) : null;
+    // Live: refresh at 5s so GEX/walls/beads stay current. Off-hours: one fetch — the ladder is static.
+    const id = liveSession ? setInterval(load, 5_000) : null;
     return () => {
       cancelled = true;
       if (id) clearInterval(id);
@@ -99,15 +102,17 @@ export function VectorGexLadder({ ticker, liveSession, initialSpot = null, dteHo
   }, [ticker, liveSession, dteHorizon, mode]);
 
   const rows = ladder.rows;
+  // SSE-derived spot updates at 1s; REST-polled spot at 5s — prefer the faster one for display.
+  const displaySpot = liveSpot ?? spot;
   // Index of the first row at/below spot — the spot marker slots ABOVE it (rows are strike-desc, so
   // this is the boundary between strikes above spot and strikes at/below it).
   const spotIdx =
-    spot != null ? rows.findIndex((r) => r.strike <= spot) : -1;
+    displaySpot != null ? rows.findIndex((r) => r.strike <= displaySpot) : -1;
 
   // Auto-centre the ladder on spot once per ticker: the rows are strike-descending, so without this
   // the panel opens scrolled to the highest strikes (all calls) and a member has to scroll down to
   // see spot and the puts below it. Centre the spot marker in the viewport on the first ready load
-  // (and again when the ticker changes) — but NOT on the 15s live refresh, which would yank the
+  // (and again when the ticker changes) — but NOT on the 5s live refresh, which would yank the
   // scroll back if the member has scrolled away.
   const listRef = useRef<HTMLOListElement>(null);
   const centeredTickerRef = useRef<string | null>(null);
@@ -115,7 +120,7 @@ export function VectorGexLadder({ ticker, liveSession, initialSpot = null, dteHo
   // re-anchor on spot instead of holding the previous horizon's scroll position.
   const centerKey = `${ticker}:${dteHorizon}:${mode}`;
   useEffect(() => {
-    if (state !== "ready" || spot == null || rows.length === 0) return;
+    if (state !== "ready" || displaySpot == null || rows.length === 0) return;
     if (centeredTickerRef.current === centerKey) return;
     const list = listRef.current;
     if (!list) return;
@@ -127,14 +132,14 @@ export function VectorGexLadder({ ticker, liveSession, initialSpot = null, dteHo
     const l = list.getBoundingClientRect();
     list.scrollTop += t.top - l.top - list.clientHeight / 2 + t.height / 2;
     centeredTickerRef.current = centerKey;
-  }, [state, spot, rows, centerKey]);
+  }, [state, displaySpot, rows, centerKey]);
 
   return (
     <section className="vector-gex-ladder" aria-label={`${ticker} GEX strike ladder`}>
       <header className="vector-gex-ladder-head">
         <span className="vector-gex-ladder-title">GEX Ladder</span>
         <span className="vector-gex-ladder-sub">
-          {spot != null ? `spot ${spot.toLocaleString("en-US", { maximumFractionDigits: 2 })}` : "—"}
+          {displaySpot != null ? `spot ${displaySpot.toLocaleString("en-US", { maximumFractionDigits: 2 })}` : "—"}
           <span className="vector-gex-ladder-scope">
             {" · "}
             {mode === "flow" ? "flow · all exp" : dteHorizon === "all" ? "near-term" : dteHorizonLabel(dteHorizon)}
@@ -208,7 +213,7 @@ export function VectorGexLadder({ ticker, liveSession, initialSpot = null, dteHo
       ) : (
         <ol className="vector-gex-ladder-rows" ref={listRef}>
           {rows.map((r, i) => (
-            <LadderRow key={r.strike} row={r} showSpotAbove={i === spotIdx} spot={spot} />
+            <LadderRow key={r.strike} row={r} showSpotAbove={i === spotIdx} spot={displaySpot} />
           ))}
         </ol>
       )}

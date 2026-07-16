@@ -2,8 +2,9 @@ import type { GexWalls } from "@/lib/providers/gex-wall-levels";
 import { roundFloats } from "@/lib/round-floats";
 import type { WallHistorySample } from "./vector-wall-history";
 
-/** Reference product cadence — gamma wall bead trail samples (live levels still ~1s). */
-export const DEFAULT_WALL_TRAIL_SAMPLE_SEC = 15;
+/** Wall bead trail sample cadence — 5s gives the rail 3× the temporal density of the prior 15s
+ *  bucket, matching the GEX ladder's 5s poll and the user-facing "updates every 5 seconds" contract. */
+export const DEFAULT_WALL_TRAIL_SAMPLE_SEC = 5;
 
 const EMPTY_WALLS: GexWalls = { callWalls: [], putWalls: [] };
 
