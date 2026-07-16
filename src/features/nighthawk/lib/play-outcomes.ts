@@ -192,7 +192,8 @@ export type NighthawkRejectionDetail =
         threshold: number | string | null;
         value: number | string | null;
       }>;
-    };
+    }
+  | { stage: "cross_edition_governor"; reasons: string[] };
 
 // Exported (task #145) so nighthawk/analytics.ts can invert this map — the admin funnel/
 // rejection-rate panel groups `alert_audit_log.trigger_reason` rows (a plain TEXT column,
@@ -208,6 +209,8 @@ export const REJECTION_TRIGGER_REASON: Record<NighthawkRejectionDetail["stage"],
   sector_concentration: "rejected at synthesis — sector-concentration cap reached for this edition",
   publish_gate:
     "rejected at publish — failed the publish-time sanity gates (detached band / unreachable target / stale quote basis / unknown geometry)",
+  cross_edition_governor:
+    "rejected by cross-edition governor — repeat-ticker cooldown / loss-streak halt / rolling sector cap",
 };
 
 function decisionTraceForRejection(
@@ -263,6 +266,13 @@ function decisionTraceForRejection(
         passed: false,
         value: block.value ?? block.reason,
         threshold: block.threshold,
+      }));
+    case "cross_edition_governor":
+      return detail.reasons.map((reason, i) => ({
+        check: `governor_${i + 1}`,
+        passed: false,
+        value: reason,
+        threshold: null,
       }));
   }
 }
@@ -361,6 +371,8 @@ function inputSnapshotForRejection(
       };
     case "publish_gate":
       return { ...base, gate_blocks: detail.blocks, options_play: play.options_play };
+    case "cross_edition_governor":
+      return { ...base, governor_reasons: detail.reasons };
   }
 }
 

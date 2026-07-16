@@ -6118,6 +6118,40 @@ export async function fetchPendingNighthawkOutcomes(lookbackDays = 7): Promise<N
   return res.rows.map(mapNighthawkPlayOutcomeRow);
 }
 
+/** PR-N8: fetch the most recent N editions' outcomes for the cross-edition governor.
+ *  Returns ticker/direction/outcome/sector per row — the minimal shape the governor needs. */
+export async function fetchRecentNighthawkOutcomesForGovernor(
+  lookbackEditions = 3
+): Promise<Array<{ edition_for: string; ticker: string; direction: string | null; outcome: string | null; sector: string | null }>> {
+  await ensureSchema();
+  const safeN =
+    Number.isFinite(lookbackEditions) && lookbackEditions > 0 ? Math.trunc(lookbackEditions) : 3;
+  const res = await (await getPool()).query(
+    `
+    SELECT edition_for, ticker, direction, outcome, sector
+    FROM nighthawk_play_outcomes
+    WHERE edition_for >= (
+      SELECT COALESCE(MIN(e), CURRENT_DATE)
+      FROM (
+        SELECT DISTINCT edition_for AS e
+        FROM nighthawk_play_outcomes
+        ORDER BY e DESC
+        LIMIT $1
+      ) sub
+    )
+    ORDER BY edition_for DESC, ticker ASC
+    `,
+    [safeN]
+  );
+  return res.rows.map((r: QueryResultRow) => ({
+    edition_for: isoDateString(r.edition_for),
+    ticker: String(r.ticker),
+    direction: r.direction != null ? String(r.direction) : null,
+    outcome: r.outcome != null ? String(r.outcome) : null,
+    sector: r.sector != null ? String(r.sector) : null,
+  }));
+}
+
 export async function updateNighthawkPlayOutcome(
   id: number,
   patch: {

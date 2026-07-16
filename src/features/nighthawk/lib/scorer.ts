@@ -8,6 +8,7 @@ import type { FlowStreak } from "./flow-streak";
 import type { MarketWideContext } from "./market-wide";
 import type { PositioningSummary } from "./positioning";
 import type { TechnicalCard } from "./technicals";
+import { assignNighthawkTier } from "./nighthawk-tiers";
 
 export type NightHawkRegimeContext = {
   vix_iv_rank: number | null;
@@ -46,6 +47,7 @@ export type ScoredCandidate = {
   fundamental_block?: boolean;
   fundamental_flags?: string[];
   trading_halt?: boolean;
+  sector?: string;
 };
 
 export function regimeContextFromMarket(ctx: MarketWideContext): NightHawkRegimeContext {
@@ -954,7 +956,11 @@ export function scoreCandidate(
     catalyst_flags: catalystFlags,
     earnings_risk: earningsRisk,
     confirming_signals: confirmingSignals,
-    conviction: convictionFromScore(total),
+    conviction: assignNighthawkTier({
+      score: total,
+      confirmingSignals: confirmingSignals,
+      earningsRisk: earningsRisk,
+    }).tier,
     regime_multiplier: regimeMultiplier,
     fundamental_block: !fundCheck.ok,
     fundamental_flags: fundCheck.reasons,

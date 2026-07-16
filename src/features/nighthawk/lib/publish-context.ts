@@ -21,6 +21,7 @@ import type { ScoredCandidate, NightHawkRegimeContext } from "./scorer";
 import type { TickerDossier } from "./dossier";
 import { parsePlayLevels } from "./play-levels";
 import { confluenceSnapshot } from "./play-outcomes";
+import { assignNighthawkTier, nhTierInputFromScored } from "./nighthawk-tiers";
 // Type-only (erased at runtime): the gate module imports this file's geometry helper, so a
 // value import back the other way would be a cycle. The pinned gate result is opaque here.
 import type { NighthawkPublishGateResult } from "./publish-gates";
@@ -220,6 +221,14 @@ export function buildNighthawkPublishContext(opts: {
       earnings_risk: scored?.earnings_risk ?? false,
       catalyst_flags: scored?.catalyst_flags ?? [],
     },
+
+    // ── PR-N7: tier engine assignment pinned at publish ─────────────────────────
+    tier: scored
+      ? (() => {
+          const t = assignNighthawkTier(nhTierInputFromScored(scored));
+          return { tier: t.tier, factors: t.factors };
+        })()
+      : null,
 
     // ── The builder's own score/conviction inputs (shared shape with the
     //    rejection audit rows — one snapshot format across the funnel) ──────────

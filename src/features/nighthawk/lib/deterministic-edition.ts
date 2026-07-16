@@ -26,7 +26,7 @@
 import type { EditionChainData, ChainStrikeRow } from "./option-chain-prompt";
 import type { TickerDossier } from "./dossier";
 import type { ScoredCandidate } from "./scorer";
-import { convictionFromScore } from "./scorer";
+import { assignNighthawkTier, nhTierInputFromScored } from "./nighthawk-tiers";
 import type { PlaybookPlay } from "./types";
 import { buildDirectionalStockLevels, formatStockLevel } from "./play-levels";
 import { applyPremiumCapToPlay, validatePlayGeometry } from "./play-constraints";
@@ -215,9 +215,10 @@ function buildPlay(
     rank,
     ticker: scored.ticker,
     direction: scored.direction === "short" ? "SHORT" : "LONG",
-    // Conviction is the deterministic score→letter mapping — the same number the card pins. No LLM
-    // self-grade to reconcile here (that reconciliation only exists on the Claude path).
-    conviction: scored.conviction || convictionFromScore(scored.score),
+    // PR-N7: conviction is now the tier-engine assignment, not the old mechanical score→letter
+    // mapping. The tier engine scores on band placement + signal breadth + earnings risk,
+    // with the measured overnight inversion (A+≥70 went 0/1) priced into the bands.
+    conviction: assignNighthawkTier(nhTierInputFromScored(scored)).tier,
     play_type: "stock",
     thesis,
     key_signal,

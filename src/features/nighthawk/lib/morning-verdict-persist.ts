@@ -27,7 +27,21 @@ import { parsePlayLevels } from "./play-levels";
 import { recordNighthawkMorningVerdict } from "@/lib/db";
 
 /** Bump when the persisted verdict shape changes so calibration reads can segment. */
-export const MORNING_VERDICT_VERSION = 1;
+export const MORNING_VERDICT_VERSION = 2;
+
+// PR-N6: DEGRADED becomes binding when multiple independent signals fire. A single
+// "reduce size" stays advisory (a reasoned caution, not an actionable defect);
+// ≥2 distinct degradation reasons means the play's premise is compromised on multiple
+// axes and the honest call is to pull rather than badge.
+export const DEGRADED_SEVERE_REASON_COUNT = 2;
+
+/** True when a DEGRADED verdict is severe enough to engage the pull latch (PR-N6).
+ *  Severity = count of distinct reasons (semicolon-separated in PlayStatus.reason). */
+export function isDegradedSevere(status: PlayStatus): boolean {
+  if (status.status !== "DEGRADED") return false;
+  const reasons = status.reason.split(";").map((r) => r.trim()).filter(Boolean);
+  return reasons.length >= DEGRADED_SEVERE_REASON_COUNT;
+}
 
 export type MorningVerdictMarketContext = {
   /** SPX pre-market − prior close, points. Null when either side was unreachable. */
@@ -102,9 +116,9 @@ export type PersistMorningVerdictDeps = {
 };
 
 /**
- * Persist every play's verdict for one edition. INVALIDATED engages the pull latch;
- * every other status (CONFIRMED / DEGRADED / UNVERIFIED) persists as label-only.
- * Never throws; per-play failures land in `errors` and the rest of the batch proceeds.
+ * Persist every play's verdict for one edition. INVALIDATED and severe-DEGRADED
+ * (PR-N6: ≥2 distinct reasons) engage the pull latch; lighter statuses persist as
+ * label-only. Never throws; per-play failures land in `errors` and the rest proceeds.
  */
 export async function persistNighthawkMorningVerdicts(
   opts: {
@@ -136,14 +150,17 @@ export async function persistNighthawkMorningVerdicts(
         market: opts.market,
       });
       const invalidated = status.status === "INVALIDATED";
+      // PR-N6: severe DEGRADED (≥2 independent degradation reasons) also pulls.
+      const degradedSevere = isDegradedSevere(status);
+      const shouldPull = invalidated || degradedSevere;
       const res = await record({
         edition_for: opts.editionFor,
         ticker: status.ticker,
         verdict,
-        pull: invalidated,
-        // The member-facing pull reason IS the verdict's evidence sentence — same
-        // honest-labeling spirit as the 0DTE WATCH badge.
-        pull_reason: invalidated ? `Pulled pre-open: ${status.reason}` : null,
+        pull: shouldPull,
+        pull_reason: shouldPull
+          ? `Pulled pre-open${degradedSevere ? " (severe degradation)" : ""}: ${status.reason}`
+          : null,
       });
       if (!res.matched) {
         result.missing_rows += 1;

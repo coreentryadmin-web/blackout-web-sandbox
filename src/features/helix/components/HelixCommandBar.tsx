@@ -36,7 +36,7 @@ function ChipToggle({
       className={clsx(
         "helix-tape-chip",
         active && "helix-tape-chip--active",
-        tone && active && `helix-tape-chip--${tone}`
+        tone && `helix-tape-chip--${tone}`
       )}
     >
       {children}
@@ -121,8 +121,8 @@ export function HelixCommandBar({
     <div className="helix-tape-bar">
       <div className="helix-tape-bar-primary">
         <div className="helix-tape-bar-block">
-          <span className="helix-tape-bar-label">Floor</span>
-          <div className="helix-tape-seg">
+          <span className="helix-tape-bar-label helix-tape-bar-label--cyan">Floor</span>
+          <div className="helix-tape-seg helix-tape-seg--floor">
             {PREMIUM_PRESETS.map((v) => (
               <button
                 key={v}
@@ -161,7 +161,7 @@ export function HelixCommandBar({
         </div>
 
         <div className="helix-tape-bar-block helix-tape-bar-search">
-          <label className="helix-tape-bar-label" htmlFor="helix-ticker-search">
+          <label className="helix-tape-bar-label helix-tape-bar-label--green" htmlFor="helix-ticker-search">
             Symbol
           </label>
           <div className="helix-tape-input-wrap">
@@ -191,7 +191,7 @@ export function HelixCommandBar({
         </div>
 
         <div className="helix-tape-bar-block helix-tape-bar-chips">
-          <span className="helix-tape-bar-label">Quick</span>
+          <span className="helix-tape-bar-label helix-tape-bar-label--purple">Quick</span>
           <div className="helix-tape-chips">
             <ChipToggle active={whalesOnly} onClick={() => onWhalesOnlyChange(!whalesOnly)} tone="purple">
               Whales
@@ -220,8 +220,8 @@ export function HelixCommandBar({
         <div className="helix-tape-bar-spacer" />
 
         <div className="helix-tape-bar-block">
-          <span className="helix-tape-bar-label">DTE</span>
-          <div className="helix-tape-seg helix-tape-seg--compact">
+          <span className="helix-tape-bar-label helix-tape-bar-label--amber">DTE</span>
+          <div className="helix-tape-seg helix-tape-seg--compact helix-tape-seg--dte">
             {DTE_OPTIONS.map((o) => (
               <button
                 key={o.id}

@@ -35,7 +35,7 @@ import {
 } from "./constants";
 import type { GroundingSummary } from "./grounding";
 import type { ScoredCandidate } from "./scorer";
-import { convictionFromScore, convictionRank } from "./scorer";
+import { assignNighthawkTier, nhTierInputFromScored, nhConvictionRank } from "./nighthawk-tiers";
 import type { PlaybookPlay } from "./types";
 import type { HuntMode } from "./types";
 import type { NighthawkRejectionDetail } from "./play-outcomes";
@@ -46,9 +46,12 @@ export function mapClaudePlayToEdition(play: ClaudePlayRaw, rank: number, dossie
   const playType = String(play.type ?? "stock").toLowerCase();
   const pinnedScore = dossier?.scored?.score ?? Number(play.score ?? 0);
   const modelConviction = String(play.conviction ?? "B");
-  const deterministicConviction = convictionFromScore(pinnedScore);
+  const scored = dossier?.scored;
+  const deterministicConviction = scored
+    ? assignNighthawkTier(nhTierInputFromScored(scored)).tier
+    : assignNighthawkTier({ score: pinnedScore, confirmingSignals: null, earningsRisk: false }).tier;
   const conviction =
-    convictionRank(modelConviction) < convictionRank(deterministicConviction)
+    nhConvictionRank(modelConviction) < nhConvictionRank(deterministicConviction)
       ? modelConviction
       : deterministicConviction;
   const scoredDirection = dossier?.scored?.direction;

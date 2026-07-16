@@ -10,7 +10,7 @@ import {
 import { authorizeCronOrTierApi } from "@/lib/market-api-auth";
 import { rowToNightHawkEdition } from "@/features/nighthawk/lib/edition-builder";
 import { applyNighthawkPullOverlay } from "@/features/nighthawk/lib/pull-overlay";
-import { convictionFromScore } from "@/features/nighthawk/lib/scorer";
+import { assignNighthawkTier } from "@/features/nighthawk/lib/nighthawk-tiers";
 import { isBeforeOrAtMarketCloseEt, nextTradingDayEt, priorEt, todayEt } from "@/features/nighthawk/lib/session";
 import { requireToolApi } from "@/lib/tool-access-server";
 import type { NightHawkEdition } from "@/features/nighthawk/lib/types";
@@ -74,7 +74,9 @@ async function fetchLegacyPlays(): Promise<NightHawkEdition | null> {
         direction: String(p.direction ?? "LONG"),
         // Derive conviction from the real score instead of hardcoding "B"; leave it blank
         // when there is no score to derive from.
-        conviction: realScore != null ? convictionFromScore(realScore) : "",
+        conviction: realScore != null
+          ? assignNighthawkTier({ score: realScore, confirmingSignals: null, earningsRisk: false }).tier
+          : "",
         play_type: "stock" as const,
         thesis: String(p.summary ?? ""),
         key_signal: String(p.summary ?? ""),

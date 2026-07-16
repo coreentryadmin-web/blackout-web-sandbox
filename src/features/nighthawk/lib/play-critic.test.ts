@@ -25,13 +25,14 @@ function fakePlay(overrides: Partial<PlaybookPlay> = {}): PlaybookPlay {
 function fakeScored(overrides: Partial<ScoredCandidate> = {}): ScoredCandidate {
   return {
     ticker: "NBIS",
-    score: 55,
+    score: 48,
     direction: "long",
     flow_score: 15,
     tech_score: 12,
     pos_score: 8,
     news_score: 4,
     smart_money_score: 3,
+    confirming_signals: 3,
     conviction: "A",
     ...overrides,
   };
@@ -117,9 +118,9 @@ describe("play-critic: deterministic rule-based critic", () => {
     assert.ok(result.notes.some((n) => n.includes("CUT") && n.includes("halt")));
   });
 
-  test("DOWNGRADE: conviction inflation (play A+, score only warrants C)", async () => {
+  test("DOWNGRADE: conviction inflation (play A+, tier engine warrants C)", async () => {
     const play = fakePlay({ conviction: "A+" });
-    const scored = fakeScored({ score: 35, conviction: "C" });
+    const scored = fakeScored({ score: 30, confirming_signals: 1, conviction: "C" });
     const result = await critiquePlays({
       plays: [play],
       dossiers: {},
@@ -131,11 +132,12 @@ describe("play-critic: deterministic rule-based critic", () => {
     assert.ok(result.notes.some((n) => n.includes("DOWNGRADE") && n.includes("A+") && n.includes("C")));
   });
 
-  test("DOWNGRADE: thin signal confirmation (<2 positive dimensions)", async () => {
+  test("DOWNGRADE: thin signal confirmation (tier engine caps at B)", async () => {
     const play = fakePlay({ conviction: "A" });
     const scored = fakeScored({
-      score: 55,
+      score: 48,
       conviction: "A",
+      confirming_signals: 1,
       flow_score: 20,
       tech_score: 0,
       pos_score: -2,
@@ -150,12 +152,12 @@ describe("play-critic: deterministic rule-based critic", () => {
     });
     assert.equal(result.plays.length, 1);
     assert.equal(result.plays[0].conviction, "B");
-    assert.ok(result.notes.some((n) => n.includes("DOWNGRADE") && n.includes("confirming signal")));
+    assert.ok(result.notes.some((n) => n.includes("DOWNGRADE") && n.includes("→ B")));
   });
 
   test("NOTE + DOWNGRADE: regime contradiction (bearish tide + LONG play)", async () => {
     const play = fakePlay({ direction: "LONG", conviction: "A" });
-    const scored = fakeScored({ direction: "long" });
+    const scored = fakeScored({ direction: "long", score: 48, confirming_signals: 3 });
     const result = await critiquePlays({
       plays: [play],
       dossiers: {},

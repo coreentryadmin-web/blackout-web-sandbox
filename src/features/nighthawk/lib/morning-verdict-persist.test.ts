@@ -3,7 +3,9 @@ import test from "node:test";
 import {
   buildMorningVerdictRecord,
   persistNighthawkMorningVerdicts,
+  isDegradedSevere,
   MORNING_VERDICT_VERSION,
+  DEGRADED_SEVERE_REASON_COUNT,
   type MorningVerdictMarketContext,
 } from "./morning-verdict-persist";
 import type { PlayStatus } from "./morning-confirm-verdict";
@@ -118,7 +120,7 @@ test("unavailable inputs persist as null — never fabricated", () => {
   assert.equal(m.premarket_vs_stop_pct, null);
 });
 
-test("INVALIDATED persists AND pulls; DEGRADED/CONFIRMED persist label-only (advisory, N6 owns enforcement)", async () => {
+test("INVALIDATED pulls; single-reason DEGRADED stays advisory; CONFIRMED is label-only", async () => {
   const h = harness({ AMD: freshRow(), TSLA: freshRow(), WFC: freshRow() });
   const result = await persistNighthawkMorningVerdicts(
     {
@@ -141,9 +143,43 @@ test("INVALIDATED persists AND pulls; DEGRADED/CONFIRMED persist label-only (adv
   assert.equal(h.rows.AMD.pulled, true);
   assert.match(h.rows.AMD.pulled_reason ?? "", /^Pulled pre-open: /);
   assert.match(h.rows.AMD.pulled_reason ?? "", /gapped through the stop/);
-  assert.equal(h.rows.TSLA.pulled, false, "DEGRADED stays advisory — never pulls");
+  assert.equal(h.rows.TSLA.pulled, false, "single-reason DEGRADED stays advisory");
   assert.equal(h.rows.WFC.pulled, false);
   assert.equal((h.rows.TSLA.morning_verdict as Record<string, unknown>).status, "DEGRADED");
+});
+
+test("severe DEGRADED (≥2 reasons) engages the pull latch (PR-N6)", async () => {
+  const h = harness({ AMD: freshRow() });
+  const severeReason = "Put wall drifted 15 pts; Contrary flow anomaly detected";
+  const result = await persistNighthawkMorningVerdicts(
+    {
+      editionFor: "2026-07-07",
+      checkedAt: "2026-07-07T13:15:30.000Z",
+      playStatuses: [
+        status({ ticker: "AMD", status: "DEGRADED", reason: severeReason }),
+      ],
+      plays: [play()],
+      market: market(),
+    },
+    { record: h.record }
+  );
+
+  assert.equal(result.ok, true);
+  assert.equal(result.persisted, 1);
+  assert.equal(result.pulled, 1);
+  assert.equal(h.rows.AMD.pulled, true);
+  assert.match(h.rows.AMD.pulled_reason ?? "", /severe degradation/);
+  assert.match(h.rows.AMD.pulled_reason ?? "", /Put wall drifted/);
+  assert.equal((h.rows.AMD.morning_verdict as Record<string, unknown>).status, "DEGRADED");
+});
+
+test("isDegradedSevere: single reason → false, two reasons → true, non-DEGRADED → false", () => {
+  assert.equal(isDegradedSevere(status({ status: "DEGRADED", reason: "One reason only" })), false);
+  assert.equal(isDegradedSevere(status({ status: "DEGRADED", reason: "Reason A; Reason B" })), true);
+  assert.equal(isDegradedSevere(status({ status: "DEGRADED", reason: "A; B; C" })), true);
+  assert.equal(isDegradedSevere(status({ status: "CONFIRMED", reason: "A; B" })), false);
+  assert.equal(isDegradedSevere(status({ status: "INVALIDATED", reason: "A; B" })), false);
+  assert.equal(DEGRADED_SEVERE_REASON_COUNT, 2);
 });
 
 test("idempotent re-run: first verdict wins, pull latch is one-way (a softer re-run can never un-pull)", async () => {
