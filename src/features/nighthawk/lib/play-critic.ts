@@ -16,7 +16,7 @@
 import type { TickerDossier } from "./dossier";
 import type { MarketWideContext } from "./market-wide";
 import type { ScoredCandidate } from "./scorer";
-import { convictionFromScore, convictionRank } from "./scorer";
+import { assignNighthawkTier, nhTierInputFromScored, nhConvictionRank } from "./nighthawk-tiers";
 import type { PlaybookPlay } from "./types";
 
 /** Minimum composite score for a play to publish — below this it's cut. */
@@ -108,12 +108,13 @@ export async function critiquePlays(params: {
       continue;
     }
 
-    // DOWNGRADE: conviction inflation — deterministic score→letter is the ceiling.
-    const deterministicConviction = convictionFromScore(scored.score);
+    // PR-N7: conviction ceiling is now the tier engine, not the old score→letter mapping.
+    const tierResult = assignNighthawkTier(nhTierInputFromScored(scored));
+    const deterministicConviction = tierResult.tier;
     let conviction = play.conviction;
-    if (convictionRank(conviction) > convictionRank(deterministicConviction)) {
+    if (nhConvictionRank(conviction) > nhConvictionRank(deterministicConviction)) {
       notes.push(
-        `#${play.rank} ${play.ticker}: DOWNGRADE conviction ${conviction} → ${deterministicConviction} (score ${scored.score})`
+        `#${play.rank} ${play.ticker}: DOWNGRADE conviction ${conviction} → ${deterministicConviction} (tier engine: ${tierResult.factors.map(f => f.label).join(", ")})`
       );
       conviction = deterministicConviction;
     }
@@ -121,7 +122,7 @@ export async function critiquePlays(params: {
     // DOWNGRADE: thin signal confirmation. Prefer the scorer's threshold-based count
     // (material contribution, not just >0) when available.
     const confirming = scored.confirming_signals ?? countConfirmingSignals(scored);
-    if (confirming < MIN_CONFIRMING_SIGNALS && convictionRank(conviction) > 2) {
+    if (confirming < MIN_CONFIRMING_SIGNALS && nhConvictionRank(conviction) > 2) {
       const newConviction = "B";
       notes.push(
         `#${play.rank} ${play.ticker}: DOWNGRADE ${conviction} → ${newConviction} — only ${confirming} confirming signal(s)`
@@ -135,9 +136,9 @@ export async function critiquePlays(params: {
         `#${play.rank} ${play.ticker}: NOTE — play direction ${play.direction} against current market tide`
       );
       // Downgrade by one notch if A+ or A.
-      if (convictionRank(conviction) >= 3) {
+      if (nhConvictionRank(conviction) >= 3) {
         const prev = conviction;
-        conviction = convictionRank(conviction) === 4 ? "A" : "B";
+        conviction = nhConvictionRank(conviction) === 4 ? "A" : "B";
         notes.push(`#${play.rank} ${play.ticker}: DOWNGRADE ${prev} → ${conviction} (regime headwind)`);
       }
     }
