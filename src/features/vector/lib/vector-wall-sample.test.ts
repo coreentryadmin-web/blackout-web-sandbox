@@ -6,15 +6,16 @@ import {
   DEFAULT_WALL_TRAIL_SAMPLE_SEC,
 } from "./vector-wall-sample";
 
-test("bucketWallSampleTime: snaps to 15s floor", () => {
-  assert.equal(bucketWallSampleTime(100, 15), 90);
-  assert.equal(bucketWallSampleTime(105, 15), 105);
-  assert.equal(bucketWallSampleTime(107, 15), 105);
-  assert.equal(bucketWallSampleTime(120, 15), 120);
+test("bucketWallSampleTime: snaps to 5s floor", () => {
+  assert.equal(bucketWallSampleTime(100, 5), 100);
+  assert.equal(bucketWallSampleTime(103, 5), 100);
+  assert.equal(bucketWallSampleTime(105, 5), 105);
+  assert.equal(bucketWallSampleTime(107, 5), 105);
+  assert.equal(bucketWallSampleTime(120, 5), 120);
 });
 
-test("DEFAULT_WALL_TRAIL_SAMPLE_SEC is 15", () => {
-  assert.equal(DEFAULT_WALL_TRAIL_SAMPLE_SEC, 15);
+test("DEFAULT_WALL_TRAIL_SAMPLE_SEC is 5", () => {
+  assert.equal(DEFAULT_WALL_TRAIL_SAMPLE_SEC, 5);
 });
 
 const CALL = [{ strike: 7575, pct: 4, gex: 3_000_000_000 }];
