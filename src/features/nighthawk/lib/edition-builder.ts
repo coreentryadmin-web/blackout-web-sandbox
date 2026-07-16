@@ -43,6 +43,7 @@ import {
 import { partitionPlaysByGeometry } from "./play-constraints";
 import { applyCrossEditionGovernor, GOV_LOOKBACK_EDITIONS } from "./cross-edition-governor";
 import type { RecentOutcomeRow } from "./cross-edition-governor";
+import { applyBearishPosture, BEARISH_RECAP_REASON } from "./bearish-posture";
 import { nextTradingDayEt, todayEt } from "./session";
 import { notifyOpsDiscord } from "@/features/spx/lib/spx-play-notify";
 import type { NightHawkEdition, PlaybookPlay } from "./types";
@@ -63,6 +64,7 @@ type FunnelCounts = {
   candidates: number;
   ranked: number;
   governor_passed: number;
+  posture_applied: number;
   dossiers: number;
   synthesized: number;
   critic_passed: number;
@@ -79,7 +81,7 @@ function formatFunnelLine(editionFor: string, f: Partial<FunnelCounts>): string 
   const c = (n: number | undefined) => (n == null ? "-" : n);
   return (
     `[nighthawk-funnel] ${editionFor}: candidates=${c(f.candidates)} extracted, ` +
-    `ranked=${c(f.ranked)}, governor_passed=${c(f.governor_passed)}, dossiers=${c(f.dossiers)}, ` +
+    `ranked=${c(f.ranked)}, governor_passed=${c(f.governor_passed)}, posture=${c(f.posture_applied)}, dossiers=${c(f.dossiers)}, ` +
     `synthesized=${c(f.synthesized)} (claude raw plays), ` +
     `critic_passed=${c(f.critic_passed)}, ` +
     `grounded=${c(f.grounded)}, dropped_ungrounded=${c(f.dropped_ungrounded)}, flagged=${c(f.flagged)}, ` +
@@ -621,6 +623,19 @@ export async function buildEveningEdition(opts?: {
     }
     funnel.governor_passed = ranked.length;
 
+    // STAGE 4c — Bearish-tape posture (PR-N9): when ≥2 of tide/breadth/regime signal
+    // bearish, re-rank to prefer SHORT candidates. Thin-flow longs get flipped to short;
+    // strong-flow longs are penalized but kept for downstream gates to decide.
+    const postureResult = applyBearishPosture(ranked, regime);
+    if (postureResult.posture === "SHORT") {
+      ranked = postureResult.ranked;
+      console.info(
+        `[nighthawk/edition] bearish-posture: SHORT posture engaged (${postureResult.reasons.join("; ")}), ` +
+        `${postureResult.flipped} candidate(s) flipped to short`
+      );
+    }
+    funnel.posture_applied = ranked.length;
+
     const topDossiers = ranked.map((s) => dossiers[s.ticker]).filter(Boolean);
     const synthesisRanked = ranked.slice(0, EDITION_SYNTHESIS_POOL);
     const synthesisDossiers = synthesisRanked.map((s) => dossiers[s.ticker]).filter(Boolean);
@@ -746,9 +761,13 @@ export async function buildEveningEdition(opts?: {
       if (!rawPlays.length) {
         // Name the funnel stage that zeroed the plays so the empty state is self-diagnosing in
         // edition meta (no Railway-log dig needed). parsed→stock→within-cap→strike-valid.
-        const reason = synthFunnel
+        // PR-N9: when posture is SHORT, annotate the recap reason so the skip is explicit.
+        const funnelReason = synthFunnel
           ? `All plays filtered out — funnel: ${synthFunnel.parsed} candidates → ${synthFunnel.stock} contract-ok → ${synthFunnel.premium_ok} within-cap → ${synthFunnel.strike_ok} strike-valid → 0 grounded (${synthFunnel.dropped_ungrounded} dropped ungrounded, ${synthFunnel.flagged} flagged).`
           : "Deterministic synthesis produced no plays.";
+        const reason = postureResult.posture === "SHORT"
+          ? `${BEARISH_RECAP_REASON} ${funnelReason}`
+          : funnelReason;
         // Synthesis produced no plays — publish a recap-only edition instead of failing dark, so the
         // UI always shows tonight's market read. Never fabricate plays from nothing.
         console.warn(`[nighthawk/edition] stage_synthesis zeroed — recap-only fallback: ${reason}`);
