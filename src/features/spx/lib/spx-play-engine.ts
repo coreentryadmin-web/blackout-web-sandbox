@@ -32,7 +32,7 @@ import type { PowerHourPlayPayload } from "@/features/spx/lib/spx-power-hour-eng
 import { evaluatePlayConfirmations, flowAlignedForDirection } from "@/features/spx/lib/spx-play-confirmations";
 import { buildPlayTechnicals, type PlayTechnicals } from "@/features/spx/lib/spx-play-technicals";
 import type { PlayConfirmationResult } from "@/features/spx/lib/spx-play-confirmations";
-import { evaluateClaudePlayApproval, type ClaudePlayVerdict } from "@/features/spx/lib/spx-play-claude";
+import type { ClaudePlayVerdict } from "@/features/spx/lib/spx-play-claude";
 import { pickIdleMessage, watchMessage } from "@/features/spx/lib/spx-play-idle";
 import { buildPlayIdeaIntel, humanizeGateBlock, humanizeGateBlocks } from "@/features/spx/lib/spx-play-intel";
 import { playbookExitProfile } from "@/features/spx/lib/playbook-verdict-guard";
@@ -54,6 +54,7 @@ import {
   playTrailingStopTrailWindowPts,
   playBuyCooldownAplusBypass,
   playbookStagingLabEnabled,
+  playCortexRequiredForColdBuy,
 } from "@/features/spx/lib/spx-play-config";
 import { evaluateOpenThesisBreak } from "@/features/spx/lib/spx-play-thesis";
 import { enrichPlayPayload } from "@/features/spx/lib/spx-play-context";
@@ -95,6 +96,12 @@ import {
   parseOptionPremiumMid,
 } from "@/features/spx/lib/playbook-option-pnl";
 import { mergeTradeGovernorWithOptionOverlay } from "@/features/spx/lib/trade-governor";
+import {
+  evaluateCortexForCommit,
+  cortexGateBlocks,
+  cortexSummaryFor,
+  cortexEntryContextFor,
+} from "@/lib/zerodte/cortex-gate";
 import {
   evaluatePlaybookExitPlan,
   strongestPlaybookExitSignal,
@@ -773,6 +780,7 @@ async function evaluateOpenPlay(
       play_idea: null,
     },
     claude: null,
+    cortex: null,
     open_play:
       action === "SELL"
         ? null
@@ -1051,53 +1059,35 @@ async function evaluateFlatPlay(
     };
   }
 
-  const claude = await evaluateClaudePlayApproval(
-    desk,
-    confluence,
-    entryGatesRaw,
-    confirmations,
-    technicals,
-    {
-      forceClaude: promoteEligible && adaptive.promote_requires_claude,
-    }
-  );
-
-  // BUG-04: detect and flag direction mismatches between Claude and confluence.
-  const claudeDirectionMismatch =
-    claude.direction != null &&
-    confluence.direction != null &&
-    claude.direction !== confluence.direction;
-  if (claudeDirectionMismatch) {
-    console.warn(
-      `[spx-play-engine] Direction mismatch: Claude=${claude.direction} vs confluence=${confluence.direction}`
-    );
-  }
-
-  if (!claude.approved || !confluence.direction) {
-    spxPlayDebug('[spx-play-engine] Claude blocked play:', {
-      verdict: claude.verdict,
-      source: claude.source,
-      approved: claude.approved,
-      headline: claude.headline,
+  // ── Cortex evidence gate (Phase 2 of unified engine) ─────────────────────
+  // Runs on gate SURVIVORS only, same sequencing as 0DTE Command's scan.ts:
+  // hard gates are the cheap fail-closed floor; the Cortex is the expensive
+  // precision layer on top. evaluateCortexForCommit never throws — total
+  // Cortex outage degrades to ABSTAIN (commit proceeds on gates alone).
+  const cortexAssessment = direction != null
+    ? await evaluateCortexForCommit("SPX", direction, new Date())
+    : null;
+  const cortexBlocks = cortexGateBlocks(cortexAssessment);
+  if (cortexBlocks.length > 0) {
+    spxPlayDebug('[spx-play-engine] Cortex blocked play:', {
+      decision: cortexAssessment && !cortexAssessment.abstained ? cortexAssessment.decision : "N/A",
+      blocks: cortexBlocks.map((b) => b.code),
       grade: confluence.grade,
       score: confluence.score,
-      direction: confluence.direction,
-      mutate,
+      direction,
     });
+    const blockReasons = cortexBlocks.map((b) => b.reason);
     return {
       ...scanningPayload(desk, confluence, pickIdleMessage(), {
         ...entryGatesView,
         passed: false,
-        blocks:
-          claude.verdict === "VETO"
-            ? [`Claude veto: ${claude.headline}`]
-            : entryGatesView.blocks,
+        blocks: blockReasons,
+        blocks_by_category: categorizeGateBlocks(blockReasons),
       }, sessionExtras),
       phase: "SCANNING",
       action: "SCANNING",
-      headline: claude.headline,
-      thesis: claude.thesis,
-      claude: { ...claude, direction_mismatch: claudeDirectionMismatch },
+      headline: `Cortex: ${cortexBlocks[0]!.code.replace(/_/g, " ")}`,
+      cortex: cortexSummaryFor(cortexAssessment),
       confirmations: null,
       technicals: techSum,
       mtf,
@@ -1105,6 +1095,97 @@ async function evaluateFlatPlay(
       telemetry,
     };
   }
+
+  // ── Cortex-based deterministic approval (replaces Claude LLM gate) ──────
+  // Cortex VETO/NET_NEGATIVE are already blocked above. What remains:
+  //   PASS     → evidence supports the play (strongest signal)
+  //   ABSTAIN  → no evidence available (Cortex outage or thin data)
+  //
+  // Cold buy path (17% historical WR) REQUIRES Cortex PASS — no trading blind.
+  // Watch-promote (38% WR) and playbook paths accept ABSTAIN: the watch phase
+  // already validated the thesis, and gates alone earned a 38% win rate.
+  const cortexPassed = cortexAssessment != null && !cortexAssessment.abstained && cortexAssessment.decision === "PASS";
+  const isColdBuy = !promoteEligible && !playbookLabActive;
+
+  if (isColdBuy && !cortexPassed && playCortexRequiredForColdBuy()) {
+    const reason = cortexAssessment?.abstained
+      ? "Cortex unavailable — cold entries require evidence backing"
+      : "Cortex did not evaluate — cold entries require evidence backing";
+    spxPlayDebug('[spx-play-engine] Cold buy blocked (no Cortex PASS):', {
+      cortexDecision: cortexAssessment?.abstained ? "ABSTAIN" : "null",
+      grade: confluence.grade,
+      score: confluence.score,
+      direction,
+    });
+    return {
+      ...scanningPayload(desk, confluence, pickIdleMessage(), {
+        ...entryGatesView,
+        passed: false,
+        blocks: [reason],
+        blocks_by_category: categorizeGateBlocks([reason]),
+      }, sessionExtras),
+      phase: "SCANNING",
+      action: "SCANNING",
+      headline: reason,
+      cortex: cortexSummaryFor(cortexAssessment),
+      confirmations: null,
+      technicals: techSum,
+      mtf,
+      watch: watchState,
+      telemetry,
+    };
+  }
+
+  // Mechanical approval: gates passed + direction + grade B+ + confirmations passed.
+  // This is the same bar the old BIE precedent gate used as its floor.
+  const mechanicalApproved =
+    entryGatesRaw.passed &&
+    confluence.direction != null &&
+    gradeRank(confluence.grade) >= 2 &&
+    confirmations.passed;
+
+  if (!mechanicalApproved || !confluence.direction) {
+    const thesis = entryGatesView.play_idea ??
+      entryGatesView.blocks[0] ??
+      "Waiting for full gate pass with B+ confluence.";
+    spxPlayDebug('[spx-play-engine] Mechanical approval failed:', {
+      gatesPassed: entryGatesRaw.passed,
+      gradeRank: gradeRank(confluence.grade),
+      confirmationsPassed: confirmations.passed,
+      direction: confluence.direction,
+    });
+    return {
+      ...scanningPayload(desk, confluence, pickIdleMessage(), entryGatesView, sessionExtras),
+      phase: "SCANNING",
+      action: "SCANNING",
+      headline: "Quality bar not met — stay flat",
+      thesis,
+      claude: null,
+      cortex: cortexSummaryFor(cortexAssessment),
+      confirmations: null,
+      technicals: techSum,
+      mtf,
+      watch: watchState,
+      telemetry,
+    };
+  }
+
+  // Build a backward-compatible ClaudePlayVerdict from Cortex + mechanical checks.
+  const dirLabel = confluence.direction === "long" ? "CALL" : "PUT";
+  const cortexNote = cortexPassed
+    ? `Cortex ${cortexAssessment!.abstained ? "" : `score ${(cortexAssessment as { verdict: { score: number } }).verdict.score > 0 ? "+" : ""}${(cortexAssessment as { verdict: { score: number } }).verdict.score.toFixed(1)}`} · `
+    : cortexAssessment?.abstained
+      ? "Cortex unavailable · "
+      : "";
+  const claude: ClaudePlayVerdict = {
+    verdict: "APPROVE_BUY",
+    direction: confluence.direction,
+    headline: `${confluence.grade} ${dirLabel} — ${cortexNote}${confirmations.passed_count}/${confirmations.total} confirmations`,
+    thesis: `${cortexNote}gates passed · ${confirmations.passed_count}/${confirmations.total} confirmations · score ${confluence.score}.`,
+    approved: true,
+    source: cortexPassed ? "bie" : "mechanical",
+  };
+  const claudeDirectionMismatch = false;
 
   const dir = confluence.direction;
   const optionTicketRaw = await buildOptionTicket(desk.price, dir, confluence.grade);
@@ -1158,6 +1239,7 @@ async function evaluateFlatPlay(
         entry_mode: "none",
         play_idea: entryGatesView.play_idea,
       }, sessionExtras),
+      cortex: cortexSummaryFor(cortexAssessment),
       confirmations: null,
       technicals: techSum,
       mtf,
@@ -1200,6 +1282,7 @@ async function evaluateFlatPlay(
         entry_mode: "none",
         play_idea: entryGatesView.play_idea,
       }, sessionExtras),
+      cortex: cortexSummaryFor(cortexAssessment),
       confirmations: null,
       technicals: techSum,
       mtf,
@@ -1230,9 +1313,6 @@ async function evaluateFlatPlay(
     : `${promotePrefix}${claude.headline}`;
 
   if (!mutate) {
-    // Read-only snapshot: all gates passed and Claude approved, but mutate:false so no
-    // play was opened. Surface action:"BUY" so member-facing UIs know a live entry would
-    // fire right now rather than showing a misleading SCANNING/WATCHING phase.
     return {
       available: true,
       phase: "SCANNING",
@@ -1248,6 +1328,7 @@ async function evaluateFlatPlay(
       levels: confluence.levels,
       gates: entryGatesView,
       claude: { ...claude, direction_mismatch: claudeDirectionMismatch },
+      cortex: cortexSummaryFor(cortexAssessment),
       open_play: null,
       confirmations,
       technicals: techSum,
@@ -1271,8 +1352,8 @@ async function evaluateFlatPlay(
     mutate,
     optionBlocked: optionTicket.blocked,
     optionLabel: optionTicket.contract_label,
-    claudeVerdict: claude.verdict,
-    claudeSource: claude.source,
+    cortexDecision: cortexAssessment?.abstained ? "ABSTAIN" : cortexAssessment?.decision ?? "null",
+    approvalSource: claude.source,
   });
 
   const openedAt = new Date().toISOString();
@@ -1333,6 +1414,7 @@ async function evaluateFlatPlay(
       confirmations,
       mtf,
       claude,
+      cortex: cortexEntryContextFor(cortexAssessment),
       option_ticket: optionTicket,
       opened_at: openedAt,
       playbook_id: playbookPrimaryId,
@@ -1423,6 +1505,7 @@ async function evaluateFlatPlay(
       play_idea: entryGatesView.play_idea,
     },
     claude: { ...claude, direction_mismatch: claudeDirectionMismatch },
+    cortex: cortexSummaryFor(cortexAssessment),
     open_play: {
       id: opened.id,
       direction: dir,
@@ -1547,6 +1630,7 @@ async function evaluateSpxPlayCore(
         play_idea: playIdea,
       },
       claude: null,
+      cortex: null,
       open_play: null,
       confirmations: null,
       technicals: null,

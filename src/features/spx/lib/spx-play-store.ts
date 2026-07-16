@@ -383,6 +383,7 @@ export async function openPlay(
         confirmations: outcome.confirmations,
         mtf: outcome.mtf,
         claude: outcome.claude,
+        cortex: outcome.cortex ?? null,
         option_ticket: outcome.option_ticket,
         playbook_id: outcome.playbook_id ?? null,
         playbook_instance_id: outcome.playbook_instance_id ?? null,

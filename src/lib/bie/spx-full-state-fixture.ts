@@ -57,6 +57,7 @@ export const SPX_FULL_STATE_FIXTURE: SpxPlayPayload = {
     approved: true,
     source: "bie",
   },
+  cortex: null,
   open_play: {
     id: 1,
     direction: "long",
