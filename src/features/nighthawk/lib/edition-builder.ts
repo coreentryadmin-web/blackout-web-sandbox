@@ -595,13 +595,11 @@ export async function buildEveningEdition(opts?: {
 
     // STAGE 4b — Cross-edition governor (PR-N8): demote repeat tickers, halt loss streaks,
     // cap rolling sector exposure. Fail-soft: a DB read error skips the governor entirely.
-    let governorNotes: string[] = [];
     try {
       const recentOutcomes: RecentOutcomeRow[] = await fetchRecentNighthawkOutcomesForGovernor(GOV_LOOKBACK_EDITIONS);
       if (recentOutcomes.length > 0) {
         const govResult = applyCrossEditionGovernor(ranked, recentOutcomes);
         ranked = govResult.ranked;
-        governorNotes = govResult.notes;
 
         for (const cut of govResult.cut) {
           try {
