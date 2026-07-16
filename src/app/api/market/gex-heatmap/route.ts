@@ -8,12 +8,10 @@ import type {
 } from "@/lib/providers/polygon-options-gex";
 import { validateGexAgainstUW } from "@/lib/providers/gex-cross-validation";
 import { resolveNearTermExpiriesForCrossValidation } from "@/lib/providers/gex-cross-validation-core";
-import { isHeatmapPreset } from "@/lib/heatmap-allowlist";
 import { fetchUwFlowPerStrikeRows, fetchUwDarkPool } from "@/lib/providers/unusual-whales";
 import { isUwCircuitOpen } from "@/lib/providers/uw-rate-limiter";
 import { sharedCacheGet, sharedCacheSet } from "@/lib/shared-cache";
 import { requireAnyToolApi } from "@/lib/tool-access-server";
-import { isHeatmapOverlayAllowed } from "@/lib/heatmap-allowlist";
 import { dbConfigured, fetchLatestNighthawkEdition } from "@/lib/db";
 import { roundFloats, reconcileStrikeTotal } from "@/lib/round-floats";
 import { isEtCashRth } from "@/lib/et-market-hours";
@@ -207,14 +205,7 @@ async function getOverlays(
     /* redis optional */
   }
 
-  // No warm cache → decide whether we're allowed to spend a fresh UW overlay fetch.
-  // (a) Off-allowlist tickers NEVER fetch overlays — serve the matrix-only contract. This is
-  //     what keeps 1000 distinct-ticker users from each minting a UW fetch.
-  // (b) Allowlisted tickers still drop overlays while the UW circuit breaker is open (429 storm)
-  //     so the heatmap degrades to matrix-only instead of piling onto a saturated UW.
-  // Neither case writes the overlay cache (we don't want to pin a `null` payload over a key that
-  // a warm path could legitimately fill once the breaker clears / for a real allowlisted name).
-  if (!isHeatmapOverlayAllowed(ticker)) return { overlays: NO_OVERLAYS, at: null };
+  // UW circuit breaker: degrade to matrix-only when UW is saturated (429 storm).
   if (isUwCircuitOpen()) return { overlays: NO_OVERLAYS, at: null };
 
   const [flow_by_strike, dark_pool_levels] = await Promise.all([
@@ -301,7 +292,7 @@ export async function GET(req: NextRequest) {
     // doc comment for why this must read `heatmap.near_term_expiries`, not a bare
     // `heatmap.expiries.slice(0, 8)`.
     let cross_validation = null;
-    if (isHeatmapPreset(ticker) && heatmap.gex) {
+    if (heatmap.gex) {
       const nearTermExpiries = resolveNearTermExpiriesForCrossValidation(heatmap);
       cross_validation = await validateGexAgainstUW(
         ticker,

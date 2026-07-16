@@ -1,6 +1,5 @@
 import { sharedCacheGet, sharedCacheSet } from "@/lib/shared-cache";
 import { fetchUwDarkPool } from "@/lib/providers/unusual-whales";
-import { isHeatmapOverlayAllowed } from "@/lib/heatmap-allowlist";
 import {
   darkPoolLevelsFromSnapshot,
   type VectorDarkPoolLevel,
@@ -50,7 +49,6 @@ export async function getCachedVectorDarkPool(ticker: string): Promise<VectorDar
 /** Levels plus the fetch timestamp, so payloads can disclose staleness. */
 export async function getCachedVectorDarkPoolWithAge(ticker: string): Promise<VectorDarkPoolRead> {
   const t = normalizeVectorTicker(ticker);
-  if (!isHeatmapOverlayAllowed(t)) return { levels: [], fetchedAt: 0 };
   const hit = await sharedCacheGet<unknown>(redisKey(t));
   return normalizeEntry(hit) ?? { levels: [], fetchedAt: 0 };
 }
@@ -74,8 +72,6 @@ export type WarmVectorDarkPoolResult = {
 /** Cron writer — fetch UW dark pool once per ticker and persist to Redis. */
 export async function warmVectorDarkPool(ticker: string): Promise<WarmVectorDarkPoolResult> {
   const t = normalizeVectorTicker(ticker);
-  if (!isHeatmapOverlayAllowed(t)) return { levels: 0, fetchFailed: false };
-
   const scale = isVectorIndexTicker(t) && t !== "SPY" ? "spx-from-spy" : "native";
   const primary = t === "SPX" ? "SPX" : t;
   const fallback = t === "SPX" ? "SPY" : null;
