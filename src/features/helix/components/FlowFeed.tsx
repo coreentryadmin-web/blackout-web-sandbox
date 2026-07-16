@@ -650,8 +650,12 @@ export function FlowFeed() {
           </button>
         </div>
       )}
-      <NetPremiumLeaderboard alerts={alerts} loading={loading} />
-      <StrikeStackDetector alerts={alerts} onSelectTicker={setSelectedTicker} />
+      <div className="helix-analytics-wide">
+        <NetPremiumLeaderboard alerts={alerts} loading={loading} />
+      </div>
+      <div className="helix-analytics-wide">
+        <StrikeStackDetector alerts={alerts} onSelectTicker={setSelectedTicker} />
+      </div>
       <DarkPoolPanel />
       {showMorePanels && (
         <>
@@ -663,7 +667,9 @@ export function FlowFeed() {
           />
           <SplitFlowRadar entries={splitFlowEntries} onTickerClick={setSelectedTicker} />
           <SectorFlowPanel entries={sectorFlowEntries} />
-          <FlowMomentumChart alerts={alerts} />
+          <div className="helix-analytics-wide">
+            <FlowMomentumChart alerts={alerts} />
+          </div>
         </>
       )}
     </>
