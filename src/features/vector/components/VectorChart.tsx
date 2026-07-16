@@ -832,7 +832,8 @@ function applyWallBeadMarkers(
   side: "callWalls" | "putWalls",
   baseColor: string,
   lens: VectorWallLens,
-  intervalMinutes: VectorTimeframeMinutes
+  intervalMinutes: VectorTimeframeMinutes,
+  lastBarTime: number = 0
 ): number[] {
   if (!beadsPlugin) return [];
   const bucketed = bucketWallHistoryForInterval(history, intervalMinutes);
@@ -846,7 +847,38 @@ function applyWallBeadMarkers(
   const active = pickActiveStrikes(trailMap, wallCountForTimeframe(intervalMinutes));
   const activeSet = new Set(active);
   const rendered = lifecycle.filter((t) => activeSet.has(t.strike));
-  beadsPlugin.setMarkers(buildWallBeadMarkers(rendered, baseColor, intervalMinutes * 60));
+  const markers = buildWallBeadMarkers(rendered, baseColor, intervalMinutes * 60);
+  // ZOOM ANCHOR: lightweight-charts only renders markers at timestamps within the visible time
+  // range. If a wall's beads are concentrated in the earlier part of the session (e.g. a wall
+  // formed at 17:30 and faded by 18:30), zooming in on recent candles clips ALL its beads and
+  // the entire row vanishes — even though the price level is still visible. Fix: pin an anchor
+  // bead at the latest bar time for every rendered trail so at least one marker is always near
+  // the chart's right edge. Active walls get a normal-strength anchor; inactive (faded) walls
+  // get a faint ghost so the user can still see where the wall was.
+  if (lastBarTime > 0) {
+    const anchorTime = lastBarTime as Time;
+    let maxPct = 0;
+    for (const trail of rendered) {
+      for (const p of trail.points) if (p.pct > maxPct) maxPct = p.pct;
+    }
+    for (const trail of rendered) {
+      const lastPoint = trail.points[trail.points.length - 1];
+      if (!lastPoint) continue;
+      // Skip if the trail already has a point at or very near the latest bar (within one candle)
+      if (lastPoint.time >= lastBarTime - intervalMinutes * 60) continue;
+      const anchorAlpha = trail.active ? 0.5 : 0.15;
+      const anchorSize = markerSizeForPctRel(lastPoint.pct, maxPct) * (trail.active ? 0.8 : 0.5);
+      markers.push({
+        time: anchorTime,
+        position: "atPriceMiddle",
+        price: trail.strike,
+        shape: "circle",
+        color: withAlpha(baseColor, anchorAlpha),
+        size: anchorSize,
+      });
+    }
+  }
+  beadsPlugin.setMarkers(markers);
   // Return the strikes actually drawn so the caller can widen the price axis to cover them —
   // otherwise a drawn bead outside the current-ladder range clips out on zoom (see beadStrikesRef).
   return active;
@@ -1209,8 +1241,8 @@ export function VectorChart({
             liveTrailAnchorSec(wallHistoryRef.current, minuteBarsRef.current.map((b) => b.time))
           )
         : wallHistoryRef.current);
-    const callStrikes = applyWallBeadMarkers(callBeadsRef.current, history, "callWalls", v.callColor, activeLens, timeframeRef.current);
-    const putStrikes = applyWallBeadMarkers(putBeadsRef.current, history, "putWalls", v.putColor, activeLens, timeframeRef.current);
+    const callStrikes = applyWallBeadMarkers(callBeadsRef.current, history, "callWalls", v.callColor, activeLens, timeframeRef.current, lastBarTime);
+    const putStrikes = applyWallBeadMarkers(putBeadsRef.current, history, "putWalls", v.putColor, activeLens, timeframeRef.current, lastBarTime);
     // Record what was actually drawn so the autoscale provider widens to reveal these exact beads
     // at every zoom level, then nudge a rescale (off-hours there is no tick to trigger it).
     beadStrikesRef.current = { call: callStrikes, put: putStrikes };
@@ -1604,8 +1636,8 @@ export function VectorChart({
 
       const visibleHistory = sliceHistoryToTime(sourceHistory, cursorTime);
       const v = lensVisuals(activeLens);
-      const callStrikes = applyWallBeadMarkers(callBeadsRef.current, visibleHistory, "callWalls", v.callColor, activeLens, timeframeRef.current);
-      const putStrikes = applyWallBeadMarkers(putBeadsRef.current, visibleHistory, "putWalls", v.putColor, activeLens, timeframeRef.current);
+      const callStrikes = applyWallBeadMarkers(callBeadsRef.current, visibleHistory, "callWalls", v.callColor, activeLens, timeframeRef.current, cursorTime);
+      const putStrikes = applyWallBeadMarkers(putBeadsRef.current, visibleHistory, "putWalls", v.putColor, activeLens, timeframeRef.current, cursorTime);
       // Same zoom-stability guarantee in replay: widen the axis for the beads this frame drew.
       beadStrikesRef.current = { call: callStrikes, put: putStrikes };
       pinCandlesOnTop(series);
