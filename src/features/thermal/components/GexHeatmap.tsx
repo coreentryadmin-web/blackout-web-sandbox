@@ -1538,23 +1538,35 @@ function TickerSwitcher({
     () => (q ? PRESET_TICKERS.filter((t) => t.startsWith(q)) : PRESET_TICKERS),
     [q]
   );
-  // Combined option list (presets first, then remote matches not already shown).
-  // This flat list drives the keyboard cursor + Enter selection.
+  // Combined option list: presets first (filtered by query), then remote results
+  // sorted by RELEVANCE (exact > prefix > substring > fuzzy), so the best match
+  // always lands at the top — typing "ASTS" puts ASTS first, not buried under
+  // alphabetically-earlier Polygon hits like ASTL/ASTR.
   const options = useMemo(() => {
     const seen = new Set(presetMatches);
     const opts: { ticker: string; name?: string; preset: boolean }[] = presetMatches.map((t) => ({
       ticker: t,
       preset: true,
     }));
+    const remote: typeof opts = [];
     for (const r of searchResults) {
       const sym = r.ticker.toUpperCase();
       if (!seen.has(sym)) {
         seen.add(sym);
-        opts.push({ ticker: sym, name: r.name, preset: false });
+        remote.push({ ticker: sym, name: r.name, preset: false });
       }
     }
+    if (q && remote.length > 1) {
+      remote.sort((a, b) => {
+        const at = a.ticker, bt = b.ticker;
+        const aExact = at === q ? 0 : at.startsWith(q) ? 1 : at.includes(q) ? 2 : 3;
+        const bExact = bt === q ? 0 : bt.startsWith(q) ? 1 : bt.includes(q) ? 2 : 3;
+        return aExact - bExact || at.localeCompare(bt);
+      });
+    }
+    opts.push(...remote);
     return opts;
-  }, [presetMatches, searchResults]);
+  }, [presetMatches, searchResults, q]);
 
   // Close the dropdown on outside click (trigger + portaled menu). Native sheet uses backdrop.
   useEffect(() => {
