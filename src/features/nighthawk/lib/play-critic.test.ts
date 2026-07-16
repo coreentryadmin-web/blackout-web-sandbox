@@ -1,21 +1,9 @@
 import assert from "node:assert/strict";
-import { before, describe, test, mock } from "node:test";
+import { describe, test } from "node:test";
 import type { PlaybookPlay } from "./types";
 import type { MarketWideContext } from "./market-wide";
-
-// Regression: critiquePlays() cut/downgraded plays based solely on Claude's self-reported
-// "reason" with no check that the cited contradiction is real against the play's own data —
-// a hallucinated reason could silently zero a real play. mock.module the Anthropic provider so
-// we control exactly what the "critic" returns and assert the grounding guard's behavior.
-
-let mockRaw: string | null = null;
-
-mock.module("../../../lib/providers/anthropic", {
-  namedExports: {
-    anthropicConfigured: () => true,
-    anthropicText: async () => mockRaw,
-  },
-});
+import type { ScoredCandidate } from "./scorer";
+import { critiquePlays } from "./play-critic";
 
 function fakePlay(overrides: Partial<PlaybookPlay> = {}): PlaybookPlay {
   return {
@@ -34,7 +22,22 @@ function fakePlay(overrides: Partial<PlaybookPlay> = {}): PlaybookPlay {
   };
 }
 
-function fakeCtx(): MarketWideContext {
+function fakeScored(overrides: Partial<ScoredCandidate> = {}): ScoredCandidate {
+  return {
+    ticker: "NBIS",
+    score: 55,
+    direction: "long",
+    flow_score: 15,
+    tech_score: 12,
+    pos_score: 8,
+    news_score: 4,
+    smart_money_score: 3,
+    conviction: "A",
+    ...overrides,
+  };
+}
+
+function fakeCtx(overrides: Partial<MarketWideContext> = {}): MarketWideContext {
   return {
     today: "2026-07-04",
     tomorrow: "2026-07-05",
@@ -56,54 +59,148 @@ function fakeCtx(): MarketWideContext {
     predictions_consensus: [],
     mag7_greek_flow: null,
     macro_indicators: [],
+    ...overrides,
   } as unknown as MarketWideContext;
 }
 
-describe("play-critic: grounding guard on cut/downgrade reasons", () => {
-  let critiquePlays: typeof import("./play-critic").critiquePlays;
-
-  before(async () => {
-    ({ critiquePlays } = await import("./play-critic"));
-  });
-
-  test("a cut backed by a grounded reason (cites a real level) is applied", async () => {
-    mockRaw = JSON.stringify([
-      { rank: 1, verdict: "cut", reason: "Entry 300 contradicts put-heavy flow at 285.", corrected_conviction: "C" },
-    ]);
+describe("play-critic: deterministic rule-based critic", () => {
+  test("passes a well-scored play with confirming signals", async () => {
     const play = fakePlay();
-    const result = await critiquePlays({ plays: [play], dossiers: {}, ranked: [], ctx: fakeCtx() });
-    assert.equal(result.plays.length, 0);
-    assert.ok(result.notes.some((n) => n.includes("cut")));
-  });
-
-  test("a cut backed by an ungrounded reason (hallucinated level) is rejected — play kept", async () => {
-    mockRaw = JSON.stringify([
-      { rank: 1, verdict: "cut", reason: "Contradicts resistance at 812, a level not in the data.", corrected_conviction: "C" },
-    ]);
-    const play = fakePlay();
-    const result = await critiquePlays({ plays: [play], dossiers: {}, ranked: [], ctx: fakeCtx() });
+    const scored = fakeScored();
+    const result = await critiquePlays({
+      plays: [play],
+      dossiers: {},
+      ranked: [scored],
+      ctx: fakeCtx(),
+    });
     assert.equal(result.plays.length, 1);
-    assert.equal(result.plays[0].rank, 1);
-    assert.equal(result.plays[0].conviction, "A"); // unchanged
-    assert.ok(result.notes.some((n) => n.includes("REJECTED")));
+    assert.equal(result.plays[0].ticker, "NBIS");
+    assert.equal(result.plays[0].conviction, "A");
   });
 
-  test("a downgrade backed by an ungrounded reason is rejected — conviction unchanged", async () => {
-    mockRaw = JSON.stringify([
-      { rank: 1, verdict: "downgrade", reason: "IV rank spiked to 999, well above normal.", corrected_conviction: "C" },
-    ]);
+  test("CUT: score below floor (25)", async () => {
     const play = fakePlay();
-    const result = await critiquePlays({ plays: [play], dossiers: {}, ranked: [], ctx: fakeCtx() });
+    const scored = fakeScored({ score: 20, conviction: "C" });
+    const result = await critiquePlays({
+      plays: [play],
+      dossiers: {},
+      ranked: [scored],
+      ctx: fakeCtx(),
+    });
+    assert.equal(result.plays.length, 0);
+    assert.ok(result.notes.some((n) => n.includes("CUT") && n.includes("score 20")));
+  });
+
+  test("CUT: direction inconsistency (play LONG, scored short)", async () => {
+    const play = fakePlay({ direction: "LONG" });
+    const scored = fakeScored({ direction: "short" });
+    const result = await critiquePlays({
+      plays: [play],
+      dossiers: {},
+      ranked: [scored],
+      ctx: fakeCtx(),
+    });
+    assert.equal(result.plays.length, 0);
+    assert.ok(result.notes.some((n) => n.includes("CUT") && n.includes("direction")));
+  });
+
+  test("CUT: trading halt", async () => {
+    const play = fakePlay();
+    const scored = fakeScored({ trading_halt: true });
+    const result = await critiquePlays({
+      plays: [play],
+      dossiers: {},
+      ranked: [scored],
+      ctx: fakeCtx(),
+    });
+    assert.equal(result.plays.length, 0);
+    assert.ok(result.notes.some((n) => n.includes("CUT") && n.includes("halt")));
+  });
+
+  test("DOWNGRADE: conviction inflation (play A+, score only warrants C)", async () => {
+    const play = fakePlay({ conviction: "A+" });
+    const scored = fakeScored({ score: 35, conviction: "C" });
+    const result = await critiquePlays({
+      plays: [play],
+      dossiers: {},
+      ranked: [scored],
+      ctx: fakeCtx(),
+    });
+    assert.equal(result.plays.length, 1);
+    assert.equal(result.plays[0].conviction, "C");
+    assert.ok(result.notes.some((n) => n.includes("DOWNGRADE") && n.includes("A+") && n.includes("C")));
+  });
+
+  test("DOWNGRADE: thin signal confirmation (<2 positive dimensions)", async () => {
+    const play = fakePlay({ conviction: "A" });
+    const scored = fakeScored({
+      score: 55,
+      conviction: "A",
+      flow_score: 20,
+      tech_score: 0,
+      pos_score: -2,
+      news_score: 0,
+      smart_money_score: 0,
+    });
+    const result = await critiquePlays({
+      plays: [play],
+      dossiers: {},
+      ranked: [scored],
+      ctx: fakeCtx(),
+    });
+    assert.equal(result.plays.length, 1);
+    assert.equal(result.plays[0].conviction, "B");
+    assert.ok(result.notes.some((n) => n.includes("DOWNGRADE") && n.includes("confirming signal")));
+  });
+
+  test("NOTE + DOWNGRADE: regime contradiction (bearish tide + LONG play)", async () => {
+    const play = fakePlay({ direction: "LONG", conviction: "A" });
+    const scored = fakeScored({ direction: "long" });
+    const result = await critiquePlays({
+      plays: [play],
+      dossiers: {},
+      ranked: [scored],
+      ctx: fakeCtx({ tide: "bearish" as any }),
+    });
+    assert.equal(result.plays.length, 1);
+    assert.equal(result.plays[0].conviction, "B");
+    assert.ok(result.notes.some((n) => n.includes("NOTE") && n.includes("tide")));
+    assert.ok(result.notes.some((n) => n.includes("DOWNGRADE") && n.includes("regime")));
+  });
+
+  test("no scored data → play passes through unchanged", async () => {
+    const play = fakePlay({ ticker: "UNKNOWN" });
+    const result = await critiquePlays({
+      plays: [play],
+      dossiers: {},
+      ranked: [],
+      ctx: fakeCtx(),
+    });
     assert.equal(result.plays.length, 1);
     assert.equal(result.plays[0].conviction, "A");
   });
 
-  test("a keep verdict is never gated by the grounding guard", async () => {
-    mockRaw = JSON.stringify([
-      { rank: 1, verdict: "keep", reason: "Aligns with resistance at 999, an ungrounded aside.", corrected_conviction: "A" },
-    ]);
-    const play = fakePlay();
-    const result = await critiquePlays({ plays: [play], dossiers: {}, ranked: [], ctx: fakeCtx() });
-    assert.equal(result.plays.length, 1);
+  test("re-ranks surviving plays 1..N after cuts", async () => {
+    const plays = [
+      fakePlay({ rank: 1, ticker: "AAA" }),
+      fakePlay({ rank: 2, ticker: "BBB" }),
+      fakePlay({ rank: 3, ticker: "CCC" }),
+    ];
+    const ranked = [
+      fakeScored({ ticker: "AAA", score: 60 }),
+      fakeScored({ ticker: "BBB", score: 10, conviction: "C" }),
+      fakeScored({ ticker: "CCC", score: 50 }),
+    ];
+    const result = await critiquePlays({
+      plays,
+      dossiers: {},
+      ranked,
+      ctx: fakeCtx(),
+    });
+    assert.equal(result.plays.length, 2);
+    assert.equal(result.plays[0].ticker, "AAA");
+    assert.equal(result.plays[0].rank, 1);
+    assert.equal(result.plays[1].ticker, "CCC");
+    assert.equal(result.plays[1].rank, 2);
   });
 });

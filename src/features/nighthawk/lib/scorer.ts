@@ -1,6 +1,8 @@
 import type { FlowStrikeStack } from "@/lib/largo/flow-strike-stacks";
 import type { BenzingaCatalyst, BenzingaPriceTarget, FundamentalSignals, PolygonFinancialRatios } from "@/lib/providers/polygon";
-import type { PredictionConsensusSignal } from "@/lib/providers/unusual-whales";import type { TideBias } from "./format";
+import type { PredictionConsensusSignal } from "@/lib/providers/unusual-whales";
+import type { TickerGreekFlowSummary } from "./dossier";
+import type { TideBias } from "./format";
 import { tideBias } from "./format";
 import type { FlowStreak } from "./flow-streak";
 import type { MarketWideContext } from "./market-wide";
@@ -37,6 +39,8 @@ export type ScoredCandidate = {
   short_interest_score?: number;
   /** Earnings proximity penalty applied to catalyst_score. Set when earnings are tomorrow with matching expiry. */
   earnings_risk?: boolean;
+  /** Count of scoring dimensions with material positive contribution (≥ threshold). */
+  confirming_signals?: number;
   conviction: string;
   regime_multiplier?: number;
   fundamental_block?: boolean;
@@ -477,6 +481,7 @@ export function scoreOptionsPositioning(
     oi_change?: Array<{ oi_change?: number; option_type?: string }>;
     positioning?: PositioningSummary;
     strike_stacks?: FlowStrikeStack[];
+    greek_flow?: TickerGreekFlowSummary | null;
   },
   direction: "long" | "short"
 ): number {
@@ -524,7 +529,19 @@ export function scoreOptionsPositioning(
   });
   if (alignedOi.length >= 2) score += 2;
 
-  return Math.min(18, score);
+  // Dealer greek flow alignment: if per-ticker net delta confirms direction, bonus +3.
+  // Contradicting flow penalises −1 (mild — dealers can be wrong short-term).
+  const gf = dossier.greek_flow;
+  if (gf && gf.row_count > 0) {
+    const deltaAligns =
+      direction === "long" ? gf.bias === "bullish" : gf.bias === "bearish";
+    const deltaContradicts =
+      direction === "long" ? gf.bias === "bearish" : gf.bias === "bullish";
+    if (deltaAligns) score += 3;
+    else if (deltaContradicts) score -= 1;
+  }
+
+  return Math.min(18, Math.max(0, score));
 }
 
 function predictionAlignsWithDirection(
@@ -767,6 +784,12 @@ export function scoreCandidate(
     tomorrow_ymd?: string | null;
     /** Most recent analyst price target action from Benzinga. Used to nudge catalyst_score. */
     benzinga_price_target?: BenzingaPriceTarget | null;
+    /** Per-ticker dealer greek flow summary (net delta/gamma bias). */
+    greek_flow?: TickerGreekFlowSummary | null;
+    /** IV rank percentile (0-100). Elevated IV = expensive options, risk flag. */
+    iv_rank?: number | null;
+    /** Upcoming FDA calendar events for this ticker (UW). */
+    fda_events?: Record<string, unknown>[];
   },
   flowStreak?: FlowStreak,
   regime?: NightHawkRegimeContext | null,
@@ -849,7 +872,24 @@ export function scoreCandidate(
     }
   }
 
-  const totalCatalystScore = Math.max(-CATALYST_CAP, Math.min(CATALYST_CAP, catalyst.score + earningsPenalty + ptNudge));
+  // IV rank flag: elevated IV warns members options are expensive (wider spreads, higher decay).
+  const ivRank = dossierExtras.iv_rank;
+  let ivPenalty = 0;
+  if (ivRank != null && Number.isFinite(ivRank) && ivRank > 70) {
+    ivPenalty = -1;
+    catalyst.flags.push(`IV rank ${Math.round(ivRank)} — options expensive, tighter stops`);
+  }
+
+  // FDA calendar reinforcement: if UW FDA calendar has upcoming dates, strengthen the binary
+  // penalty (scoreCatalystAwareness may have already flagged from Benzinga catalysts).
+  let fdaPenalty = 0;
+  const fdaRows = dossierExtras.fda_events ?? [];
+  if (fdaRows.length > 0 && !catalyst.flags.some((f) => f.includes("FDA"))) {
+    fdaPenalty = -2;
+    catalyst.flags.push("FDA calendar event upcoming — binary risk");
+  }
+
+  const totalCatalystScore = Math.max(-CATALYST_CAP, Math.min(CATALYST_CAP, catalyst.score + earningsPenalty + ptNudge + ivPenalty + fdaPenalty));
 
   // Flow-anomaly penalty: names flagged critical in the last hour get demoted unless flow is exceptional.
   let anomalyPenalty = 0;
@@ -889,6 +929,16 @@ export function scoreCandidate(
     ? [...catalyst.flags, "earnings tomorrow — binary risk, expiry into event"]
     : catalyst.flags;
 
+  const confirmingSignals = [
+    flow.score >= 8,
+    techScore >= 6,
+    posScore >= 4,
+    newsScore >= 2,
+    smartMoneyScore >= 2,
+    fundamentalScore >= 2,
+    shortInterestScore >= 2,
+  ].filter(Boolean).length;
+
   return {
     ticker,
     score: total,
@@ -903,6 +953,7 @@ export function scoreCandidate(
     catalyst_score: totalCatalystScore,
     catalyst_flags: catalystFlags,
     earnings_risk: earningsRisk,
+    confirming_signals: confirmingSignals,
     conviction: convictionFromScore(total),
     regime_multiplier: regimeMultiplier,
     fundamental_block: !fundCheck.ok,

@@ -35,9 +35,7 @@ export function HelixPageShell() {
               <ProductMark product="helix" size={44} animated={false} />
               <h1 className="helix-pro-title">HELIX</h1>
             </div>
-            <p className="helix-pro-subtitle">
-              Live options tape, contract drilldown, and flow analytics on one desk.
-            </p>
+            {/* subtitle removed — the kicker + title already establish context */}
           </div>
           <HelixTideBar className="helix-pro-tide lg:mb-1" />
         </div>

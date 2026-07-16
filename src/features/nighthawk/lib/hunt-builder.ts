@@ -175,9 +175,10 @@ export function rescoreDossier(
       earnings_date: earningsDate,
       today_ymd: ctx.today,
       tomorrow_ymd: ctx.tomorrow,
-      // Dead-input fix (audit): the PT nudge was implemented in scoreCandidate but no
-      // caller passed the field.
       benzinga_price_target: dossier.benzinga_price_target,
+      greek_flow: dossier.greek_flow,
+      iv_rank: dossier.iv_rank,
+      fda_events: dossier.fda_events,
     },
     dossier.flow_streak,
     regime,

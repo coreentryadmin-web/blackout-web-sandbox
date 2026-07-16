@@ -15,7 +15,6 @@ import {
 import { marketPlatform } from "@/lib/platform";
 import { uwConfigured } from "@/lib/providers/config";
 import { polygonConfigured } from "@/lib/providers/config";
-import { anthropicConfigured } from "@/lib/providers/anthropic";
 import {
   recordNighthawkRejectedAuditTrail,
   recordNighthawkStageRejectedAuditTrail,
@@ -709,14 +708,9 @@ export async function buildEveningEdition(opts?: {
       if (!rawPlays.length) {
         // Name the funnel stage that zeroed the plays so the empty state is self-diagnosing in
         // edition meta (no Railway-log dig needed). parsed→stock→within-cap→strike-valid.
-        const funnelMsg = synthFunnel
-          ? synthFunnel.parsed === 0
-            ? `Claude returned no parseable JSON plays (raw ${synthRaw?.length ?? 0} chars).`
-            : `All plays filtered out — funnel: ${synthFunnel.parsed} parsed → ${synthFunnel.stock} stock → ${synthFunnel.premium_ok} within-cap → ${synthFunnel.strike_ok} strike-valid → 0 grounded (${synthFunnel.dropped_ungrounded} dropped ungrounded, ${synthFunnel.flagged} flagged).`
-          : "Claude returned no parseable plays.";
-        const reason = anthropicConfigured()
-          ? funnelMsg
-          : "Claude not configured and mechanical fallback empty.";
+        const reason = synthFunnel
+          ? `All plays filtered out — funnel: ${synthFunnel.parsed} candidates → ${synthFunnel.stock} contract-ok → ${synthFunnel.premium_ok} within-cap → ${synthFunnel.strike_ok} strike-valid → 0 grounded (${synthFunnel.dropped_ungrounded} dropped ungrounded, ${synthFunnel.flagged} flagged).`
+          : "Deterministic synthesis produced no plays.";
         // Synthesis produced no plays — publish a recap-only edition instead of failing dark, so the
         // UI always shows tonight's market read. Never fabricate plays from nothing.
         console.warn(`[nighthawk/edition] stage_synthesis zeroed — recap-only fallback: ${reason}`);

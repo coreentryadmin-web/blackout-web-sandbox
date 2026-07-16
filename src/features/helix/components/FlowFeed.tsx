@@ -37,6 +37,9 @@ import { SplitFlowRadar, type SplitFlowEntry } from "@/features/helix/components
 import { VelocityRadar, type VelocityEntry } from "@/features/helix/components/VelocityRadar";
 import { SectorFlowPanel, type SectorFlowEntry } from "@/features/helix/components/SectorFlowPanel";
 import { NightHawkFlowPanel, type NightHawkPlayWithFlow } from "@/features/helix/components/NightHawkFlowPanel";
+import { ExpiryConcentration } from "@/features/helix/components/ExpiryConcentration";
+import { RouteBreakdown } from "@/features/helix/components/RouteBreakdown";
+import { HighScorePrints } from "@/features/helix/components/HighScorePrints";
 import { WatchlistBar } from "@/features/helix/components/WatchlistBar";
 import { useWatchlist } from "@/hooks/useWatchlist";
 import { Skeleton } from "@/components/ui";
@@ -130,7 +133,7 @@ export function FlowFeed() {
   const [whalesOnly, setWhalesOnly]         = useState(false);
   const [dteFilter, setDteFilter]           = useState<HelixDteFilter>("all");
   const [indicesOnly, setIndicesOnly]       = useState(false);
-  const [density, setDensity]               = useState<HelixTableDensity>("standard");
+  const density: HelixTableDensity = "full";
   const [analyticsOpen, setAnalyticsOpen] = useState(false);
   const [tickerFilter, setTickerFilter]   = useState("");
   // UI
@@ -650,7 +653,9 @@ export function FlowFeed() {
           </button>
         </div>
       )}
+      <HighScorePrints alerts={alerts} loading={loading} onSelect={setSelectedContract} />
       <NetPremiumLeaderboard alerts={alerts} loading={loading} />
+      <ExpiryConcentration alerts={alerts} loading={loading} />
       <StrikeStackDetector alerts={alerts} onSelectTicker={setSelectedTicker} />
       <DarkPoolPanel />
       {showMorePanels && (
@@ -662,6 +667,7 @@ export function FlowFeed() {
             onTickerClick={setSelectedTicker}
           />
           <SplitFlowRadar entries={splitFlowEntries} onTickerClick={setSelectedTicker} />
+          <RouteBreakdown alerts={alerts} loading={loading} />
           <SectorFlowPanel entries={sectorFlowEntries} />
           <FlowMomentumChart alerts={alerts} />
         </>
@@ -855,8 +861,6 @@ export function FlowFeed() {
           watchlistOnly={watchlistOnly}
           onWatchlistOnlyChange={setWatchlistOnly}
           watchlistCount={watchlist.watchlist.length}
-          density={density}
-          onDensityChange={setDensity}
           analyticsOpen={analyticsOpen}
           onAnalyticsOpenChange={setAnalyticsOpen}
           replayMode={replayMode}

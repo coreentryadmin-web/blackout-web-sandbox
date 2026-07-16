@@ -59,9 +59,9 @@ export const NIGHTHAWK_DATA_SOURCES = {
       { provider: "polygon", endpoint: "Benzinga financials + catalysts + PT", use: "Fundamentals + events" },
       { provider: "postgres", endpoint: "flow_alerts", use: "Multi-day flow streak" },
       { provider: "uw", endpoint: "/api/stock/{t}/fda-calendar", use: "FDA catalysts (conditional)" },
+      { provider: "uw", endpoint: "/api/stock/{t}/greek-flow", use: "Per-ticker dealer greek flow (scoring + thesis)" },
     ],
     available: [
-      { provider: "uw", endpoint: "/api/stock/{t}/greek-flow", use: "Per-ticker dealer greek flow" },
       { provider: "heatmap", endpoint: "flow-per-strike overlay", use: "Strike-level flow vs GEX" },
     ],
   },

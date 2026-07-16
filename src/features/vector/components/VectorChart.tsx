@@ -1096,6 +1096,11 @@ export function VectorChart({
   const lastMagnetRef = useRef<string>("");
   const lastWallIntegrityRef = useRef<string>("");
   const lensRef = useRef<VectorWallLens>("gex");
+  // Timestamp of the last wheel event on the chart — during the cooldown window the
+  // autoscaleInfoProvider skips wall/bead extension and reassertPriceAutoScale is
+  // suppressed, so the member's zoom holds stable instead of snapping back to the
+  // wide wall-inclusive range on the next SSE tick (~1/sec).
+  const wheelZoomCooldownRef = useRef(0);
   const spotRef = useRef<number | null>(
     initialBars.length ? initialBars[initialBars.length - 1]!.close : null
   );
@@ -1247,8 +1252,10 @@ export function VectorChart({
     // at every zoom level, then nudge a rescale (off-hours there is no tick to trigger it).
     beadStrikesRef.current = { call: callStrikes, put: putStrikes };
     // Respect a manual vertical zoom — only nudge autoscale when the member hasn't taken the
-    // price axis over (see reassertPriceAutoScale; this was the residual "zooms out" reset).
-    reassertPriceAutoScale(series.priceScale());
+    // price axis over AND hasn't scrolled within the cooldown window.
+    if (Date.now() - wheelZoomCooldownRef.current >= 8_000) {
+      reassertPriceAutoScale(series.priceScale());
+    }
     pinCandlesOnTop(series);
   }, []);
 
@@ -1301,8 +1308,10 @@ export function VectorChart({
         put: (walls?.putWalls ?? []).slice(0, maxGuides).map((w) => w.strike),
       };
       // Same guard as refreshTrails: a live tick re-running this must not override the member's
-      // manual price-axis zoom (the split-second "zooms out" bug).
-      reassertPriceAutoScale(series.priceScale());
+      // manual price-axis zoom or a recent scroll zoom (the split-second "zooms out" bug).
+      if (Date.now() - wheelZoomCooldownRef.current >= 8_000) {
+        reassertPriceAutoScale(series.priceScale());
+      }
     },
     []
   );
@@ -2319,6 +2328,10 @@ export function VectorChart({
       autoscaleInfoProvider: (original: () => AutoscaleInfo | null) => {
         const res = original();
         if (!res || !res.priceRange) return res;
+        // During a wheel-zoom cooldown, return the raw candle range WITHOUT extending
+        // for walls/beads — this lets the member's scroll-zoom hold tight to the visible
+        // candles instead of snapping back to the wide wall-inclusive band on every tick.
+        if (Date.now() - wheelZoomCooldownRef.current < 8_000) return res;
         // Two composed widenings (each only ever WIDENS, never narrows the candle band):
         // 1) the current live ladder (rangeWallsRef) within the tight ±WALL_VIEW_MAX_PCT window;
         // 2) the strikes ACTUALLY drawn as beads (beadStrikesRef) within the wider BEAD_VIEW_MAX_PCT.
@@ -2393,6 +2406,22 @@ export function VectorChart({
     refreshTrails("gex");
     refreshOverlays("gex", initialWalls, initialVexWalls, initialGammaFlip, initialVexFlip, initialDarkPoolLevels);
     pinCandlesOnTop(series);
+
+    // SCROLL-ZOOM FIX: stamp a cooldown on every wheel event so the autoscaleInfoProvider
+    // and reassertPriceAutoScale calls respect the member's zoom for 8s instead of
+    // snapping back to the wide wall-inclusive range on the next SSE tick. When the wheel
+    // lands on the price-axis strip (rightmost ~65px), also disable autoScale entirely so
+    // the member can hold a manual vertical zoom (double-click restores it).
+    const onWheel = (e: WheelEvent) => {
+      wheelZoomCooldownRef.current = Date.now();
+      const rect = container.getBoundingClientRect();
+      const xInChart = e.clientX - rect.left;
+      const priceAxisZone = rect.width - 65;
+      if (xInChart >= priceAxisZone) {
+        series.priceScale().applyOptions({ autoScale: false });
+      }
+    };
+    container.addEventListener("wheel", onWheel, { passive: true });
 
     chart.subscribeCrosshairMove((param) => {
       if (!param.time || !param.point) {
@@ -2493,6 +2522,7 @@ export function VectorChart({
     if (liveSession) connectLive();
 
     return () => {
+      container.removeEventListener("wheel", onWheel);
       stopReplayTimer();
       if (priceScaleTimer != null) clearInterval(priceScaleTimer);
       priceScaleThrottle?.cancel();

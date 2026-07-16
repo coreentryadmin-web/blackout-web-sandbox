@@ -126,7 +126,7 @@ test("healthy play PUBLISHes and the result carries every gate's PASS margin", (
     ]
   );
   const band = res.checks.find((c) => c.code === "band_detached")!;
-  // LONG fill edge 107.5 vs spot 108 → −0.463% pullback entry, well inside 2.5%.
+  // LONG fill edge 107.5 vs spot 108 → −0.463% pullback entry, well inside 3.5%.
   assert.equal(band.value, -0.463);
   assert.equal(band.threshold, GATE_BAND_MAX_DISTANCE_PCT);
   const target = res.checks.find((c) => c.code === "target_unreachable")!;
@@ -137,81 +137,83 @@ test("healthy play PUBLISHes and the result carries every gate's PASS margin", (
 
 // ── G-N1 band-vs-spot boundary, both directions ────────────────────────────────────────
 
-test("G-N1 boundary: LONG band edge exactly 2.5% below spot passes; a hair beyond blocks", () => {
-  // spot 100, fill edge (band top) 97.50 → −2.5% exactly → allowed (≤, not <).
+test("G-N1 boundary: LONG band edge exactly 3.5% below spot passes; a hair beyond blocks", () => {
+  // spot 100, fill edge (band top) 96.50 → −3.5% exactly → allowed (≤, not <).
   const at = evaluate(
-    play({ entry_range: "$97.00-$97.50", target: "$99.00", stop: "$95.00" }),
+    play({ entry_range: "$96.00-$96.50", target: "$99.00", stop: "$94.00" }),
     dossier({ price: 100, atr14: 4 })
   );
   assert.equal(at.verdict, "PUBLISH");
 
-  // fill edge 97.40 → −2.6% → band_detached.
+  // fill edge 96.40 → −3.6% → band_detached.
   const beyond = evaluate(
-    play({ entry_range: "$97.00-$97.40", target: "$99.00", stop: "$95.00" }),
+    play({ entry_range: "$96.00-$96.40", target: "$99.00", stop: "$94.00" }),
     dossier({ price: 100, atr14: 4 })
   );
   assert.equal(beyond.verdict, "BLOCK");
   assert.deepEqual(beyond.blocks.map((b) => b.code), ["band_detached"]);
-  assert.equal(beyond.blocks[0]!.value, -2.6);
+  assert.equal(beyond.blocks[0]!.value, -3.6);
   assert.equal(beyond.blocks[0]!.threshold, GATE_BAND_MAX_DISTANCE_PCT);
 });
 
-test("G-N1 is an ABSOLUTE distance: a LONG band 2.6% ABOVE spot is just as unfillable", () => {
+test("G-N1 is an ABSOLUTE distance: a LONG band 3.6% ABOVE spot is just as unfillable", () => {
   const res = evaluate(
-    play({ entry_range: "$102.40-$102.60", target: "$104.00", stop: "$100.50" }),
+    play({ entry_range: "$103.40-$103.60", target: "$106.00", stop: "$101.00" }),
     dossier({ price: 100, atr14: 4 })
   );
   assert.equal(res.verdict, "BLOCK");
   assert.deepEqual(res.blocks.map((b) => b.code), ["band_detached"]);
-  assert.equal(res.blocks[0]!.value, 2.6);
+  assert.equal(res.blocks[0]!.value, 3.6);
 });
 
-test("G-N1 SHORT mirror: fill edge is the band LOW; 2.5% above spot passes, 2.6% blocks", () => {
+test("G-N1 SHORT mirror: fill edge is the band LOW; 3.5% above spot passes, 3.6% blocks", () => {
   const at = evaluate(
-    play({ direction: "SHORT", entry_range: "$102.50-$103.00", target: "$100.00", stop: "$105.00" }),
+    play({ direction: "SHORT", entry_range: "$103.50-$104.00", target: "$100.00", stop: "$106.00" }),
     dossier({ price: 100, atr14: 4 })
   );
   assert.equal(at.verdict, "PUBLISH");
 
   const beyond = evaluate(
-    play({ direction: "SHORT", entry_range: "$102.60-$103.00", target: "$100.00", stop: "$105.00" }),
+    play({ direction: "SHORT", entry_range: "$103.60-$104.00", target: "$100.00", stop: "$106.00" }),
     dossier({ price: 100, atr14: 4 })
   );
   assert.equal(beyond.verdict, "BLOCK");
   assert.deepEqual(beyond.blocks.map((b) => b.code), ["band_detached"]);
-  assert.equal(beyond.blocks[0]!.value, 2.6);
+  assert.equal(beyond.blocks[0]!.value, 3.6);
 });
 
 // ── G-N2 achievable target boundary, both directions ───────────────────────────────────
 
 test("G-N2 boundary: target exactly K×ATR14 from the fill edge passes; beyond blocks", () => {
-  // fill edge 100, ATR14 4 → allowance 1.5 × 4 = 6.00. Target 106.00 → exactly 1.5×.
+  // fill edge 100, ATR14 4 → allowance 2.0 × 4 = 8.00. Target 108.00 → exactly 2.0×.
   const at = evaluate(
-    play({ entry_range: "$99.50-$100.00", target: "$106.00", stop: "$97.00" }),
+    play({ entry_range: "$99.50-$100.00", target: "$108.00", stop: "$97.00" }),
     dossier({ price: 100, atr14: 4 })
   );
   assert.equal(at.verdict, "PUBLISH");
 
-  // Target 106.10 → 1.525× → target_unreachable.
+  // Target 108.10 → 2.025× → target_unreachable.
   const beyond = evaluate(
-    play({ entry_range: "$99.50-$100.00", target: "$106.10", stop: "$97.00" }),
+    play({ entry_range: "$99.50-$100.00", target: "$108.10", stop: "$97.00" }),
     dossier({ price: 100, atr14: 4 })
   );
   assert.equal(beyond.verdict, "BLOCK");
   assert.deepEqual(beyond.blocks.map((b) => b.code), ["target_unreachable"]);
-  assert.equal(beyond.blocks[0]!.value, 1.525);
+  assert.equal(beyond.blocks[0]!.value, 2.025);
   assert.equal(beyond.blocks[0]!.threshold, GATE_TARGET_MAX_ATR_MULTIPLE);
 });
 
 test("G-N2 SHORT mirror: distance is absolute, so a downside target measures the same", () => {
+  // fill edge 100.00, ATR14 4 → allowance 2.0 × 4 = 8.00. Target 92.00 → exactly 2.0×.
   const at = evaluate(
-    play({ direction: "SHORT", entry_range: "$100.00-$100.50", target: "$94.00", stop: "$103.00" }),
+    play({ direction: "SHORT", entry_range: "$100.00-$100.50", target: "$92.00", stop: "$103.00" }),
     dossier({ price: 100, atr14: 4 })
   );
   assert.equal(at.verdict, "PUBLISH");
 
+  // Target 91.90 → 2.025× → target_unreachable.
   const beyond = evaluate(
-    play({ direction: "SHORT", entry_range: "$100.00-$100.50", target: "$93.90", stop: "$103.00" }),
+    play({ direction: "SHORT", entry_range: "$100.00-$100.50", target: "$91.90", stop: "$103.00" }),
     dossier({ price: 100, atr14: 4 })
   );
   assert.equal(beyond.verdict, "BLOCK");
@@ -278,14 +280,14 @@ test("DELL 2026-07-08 fixture (band $226.82–227.27, stock $417, target $469.47
   assert.deepEqual(res.blocks.map((b) => b.code), ["band_detached", "target_unreachable"]);
   // (227.27 − 417) / 417 = −45.4988% — the doc's −45.5% worst case, reproduced exactly.
   assert.equal(res.blocks[0]!.value, -45.4988);
-  // (469.47 − 227.27) / 12.5 = 19.376× ATR14 — an order of magnitude past K=1.5.
+  // (469.47 − 227.27) / 12.5 = 19.376× ATR14 — an order of magnitude past K=2.0.
   assert.equal(res.blocks[1]!.value, 19.376);
 });
 
-test("the 14/24 >3% detached-band class blocks; a normal ~1.5% pullback entry publishes", () => {
-  // Band top 3.4% below spot — inside the failing class (>3%), outside the 2.5% gate.
+test("the >3.5% detached-band class blocks; a normal ~1.5% pullback entry publishes", () => {
+  // Band top 3.6% below spot — outside the 3.5% gate.
   const detached = evaluate(
-    play({ entry_range: "$96.00-$96.60", target: "$99.00", stop: "$94.00" }),
+    play({ entry_range: "$96.00-$96.40", target: "$99.00", stop: "$94.00" }),
     dossier({ price: 100, atr14: 4 })
   );
   assert.equal(detached.verdict, "BLOCK");

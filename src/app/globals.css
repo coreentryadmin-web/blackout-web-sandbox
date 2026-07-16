@@ -16955,7 +16955,7 @@ body::before {
   /* Framed page header — a clear bottom rule + breathing room separates the
      title block from the toolbar/tape beneath it (was floating, unframed). */
   .helix-pro-header {
-    @apply flex flex-col gap-4 pb-4 border-b border-white/10 lg:flex-row lg:items-end lg:justify-between;
+    @apply flex flex-col gap-4 pb-4 border-b border-white/[0.06] lg:flex-row lg:items-end lg:justify-between;
   }
 
   .helix-pro-header-copy {
@@ -16963,16 +16963,15 @@ body::before {
   }
 
   .helix-pro-kicker {
-    @apply font-mono text-[11px] font-semibold uppercase tracking-[0.3em] text-cyan-300/90;
+    @apply font-mono text-[10px] font-bold uppercase tracking-[0.35em] text-cyan-400/70;
   }
 
   .helix-pro-title-row {
     @apply flex items-center gap-3.5 mt-1.5;
   }
 
-  /* Prominent institutional page title — big, bold, high-contrast. */
   .helix-pro-title {
-    @apply font-mono text-3xl font-extrabold uppercase tracking-[0.14em] text-white md:text-[2.5rem];
+    @apply font-mono text-3xl font-extrabold uppercase tracking-[0.16em] text-white md:text-[2.5rem];
     line-height: 1.05;
     text-shadow: 0 0 28px rgba(191, 95, 255, 0.22);
   }
@@ -16982,7 +16981,9 @@ body::before {
   }
 
   .helix-pro-tide {
-    @apply flex items-center gap-3 rounded-lg border border-white/10 bg-[rgba(6,7,12,0.72)] px-3 py-2 shrink-0;
+    @apply flex items-center gap-3 rounded-xl border border-white/[0.06] px-3.5 py-2.5 shrink-0;
+    background: rgba(6, 7, 13, 0.65);
+    backdrop-filter: blur(12px);
   }
 
   .helix-pro-command {
@@ -17464,12 +17465,16 @@ body::before {
   }
 
   .helix-tape-bar {
-    @apply rounded-lg border border-white/10 bg-[rgba(5,6,11,0.94)] overflow-hidden;
-    box-shadow: inset 0 1px 0 rgba(125, 211, 252, 0.05);
+    @apply rounded-xl border border-white/[0.06] overflow-hidden;
+    background: rgba(6, 7, 13, 0.92);
+    backdrop-filter: blur(16px);
+    box-shadow:
+      inset 0 1px 0 rgba(125, 211, 252, 0.04),
+      0 4px 24px rgba(0, 0, 0, 0.2);
   }
 
   .helix-tape-bar-primary {
-    @apply flex flex-wrap items-center gap-x-3 gap-y-2.5 px-3 py-2.5;
+    @apply flex flex-wrap items-center gap-x-3 gap-y-2 px-3.5 py-2.5;
   }
 
   .helix-tape-bar-block {
@@ -17477,11 +17482,11 @@ body::before {
   }
 
   .helix-tape-bar-label {
-    @apply font-mono text-[9px] uppercase tracking-[0.2em] text-sky-300/50 shrink-0;
+    @apply font-mono text-[8px] font-semibold uppercase tracking-[0.22em] text-sky-300/40 shrink-0;
   }
 
   .helix-tape-bar-search {
-    @apply flex-1 min-w-[7rem] max-w-[9rem];
+    @apply flex-1 min-w-[7rem] max-w-[10rem];
   }
 
   @media (max-width: 1279px) {
@@ -17500,7 +17505,7 @@ body::before {
   }
 
   .helix-tape-bar-chips .helix-tape-chips {
-    @apply flex flex-wrap gap-1;
+    @apply flex flex-wrap gap-1.5;
   }
 
   .helix-tape-bar-spacer {
@@ -17508,7 +17513,9 @@ body::before {
   }
 
   .helix-tape-seg {
-    @apply inline-flex rounded-md border border-white/10 bg-black/50 p-0.5 gap-px;
+    @apply inline-flex rounded-lg border border-white/[0.08] p-0.5 gap-0.5;
+    background: rgba(0, 0, 0, 0.45);
+    backdrop-filter: blur(8px);
   }
 
   .helix-tape-seg--compact .helix-tape-seg-btn {
@@ -17516,59 +17523,80 @@ body::before {
   }
 
   .helix-tape-seg-btn {
-    @apply font-mono text-[10px] font-semibold uppercase tracking-wide px-2.5 py-1 rounded text-sky-300/75 transition-colors;
+    @apply font-mono text-[10px] font-semibold uppercase tracking-wide px-2.5 py-1 rounded-md text-sky-300/65 transition-all duration-150;
   }
 
   .helix-tape-seg-btn:hover {
-    @apply text-sky-100 bg-white/5;
+    @apply text-sky-100 bg-white/[0.06];
   }
 
   .helix-tape-seg-btn--active {
-    @apply text-white bg-white/10;
+    @apply text-white font-bold;
+    background: rgba(125, 211, 252, 0.12);
+    box-shadow: 0 0 12px rgba(125, 211, 252, 0.15), inset 0 1px 0 rgba(255, 255, 255, 0.08);
   }
 
   .helix-tape-seg-btn--call.helix-tape-seg-btn--active {
-    @apply text-bull bg-bull/15;
+    @apply text-bull;
+    background: rgba(0, 230, 118, 0.12);
+    box-shadow: 0 0 14px rgba(0, 230, 118, 0.2), inset 0 1px 0 rgba(0, 230, 118, 0.15);
   }
 
   .helix-tape-seg-btn--put.helix-tape-seg-btn--active {
-    @apply text-bear-text bg-bear/15;
+    @apply text-bear-text;
+    background: rgba(255, 45, 85, 0.12);
+    box-shadow: 0 0 14px rgba(255, 45, 85, 0.2), inset 0 1px 0 rgba(255, 45, 85, 0.15);
   }
 
   .helix-tape-seg-count {
-    @apply ml-1 text-[9px] tabular-nums text-sky-300/55;
+    @apply ml-1 text-[9px] tabular-nums text-sky-300/45;
   }
 
   .helix-tape-seg-btn--active .helix-tape-seg-count {
-    @apply text-inherit opacity-80;
+    @apply text-inherit opacity-75;
   }
 
   .helix-tape-chip {
-    @apply font-mono text-[9px] font-bold uppercase tracking-wider px-2 py-1 rounded-full border border-white/10 text-sky-300/70 transition-colors;
+    @apply font-mono text-[9px] font-bold uppercase tracking-wider px-2.5 py-1 rounded-full border border-white/[0.08] text-sky-300/60 transition-all duration-200;
   }
 
   .helix-tape-chip:hover:not(:disabled) {
     @apply border-white/20 text-sky-100;
+    background: rgba(255, 255, 255, 0.04);
+  }
+
+  .helix-tape-chip:disabled {
+    @apply opacity-35 cursor-not-allowed;
   }
 
   .helix-tape-chip--active {
-    @apply text-white border-white/25 bg-white/10;
+    @apply text-white border-white/20 font-bold;
+    background: rgba(125, 211, 252, 0.1);
+    box-shadow: 0 0 10px rgba(125, 211, 252, 0.12);
   }
 
   .helix-tape-chip--gold.helix-tape-chip--active {
-    @apply text-gold border-gold/45 bg-gold/10;
+    @apply text-gold border-gold/50;
+    background: rgba(255, 210, 63, 0.12);
+    box-shadow: 0 0 14px rgba(255, 210, 63, 0.2);
   }
 
   .helix-tape-chip--ember.helix-tape-chip--active {
-    @apply text-ember border-ember/45 bg-ember/10;
+    @apply text-ember border-ember/50;
+    background: rgba(255, 107, 0, 0.12);
+    box-shadow: 0 0 14px rgba(255, 107, 0, 0.2);
   }
 
   .helix-tape-chip--sky.helix-tape-chip--active {
-    @apply text-sky-200 border-sky-400/40 bg-sky-400/10;
+    @apply text-sky-200 border-sky-400/45;
+    background: rgba(56, 189, 248, 0.1);
+    box-shadow: 0 0 14px rgba(56, 189, 248, 0.2);
   }
 
   .helix-tape-chip--purple.helix-tape-chip--active {
-    @apply text-purple-light border-purple/40 bg-purple/10;
+    @apply text-purple-light border-purple/45;
+    background: rgba(191, 95, 255, 0.12);
+    box-shadow: 0 0 14px rgba(191, 95, 255, 0.2);
   }
 
   .helix-tape-input-wrap {
@@ -17576,35 +17604,46 @@ body::before {
   }
 
   .helix-tape-input {
-    @apply w-full font-mono text-[11px] font-semibold uppercase tracking-widest rounded-md border border-white/10 bg-black/60 px-2.5 py-1.5 text-sky-100 placeholder:text-sky-300/35 outline-none;
+    @apply w-full font-mono text-[11px] font-semibold uppercase tracking-widest rounded-lg border border-white/[0.08] px-2.5 py-1.5 text-sky-100 placeholder:text-sky-300/30 outline-none transition-all duration-200;
+    background: rgba(0, 0, 0, 0.5);
+    backdrop-filter: blur(8px);
   }
 
   .helix-tape-input:focus {
-    @apply border-cyan-500/45 ring-1 ring-cyan-500/20;
+    @apply border-cyan-500/50;
+    box-shadow: 0 0 16px rgba(34, 211, 238, 0.15), inset 0 0 0 1px rgba(34, 211, 238, 0.1);
   }
 
   .helix-tape-input-clear {
-    @apply absolute right-1.5 font-mono text-sm text-sky-300/50 hover:text-sky-100 px-1;
+    @apply absolute right-1.5 font-mono text-sm text-sky-300/50 hover:text-sky-100 px-1 transition-colors;
   }
 
   .helix-tape-tool-btn {
-    @apply font-mono text-[10px] font-semibold uppercase tracking-wide px-2.5 py-1.5 rounded-md border border-white/10 text-sky-300/80 transition-colors;
+    @apply font-mono text-[10px] font-semibold uppercase tracking-wide px-2.5 py-1.5 rounded-lg border border-white/[0.08] text-sky-300/70 transition-all duration-200;
   }
 
   .helix-tape-tool-btn:hover:not(:disabled) {
-    @apply text-sky-100 border-white/20 bg-white/5;
+    @apply text-sky-100 border-white/15;
+    background: rgba(255, 255, 255, 0.04);
+  }
+
+  .helix-tape-tool-btn:disabled {
+    @apply opacity-35 cursor-not-allowed;
   }
 
   .helix-tape-tool-btn--active {
-    @apply text-cyan-200 border-cyan-500/35 bg-cyan-500/10;
+    @apply text-cyan-200 border-cyan-500/40;
+    background: rgba(34, 211, 238, 0.1);
+    box-shadow: 0 0 12px rgba(34, 211, 238, 0.15);
   }
 
   .helix-tape-bar-tools {
-    @apply flex flex-wrap gap-2 px-3 py-2 border-t border-white/10 bg-black/30;
+    @apply flex flex-wrap gap-2 px-3 py-2 border-t border-white/[0.06];
+    background: rgba(0, 0, 0, 0.25);
   }
 
   .helix-tape-status {
-    @apply flex items-center gap-2 shrink-0 ml-auto;
+    @apply flex items-center gap-2.5 shrink-0 ml-auto pl-3 border-l border-white/[0.06];
   }
 
   .helix-tape-status-dot {
@@ -17613,21 +17652,22 @@ body::before {
 
   .helix-tape-status-dot--live {
     @apply bg-bull;
-    box-shadow: 0 0 8px rgba(0, 230, 118, 0.55);
+    box-shadow: 0 0 10px rgba(0, 230, 118, 0.6), 0 0 4px rgba(0, 230, 118, 0.3);
     animation: helix-pulse-live 2s ease-in-out infinite;
   }
 
   .helix-tape-status-dot--stale {
     @apply bg-gold;
+    box-shadow: 0 0 6px rgba(255, 210, 63, 0.35);
   }
 
   .helix-tape-status-dot--off {
-    @apply bg-white/25;
+    @apply bg-white/20;
   }
 
   @keyframes helix-pulse-live {
     0%, 100% { opacity: 1; }
-    50% { opacity: 0.45; }
+    50% { opacity: 0.4; }
   }
 
   .helix-tape-status-copy {
@@ -17639,34 +17679,32 @@ body::before {
   }
 
   .helix-tape-status-meta {
-    @apply font-mono text-[9px] text-sky-300/65 tabular-nums;
+    @apply font-mono text-[9px] text-sky-300/55 tabular-nums;
   }
 
   .helix-tape {
-    @apply flex flex-1 flex-col min-h-0 border border-white/10;
-    background: linear-gradient(180deg, rgba(7, 8, 14, 0.98) 0%, rgba(5, 6, 11, 0.96) 100%);
-    border-radius: 10px;
+    @apply flex flex-1 flex-col min-h-0 border border-white/[0.07];
+    background: linear-gradient(180deg, rgba(8, 9, 16, 0.98) 0%, rgba(6, 7, 13, 0.97) 100%);
+    border-radius: 12px;
     box-shadow:
-      inset 0 1px 0 rgba(125, 211, 252, 0.07),
-      0 12px 48px rgba(0, 0, 0, 0.35);
+      inset 0 1px 0 rgba(125, 211, 252, 0.05),
+      0 16px 64px rgba(0, 0, 0, 0.4),
+      0 2px 8px rgba(0, 0, 0, 0.2);
     overflow: hidden;
   }
 
   .helix-tape-chrome {
-    /* Slim single-row chrome: usage hint on the left, live status chip on the right. The big
-       "FLOW PRINTS" title was removed as a dup of the page HELIX header. */
-    @apply flex items-center justify-between gap-4 shrink-0 px-5 py-2.5 border-b border-white/10;
-    background: linear-gradient(180deg, rgba(10, 11, 18, 0.95) 0%, rgba(8, 9, 15, 0.88) 100%);
+    @apply flex items-center justify-end gap-4 shrink-0 px-5 py-2 border-b border-white/[0.06];
+    background: rgba(8, 9, 15, 0.6);
+    backdrop-filter: blur(12px);
   }
 
-  /* .helix-tape-chrome-title / -kicker / -heading were removed with the duplicate "FLOW PRINTS"
-     title block — the page-level HELIX header already carries the brand. */
   .helix-tape-hint {
-    @apply font-mono text-[11px] text-sky-300/60 hidden sm:block;
+    @apply font-mono text-[11px] text-sky-300/50 hidden sm:block;
   }
 
   .helix-tape-chrome-meta {
-    @apply flex items-center gap-2.5 font-mono text-[10px] text-sky-300/75 shrink-0;
+    @apply flex items-center gap-2.5 font-mono text-[10px] text-sky-300/65 shrink-0;
   }
 
   .helix-tape-meta-count {
@@ -17675,7 +17713,7 @@ body::before {
 
   .helix-tape-meta-sub,
   .helix-tape-meta-density {
-    @apply text-[9px] uppercase tracking-wider text-sky-300/50;
+    @apply text-[9px] uppercase tracking-wider text-sky-300/45;
   }
 
   .helix-tape-alert {
@@ -17731,7 +17769,7 @@ body::before {
   }
 
   .helix-tape-group-th {
-    @apply flex items-center justify-center px-2 py-1.5 font-mono text-[9px] font-bold uppercase tracking-[0.22em] text-cyan-300/70 border-b border-white/10;
+    @apply flex items-center justify-center px-2 py-1.5 font-mono text-[9px] font-bold uppercase tracking-[0.22em] text-cyan-300/60 border-b border-white/[0.06];
     background: rgba(6, 7, 12, 0.98);
   }
 
@@ -17742,9 +17780,10 @@ body::before {
   /* Column headers: bolder, brighter (Helix cyan accent), a step larger than the old faint labels
      so the row reads clearly as headers. */
   .helix-tape-col-th {
-    @apply flex items-center px-2.5 py-2.5 font-mono text-[11.5px] font-bold uppercase tracking-[0.14em] text-cyan-200/95 whitespace-nowrap border-b border-cyan-400/15;
+    @apply flex items-center px-2.5 py-2.5 font-mono text-[11px] font-bold uppercase tracking-[0.14em] text-cyan-200/85 whitespace-nowrap;
     background: rgba(8, 9, 14, 0.98);
-    box-shadow: 0 2px 0 rgba(0, 0, 0, 0.35);
+    border-bottom: 1px solid rgba(34, 211, 238, 0.1);
+    box-shadow: 0 1px 0 rgba(0, 0, 0, 0.3);
   }
 
   /* Right-aligned columns push their content (and the sort control) to the track's right edge. */
@@ -17791,8 +17830,8 @@ body::before {
   }
 
   .helix-tape-row {
-    border-bottom: 1px solid rgba(255, 255, 255, 0.035);
-    transition: background 0.1s ease, box-shadow 0.1s ease;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+    transition: background 0.12s ease, box-shadow 0.12s ease;
     cursor: pointer;
     position: relative;
   }
@@ -17806,43 +17845,47 @@ body::before {
     width: 3px;
     background: transparent;
     pointer-events: none;
+    border-radius: 0 2px 2px 0;
   }
 
   .helix-tape-row--call::before {
-    background: rgba(0, 230, 118, 0.55);
+    background: rgba(0, 230, 118, 0.6);
+    box-shadow: 0 0 6px rgba(0, 230, 118, 0.2);
   }
 
   .helix-tape-row--put::before {
-    background: rgba(255, 45, 85, 0.55);
+    background: rgba(255, 45, 85, 0.6);
+    box-shadow: 0 0 6px rgba(255, 45, 85, 0.2);
   }
 
   .helix-tape-row--stack {
-    background: rgba(255, 210, 63, 0.04);
+    background: rgba(255, 210, 63, 0.035);
   }
 
   .helix-tape-row--stack::before {
     background: rgba(255, 210, 63, 0.85);
+    box-shadow: 0 0 8px rgba(255, 210, 63, 0.25);
   }
 
   .helix-tape-row--whale {
-    background: rgba(191, 95, 255, 0.04);
+    background: rgba(191, 95, 255, 0.035);
   }
 
   .helix-tape-row--zebra {
-    background: rgba(255, 255, 255, 0.012);
+    background: rgba(255, 255, 255, 0.01);
   }
 
   .helix-tape-row--zebra.helix-tape-row--call {
-    background: rgba(0, 230, 118, 0.025);
+    background: rgba(0, 230, 118, 0.02);
   }
 
   .helix-tape-row--zebra.helix-tape-row--put {
-    background: rgba(255, 45, 85, 0.025);
+    background: rgba(255, 45, 85, 0.02);
   }
 
   .helix-tape-row:hover {
-    background: rgba(125, 211, 252, 0.07) !important;
-    box-shadow: inset 0 0 0 1px rgba(125, 211, 252, 0.12);
+    background: rgba(125, 211, 252, 0.06) !important;
+    box-shadow: inset 0 0 0 1px rgba(125, 211, 252, 0.1);
   }
 
   .helix-tape-row--flash {
@@ -17989,23 +18032,31 @@ body::before {
   }
 
   .helix-contract-stat {
-    @apply flex flex-col gap-0.5 rounded-lg border border-white/10 bg-black/50 px-3 py-2;
+    @apply flex flex-col gap-0.5 rounded-lg border border-white/[0.08] px-3 py-2;
+    background: rgba(0, 0, 0, 0.35);
+    backdrop-filter: blur(6px);
   }
 
   .helix-contract-stat-label {
-    @apply font-mono text-[9px] uppercase tracking-[0.16em] text-sky-300/70;
+    @apply font-mono text-[9px] uppercase tracking-[0.16em] text-sky-300/60;
   }
 
   .helix-contract-stat-value {
-    @apply font-mono text-[12px] font-semibold text-white tabular-nums;
+    @apply font-mono text-[13px] font-bold text-white tabular-nums;
   }
 
   .helix-contract-fills-table th {
-    @apply px-3 py-2 text-left font-mono text-[9px] uppercase tracking-[0.14em] text-sky-300/70 sticky top-0 bg-[rgba(8,9,14,0.98)];
+    @apply px-3 py-2.5 text-left font-mono text-[9px] font-bold uppercase tracking-[0.16em] text-cyan-300/70 sticky top-0;
+    background: rgba(8, 9, 14, 0.98);
+    border-bottom: 1px solid rgba(34, 211, 238, 0.1);
   }
 
   .helix-contract-fills-table td {
-    @apply px-3 py-1.5 font-mono text-[11px] border-t border-white/5;
+    @apply px-3 py-2 font-mono text-[11px] border-t border-white/[0.04];
+  }
+
+  .helix-contract-fills-table tbody tr {
+    transition: background 0.1s ease;
   }
 
   .helix-contract-fills-table tbody tr:hover {
@@ -18015,56 +18066,64 @@ body::before {
   /* ── HELIX single-print drilldown ("This print" panel) — added alongside the #227
      remodel classes, not replacing them. ── */
   .helix-print-detail-title {
-    @apply font-mono text-[10px] uppercase tracking-[0.18em] text-purple-light mb-2;
+    @apply font-mono text-[10px] font-bold uppercase tracking-[0.2em] text-cyan-300/80 mb-2.5;
   }
 
   .helix-print-stat-grid {
     @apply grid gap-2;
-    grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
   }
 
   .helix-print-stat {
-    @apply flex flex-col gap-0.5 rounded-lg border border-white/10 bg-black/40 px-2.5 py-1.5;
+    @apply flex flex-col gap-1 rounded-lg border border-white/[0.08] px-2.5 py-2;
+    background: rgba(0, 0, 0, 0.3);
   }
 
   .helix-print-stat-label {
-    @apply flex items-center gap-1 font-mono text-[9px] uppercase tracking-[0.14em] text-sky-300/70;
+    @apply flex items-center gap-1 font-mono text-[8px] font-semibold uppercase tracking-[0.16em] text-sky-300/55;
   }
 
   .helix-print-stat-est {
-    @apply rounded bg-white/10 px-1 py-px font-mono text-[7px] uppercase tracking-[0.1em] text-sky-300/60;
+    @apply rounded px-1 py-px font-mono text-[7px] uppercase tracking-[0.1em] text-sky-300/45;
+    background: rgba(255, 255, 255, 0.06);
   }
 
   .helix-print-stat-value {
-    @apply font-mono text-[13px] font-semibold text-white tabular-nums;
+    @apply font-mono text-[14px] font-bold text-white tabular-nums;
   }
 
   .helix-print-tags {
-    @apply mt-2 flex flex-wrap gap-1.5;
+    @apply mt-3 flex flex-wrap gap-1.5;
   }
 
   .helix-print-tag {
-    @apply rounded border px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-[0.12em];
+    @apply rounded-md border px-2 py-0.5 font-mono text-[9px] font-semibold uppercase tracking-[0.14em];
   }
 
   .helix-print-tag--rule {
-    @apply border-sky-400/30 bg-sky-400/10 text-sky-200;
+    @apply text-sky-200;
+    border-color: rgba(56, 189, 248, 0.25);
+    background: rgba(56, 189, 248, 0.08);
+    box-shadow: 0 0 8px rgba(56, 189, 248, 0.08);
   }
 
   .helix-print-tag--wall {
-    @apply border-purple-light/30 bg-purple-light/10 text-purple-light;
+    @apply text-purple-light;
+    border-color: rgba(191, 95, 255, 0.25);
+    background: rgba(191, 95, 255, 0.08);
+    box-shadow: 0 0 8px rgba(191, 95, 255, 0.08);
   }
 
   .helix-print-note {
-    @apply mt-2 font-mono text-[9px] leading-relaxed text-sky-300/50;
+    @apply mt-3 font-mono text-[9px] leading-relaxed text-sky-300/40;
   }
 
   .helix-print-section-head {
-    @apply flex items-center justify-between gap-2 border-t border-white/10 pt-3;
+    @apply flex items-center justify-between gap-2 border-t border-white/[0.08] pt-4;
   }
 
   .helix-print-loading {
-    @apply font-mono text-[9px] uppercase tracking-[0.14em] text-sky-300/60;
+    @apply font-mono text-[9px] uppercase tracking-[0.14em] text-sky-300/50;
   }
 }
 

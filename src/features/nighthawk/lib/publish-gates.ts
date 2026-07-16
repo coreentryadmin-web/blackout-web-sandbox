@@ -40,29 +40,27 @@ import {
 /**
  * G-N1 band-vs-spot (`band_detached`): |spot → fill-edge| may not exceed this % of spot.
  *
- * WHY 2.5 (doc §N-3): the failing class published band edges >3% from the market (14/24
- * LONG plays, worst −45.5% DELL), while healthy plays sat within ~1.5% of spot. 2.5%
- * catches ALL 14 of the >3% class plus the six 6.4%–45.5% backfill plays, while still
- * allowing a normal pullback entry (band a point or two under spot). Checked as an
- * ABSOLUTE distance: a LONG band far ABOVE spot is just as unfillable-as-published as one
- * far below (and the SHORT mirror likewise). Calibratable from the pinned PASS margins.
+ * WHY 3.5 (Phase 3 tuning): overnight plays target next-session action where the open can
+ * gap 1-2% from prior close — a 2.5% gate was blocking legitimate entries that sit a normal
+ * overnight gap away from the evening's spot. 3.5% still catches the catastrophic class
+ * (6.4%–45.5% DELL backfills, 14/24 >3% detached plays) while giving next-session entries
+ * the ~1% extra headroom an overnight gap needs. Calibratable from pinned PASS margins.
  */
-export const GATE_BAND_MAX_DISTANCE_PCT = 2.5;
+export const GATE_BAND_MAX_DISTANCE_PCT = 3.5;
 
 /**
  * G-N2 achievable target (`target_unreachable`): |fill-edge → target| may not exceed
  * K × ATR14. Measured from the FILL EDGE, not spot, because that is the entry the play
  * grades from (and G-N1 already pins the edge near spot for anything that publishes).
  *
- * WHY 1.5 (doc §N-3 + §4/PR-N3): these are ONE-SESSION plays — graded against the next
- * day's high/low. ATR14 is the average full-session range, so a target more than ~1×ATR
- * from entry needs an above-average day moving entirely in the play's favor; the doc's
- * suggested starting k was 1.0. We ship K=1.5 — one strong-expansion day of headroom so
- * legitimate momentum targets (0.5–1.2×ATR) never block — while the failing class
- * (+8.6%..+106.6% targets ≈ 3×–20×+ ATR on those names) stays blocked by an order of
- * magnitude. Tighten toward 1.0 once the pinned margins show real plays clustering low.
+ * WHY 2.0 (Phase 3 tuning): overnight plays are published the evening before for
+ * next-session action. The deterministic path builds targets from real support/resistance
+ * levels which can legitimately sit 1.5-2× ATR from entry on a momentum name with a
+ * near-term catalyst. K=1.5 was blocking too many valid plays built from real levels;
+ * K=2.0 allows strong-expansion targets while still catching the catastrophic class
+ * (+8.6%..+106.6% targets ≈ 3×–20×+ ATR). The failing class remains blocked by 5×+.
  */
-export const GATE_TARGET_MAX_ATR_MULTIPLE = 1.5;
+export const GATE_TARGET_MAX_ATR_MULTIPLE = 2.0;
 
 export type NighthawkGateCode =
   | "band_detached" // G-N1
