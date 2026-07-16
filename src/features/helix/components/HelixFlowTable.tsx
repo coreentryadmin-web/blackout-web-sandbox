@@ -319,14 +319,14 @@ export function HelixFlowTable({
           one-line usage hint and the live status chip (print count / render cap / density) remain, so
           the live signal is preserved without the redundant heading. */}
       <div className="helix-tape-chrome">
-        <p className="helix-tape-hint">Click any row for contract drilldown · sort headers to re-rank</p>
+        {/* hint removed — the table interaction is self-evident */}
         {!loading && (
           <div className="helix-tape-chrome-meta tabular-nums">
             <span className="helix-tape-meta-count">{total.toLocaleString()} prints</span>
             {hasMore && (
               <span className="helix-tape-meta-sub">showing {renderLimit.toLocaleString()}</span>
             )}
-            <span className="helix-tape-meta-density">{density}</span>
+            {/* density label removed — always full now */}
           </div>
         )}
       </div>

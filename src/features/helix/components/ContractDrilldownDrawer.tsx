@@ -67,10 +67,10 @@ function ChartTooltip({
   const row = payload[0]?.payload;
   if (!row) return null;
   return (
-    <div className="rounded-md border border-white/10 bg-[rgba(8,9,14,0.95)] px-2.5 py-1.5 shadow-xl">
-      <p className="font-mono text-[10px] text-sky-300">{row.label}</p>
-      <p className="font-mono text-[10px] text-white">Vol {row.volume.toLocaleString()}</p>
-      <p className="font-mono text-[10px] text-cyan-300">Avg ${row.avg_price.toFixed(2)}</p>
+    <div className="rounded-lg border border-white/[0.08] px-3 py-2 shadow-2xl" style={{ background: 'rgba(8,9,14,0.96)', backdropFilter: 'blur(12px)' }}>
+      <p className="font-mono text-[9px] font-semibold uppercase tracking-wider text-sky-300/70 mb-1">{row.label}</p>
+      <p className="font-mono text-[11px] font-semibold text-white tabular-nums">Vol {row.volume.toLocaleString()}</p>
+      <p className="font-mono text-[11px] font-semibold text-cyan-300 tabular-nums">Avg ${row.avg_price.toFixed(2)}</p>
     </div>
   );
 }
@@ -174,21 +174,23 @@ export function ContractDrilldownDrawer({
   }, [flow]);
 
   const header = flow ? (
-    <div className="flex flex-col gap-1 min-w-0">
-      <span className="font-mono text-[10px] uppercase tracking-[0.2em] text-cyan-400/80">
-        Flow print · contract drilldown
+    <div className="flex flex-col gap-1.5 min-w-0">
+      <span className="font-mono text-[9px] font-bold uppercase tracking-[0.25em] text-cyan-400/70">
+        Contract drilldown
       </span>
-      <div className="flex items-center gap-2 flex-wrap">
-        <h2 className="t-label text-lg uppercase text-white">
-          {flow.ticker} {flow.strike}
-          {isCall ? "C" : "P"}
+      <div className="flex items-center gap-2.5 flex-wrap">
+        <h2 className="font-mono text-lg font-bold uppercase tracking-wide text-white">
+          {flow.ticker}
+          <span className={clsx("ml-1.5", isCall ? "text-bull" : "text-bear-text")}>
+            {flow.strike}{isCall ? "C" : "P"}
+          </span>
         </h2>
-        <span className="font-mono text-[11px] text-sky-300">{fmtExpiryShort(flow.expiry)}</span>
+        <span className="font-mono text-[11px] text-sky-300/80">{fmtExpiryShort(flow.expiry)}</span>
         {onViewTicker && (
           <button
             type="button"
             onClick={() => onViewTicker(flow.ticker)}
-            className="font-mono text-[10px] text-cyan-400 hover:text-sky-200 underline underline-offset-2"
+            className="font-mono text-[10px] font-semibold text-cyan-400/80 hover:text-cyan-200 transition-colors"
           >
             All {flow.ticker} flow →
           </button>
@@ -206,7 +208,7 @@ export function ContractDrilldownDrawer({
           {/* ── THIS PRINT ──────────────────────────────────────────────────────
               Every value here is the real payload of the row the user clicked. */}
           {detail && (
-            <section className="helix-print-detail desk-panel border border-white/10 rounded-lg p-3">
+            <section className="helix-print-detail desk-panel border border-white/[0.08] rounded-xl p-4">
               <p className="helix-print-detail-title">This print</p>
               <div className="helix-print-stat-grid">
                 <PrintStat
@@ -307,8 +309,8 @@ export function ContractDrilldownDrawer({
                 </div>
               </div>
 
-              <div className="helix-contract-chart-panel desk-panel border border-white/10 rounded-lg p-3">
-                <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-purple-light mb-2">
+              <div className="helix-contract-chart-panel desk-panel border border-white/[0.08] rounded-xl p-4">
+                <p className="helix-print-detail-title">
                   Intraday volume · avg price
                 </p>
                 {chartData.length < 2 ? (
@@ -350,9 +352,9 @@ export function ContractDrilldownDrawer({
                 )}
               </div>
 
-              <div className="helix-contract-fills desk-panel border border-white/10 rounded-lg overflow-hidden">
-                <div className="px-3 py-2 border-b border-white/10">
-                  <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-purple-light">
+              <div className="helix-contract-fills desk-panel border border-white/[0.08] rounded-xl overflow-hidden">
+                <div className="px-4 py-2.5 border-b border-white/[0.06]">
+                  <p className="helix-print-detail-title !mb-0">
                     Contract flow data
                   </p>
                 </div>

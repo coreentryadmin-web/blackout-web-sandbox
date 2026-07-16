@@ -4,7 +4,7 @@ import { useState } from "react";
 import type { ReactNode } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { clsx } from "clsx";
-import type { HelixDteFilter, HelixTableDensity } from "@/features/helix/lib/helix-table-columns";
+import type { HelixDteFilter } from "@/features/helix/lib/helix-table-columns";
 
 const PREMIUM_PRESETS = [200_000, 500_000, 1_000_000, 20_000_000] as const;
 const DTE_OPTIONS: { id: HelixDteFilter; label: string }[] = [
@@ -13,12 +13,6 @@ const DTE_OPTIONS: { id: HelixDteFilter; label: string }[] = [
   { id: "week", label: "≤7d" },
   { id: "month+", label: ">7d" },
 ];
-const DENSITY_OPTIONS: { id: HelixTableDensity; label: string }[] = [
-  { id: "essential", label: "Essential" },
-  { id: "standard", label: "Standard" },
-  { id: "full", label: "Full" },
-];
-
 export type HelixTypeFilter = "ALL" | "CALL" | "PUT";
 
 function ChipToggle({
@@ -69,8 +63,6 @@ export function HelixCommandBar({
   watchlistOnly,
   onWatchlistOnlyChange,
   watchlistCount,
-  density,
-  onDensityChange,
   analyticsOpen,
   onAnalyticsOpenChange,
   replayMode,
@@ -106,8 +98,6 @@ export function HelixCommandBar({
   watchlistOnly: boolean;
   onWatchlistOnlyChange: (v: boolean) => void;
   watchlistCount: number;
-  density: HelixTableDensity;
-  onDensityChange: (d: HelixTableDensity) => void;
   analyticsOpen: boolean;
   onAnalyticsOpenChange: (v: boolean) => void;
   replayMode: boolean;
@@ -240,25 +230,6 @@ export function HelixCommandBar({
                 className={clsx(
                   "helix-tape-seg-btn helix-tape-seg-btn--compact",
                   dteFilter === o.id && "helix-tape-seg-btn--active"
-                )}
-              >
-                {o.label}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <div className="helix-tape-bar-block">
-          <span className="helix-tape-bar-label">Cols</span>
-          <div className="helix-tape-seg helix-tape-seg--compact">
-            {DENSITY_OPTIONS.map((o) => (
-              <button
-                key={o.id}
-                type="button"
-                onClick={() => onDensityChange(o.id)}
-                className={clsx(
-                  "helix-tape-seg-btn helix-tape-seg-btn--compact",
-                  density === o.id && "helix-tape-seg-btn--active"
                 )}
               >
                 {o.label}
