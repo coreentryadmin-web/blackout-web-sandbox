@@ -6,16 +6,7 @@ name: ECR push (staging)
 on:
   workflow_dispatch:
   push:
-    branches: [blackout-web-sandbox]
-    paths:
-      - "deploy/Dockerfile"
-      - ".dockerignore"
-      - "next.config.mjs"
-      - "package.json"
-      - "package-lock.json"
-      - "src/**"
-      - "public/**"
-      - ".github/workflows/ecr-push-staging.yml"
+    branches: [main]
 
 permissions:
   contents: read
