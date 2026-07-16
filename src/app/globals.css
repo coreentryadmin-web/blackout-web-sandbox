@@ -17467,12 +17467,23 @@ body::before {
   }
 
   .helix-tape-bar {
-    @apply rounded-xl border border-white/[0.06] overflow-hidden;
+    @apply rounded-xl border border-white/[0.06] overflow-hidden relative;
     background: rgba(6, 7, 13, 0.92);
     backdrop-filter: blur(16px);
     box-shadow:
       inset 0 1px 0 rgba(125, 211, 252, 0.04),
       0 4px 24px rgba(0, 0, 0, 0.2);
+  }
+
+  .helix-tape-bar::before {
+    content: '';
+    @apply absolute top-0 left-0 right-0 h-px z-10;
+    background: linear-gradient(90deg,
+      rgba(34, 211, 238, 0.5),
+      rgba(191, 95, 255, 0.35) 35%,
+      rgba(255, 210, 63, 0.3) 65%,
+      rgba(255, 107, 0, 0.25)
+    );
   }
 
   .helix-tape-bar-primary {
@@ -17486,6 +17497,11 @@ body::before {
   .helix-tape-bar-label {
     @apply font-mono text-[10px] font-semibold uppercase tracking-[0.18em] text-sky-300/60 shrink-0;
   }
+
+  .helix-tape-bar-label--cyan { color: rgba(34, 211, 238, 0.65); }
+  .helix-tape-bar-label--green { color: rgba(52, 211, 153, 0.6); }
+  .helix-tape-bar-label--purple { color: rgba(196, 148, 255, 0.6); }
+  .helix-tape-bar-label--amber { color: rgba(251, 191, 36, 0.55); }
 
   .helix-tape-bar-search {
     @apply flex-1 min-w-[7rem] max-w-[10rem];
@@ -17550,6 +17566,21 @@ body::before {
     box-shadow: 0 0 14px rgba(255, 45, 85, 0.2), inset 0 1px 0 rgba(255, 45, 85, 0.15);
   }
 
+  .helix-tape-seg--floor .helix-tape-seg-btn--active {
+    color: rgba(34, 211, 238, 0.95);
+    background: rgba(34, 211, 238, 0.15);
+    box-shadow: 0 0 14px rgba(34, 211, 238, 0.22), inset 0 1px 0 rgba(34, 211, 238, 0.12);
+  }
+
+  .helix-tape-seg--dte .helix-tape-seg-btn--active {
+    color: rgba(251, 191, 36, 0.95);
+    background: rgba(251, 191, 36, 0.12);
+    box-shadow: 0 0 14px rgba(251, 191, 36, 0.2), inset 0 1px 0 rgba(251, 191, 36, 0.1);
+  }
+
+  .helix-tape-seg--floor { border-color: rgba(34, 211, 238, 0.1); }
+  .helix-tape-seg--dte { border-color: rgba(251, 191, 36, 0.08); }
+
   .helix-tape-seg-count {
     @apply ml-1 text-[10px] tabular-nums text-sky-300/55;
   }
@@ -17570,6 +17601,15 @@ body::before {
   .helix-tape-chip:disabled {
     @apply opacity-35 cursor-not-allowed;
   }
+
+  .helix-tape-chip--gold:not(.helix-tape-chip--active) { color: rgba(255, 210, 63, 0.5); border-color: rgba(255, 210, 63, 0.12); }
+  .helix-tape-chip--gold:hover:not(:disabled):not(.helix-tape-chip--active) { color: rgba(255, 210, 63, 0.72); border-color: rgba(255, 210, 63, 0.22); background: rgba(255, 210, 63, 0.06); }
+  .helix-tape-chip--ember:not(.helix-tape-chip--active) { color: rgba(255, 107, 0, 0.5); border-color: rgba(255, 107, 0, 0.12); }
+  .helix-tape-chip--ember:hover:not(:disabled):not(.helix-tape-chip--active) { color: rgba(255, 107, 0, 0.72); border-color: rgba(255, 107, 0, 0.22); background: rgba(255, 107, 0, 0.06); }
+  .helix-tape-chip--sky:not(.helix-tape-chip--active) { color: rgba(56, 189, 248, 0.5); border-color: rgba(56, 189, 248, 0.12); }
+  .helix-tape-chip--sky:hover:not(:disabled):not(.helix-tape-chip--active) { color: rgba(56, 189, 248, 0.72); border-color: rgba(56, 189, 248, 0.22); background: rgba(56, 189, 248, 0.06); }
+  .helix-tape-chip--purple:not(.helix-tape-chip--active) { color: rgba(191, 95, 255, 0.5); border-color: rgba(191, 95, 255, 0.12); }
+  .helix-tape-chip--purple:hover:not(:disabled):not(.helix-tape-chip--active) { color: rgba(191, 95, 255, 0.72); border-color: rgba(191, 95, 255, 0.22); background: rgba(191, 95, 255, 0.06); }
 
   .helix-tape-chip--active {
     @apply text-white border-white/25 font-bold;
