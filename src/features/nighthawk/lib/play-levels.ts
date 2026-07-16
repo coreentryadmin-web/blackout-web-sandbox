@@ -60,11 +60,35 @@ export function buildDirectionalStockLevels(params: {
   direction: "long" | "short";
   support?: number | null;
   resistance?: number | null;
+  /** Current spot price. When provided, entries anchor near spot (overnight plays
+   *  where members act at the next session's open, not at a pullback to support). */
+  spot?: number | null;
 }): { entry_range: string; target: string; stop: string } {
   const support = params.support != null && Number.isFinite(params.support) ? params.support : null;
   const resistance =
     params.resistance != null && Number.isFinite(params.resistance) ? params.resistance : null;
+  const spot = params.spot != null && Number.isFinite(params.spot) && params.spot > 0 ? params.spot : null;
 
+  // Spot-anchored path: overnight plays where the member acts at the next open.
+  // Entry bands near spot, stop at real S/R, target at real S/R.
+  if (spot != null && support != null && resistance != null && resistance > support) {
+    if (params.direction === "long") {
+      return {
+        entry_range: `$${formatStockLevel(spot * 0.995)}-$${formatStockLevel(spot * 1.005)}`,
+        target: formatStockLevel(resistance),
+        stop: formatStockLevel(support),
+      };
+    }
+    if (params.direction === "short") {
+      return {
+        entry_range: `$${formatStockLevel(spot * 0.995)}-$${formatStockLevel(spot * 1.005)}`,
+        target: formatStockLevel(support),
+        stop: formatStockLevel(resistance),
+      };
+    }
+  }
+
+  // Legacy pullback-entry path (no spot): entry near S/R boundaries.
   if (params.direction === "long" && support != null && resistance != null && resistance > support) {
     const lo = support * 0.998;
     const hi = support;
