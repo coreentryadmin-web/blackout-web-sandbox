@@ -92,7 +92,9 @@ export async function getHorizonStrikeTotals(
     if (scoped.size === 0) return null;
     const filtered = contracts.filter((c) => scoped.has(c.expiry));
     if (!filtered.length) return null;
-    const ladder = gexLadderAtSpot(filtered, spot, today);
+    // Match the walls source: volume-adjusted so the ladder's king crowning
+    // agrees with the banner's resistance/support (see vector-dte-walls-core.ts:54-58).
+    const ladder = gexLadderAtSpot(filtered, spot, today, { volumeAdjusted: true });
     if (ladder.size === 0) return null;
     const strikeTotals: Record<string, number> = {};
     for (const [strike, gex] of ladder) strikeTotals[String(strike)] = gex;

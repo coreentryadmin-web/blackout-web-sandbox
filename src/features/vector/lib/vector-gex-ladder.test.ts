@@ -235,3 +235,22 @@ test("buildGexLadder: omitting kingStrikes preserves the pure self-crowned behav
   assert.equal(l.rows.find((r) => r.strike === 105)!.isKing, true, "call king = max-|gex| (105)");
   assert.equal(l.rows.find((r) => r.strike === 90)!.isKing, true, "put king = max-|gex| (90)");
 });
+
+test("buildGexLadder: volume-adjusted ladder crowns the wall strike that OI-only would miss (NVDA RTH regression)", () => {
+  // NVDA live bug: OI-only ladder had put king at 195 while the volume-adjusted walls put the
+  // wall at 205. With getHorizonStrikeTotals now using volumeAdjusted: true, the ladder data
+  // includes the 205 put volume — so the kingStrikes override succeeds instead of falling back.
+  // This test simulates the scenario: the volume-adjusted data has a put at 205 (from day volume)
+  // that OI-only didn't see, so the override now crowns 205 as the put king.
+  const volAdjusted: Record<string, number> = {
+    "210": 5_000,   // call king (walls agree)
+    "205": -4_000,  // put wall from volume-adjusted (wasn't present or was wrong-signed in OI-only)
+    "200": 1_000,
+    "195": -3_000,  // OI-only would crown this as the put king (strongest negative by OI)
+  };
+  const l = buildGexLadder(volAdjusted, 208, { bandPct: 0.5, kingStrikes: { call: 210, put: 205 } });
+  const kings = l.rows.filter((r) => r.isKing);
+  assert.equal(kings.length, 2);
+  assert.equal(kings.find((r) => r.side === "call")!.strike, 210, "call king matches banner");
+  assert.equal(kings.find((r) => r.side === "put")!.strike, 205, "put king matches banner (volume-adjusted wall)");
+});
