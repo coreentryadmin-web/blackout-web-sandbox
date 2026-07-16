@@ -328,7 +328,9 @@ test("runLargoQueryStream: same persistence contract on the streaming path — C
   inserted = [];
   toolLoopToolNames = [];
   const events: unknown[] = [];
-  await runLargoQueryStream("Should I hold my TSLA play into the close?", "", "user-4", (e) => events.push(e));
+  // Use a question that no BIE route matches — the original "Should I hold my TSLA play"
+  // now routes to ticker_advice → composer-failed fallback (the fix this PR introduces).
+  await runLargoQueryStream("I lost money on my trades today", "", "user-4", (e) => events.push(e));
   await waitForInserts(1);
 
   assert.equal(inserted.length, 1);
@@ -380,8 +382,9 @@ test("runLargoQueryStream: a thrown tool-loop error still emits an 'error' SSE e
   try {
     const events: unknown[] = [];
     // runLargoQueryStream's own catch swallows the error (it emits an SSE event instead of
-    // rethrowing) — the call must resolve, not reject.
-    await runLargoQueryStream("Should I hold my TSLA play into the close?", "", "user-err-2", (e) =>
+    // rethrowing) — the call must resolve, not reject. Use a question that no BIE route
+    // matches so we fall through to the Claude tool-loop where the toolLoopError can trigger.
+    await runLargoQueryStream("I lost money on my trades today", "", "user-err-2", (e) =>
       events.push(e)
     );
     await waitForInserts(1);
@@ -469,4 +472,24 @@ test("runLargoQueryStream: the done event omits the envelope for a trivial strin
     | undefined;
   assert.ok(done, "expected a done event");
   assert.equal(done?.envelope, undefined, "market_context has no envelope → done event omits it");
+});
+
+test("runLargoQuery: routed-but-null-composed returns honest fallback, never falls through to Claude (SPY/QQQ misroute regression)", async () => {
+  inserted = [];
+  appended = [];
+  // "Vector setup on SPY" routes to vector_read with ticker=SPY, but the mock
+  // composeBieAnswer returns null for vector_read (simulating the composer
+  // throwing internally). Before the fix, this would fall through to the Claude
+  // tool-loop which only has SPX context, silently answering SPY with SPX data.
+  const result = await runLargoQuery("Vector setup on SPY", "", "user-misroute-1");
+  await waitForInserts(1);
+
+  assert.equal(result.source, "blackout-intelligence", "must NOT fall through to Claude");
+  assert.match(result.answer, /vector read/i, "honest fallback mentions the matched intent");
+  assert.match(result.answer, /SPY/i, "honest fallback names the requested ticker");
+  assert.match(result.answer, /couldn't compose/i, "honest fallback explains the gap");
+
+  const row = inserted[0]!;
+  assert.equal(row.answer_source, "bie-router", "logged as router path, not claude");
+  assert.equal(row.intent, "vector_read");
 });
