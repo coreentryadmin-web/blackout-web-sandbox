@@ -3369,21 +3369,14 @@ export function GexHeatmap({
   ]);
 
   // ── View panels (Step 3) ─────────────────────────────────────────────────────
-  // The four views (Profile / Curve / Shift / Matrix) live in 2 tabs. Each view's render
-  // JSX is REUSED verbatim (not rewritten) — lifted into a panel const here, then placed
-  // into a grid cell below. Each panel keeps its bounded scroller, spot/flip anchoring,
-  // anchor markers, diverging colors, sticky header + legends; a small header label rides
-  // above each so the group reads clearly.
-  // Tab A "Matrix" (default): the Strike × Expiry Matrix ALONE, FULL content width — so the
-  // far-dated monthly columns breathe. Tab B "Profile + Curve + Shift": the Gamma Profile +
-  // Cumulative Curve + Shift grouped (all strike-axis profile views). Scrollers stay
-  // ~clamp(360px,56vh,600px); the matrix-tab box can grow taller since it owns the row.
+  // Tab A "Matrix" (default): the Strike × Expiry Matrix at full content width.
+  // Tab B "Profile + Curve + Shift": 3 equal-width columns, all centered on spot,
+  // with a shared ExpiryScopeBar + overlay toggles above. Largo/DarkPool rail only
+  // shows on the Matrix tab — the 3-panel view is self-contained.
 
-  const profilePanel = (
-    <div className="min-w-0">
-      <PanelLabel>{`${vocab.noun} Profile`}</PanelLabel>
-      {/* Expiry scope — All · 0DTE · per-expiry (Rank 5). Re-sums the profile
-          + curve client-side over the chosen expiry/expiries. */}
+  // Shared controls rendered once ABOVE all 3 profile panels (expiry scope + overlay toggles).
+  const sharedProfileControls = (
+    <div className="mb-4 space-y-2">
       <ExpiryScopeBar
         expiries={expiries}
         zeroDteExpiry={zeroDteExpiry}
@@ -3391,9 +3384,8 @@ export function GexHeatmap({
         scope={expiryScope}
         onScope={setExpiryScope}
       />
-      {/* Cross-tool overlay toggles — only shown when an overlay has data */}
       {(hasFlowOverlay || hasDarkPoolOverlay) && (
-        <div className="mb-3 flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <span className="font-mono text-[9px] uppercase tracking-[0.2em] text-sky-300/60">
             Overlays
           </span>
@@ -3429,9 +3421,6 @@ export function GexHeatmap({
               Dark Pool
             </button>
           )}
-          {/* Overlay freshness (#9) — the dark-pool / flow-by-strike overlays ride a separate
-              ~30s cache (dark-pool source up to ~2min) and can be staler than the matrix, so
-              label their OWN sample time rather than letting them inherit the matrix's. */}
           {fmtAsofSeconds(data?.overlays_at ?? undefined) && (
             <span className="font-mono text-[9px] tabular-nums normal-case text-sky-300/60">
               as of {fmtAsofSeconds(data?.overlays_at ?? undefined)} ET
@@ -3439,6 +3428,12 @@ export function GexHeatmap({
           )}
         </div>
       )}
+    </div>
+  );
+
+  const profilePanel = (
+    <div className="min-w-0">
+      <PanelLabel>{`${vocab.noun} Profile`}</PanelLabel>
       <ExposureProfile
         rows={profileRows}
         peak={filteredPeak}
@@ -3453,9 +3448,9 @@ export function GexHeatmap({
         showDarkPool={showDarkPool && hasDarkPoolOverlay}
         shift={shift}
       />
-      <p className="mt-3 text-[10px] font-mono uppercase tracking-widest text-sky-300/75">
-        {`Net dealer ${vocab.unit} per strike · ${vocab.pos} / ${vocab.neg} · `}
-        {scopeLabel} total{" "}
+      <p className="mt-2 text-[9px] font-mono uppercase tracking-widest text-sky-300/60">
+        {`${vocab.pos} / ${vocab.neg} · `}
+        {scopeLabel}{" "}
         <span className={clsx(filteredTotal >= 0 ? posColorClass : "text-bear-text")}>
           {fmtMoney(filteredTotal)}
         </span>
@@ -3466,17 +3461,10 @@ export function GexHeatmap({
   const curvePanel = (
     <div className="min-w-0">
       <PanelLabel>Cumulative Curve</PanelLabel>
-      <ExpiryScopeBar
-        expiries={expiries}
-        zeroDteExpiry={zeroDteExpiry}
-        monthlyExpiries={monthlyExpiries}
-        scope={expiryScope}
-        onScope={setExpiryScope}
-      />
       <CumulativeCurve rows={profileRows} spot={spot} flip={profileFlip} lens={lens} />
-      <p className="mt-3 text-[10px] font-mono uppercase tracking-widest text-sky-300/75">
-        {`Cumulative net dealer ${vocab.unit} across strikes · zero-crossing = ${vocab.pivot} · `}
-        {scopeLabel} total{" "}
+      <p className="mt-2 text-[9px] font-mono uppercase tracking-widest text-sky-300/60">
+        {`Zero-crossing = ${vocab.pivot} · `}
+        {scopeLabel}{" "}
         <span className={clsx(filteredTotal >= 0 ? posColorClass : "text-bear-text")}>
           {fmtMoney(filteredTotal)}
         </span>
@@ -3494,8 +3482,8 @@ export function GexHeatmap({
       {hasShiftForLens && shift && shift.available ? (
         <>
           <ShiftView shift={shift} strikes={strikes} spotStrike={spotStrike} lens={lens} />
-          <p className="mt-3 text-[10px] font-mono uppercase tracking-widest text-sky-300/75">
-            {`Δ net dealer ${vocab.unit} vs earlier snapshot · green built / red melted · pivot drift up = dealers longer`}
+          <p className="mt-2 text-[9px] font-mono uppercase tracking-widest text-sky-300/60">
+            {`Δ ${vocab.unit} · built / melted`}
           </p>
         </>
       ) : (
@@ -3922,43 +3910,30 @@ export function GexHeatmap({
               renders nothing when empty/absent. Sits above the regime header. ── */}
           <AlertsStrip events={events} />
 
-          {/* ── Main area — 2 views (Step 3), restructured:
-                • "Matrix" (DEFAULT) — the Strike × Expiry Matrix ALONE at FULL content width,
-                  so the far-dated monthly OpEx columns breathe (no longer sharing the row with
-                  the Gamma Profile).
-                • "Profile + Curve + Shift" — the Gamma Profile + Cumulative Curve + Shift, all
-                  strike-axis profile views grouped together. Profile takes the wide left column
-                  (lg:col-span-7); Curve + Shift stack in the right column (lg:col-span-5) so
-                  the curve keeps a readable width and Shift has room. Stacks on md/sm.
-              The VIEW TabList lives on the top control row (controlled by `pairView`); this body
-              `Tabs` is the same controlled value, so it renders ONLY the panels — no duplicate
-              tab strip here. Each panel const (built above) REUSES its view's render JSX verbatim,
-              keeping its bounded scroller, spot/flip anchoring, anchor markers, colors + legends.
-              The GEX/VEX/DEX/CHARM lens switch drives every panel (all read the active `lens`).
+          {/* ── Main area — 2 tabs:
+                • "Matrix" — full-width Strike × Expiry Matrix + Largo/DarkPool rail below.
+                • "Profile + Curve + Shift" — 3 equal columns (lg:grid-cols-3), shared
+                  ExpiryScopeBar + overlay toggles above, no Largo/DarkPool rail.
               ──────────────── */}
           <Tabs value={pairView} onValueChange={(v) => setPairView(v as "pair-a" | "pair-b")} className="mt-3">
             <TabPanels>
               <TabPanel value="pair-a">{matrixPanel}</TabPanel>
               {!nativeShell ? (
                 <TabPanel value="pair-b">
-                  <div className="grid grid-cols-1 gap-5 lg:grid-cols-12">
-                    <div className="min-w-0 lg:col-span-7">{profilePanel}</div>
-                    <div className="grid min-w-0 content-start gap-5 lg:col-span-5">
-                      {curvePanel}
-                      {shiftPanel}
-                    </div>
+                  {sharedProfileControls}
+                  <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+                    <div className="min-w-0">{profilePanel}</div>
+                    <div className="min-w-0">{curvePanel}</div>
+                    <div className="min-w-0">{shiftPanel}</div>
                   </div>
                 </TabPanel>
               ) : null}
             </TabPanels>
           </Tabs>
 
-          {/* ── Rail (full-width row below the paired views): Largo desk read · dark-pool ·
-              flow summary. The redundant "KEY LEVELS" list was dropped — spot / flip / call
-              wall / put wall / max pain already lead the page in the consolidated key-level
-              box. ASK LARGO leads; the two small optional cards (dark-pool, flow) sit beside
-              it and each self-hides when empty. ── */}
-          {!nativeShell && (
+          {/* ── Rail: Largo + dark-pool + flow — Matrix tab only (the 3-panel
+              Profile+Curve+Shift view is self-contained). ── */}
+          {!nativeShell && pairView === "pair-a" && (
             <div className="mt-5 grid gap-4 lg:grid-cols-[1.6fr_1fr] gex-heatmap-rail">
               <LargoRead key={ticker} ticker={ticker} />
               <div className="grid content-start gap-4">
@@ -3968,7 +3943,7 @@ export function GexHeatmap({
             </div>
           )}
 
-          {!nativeShell && (
+          {!nativeShell && pairView === "pair-a" && (
           <p className="mt-5 border-t border-white/8 pt-3 text-[10px] leading-snug text-sky-300/75 gex-heatmap-methodology">
             <span aria-hidden className="mr-1 text-sky-300/70">ⓘ</span>
             Net dealer gamma uses the standard convention (dealers long calls / short
