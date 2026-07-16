@@ -103,7 +103,7 @@ async function domSnap(page) {
       regime: (q(".vector-regime-read")?.textContent || "").replace(/\s+/g, " ").trim(),
       // Full terminal text (was .slice(0,300), which cut BEFORE the king-strike citations and made
       // the "terminal cites kings" check a false negative on every ticker — harness bug, not product).
-      terminal: (q(".vector-desk-terminal")?.textContent || "").replace(/\s+/g, " ").trim().slice(0, 6000),
+      terminal: (q(".vector-pulse")?.textContent || "").replace(/\s+/g, " ").trim().slice(0, 6000),
       ladderRows: document.querySelectorAll(".vector-gex-ladder-row").length,
       crosshair: (q(".vector-crosshair-legend")?.textContent || "").replace(/\s+/g, " ").trim(),
     };
