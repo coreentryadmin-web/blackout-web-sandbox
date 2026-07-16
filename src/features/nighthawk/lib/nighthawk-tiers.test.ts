@@ -8,7 +8,6 @@ import {
   NH_SCORE_PRIME_MIN,
   NH_SCORE_PRIME_MAX,
   NH_SCORE_TOP_MIN,
-  NH_TIER_APLUS_UNLOCK,
 } from "./nighthawk-tiers";
 
 // ── assignNighthawkTier ─────────────────────────────────────────────────────────

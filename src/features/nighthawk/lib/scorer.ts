@@ -47,6 +47,7 @@ export type ScoredCandidate = {
   fundamental_block?: boolean;
   fundamental_flags?: string[];
   trading_halt?: boolean;
+  sector?: string;
 };
 
 export function regimeContextFromMarket(ctx: MarketWideContext): NightHawkRegimeContext {

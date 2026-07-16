@@ -11,6 +11,7 @@ import {
   saveDossierStaging,
   upsertNighthawkJob,
   failStaleNighthawkJobs,
+  fetchRecentNighthawkOutcomesForGovernor,
 } from "@/lib/db";
 import { marketPlatform } from "@/lib/platform";
 import { uwConfigured } from "@/lib/providers/config";
@@ -40,6 +41,8 @@ import {
   type NighthawkPublishGateResult,
 } from "./publish-gates";
 import { partitionPlaysByGeometry } from "./play-constraints";
+import { applyCrossEditionGovernor, GOV_LOOKBACK_EDITIONS } from "./cross-edition-governor";
+import type { RecentOutcomeRow } from "./cross-edition-governor";
 import { nextTradingDayEt, todayEt } from "./session";
 import { notifyOpsDiscord } from "@/features/spx/lib/spx-play-notify";
 import type { NightHawkEdition, PlaybookPlay } from "./types";
@@ -59,6 +62,7 @@ import type { NightHawkEdition, PlaybookPlay } from "./types";
 type FunnelCounts = {
   candidates: number;
   ranked: number;
+  governor_passed: number;
   dossiers: number;
   synthesized: number;
   critic_passed: number;
@@ -75,7 +79,7 @@ function formatFunnelLine(editionFor: string, f: Partial<FunnelCounts>): string 
   const c = (n: number | undefined) => (n == null ? "-" : n);
   return (
     `[nighthawk-funnel] ${editionFor}: candidates=${c(f.candidates)} extracted, ` +
-    `ranked=${c(f.ranked)}, dossiers=${c(f.dossiers)}, ` +
+    `ranked=${c(f.ranked)}, governor_passed=${c(f.governor_passed)}, dossiers=${c(f.dossiers)}, ` +
     `synthesized=${c(f.synthesized)} (claude raw plays), ` +
     `critic_passed=${c(f.critic_passed)}, ` +
     `grounded=${c(f.grounded)}, dropped_ungrounded=${c(f.dropped_ungrounded)}, flagged=${c(f.flagged)}, ` +
@@ -582,6 +586,42 @@ export async function buildEveningEdition(opts?: {
     }
 
     funnel.ranked = ranked.length;
+
+    // Enrich ranked candidates with sector from dossiers (needed by the governor's sector cap).
+    for (const c of ranked) {
+      const d = dossiers[c.ticker];
+      if (d && !c.sector && d.sector) c.sector = d.sector;
+    }
+
+    // STAGE 4b — Cross-edition governor (PR-N8): demote repeat tickers, halt loss streaks,
+    // cap rolling sector exposure. Fail-soft: a DB read error skips the governor entirely.
+    let governorNotes: string[] = [];
+    try {
+      const recentOutcomes: RecentOutcomeRow[] = await fetchRecentNighthawkOutcomesForGovernor(GOV_LOOKBACK_EDITIONS);
+      if (recentOutcomes.length > 0) {
+        const govResult = applyCrossEditionGovernor(ranked, recentOutcomes);
+        ranked = govResult.ranked;
+        governorNotes = govResult.notes;
+
+        for (const cut of govResult.cut) {
+          try {
+            recordNighthawkStageRejectedAuditTrail(
+              [{ ticker: cut.ticker, play: { ticker: cut.ticker } as any, detail: { stage: "cross_edition_governor" as const, reasons: cut.reasons }, scored: cut.scored }],
+              editionFor,
+            );
+          } catch (err) {
+            console.warn("[nighthawk/edition] governor audit-trail write failed:", err);
+          }
+        }
+
+        if (govResult.notes.length) {
+          for (const note of govResult.notes) console.info(`[nighthawk/edition] ${note}`);
+        }
+      }
+    } catch (err) {
+      console.warn("[nighthawk/edition] cross-edition governor skipped (DB read failed):", err);
+    }
+    funnel.governor_passed = ranked.length;
 
     const topDossiers = ranked.map((s) => dossiers[s.ticker]).filter(Boolean);
     const synthesisRanked = ranked.slice(0, EDITION_SYNTHESIS_POOL);

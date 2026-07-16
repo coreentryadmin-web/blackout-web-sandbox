@@ -17140,8 +17140,8 @@ body::before {
 
   .helix-pro-rail .desk-panel {
     border-radius: 8px;
-    border-color: rgba(255, 255, 255, 0.08);
-    background: rgba(6, 7, 12, 0.82);
+    border-color: rgba(255, 255, 255, 0.1);
+    background: rgba(6, 7, 12, 0.88);
   }
 
   .helix-pro-rail .desk-panel > span[aria-hidden] {
@@ -17149,18 +17149,18 @@ body::before {
   }
 
   .helix-pro-rail .desk-panel h3 {
-    font-size: 12px;
+    font-size: 13px;
     font-weight: 700;
-    letter-spacing: 0.18em;
-    color: rgba(226, 232, 240, 0.92);
+    letter-spacing: 0.14em;
+    color: rgba(226, 232, 240, 0.95);
   }
 
   .helix-pro-rail .desk-panel .border-b {
-    padding: 0.5rem 0.75rem;
+    padding: 0.5rem 0.875rem;
   }
 
   .helix-pro-rail .desk-panel > div:last-child {
-    padding: 0.625rem 0.75rem;
+    padding: 0.625rem 0.875rem;
   }
 
   .helix-pro-rail-leader-ticker {
@@ -17168,7 +17168,7 @@ body::before {
   }
 
   .helix-pro-rail-section-label {
-    @apply font-mono text-[11px] font-bold uppercase tracking-[0.22em] text-sky-200/80 px-0.5;
+    @apply font-mono text-[12px] font-bold uppercase tracking-[0.18em] text-sky-200/90 px-0.5;
   }
 
   .helix-pro-disclaimer {
@@ -17250,8 +17250,10 @@ body::before {
 
   @media (min-width: 1280px) {
     .helix-desk-analytics-rail {
-      width: 17.5rem;
-      flex: 0 0 17.5rem;
+      width: 30%;
+      flex: 0 0 30%;
+      min-width: 280px;
+      max-width: 420px;
       overflow-y: auto;
       max-height: min(78vh, calc(100dvh - var(--nav-offset) - 11rem));
     }
@@ -17482,7 +17484,7 @@ body::before {
   }
 
   .helix-tape-bar-label {
-    @apply font-mono text-[8px] font-semibold uppercase tracking-[0.22em] text-sky-300/40 shrink-0;
+    @apply font-mono text-[10px] font-semibold uppercase tracking-[0.18em] text-sky-300/60 shrink-0;
   }
 
   .helix-tape-bar-search {
@@ -17513,8 +17515,8 @@ body::before {
   }
 
   .helix-tape-seg {
-    @apply inline-flex rounded-lg border border-white/[0.08] p-0.5 gap-0.5;
-    background: rgba(0, 0, 0, 0.45);
+    @apply inline-flex rounded-lg border border-white/[0.1] p-0.5 gap-0.5;
+    background: rgba(0, 0, 0, 0.5);
     backdrop-filter: blur(8px);
   }
 
@@ -17523,7 +17525,7 @@ body::before {
   }
 
   .helix-tape-seg-btn {
-    @apply font-mono text-[10px] font-semibold uppercase tracking-wide px-2.5 py-1 rounded-md text-sky-300/65 transition-all duration-150;
+    @apply font-mono text-[11px] font-semibold uppercase tracking-wide px-3 py-1.5 rounded-md text-sky-200/75 transition-all duration-150;
   }
 
   .helix-tape-seg-btn:hover {
@@ -17532,8 +17534,8 @@ body::before {
 
   .helix-tape-seg-btn--active {
     @apply text-white font-bold;
-    background: rgba(125, 211, 252, 0.12);
-    box-shadow: 0 0 12px rgba(125, 211, 252, 0.15), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+    background: rgba(125, 211, 252, 0.18);
+    box-shadow: 0 0 14px rgba(125, 211, 252, 0.25), inset 0 1px 0 rgba(255, 255, 255, 0.1);
   }
 
   .helix-tape-seg-btn--call.helix-tape-seg-btn--active {
@@ -17549,7 +17551,7 @@ body::before {
   }
 
   .helix-tape-seg-count {
-    @apply ml-1 text-[9px] tabular-nums text-sky-300/45;
+    @apply ml-1 text-[10px] tabular-nums text-sky-300/55;
   }
 
   .helix-tape-seg-btn--active .helix-tape-seg-count {
@@ -17557,7 +17559,7 @@ body::before {
   }
 
   .helix-tape-chip {
-    @apply font-mono text-[9px] font-bold uppercase tracking-wider px-2.5 py-1 rounded-full border border-white/[0.08] text-sky-300/60 transition-all duration-200;
+    @apply font-mono text-[11px] font-bold uppercase tracking-wider px-3 py-1.5 rounded-full border border-white/[0.12] text-sky-200/70 transition-all duration-200;
   }
 
   .helix-tape-chip:hover:not(:disabled) {
@@ -17570,9 +17572,9 @@ body::before {
   }
 
   .helix-tape-chip--active {
-    @apply text-white border-white/20 font-bold;
-    background: rgba(125, 211, 252, 0.1);
-    box-shadow: 0 0 10px rgba(125, 211, 252, 0.12);
+    @apply text-white border-white/25 font-bold;
+    background: rgba(125, 211, 252, 0.16);
+    box-shadow: 0 0 12px rgba(125, 211, 252, 0.2);
   }
 
   .helix-tape-chip--gold.helix-tape-chip--active {
@@ -17619,7 +17621,7 @@ body::before {
   }
 
   .helix-tape-tool-btn {
-    @apply font-mono text-[10px] font-semibold uppercase tracking-wide px-2.5 py-1.5 rounded-lg border border-white/[0.08] text-sky-300/70 transition-all duration-200;
+    @apply font-mono text-[11px] font-semibold uppercase tracking-wide px-3 py-1.5 rounded-lg border border-white/[0.12] text-sky-200/80 transition-all duration-200;
   }
 
   .helix-tape-tool-btn:hover:not(:disabled) {
