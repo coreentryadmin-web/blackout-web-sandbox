@@ -82,7 +82,7 @@ async function domSnap(page) {
     const q = s => document.querySelector(s);
     return {
       regime: (q(".vector-regime-read")?.textContent || "").replace(/\s+/g, " ").trim(),
-      terminal: (q(".vector-desk-terminal")?.textContent || "").replace(/\s+/g, " ").trim().slice(0, 6000),
+      terminal: (q(".vector-pulse")?.textContent || "").replace(/\s+/g, " ").trim().slice(0, 6000),
       ladderRows: document.querySelectorAll(".vector-gex-ladder-row").length,
     };
   });

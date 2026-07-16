@@ -9765,7 +9765,8 @@ body::before {
       flex: 1 1 auto;
       max-height: none;
     }
-    .vector-terminal-rail .vector-desk-terminal {
+    .vector-terminal-rail .vector-desk-terminal,
+    .vector-terminal-rail .vector-pulse {
       flex: 1 1 auto;
       min-height: 0;
     }
@@ -10281,6 +10282,217 @@ body::before {
       min-height: calc(100vh - 200px);
     }
   }
+
+  /* ── Vector Pulse — live signal feed replacing the desk terminal ── */
+  .vector-pulse {
+    @apply flex flex-col min-h-0 h-full min-w-0 overflow-hidden rounded-2xl border border-white/10 bg-[#050508];
+    min-height: min(72vh, 640px);
+    font-family: ui-monospace, "SF Mono", "Cascadia Mono", "Segoe UI Mono", Menlo, monospace;
+    font-size: 0.72rem;
+    line-height: 1.4;
+    color: rgba(226, 232, 240, 0.85);
+  }
+  .vector-terminal-rail .vector-pulse {
+    @apply flex-1 min-h-0;
+  }
+  @media (min-width: 1280px) {
+    .vector-pulse {
+      min-height: calc(100vh - 200px);
+    }
+  }
+
+  /* Regime strip */
+  .vp-regime-strip {
+    @apply px-3 pt-3 pb-2 flex-shrink-0;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  }
+  .vp-regime-header {
+    @apply flex items-center gap-2;
+  }
+  .vp-ticker {
+    font-size: 0.8rem;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    color: rgba(226, 232, 240, 0.95);
+  }
+  .vp-regime-badge {
+    @apply px-2 py-0.5 rounded-md text-xs font-bold tracking-wider;
+    background: rgba(255, 255, 255, 0.06);
+  }
+  .vp-regime-badge.vp-tone-bull { background: rgba(34, 197, 94, 0.15); color: #4ade80; }
+  .vp-regime-badge.vp-tone-bear { background: rgba(239, 68, 68, 0.15); color: #f87171; }
+  .vp-regime-badge.vp-tone-warn { background: rgba(245, 158, 11, 0.15); color: #fbbf24; }
+  .vp-regime-badge.vp-tone-muted { background: rgba(148, 163, 184, 0.1); color: #94a3b8; }
+  .vp-regime-read {
+    @apply mt-1 text-xs leading-snug;
+    color: rgba(148, 163, 184, 0.7);
+    margin-bottom: 0;
+  }
+  .vp-spot-row {
+    @apply mt-1.5 flex items-baseline gap-2;
+  }
+  .vp-spot-label {
+    font-size: 0.6rem;
+    font-weight: 600;
+    letter-spacing: 0.1em;
+    color: rgba(148, 163, 184, 0.5);
+  }
+  .vp-spot-value {
+    font-size: 0.85rem;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    color: rgba(226, 232, 240, 0.95);
+  }
+
+  /* Live dot */
+  .vp-live-dot {
+    @apply relative inline-flex ml-auto;
+    width: 8px;
+    height: 8px;
+  }
+  .vp-live-dot-ping {
+    @apply absolute inset-0 rounded-full;
+    background: #22c55e;
+    animation: vp-ping 1.5s cubic-bezier(0, 0, 0.2, 1) infinite;
+  }
+  .vp-live-dot-core {
+    @apply relative rounded-full;
+    width: 8px;
+    height: 8px;
+    background: #22c55e;
+  }
+  @keyframes vp-ping {
+    75%, 100% { transform: scale(2); opacity: 0; }
+  }
+
+  /* Proximity alert */
+  .vp-proximity {
+    @apply mx-3 my-1.5 px-2.5 py-1.5 rounded-lg text-xs leading-snug flex items-start gap-2;
+    border: 1px solid rgba(255, 255, 255, 0.06);
+  }
+  .vp-proximity.vp-tone-warn {
+    background: rgba(245, 158, 11, 0.06);
+    border-color: rgba(245, 158, 11, 0.15);
+    color: #fbbf24;
+  }
+  .vp-proximity.vp-tone-info {
+    background: rgba(59, 130, 246, 0.04);
+    border-color: rgba(59, 130, 246, 0.1);
+    color: rgba(148, 163, 184, 0.85);
+  }
+  .vp-proximity-badge {
+    @apply px-1.5 py-0.5 rounded text-xs font-bold tracking-wider flex-shrink-0;
+    font-size: 0.55rem;
+    background: rgba(255, 255, 255, 0.08);
+  }
+  .vp-proximity-text {
+    flex: 1;
+    min-width: 0;
+  }
+
+  /* Signal feed */
+  .vp-feed {
+    @apply flex-1 min-h-0 flex flex-col overflow-hidden;
+  }
+  .vp-feed-header {
+    @apply flex items-center justify-between px-3 py-1.5 flex-shrink-0;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  }
+  .vp-feed-title {
+    font-size: 0.6rem;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    color: rgba(148, 163, 184, 0.5);
+  }
+  .vp-feed-count {
+    font-size: 0.6rem;
+    font-variant-numeric: tabular-nums;
+    color: rgba(148, 163, 184, 0.3);
+  }
+  .vp-feed-empty {
+    @apply px-3 py-4 text-center text-xs;
+    color: rgba(148, 163, 184, 0.3);
+    font-style: italic;
+  }
+  .vp-feed-list {
+    @apply flex-1 overflow-y-auto min-h-0 py-1;
+  }
+
+  /* Signal entries */
+  .vp-signal {
+    @apply flex items-start gap-1.5 px-3 py-1;
+  }
+  .vp-signal:hover {
+    background: rgba(255, 255, 255, 0.02);
+  }
+  .vp-signal-tone {
+    @apply px-1 py-0.5 rounded text-center flex-shrink-0 font-bold;
+    font-size: 0.5rem;
+    letter-spacing: 0.06em;
+    min-width: 30px;
+  }
+  .vp-signal-tone.vp-tone-bull { background: rgba(34, 197, 94, 0.12); color: #4ade80; }
+  .vp-signal-tone.vp-tone-bear { background: rgba(239, 68, 68, 0.12); color: #f87171; }
+  .vp-signal-tone.vp-tone-warn { background: rgba(245, 158, 11, 0.12); color: #fbbf24; }
+  .vp-signal-tone.vp-tone-info { background: rgba(59, 130, 246, 0.1); color: #60a5fa; }
+  .vp-signal-time {
+    font-size: 0.6rem;
+    font-variant-numeric: tabular-nums;
+    color: rgba(148, 163, 184, 0.35);
+    flex-shrink: 0;
+    padding-top: 1px;
+  }
+  .vp-signal-line {
+    flex: 1;
+    min-width: 0;
+    word-break: break-word;
+  }
+
+  /* Intel sections */
+  .vp-intel {
+    @apply flex-shrink-0 overflow-y-auto;
+    max-height: 45%;
+    border-top: 1px solid rgba(255, 255, 255, 0.06);
+  }
+  .vp-intel-section {
+    @apply py-1;
+  }
+  .vp-intel-section-header {
+    @apply px-3 py-1;
+    font-size: 0.6rem;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    color: rgba(148, 163, 184, 0.4);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+  }
+  .vp-intel-row {
+    @apply flex items-start gap-1.5 px-3 py-0.5;
+    color: rgba(148, 163, 184, 0.7);
+  }
+  .vp-intel-icon {
+    @apply flex-shrink-0;
+    width: 12px;
+    text-align: center;
+    font-size: 0.65rem;
+    color: rgba(148, 163, 184, 0.35);
+  }
+  .vp-intel-text {
+    flex: 1;
+    min-width: 0;
+  }
+
+  /* Tone utility classes for intel rows */
+  .vp-intel-text.vp-tone-warn { color: #fbbf24; }
+  .vp-intel-text.vp-tone-bull { color: #4ade80; }
+  .vp-intel-text.vp-tone-bear { color: #f87171; }
+
+  /* Playbook tone passthrough */
+  .vp-pb-accent { color: rgba(96, 165, 250, 0.85); }
+  .vp-pb-bull { color: #4ade80; }
+  .vp-pb-bear { color: #f87171; }
+  .vp-pb-warn { color: #fbbf24; }
+  .vp-pb-neutral { color: rgba(148, 163, 184, 0.7); }
+  .vp-pb-dim { color: rgba(148, 163, 184, 0.4); }
 
   /* ── Gamma regime banner — plain-English positioning read above the chart ── */
   .vector-regime-banner {

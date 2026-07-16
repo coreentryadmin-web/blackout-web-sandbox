@@ -13,7 +13,7 @@ import type { VectorPriceScaleMap } from "@/features/vector/lib/vector-price-sca
 import type { VectorTimeframeMinutes } from "@/features/vector/lib/vector-bar-timeframes";
 import { VectorTickerSelect } from "@/features/vector/components/VectorTickerSelect";
 import { VectorScanner } from "@/features/vector/components/VectorScanner";
-import { VectorDeskTerminal } from "@/features/vector/components/VectorDeskTerminal";
+import { VectorPulse } from "@/features/vector/components/VectorPulse";
 import { VectorGexLadder } from "@/features/vector/components/VectorGexLadder";
 import { VectorRegimeBanner } from "@/features/vector/components/VectorRegimeBanner";
 import { VectorAlertsPanel } from "@/features/vector/components/VectorAlertsPanel";
@@ -398,15 +398,15 @@ export function VectorPageShell({
               regimeSlot={<VectorRegimeBanner regime={regime} />}
             />
           </div>
-          {/* Full RIGHT column: the desk terminal narration — the main thing that scrolls, so it
-              gets the width and height (ladder moved to the thin left rail above). */}
+          {/* Full RIGHT column: Vector Pulse — live signal feed + intel context. */}
           <div className="vector-terminal-rail">
-            <VectorDeskTerminal
+            <VectorPulse
               ticker={activeTicker}
               lens={lens}
               wallEvents={wallEvents}
               liveSession={liveSession}
               streamUpdatedAt={streamUpdatedAt}
+              regime={regime}
               proximity={proximity}
               magnet={magnet}
               confluence={confluence}
@@ -414,6 +414,7 @@ export function VectorPageShell({
               expectedMove={expectedMove}
               alerts={recentAlerts.slice(0, 5).map((f) => f.message)}
               wallIntegrity={wallIntegrity}
+              liveSpot={liveSpot}
             />
             <VectorAlertsPanel
               ticker={activeTicker}

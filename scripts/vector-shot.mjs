@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * Reusable live staging screenshotter for Vector — logs in (temp Cognito user),
- * captures the full Vector page + a zoom on the desk terminal, into the scratchpad.
+ * captures the full Vector page + a zoom on the pulse panel, into the scratchpad.
  * Usage: node scripts/vector-shot.mjs [ticker] [label]
  */
 import { execSync } from "node:child_process";
@@ -62,10 +62,10 @@ try {
   }
   await page.waitForTimeout(6000);
   const regime = await page.locator('[data-testid="vector-regime-banner"]').count();
-  const pulse = await page.locator('.vector-desk-terminal').count();
+  const pulse = await page.locator('.vector-pulse').count();
   console.log(`[${TICKER}] regimeBanner=${regime} terminal=${pulse} consoleErrors=${errs.length}`);
   await page.screenshot({ path: join(OUT, `${LABEL}-${TICKER}-full.png`) });
-  const term = page.locator('.vector-desk-terminal').first();
+  const term = page.locator('.vector-pulse').first();
   if (await term.count()) await term.screenshot({ path: join(OUT, `${LABEL}-${TICKER}-terminal.png`) }).catch(()=>{});
   console.log("saved:", join(OUT, `${LABEL}-${TICKER}-full.png`));
 } finally {

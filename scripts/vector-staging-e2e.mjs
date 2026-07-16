@@ -5,7 +5,7 @@
  * STANDING POLICY (CLAUDE.md): run this after EVERY Vector deploy, before considering a change
  * done. It signs into staging (Cognito temp admin+premium user, always deleted) and sweeps the
  * product across MULTIPLE STOCKS × MULTIPLE TIMEFRAMES × MULTIPLE EXPIRIES, asserting the chart,
- * GEX ladder, desk terminal, DTE re-scoping, timeframe switches, and the indicator menu (both
+ * GEX ladder, pulse panel, DTE re-scoping, timeframe switches, and the indicator menu (both
  * groups + toggles that actually draw) all render with ZERO console errors. Exits non-zero on any
  * failure so it can gate. Only move on when this is green.
  *
@@ -89,13 +89,13 @@ async function validateTicker(page, ticker, consoleErrors) {
       ladderRows: document.querySelectorAll(".vector-gex-ladder-row").length,
       spot: (q(".vector-gex-ladder-sub")?.textContent || "").trim(),
       regime: (q(".vector-regime-read")?.textContent || "").trim().length,
-      terminal: !!q(".vector-desk-terminal"),
+      terminal: !!q(".vector-pulse"),
       menu: !!q(".vector-ind-trigger"),
     };
   });
   rec(`${ticker}: chart canvas renders`, probe.canvas);
   rec(`${ticker}: GEX ladder has rows`, probe.ladderRows > 0, `${probe.ladderRows} rows, ${probe.spot}`);
-  rec(`${ticker}: desk terminal present`, probe.terminal);
+  rec(`${ticker}: pulse panel present`, probe.terminal);
   rec(`${ticker}: regime banner populated`, probe.regime > 0);
   rec(`${ticker}: indicator menu present`, probe.menu);
 

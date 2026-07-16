@@ -87,7 +87,7 @@ async function domSnap(page) {
     const mpM = body.match(/Max Pain\s+([\d,]+(?:\.\d+)?)/i);
     return {
       banner: (q(".vector-regime-read")?.textContent || "").replace(/\s+/g, " ").trim(),
-      terminal: (q(".vector-desk-terminal")?.textContent || "").replace(/\s+/g, " ").trim().slice(0, 6000),
+      terminal: (q(".vector-pulse")?.textContent || "").replace(/\s+/g, " ").trim().slice(0, 6000),
       ladder: [...document.querySelectorAll(".vector-gex-ladder-row")].map((r) => (r.textContent || "").replace(/\s+/g, " ").trim()).join(" | "),
       flipLabel: flipM ? Number(flipM[1].replace(/,/g, "")) : null,
       maxPainLabel: mpM ? Number(mpM[1].replace(/,/g, "")) : null,
