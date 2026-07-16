@@ -88,6 +88,19 @@ test("top-band inversion is priced: a raw 85+ score earns LESS than the 75-84 ba
   assert.match(discounted.detail, /inversion/);
 });
 
+test("score 85+ ceiling cap: even with full A-grade evidence, score 85+ is HARD-CAPPED at B", () => {
+  // Without the cap this would be: +1 (score top) +2 (calm VIX) +2 (clean Cortex) = 5 → A.
+  // With the cap: ceiling is B regardless of how many factors align.
+  const maxed = assignZeroDteTier(
+    boundaryA({ score: 92, cortexScore: 3.5, cortexSupportCount: 4 })
+  );
+  assert.equal(maxed.tier, "B");
+  const cap = maxed.factors.find((f) => f.label === "Score 85+ tier cap");
+  assert.ok(cap, "the cap factor must appear");
+  assert.equal(cap!.direction, "down");
+  assert.match(cap!.detail, /75-84 prime band/);
+});
+
 test("missing evidence degrades, never upgrades: each null caps the tier", () => {
   // Missing VIX: otherwise-A evidence caps at B, with a down factor saying why.
   const noVix = assignZeroDteTier(boundaryA({ vixOpen: null, cortexScore: 3, cortexSupportCount: 3 }));

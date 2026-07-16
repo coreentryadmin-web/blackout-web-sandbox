@@ -265,6 +265,10 @@ export type ZeroDteGateFailure =
   | "governor_reentry_lock" // G-5: same-direction re-entry within 20m of that ticker's stop
   | "correlated_conflict" // G-5/B-3: opposes an OPEN plan on a correlated ticker
   | "gate_context_unavailable" // fail-closed: gate inputs (ledger/governor) unreadable
+  // ── G-4/G-6 hard gates (promoted from calibration 2026-07-16) ─────────────
+  | "vix_elevated" // G-4: VIX 17-20 regime + score < 75 (69.2% WR at <17 vs 25.0% at ≥17)
+  | "vix_extreme" // G-4: VIX ≥ 20 + non-index/ETF product (blocked outright)
+  | "cross_system_conflict" // G-6: opposes live Slayer or Night Hawk take + score < 80
   // ── Night Hawk Cortex layer (./cortex-gate.ts, NIGHTHAWK-CORTEX-DESIGN.md §2) —
   // evaluated on gate SURVIVORS only, i.e. only after every hard gate above passed.
   // The <source> suffix names the Cortex source that vetoed (e.g. "cortex_veto:flow-quality").

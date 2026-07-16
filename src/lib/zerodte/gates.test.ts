@@ -182,43 +182,55 @@ test("G-5/B-3: a commit accepted earlier in the SAME cycle also anchors the corr
   assert.deepEqual(v.blocks.map((b) => b.code), ["correlated_conflict"]);
 });
 
-// ── G-4 · VIX regime throttle (CALIBRATION — logs, never blocks) ────────────────────
+// ── G-4 · VIX regime throttle (HARD GATE — promoted from calibration 2026-07-16) ────
 
-test("G-4 calibration: normal / elevated / extreme tiers with the would-block rules", () => {
-  // Normal (<17): no verdict beyond the tier.
+test("G-4: normal VIX (<17) commits freely, calibration tier logged", () => {
   const normal = evaluateZeroDteGates(input({ vixDayOpen: 16.32 }));
+  assert.equal(normal.verdict, "COMMIT");
   assert.equal(normal.calibration.g4_vix.tier, "normal");
   assert.equal(normal.calibration.g4_vix.would_block, false);
-
-  // Elevated (>=17): hardened rule needs alignment AND score >= 75.
-  const weak = evaluateZeroDteGates(input({ vixDayOpen: 18, score: 70 }));
-  assert.equal(weak.calibration.g4_vix.tier, "elevated");
-  assert.equal(weak.calibration.g4_vix.would_block, true, "aligned but score < 75");
-  assert.equal(weak.verdict, "COMMIT", "calibration mode NEVER blocks");
-  const strong = evaluateZeroDteGates(input({ vixDayOpen: 18, score: 80 }));
-  assert.equal(strong.calibration.g4_vix.would_block, false, "aligned + score >= 75 clears");
-
-  // Extreme (>=20): index/ETF survives at half size, single names would block.
-  const qqq = evaluateZeroDteGates(input({ vixDayOpen: 22, score: 90 }));
-  assert.equal(qqq.calibration.g4_vix.tier, "extreme");
-  assert.equal(qqq.calibration.g4_vix.would_block, false);
-  assert.equal(qqq.calibration.g4_vix.would_halve_size, true);
-  const nvda = evaluateZeroDteGates(input({ ticker: "NVDA", direction: "short", vixDayOpen: 22, score: 90 }));
-  assert.equal(nvda.calibration.g4_vix.would_block, true, "single name in extreme VIX");
-  assert.equal(nvda.verdict, "COMMIT", "still calibration-only");
 });
 
-test("G-4 calibration: unknown VIX is recorded as unknown — never guessed, never blocking", () => {
+test("G-4: elevated VIX (>=17) with score < 75 BLOCKS (the 44pp WR gap is too strong to ignore)", () => {
+  const weak = evaluateZeroDteGates(input({ vixDayOpen: 18, score: 70 }));
+  assert.equal(weak.verdict, "BLOCKED");
+  assert.equal(weak.blocks.some((b) => b.code === "vix_elevated"), true);
+  assert.match(weak.blocks.find((b) => b.code === "vix_elevated")!.reason, /25% WR/);
+  assert.equal(weak.calibration.g4_vix.tier, "elevated");
+  assert.equal(weak.calibration.g4_vix.would_block, true);
+});
+
+test("G-4: elevated VIX (>=17) with score >= 75 clears", () => {
+  const strong = evaluateZeroDteGates(input({ vixDayOpen: 18, score: 80 }));
+  assert.equal(strong.verdict, "COMMIT");
+  assert.equal(strong.calibration.g4_vix.would_block, false, "aligned + score >= 75 clears");
+});
+
+test("G-4: extreme VIX (>=20) blocks single names outright", () => {
+  const nvda = evaluateZeroDteGates(input({ ticker: "NVDA", direction: "short", vixDayOpen: 22, score: 90 }));
+  assert.equal(nvda.verdict, "BLOCKED");
+  assert.equal(nvda.blocks.some((b) => b.code === "vix_extreme"), true);
+  assert.match(nvda.blocks.find((b) => b.code === "vix_extreme")!.reason, /single-name/);
+  assert.equal(nvda.calibration.g4_vix.would_block, true);
+});
+
+test("G-4: extreme VIX (>=20) lets index/ETF products through (half-size in calibration)", () => {
+  const qqq = evaluateZeroDteGates(input({ vixDayOpen: 22, score: 90 }));
+  assert.equal(qqq.verdict, "COMMIT");
+  assert.equal(qqq.calibration.g4_vix.tier, "extreme");
+  assert.equal(qqq.calibration.g4_vix.would_halve_size, true);
+});
+
+test("G-4: unknown VIX does not block — fail-open on missing data (tier engine handles the penalty)", () => {
   const v = evaluateZeroDteGates(input({ vixDayOpen: null }));
   assert.equal(v.calibration.g4_vix.tier, "unknown");
   assert.equal(v.calibration.g4_vix.would_block, false);
   assert.equal(v.verdict, "COMMIT");
 });
 
-// ── G-6 · cross-system conflict (CALIBRATION — logs, never blocks) ──────────────────
+// ── G-6 · cross-system conflict (HARD GATE — promoted from calibration 2026-07-16) ──
 
-test("G-6 calibration: opposing Night Hawk's take on the same ticker flags CONFLICT but commits", () => {
-  // The 7/13 case: META short (score 67) vs Night Hawk's 7/10 edition LONG A.
+test("G-6: opposing Night Hawk's take with score < 80 BLOCKS (was calibration-only)", () => {
   const v = evaluateZeroDteGates(
     input({
       ticker: "META",
@@ -227,28 +239,41 @@ test("G-6 calibration: opposing Night Hawk's take on the same ticker flags CONFL
       nighthawkTake: { direction: "long", edition_for: "2026-07-10" },
     })
   );
-  assert.equal(v.verdict, "COMMIT", "G-6 is calibration mode — the commit still prints");
+  assert.equal(v.verdict, "BLOCKED");
+  assert.equal(v.blocks.some((b) => b.code === "cross_system_conflict"), true);
+  assert.match(
+    v.blocks.find((b) => b.code === "cross_system_conflict")!.reason,
+    /Night Hawk/
+  );
   assert.equal(v.calibration.g6_conflict.conflict, true);
   assert.deepEqual(v.calibration.g6_conflict.against, ["nighthawk_edition"]);
-  assert.equal(v.calibration.g6_conflict.would_block, true, "hardened G-6 needs score >= 80");
-  assert.match(v.calibration.g6_conflict.note, /2026-07-10/);
+  assert.equal(v.calibration.g6_conflict.would_block, true);
 });
 
-test("G-6 calibration: opposing the live Slayer play counts only for SPX-correlated tickers", () => {
+test("G-6: opposing the live Slayer play on an SPX-correlated ticker BLOCKS at score < 80", () => {
   const slayerLive = { direction: "long" as const };
-  // SPY short vs a live Slayer long = desk disagreement.
   const spy = evaluateZeroDteGates(input({ ticker: "SPY", direction: "short", slayerLive }));
+  assert.equal(spy.verdict, "BLOCKED");
+  assert.equal(spy.blocks.some((b) => b.code === "cross_system_conflict"), true);
   assert.equal(spy.calibration.g6_conflict.conflict, true);
   assert.deepEqual(spy.calibration.g6_conflict.against, ["spx_slayer"]);
-  // A single-name short is not correlated exposure to Slayer's SPX book.
-  const intc = evaluateZeroDteGates(input({ ticker: "INTC", direction: "short", slayerLive }));
-  assert.equal(intc.calibration.g6_conflict.conflict, false);
-  // Same direction as Slayer — no conflict.
-  const qqqLong = evaluateZeroDteGates(input({ ticker: "QQQ", direction: "long", bias: "up", slayerLive }));
-  assert.equal(qqqLong.calibration.g6_conflict.conflict, false);
 });
 
-test("G-6 calibration: score >= 80 clears the hardened rule (CONFLICT still flagged)", () => {
+test("G-6: single-name short is NOT correlated exposure to Slayer's SPX book — no conflict", () => {
+  const slayerLive = { direction: "long" as const };
+  const intc = evaluateZeroDteGates(input({ ticker: "INTC", direction: "short", slayerLive }));
+  assert.equal(intc.calibration.g6_conflict.conflict, false);
+  assert.equal(intc.verdict, "COMMIT");
+});
+
+test("G-6: same direction as Slayer — no conflict, commits freely", () => {
+  const slayerLive = { direction: "long" as const };
+  const qqqLong = evaluateZeroDteGates(input({ ticker: "QQQ", direction: "long", bias: "up", slayerLive }));
+  assert.equal(qqqLong.calibration.g6_conflict.conflict, false);
+  assert.equal(qqqLong.verdict, "COMMIT");
+});
+
+test("G-6: score >= 80 overrides the conflict — CONFLICT still flagged but commits", () => {
   const v = evaluateZeroDteGates(
     input({
       ticker: "META",
@@ -257,6 +282,7 @@ test("G-6 calibration: score >= 80 clears the hardened rule (CONFLICT still flag
       nighthawkTake: { direction: "long", edition_for: "2026-07-10" },
     })
   );
+  assert.equal(v.verdict, "COMMIT");
   assert.equal(v.calibration.g6_conflict.conflict, true);
   assert.equal(v.calibration.g6_conflict.would_block, false);
 });

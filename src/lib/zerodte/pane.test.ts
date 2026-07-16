@@ -191,6 +191,9 @@ test("zeroDteGateLabel: known codes map to their gate names; unknown codes prett
   assert.equal(zeroDteGateLabel("governor_session_stops"), "governor · stop halt");
   assert.equal(zeroDteGateLabel("correlated_conflict"), "governor · correlated conflict");
   assert.equal(zeroDteGateLabel("cortex_net_negative"), "cortex · net-negative");
+  assert.equal(zeroDteGateLabel("vix_elevated"), "G-4 · VIX elevated");
+  assert.equal(zeroDteGateLabel("vix_extreme"), "G-4 · VIX extreme");
+  assert.equal(zeroDteGateLabel("cross_system_conflict"), "G-6 · cross-system conflict");
   assert.equal(zeroDteGateLabel("some_future_gate"), "some future gate");
 });
 
