@@ -145,6 +145,7 @@ export function VectorPageShell({
     [initialSpot, initialGammaFlip, initialWalls, initialWallHistory]
   );
 
+  const [liveSpot, setLiveSpot] = useState<number | null>(null);
   const [regime, setRegime] = useState<VectorRegime>(surfaceSeed.regime);
   const [proximity, setProximity] = useState<WallProximity | null>(surfaceSeed.proximity);
   const [confluence, setConfluence] = useState<string[] | null>(null);
@@ -180,6 +181,7 @@ export function VectorPageShell({
   // Load the member's saved alert rules whenever the ticker changes (and clear the recent history so
   // one ticker's fires don't bleed into another). Persisted per ticker in localStorage.
   useEffect(() => {
+    setLiveSpot(null);
     setAlertRules(loadAlertRules(activeTicker));
     setRecentAlerts([]);
     setToast(null);
@@ -343,6 +345,7 @@ export function VectorPageShell({
               ticker={activeTicker}
               liveSession={liveSession}
               initialSpot={initialBars.length ? initialBars[initialBars.length - 1]!.close : null}
+              liveSpot={liveSpot}
               dteHorizon={dteHorizon}
             />
           </div>
@@ -373,6 +376,7 @@ export function VectorPageShell({
               onRegimeChange={setRegime}
               onProximityChange={setProximity}
               onMagnetChange={setMagnet}
+              onSpotChange={setLiveSpot}
               onConfluenceChange={setConfluence}
               onWallIntegrityChange={setWallIntegrity}
               onDteHorizonChange={setDteHorizon}

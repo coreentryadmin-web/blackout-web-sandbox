@@ -79,9 +79,8 @@ mock.module("../../../../lib/et-market-hours", {
     isEtCashRth: () => mockMarketOpen,
   },
 });
-// heatmap-allowlist is intentionally left real (its own header notes it's a pure data +
-// predicate module, safe outside a server bundle) — "ZZZZ" below is neither a preset nor an
-// overlay-allowlisted ticker, so cross_validation/overlays stay on their skip paths for free.
+// heatmap-allowlist is intentionally left real (pure data module, safe outside a server
+// bundle). All tickers now get uniform treatment — overlays, cross-validation, etc.
 
 /** A fully-populated, non-empty heatmap — the normal "real data" case. */
 function liveHeatmap(overrides: Partial<GexHeatmap> = {}): GexHeatmap {

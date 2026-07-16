@@ -3,7 +3,7 @@
  * (`/api/cron/wall-history-retention`).
  *
  * The Vector wall rail is mirrored durably into `vector_wall_history` (one upsert per
- * 15s bucket during RTH). Only a rolling window is ever replayed, so old sessions are
+ * 5s bucket during RTH). Only a rolling window is ever replayed, so old sessions are
  * pruned daily. Retention is env-driven per the platform decision:
  *   - staging: 30 days (the default here)
  *   - prod:    90 days  → set WALL_HISTORY_RETENTION_DAYS=90 on the prod app

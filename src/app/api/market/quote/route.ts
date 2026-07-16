@@ -14,7 +14,7 @@ export const dynamic = "force-dynamic";
  *
  * A tiny, scalable spot-price tape for the Heat Maps GEX header — designed to be
  * polled fast (~1.5s) WITHOUT pressuring upstream, so the header price updates live
- * while the gamma matrix stays on its own 20s cache.
+ * while the gamma matrix stays on its own 5s cache.
  *
  * Two resolution paths:
  *  - INDEX (SPX/NDX/RUT/VIX → I:*): when a TRUE real-time WS price exists in the

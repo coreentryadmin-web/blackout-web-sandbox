@@ -25,7 +25,7 @@ export const SPX_PULSE_REST_POLL_MS = pollMs("NEXT_PUBLIC_SPX_PULSE_REST_POLL_MS
 /** REST pulse when SSE connected (spot still pushes @ 250ms) — default 10s. */
 export const SPX_PULSE_REST_SSE_POLL_MS = pollMs("NEXT_PUBLIC_SPX_PULSE_REST_SSE_POLL_MS", 10_000);
 
-/** Left-rail GEX/VEX matrix during RTH — default 6s (pairs with SPX_GEX_HEATMAP_CACHE_SEC). */
+/** Left-rail GEX/VEX matrix during RTH — default 6s (pairs with GEX_HEATMAP_CACHE_SEC). */
 export const SPX_MATRIX_POLL_RTH_MS = pollMs("NEXT_PUBLIC_SPX_MATRIX_POLL_RTH_MS", 6_000);
 
 /** Matrix off-hours / AH — default 20s. */

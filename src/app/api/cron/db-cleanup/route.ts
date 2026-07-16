@@ -224,7 +224,7 @@ async function runCleanup(): Promise<CleanupRunResult> {
     },
     { key: "lotto_plays", run: () => deleteOlderThan("lotto_plays", "created_at", 365) },
 
-    // vector_wall_history: durable mirror of the Redis wall rail — one upsert per 15s bucket
+    // vector_wall_history: durable mirror of the Redis wall rail — one upsert per 5s bucket
     // during RTH. Only ~90 days are ever replayed, so prune older sessions by updated_at.
     {
       key: "vector_wall_history",

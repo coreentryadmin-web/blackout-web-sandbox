@@ -251,7 +251,7 @@ type TickerSearchResult = { ticker: string; name: string; type?: string };
 
 /**
  * Live spot tape from /api/market/quote — polled fast (~1.5s) so the header price
- * updates live while the gamma matrix stays on its own 20s cache. Browser-safe shape
+ * updates live while the gamma matrix stays on its own 5s cache. Browser-safe shape
  * (no server import): index spot is true WS (`source:'ws'`), stocks/ETFs are
  * ~1.5s shared-cached REST (`source:'rest'`). `available:false` until the first read.
  */
@@ -1862,9 +1862,9 @@ function fmtAsofSeconds(iso: string | undefined): string | null {
   });
 }
 
-/** The matrix is on a 20s cache; tint the freshness chip amber once the sample is older than
- *  ~2× that window so a sitting-stale grid (e.g. an off-warm-preset ticker) is visibly flagged. */
-const MATRIX_STALE_MS = 40_000;
+/** The matrix is on a 5s server cache (5s client poll RTH); tint the freshness chip amber
+ *  once the sample is older than ~2× the poll window so a stale grid is visibly flagged. */
+const MATRIX_STALE_MS = 10_000;
 
 /** Always-visible "as of HH:MM:SS ET" freshness anchor for the matrix header. Renders null when
  *  there is no usable timestamp so it never fabricates freshness. */
@@ -2094,7 +2094,7 @@ function FlowSummary({
 
   // When overlays have been loaded but this ticker has no flow overlay data, show a muted
   // indicator instead of silently hiding the card — so the user knows the HELIX card area
-  // is working and this ticker simply isn't in the flow overlay allowlist.
+  // is working and this ticker simply has no flow overlay data available.
   if (!flowByStrike || Object.keys(flowByStrike).length === 0) {
     if (!overlaysLoaded) return null; // still loading — stay quiet
     return (
@@ -2518,12 +2518,12 @@ export function GexHeatmap({
   // string. The subset re-sums cells[strike] over the chosen expiry/expiries entirely
   // client-side (no refetch) and re-derives walls/flip from those filtered totals.
   const [expiryScope, setExpiryScope] = useState<string>("all");
-  const matrixPollMs = usePollIntervalMs(20_000, 60_000);
+  const matrixPollMs = usePollIntervalMs(5_000, 60_000);
   const quotePollMs = usePollIntervalMs(15_000, 60_000);
 
   // Fast-move bypass: when the live quote diverges from the cached matrix snapshot spot
   // by >0.5%, we append `&force=1` to the matrix key for ONE refetch (then clear it) so
-  // the gamma/vanna profile recomputes immediately instead of waiting out the 20s cache.
+  // the gamma/vanna profile recomputes immediately instead of waiting out the 5s cache.
   // `forceNonce` busts SWR's key on each forced refresh; `fastFlash` drives a header pulse.
   const [forceNonce, setForceNonce] = useState(0);
   const [fastFlash, setFastFlash] = useState(false);
@@ -2555,8 +2555,8 @@ export function GexHeatmap({
       refreshInterval: matrixPollMs,
       refreshWhenHidden: false,
       // Refresh the moment the user returns to the tab.
-      // the tab is hidden, so WITHOUT this the matrix reads up to 20s stale on return —
-      // which feels like "it only updates when I refresh". Server-cached (20s) + SWR
+      // the tab is hidden, so WITHOUT this the matrix reads stale on return —
+      // which feels like "it only updates when I refresh". Server-cached (5s) + SWR
       // deduping keep focus-triggered refetches cheap (they hit the warm cache).
       revalidateOnFocus: true,
       keepPreviousData: true,
@@ -2573,7 +2573,7 @@ export function GexHeatmap({
 
   // Live spot tape — a SEPARATE, fast (~1.5s) SWR just for the header price. Index
   // spot is true real-time WS; stocks/ETFs are shared-cached REST. The gamma
-  // matrix keeps its own 20s cache above; the header quote polls at 15s to avoid
+  // matrix keeps its own 5s cache above; the header quote polls at 15s to avoid
   // fan-out load (~10× reduction vs the prior 1.5s interval).
   const { data: quote } = useSWR<QuoteResponse>(
     `/api/market/quote?ticker=${encodeURIComponent(ticker)}`,

@@ -19,7 +19,7 @@ import { absentForMissingSlice, fmtNum, parseMs } from "./shared";
 export const TREND_WINDOW_SEC = 45 * 60;
 
 /** Minimum rail samples in-window before this source may speak (design §1 "require
- *  ≥N samples"). 8 samples ≈ 2 min of the 15s recorder cadence: enough points for a
+ *  ≥N samples"). 8 samples ≈ 40s of the 5s recorder cadence: enough points for a
  *  meaningful least-squares slope, small enough that ordinary recorder gaps
  *  (viewer-less names, restarts) don't permanently silence the flagship. */
 export const MIN_TREND_SAMPLES = 8;

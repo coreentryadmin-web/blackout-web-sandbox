@@ -48,12 +48,12 @@ test("recordWallSample: replaces the last entry when the bar is still forming (s
 
 test("recordWallSample: trims from the front once the history exceeds the cap", () => {
   let history: WallHistorySample[] = [];
-  for (let i = 0; i < 2000; i++) {
-    history = recordWallSample(history, { time: i * 15, walls: walls([6800], [6700]) });
+  for (let i = 0; i < 6000; i++) {
+    history = recordWallSample(history, { time: i * 5, walls: walls([6800], [6700]) });
   }
-  assert.equal(history.length, 1920);
-  assert.equal(history[0].time, 80 * 15);
-  assert.equal(history[history.length - 1].time, 1999 * 15);
+  assert.equal(history.length, 5760);
+  assert.equal(history[0].time, 240 * 5);
+  assert.equal(history[history.length - 1].time, 5999 * 5);
 });
 
 test("trailForRank: projects one rank's strike/pct across the history, in order", () => {
@@ -341,15 +341,15 @@ test("mergeModeledUnderlay: result is sorted by time regardless of input orderin
 });
 
 test("mergeModeledUnderlay: caps to MAX_HISTORY by keeping the newest tail", () => {
-  // 2100 modeled buckets (> the 1920 cap) → tail-sliced to the most recent 1920.
-  const modeled: WallHistorySample[] = Array.from({ length: 2100 }, (_, i) => ({
-    time: i * 15,
+  // 6100 modeled buckets (> the 5760 cap) → tail-sliced to the most recent 5760.
+  const modeled: WallHistorySample[] = Array.from({ length: 6100 }, (_, i) => ({
+    time: i * 5,
     walls: walls([6800], [6700]),
   }));
   const merged = mergeModeledUnderlay([], modeled);
-  assert.equal(merged.length, 1920);
-  assert.equal(merged[0].time, (2100 - 1920) * 15);
-  assert.equal(merged[merged.length - 1].time, 2099 * 15);
+  assert.equal(merged.length, 5760);
+  assert.equal(merged[0].time, (6100 - 5760) * 5);
+  assert.equal(merged[merged.length - 1].time, 6099 * 5);
 });
 
 test("trailsByStrike: threads the sample's modeled flag onto each emitted trail point", () => {
@@ -431,7 +431,7 @@ test("liveTrailAnchorSec: uses the later of wall history tail and last bar", () 
   assert.equal(liveTrailAnchorSec([{ time: 500, walls: walls([6800], []) }], [100, 700]), 700);
 });
 
-test("bucketWallHistoryForInterval: 1m collapses 15s samples to one bead per minute", () => {
+test("bucketWallHistoryForInterval: 1m collapses 5s samples to one bead per minute", () => {
   const history: WallHistorySample[] = [
     { time: 100, walls: walls([6800], [6700]) },
     { time: 115, walls: walls([6805], [6700]) },

@@ -201,6 +201,9 @@ type Props = {
   onRegimeChange?: (regime: VectorRegime) => void;
   onProximityChange?: (proximity: WallProximity | null) => void;
   onMagnetChange?: (magnet: GammaMagnet | null) => void;
+  /** Fires on every SSE tick with the latest candle.close so sibling panels (GEX ladder) can show
+   *  a 1s-fresh spot badge without waiting for their own REST poll. */
+  onSpotChange?: (spot: number) => void;
   /** Ranked confluence callouts (pre-formatted strings) for the desk terminal; null = no zones. */
   onConfluenceChange?: (callouts: string[] | null) => void;
   onWallIntegrityChange?: (integrity: { call: WallIntegrity | null; put: WallIntegrity | null }) => void;
@@ -891,6 +894,7 @@ export function VectorChart({
   onRegimeChange,
   onProximityChange,
   onMagnetChange,
+  onSpotChange,
   onConfluenceChange,
   onWallIntegrityChange,
   onLensChange,
@@ -2021,9 +2025,9 @@ export function VectorChart({
 
     void fetchScoped();
     void fetchHistory();
-    // Only the current walls need the 15s cadence; the recorded trail advances at the recorder's
+    // Only the current walls need the 5s cadence; the recorded trail advances at the recorder's
     // 5-min bucket, so refresh it on a slower interval in RTH (and once, above, off-hours).
-    const id = liveSession ? setInterval(fetchScoped, 15_000) : null;
+    const id = liveSession ? setInterval(fetchScoped, 5_000) : null;
     const histId = liveSession ? setInterval(fetchHistory, 60_000) : null;
     return () => {
       cancelled = true;
@@ -2196,6 +2200,7 @@ export function VectorChart({
           }
         }
         spotRef.current = curSpot;
+        onSpotChange?.(curSpot);
         minuteBarsRef.current = upsertBar(minuteBarsRef.current, snap.candle as VectorBar);
         setSessionBars(minuteBarsRef.current);
         if (!inReplay) {

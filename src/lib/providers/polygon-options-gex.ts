@@ -2,7 +2,6 @@ import { polygonConfigured } from "./config";
 import { fetchStockSnapshot, fetchIndexSnapshot } from "./polygon";
 import { todayEtYmd } from "./spx-session";
 import { polygonTrackedFetch } from "./polygon-rate-limiter";
-import { isHeatmapPreset } from "../heatmap-allowlist";
 import { isLiveOdteSession } from "./unusual-whales";
 import { fmtPremium } from "@/lib/fmt-money";
 import { persistGexRegimeEvents } from "./gex-regime-events";
@@ -124,15 +123,18 @@ function isSpxFastMove(currentSpot: number): boolean {
 // ── Per-ticker fast-move ring (heatmap presets) ────────────────────────────────
 // The SPX ring above is single-global (it backs the SPX desk bundle only). The heatmap
 // fast-move bypass needs PER-TICKER history so a >0.5% move in NVDA shortens NVDA's TTL
-// without touching SPY. Bounded to the warm presets at the call site so an arbitrary spread
-// of tickers can't grow this map. Mirrors the SPX ring's shape/window exactly.
+// without touching SPY. Now open to ALL tickers with a size cap to prevent unbounded growth.
 const heatmapPriceHistory = new Map<string, Array<{ price: number; at: number }>>();
+const HEATMAP_PRICE_RING_MAX_TICKERS = 200;
 /** Fractional move that classifies a heatmap ticker as fast-moving (mirrors SPX's 0.5%). */
 const HEATMAP_FAST_MOVE_PCT = 0.005;
 
-/** Record a spot observation for a heatmap ticker's fast-move ring (preset tickers only). */
 function recordHeatmapPriceObservation(ticker: string, price: number): void {
   if (!(price > 0)) return;
+  if (heatmapPriceHistory.size >= HEATMAP_PRICE_RING_MAX_TICKERS && !heatmapPriceHistory.has(ticker)) {
+    const oldest = heatmapPriceHistory.keys().next().value as string | undefined;
+    if (oldest) heatmapPriceHistory.delete(oldest);
+  }
   const now = Date.now();
   const ring = heatmapPriceHistory.get(ticker) ?? [];
   ring.push({ price, at: now });
@@ -1134,26 +1136,22 @@ function setCachedHeatmap(key: string, entry: { at: number; data: GexHeatmap }):
   cachedHeatmaps.set(key, entry);
 }
 
+// Uniform 5s GEX cache TTL for ALL tickers (no more tiered SPX 8s / everything-else 20s).
 function gexHeatmapCacheMs(): number {
-  const sec = Number(process.env.GEX_HEATMAP_CACHE_SEC ?? 20);
-  return Number.isFinite(sec) && sec > 0 ? sec * 1000 : 20_000;
+  const sec = Number(process.env.GEX_HEATMAP_CACHE_SEC ?? 5);
+  return Number.isFinite(sec) && sec > 0 ? sec * 1000 : 5_000;
 }
 
-/** SPX Slayer / desk hot path — shorter TTL without warming the whole preset grid. */
-function gexHeatmapCacheMsFor(root: string): number {
-  if (root === "SPX") {
-    const sec = Number(process.env.SPX_GEX_HEATMAP_CACHE_SEC ?? 8);
-    return Number.isFinite(sec) && sec > 0 ? sec * 1000 : 8_000;
-  }
+function gexHeatmapCacheMsFor(_root: string): number {
   return gexHeatmapCacheMs();
 }
 
 /**
  * Max age of a matrix entry we'll still SERVE while refreshing in the background.
- * Covers the heatmap-warm cron gap (Railway fires once/min; matrix fresh TTL ~20s) so a
+ * Covers the heatmap-warm cron gap (ECS fires once/min; matrix fresh TTL ~5s) so a
  * cold replica or TTL-boundary miss returns the last good matrix instantly instead of
- * blocking 20–35s on a chain rebuild. Always enabled — including preset fast-move — so a
- * shortened accept TTL (5s) never forces every member GET to block on a full chain rebuild
+ * blocking on a chain rebuild. Always enabled — including fast-move — so the short
+ * accept TTL never forces every member GET to block on a full chain rebuild
  * (live-caught 2026-07-06: SPX /gex-heatmap 502 + dashboard matrix stuck loading).
  */
 function gexHeatmapMaxStaleMs(): number {
@@ -1981,14 +1979,10 @@ export async function fetchGexHeatmap(
   const now = Date.now();
   const baseTtlMs = gexHeatmapCacheMsFor(root);
 
-  // ── Fast-move freshness bypass (WARM PRESETS ONLY) ───────────────────────────
-  // Dealer GEX is otherwise served on a flat ~20s TTL even while price runs. For the ~11 warm
-  // presets we SHORTEN the acceptable cache age when that ticker has moved >0.5% across its
-  // in-window ring (recorded on each fresh compute below) so the matrix re-syncs to the new
-  // level sooner. Off-preset tickers keep the full 20s TTL — they have no per-ticker ring and
-  // aren't worth the extra recompute pressure. (DOCUMENTED tradeoff: a fast-moving off-preset
-  // name can serve up to ~20s-stale GEX.)
-  const fastMove = isHeatmapPreset(root) && isHeatmapFastMove(root);
+  // ── Fast-move freshness bypass (ALL tickers) ────────────────────────────────
+  // When a ticker moves >0.5% across its in-window price ring, shorten the cache TTL so the
+  // matrix re-syncs to the new level sooner. Applies to ALL tickers uniformly.
+  const fastMove = isHeatmapFastMove(root);
   const ttlMs = fastMove ? Math.min(baseTtlMs, GEX_HEATMAP_FAST_MOVE_TTL_MS) : baseTtlMs;
 
   if (!forceRefresh) {
@@ -2007,9 +2001,8 @@ export async function fetchGexHeatmap(
       /* redis optional */
     }
 
-    // Stale-while-revalidate: cron warms once/min but fresh TTL is ~20s (5s during fast-move).
-    // Without this, every TTL-boundary miss blocks callers on a full chain rebuild (cold desk
-    // 20–120s → Cloudflare 502). Fast-move shortens accept-age, not whether we may block.
+    // Stale-while-revalidate: cron warms once/min but fresh TTL is 5s. Without this, every
+    // TTL-boundary miss blocks callers on a full chain rebuild (cold desk → Cloudflare 502).
     const stale = tryStaleWhileRevalidateHeatmap(
       cacheKey,
       root,
@@ -2075,11 +2068,7 @@ async function buildGexHeatmapUncached(
   }
   const changePct = snap?.change_pct ?? 0;
 
-  // Feed the per-ticker fast-move ring on every fresh PRESET compute so isHeatmapFastMove can
-  // actually fire on the next cache-read; without this the ring stays empty and the bypass above
-  // is dead code (the SAME bug the SPX desk bundle's recordSpxPriceObservation call guards against).
-  // Preset-only — keeps the ring map bounded to ~11 keys.
-  if (isHeatmapPreset(root)) recordHeatmapPriceObservation(root, spot);
+  recordHeatmapPriceObservation(root, spot);
 
   // Band sizing stays RELATIVE (% of spot) so it works for $5 and $900 names.
   const contracts = await fetchHeatmapBand(optionsRoot, spot, heatmapBandPct(root));
