@@ -31,7 +31,7 @@ import type { PlaybookPlay } from "./types";
 import { buildDirectionalStockLevels, formatStockLevel } from "./play-levels";
 import { applyPremiumCapToPlay, validatePlayGeometry } from "./play-constraints";
 import { groundPlays } from "./grounding";
-import { GROUNDING_MIN_OI } from "./grounding";
+import { GROUNDING_MIN_OI, tieredMinOi } from "./grounding";
 import { MAX_OPTION_PREMIUM_PER_SHARE } from "./constants";
 
 /** Default number of plays a full edition publishes. Mirrors the Claude path's top-5 shape. */
@@ -87,10 +87,11 @@ export function pickChainContract(
 ): PickedContract | null {
   const side: "call" | "put" = direction === "long" ? "call" : "put";
   const spot = chain.spot;
+  const minOi = spot > 0 ? tieredMinOi(spot) : GROUNDING_MIN_OI;
   const eligible: Array<PickedContract & { dist: number }> = [];
   for (const row of chain.rows) {
     const oi = contractOi(row, side);
-    if (oi < GROUNDING_MIN_OI) continue;
+    if (oi < minOi) continue;
     const premium = contractPremium(row, side);
     if (premium == null || premium > MAX_OPTION_PREMIUM_PER_SHARE) continue;
     eligible.push({

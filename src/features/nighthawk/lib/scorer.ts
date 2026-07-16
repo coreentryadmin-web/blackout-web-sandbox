@@ -38,6 +38,10 @@ export type ScoredCandidate = {
   catalyst_flags?: string[];
   /** Short-interest squeeze bonus (longs only, capped +5). */
   short_interest_score?: number;
+  /** Wall-proximity signal (support/resistance alignment with direction). */
+  wall_proximity_score?: number;
+  /** VEX (vanna exposure) direction alignment. */
+  vex_alignment_score?: number;
   /** Earnings proximity penalty applied to catalyst_score. Set when earnings are tomorrow with matching expiry. */
   earnings_risk?: boolean;
   /** Count of scoring dimensions with material positive contribution (≥ threshold). */
@@ -60,13 +64,15 @@ export function regimeContextFromMarket(ctx: MarketWideContext): NightHawkRegime
   };
 }
 
-/** Scale total score by VIX IV rank + market tide regime + market breadth. Cap at 1.20. */
+/** Scale total score by VIX IV rank + market tide regime + market breadth + composite regime. */
 export function computeRegimeMultiplier(regime?: NightHawkRegimeContext | null): number {
   if (!regime) return 1;
-  const { vix_iv_rank: vix, tide_bias: tide, advance_pct: adv } = regime;
+  const { vix_iv_rank: vix, tide_bias: tide, advance_pct: adv, composite_regime: compRegime } = regime;
   let m: number;
-  if (vix != null && vix > 70 && tide === "BEARISH") m = 0.7;
+  if (vix != null && vix > 80 && tide === "BEARISH") m = 0.6;
+  else if (vix != null && vix > 70 && tide === "BEARISH") m = 0.7;
   else if (vix != null && vix > 55 && tide === "BEARISH") m = 0.85;
+  else if (vix != null && vix < 20 && tide === "BULLISH") m = 1.2;
   else if (vix != null && vix < 25 && tide === "BULLISH") m = 1.15;
   else if (vix != null && vix < 40 && tide === "BULLISH") m = 1.1;
   else m = 1;
@@ -77,7 +83,14 @@ export function computeRegimeMultiplier(regime?: NightHawkRegimeContext | null):
     else if (adv < 30) m -= 0.05;
   }
 
-  return Math.min(1.20, m);
+  // Composite regime from platform intel — strong trending regimes get a small boost.
+  if (compRegime) {
+    const cr = compRegime.toLowerCase();
+    if (cr.includes("trending") || cr.includes("breakout")) m += 0.05;
+    else if (cr.includes("volatile") || cr.includes("crisis")) m -= 0.05;
+  }
+
+  return Math.max(0.6, Math.min(1.30, m));
 }
 
 function normalizeRatioPct(v: number | null): number | null {
@@ -477,6 +490,86 @@ function stackAlignsWithDirection(stack: FlowStrikeStack, direction: "long" | "s
   return direction === "long" ? t.startsWith("c") : t.startsWith("p");
 }
 
+/**
+ * Wall-proximity scoring: rewards plays where spot is near a GEX wall that SUPPORTS
+ * the direction (put wall = support for longs, call wall = resistance for shorts).
+ * Cortex already uses this signal for 0DTE — wiring it into overnight scoring fills
+ * a gap worth ~2.5/5.3 of the total Cortex signal weight.
+ *
+ * Parses wall_summary text (format: "put wall $5680 (-20pts) · call wall $5720 (+20pts)")
+ * and uses |distance_pts|/strike as the distance fraction (accurate within 0.1%).
+ *
+ * Distance bands:
+ *   ≤1% from a supporting wall: +5 (sitting right on the level)
+ *   ≤3%: +3 (within the zone of influence)
+ *   ≤5%: +1 (aware but not actionable)
+ *   Contradicting wall within 2%: -2 (resistance for a long, support for a short)
+ */
+export function scoreWallProximity(
+  positioning: PositioningSummary | undefined | null,
+  direction: "long" | "short"
+): number {
+  if (!positioning) return 0;
+
+  const wallText = positioning.wall_summary;
+  if (!wallText || wallText === "n/a") return 0;
+
+  let score = 0;
+  const walls = wallText.split(" · ");
+
+  for (const w of walls) {
+    const strikeMatch = w.match(/\$(\d+(?:\.\d+)?)/);
+    const ptsMatch = w.match(/\(([+-]?\d+(?:\.\d+)?)pts\)/);
+    if (!strikeMatch || !ptsMatch) continue;
+    const strike = Number(strikeMatch[1]);
+    const distPts = Math.abs(Number(ptsMatch[1]));
+    if (!Number.isFinite(strike) || strike <= 0) continue;
+
+    const distPct = distPts / strike;
+    const isPutWall = w.includes("put wall");
+    const isCallWall = w.includes("call wall");
+
+    if (direction === "long" && isPutWall) {
+      if (distPct <= 0.01) score += 5;
+      else if (distPct <= 0.03) score += 3;
+      else if (distPct <= 0.05) score += 1;
+    } else if (direction === "short" && isCallWall) {
+      if (distPct <= 0.01) score += 5;
+      else if (distPct <= 0.03) score += 3;
+      else if (distPct <= 0.05) score += 1;
+    }
+
+    if (direction === "long" && isCallWall && distPct <= 0.02) {
+      score -= 2;
+    } else if (direction === "short" && isPutWall && distPct <= 0.02) {
+      score -= 2;
+    }
+  }
+
+  return Math.max(-3, Math.min(7, score));
+}
+
+/**
+ * VEX (vanna exposure) direction scoring: positive net VEX = dealers are net long vanna
+ * = vol drop → dealers buy underlying = bullish tailwind; negative net VEX = bearish.
+ * This captures the "charm/vanna" flow that moves markets overnight and isn't in the
+ * base scoring at all.
+ */
+export function scoreVexAlignment(
+  positioning: PositioningSummary | undefined | null,
+  direction: "long" | "short"
+): number {
+  if (!positioning || positioning.net_vex == null || positioning.net_vex === 0) return 0;
+
+  const vexBullish = positioning.net_vex > 0;
+  const aligns = direction === "long" ? vexBullish : !vexBullish;
+  const contradicts = direction === "long" ? !vexBullish : vexBullish;
+
+  if (aligns) return 3;
+  if (contradicts) return -1;
+  return 0;
+}
+
 export function scoreOptionsPositioning(
   dossier: {
     dark_pool?: { total_premium?: number; bias?: string } | null;
@@ -834,6 +927,10 @@ export function scoreCandidate(
   // Short-interest squeeze bonus (longs only, proxy via days_to_cover).
   const shortInterestScore = scoreShortInterest(dossierExtras.short_days_to_cover, flow.direction);
 
+  // Wall-proximity and VEX-direction scoring — Cortex signal brought into overnight scoring.
+  const wallProxScore = scoreWallProximity(dossierExtras.positioning, flow.direction);
+  const vexScore = scoreVexAlignment(dossierExtras.positioning, flow.direction);
+
   // Catalyst awareness — a SMALL, conservative nudge (binary-event penalty + positive-catalyst note).
   // Like the fundamental modifier, it layers on the base and never overrides flow direction.
   const catalyst = scoreCatalystAwareness(dossierExtras.catalysts, flow.direction);
@@ -915,6 +1012,8 @@ export function scoreCandidate(
           skewAdj +
           fundamentalScore +
           shortInterestScore +
+          wallProxScore +
+          vexScore +
           totalCatalystScore +
           anomalyPenalty) *
           regimeMultiplier
@@ -939,6 +1038,8 @@ export function scoreCandidate(
     smartMoneyScore >= 2,
     fundamentalScore >= 2,
     shortInterestScore >= 2,
+    wallProxScore >= 3,
+    vexScore >= 2,
   ].filter(Boolean).length;
 
   return {
@@ -952,6 +1053,8 @@ export function scoreCandidate(
     smart_money_score: smartMoneyScore,
     fundamental_score: fundamentalScore,
     short_interest_score: shortInterestScore,
+    wall_proximity_score: wallProxScore,
+    vex_alignment_score: vexScore,
     catalyst_score: totalCatalystScore,
     catalyst_flags: catalystFlags,
     earnings_risk: earningsRisk,
