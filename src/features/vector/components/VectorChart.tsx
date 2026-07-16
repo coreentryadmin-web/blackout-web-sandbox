@@ -1996,17 +1996,19 @@ export function VectorChart({
     void fetchExpectedMove();
     void fetchGexHeatmap();
 
+    // Clear stale horizon state UP FRONT on every DTE switch — prevents the terminal from
+    // briefly narrating the PREVIOUS horizon's walls/confluence while the new fetch is in flight,
+    // and avoids the lastConfluenceRef dedup suppressing a re-emit when the new zones happen to
+    // match the old key string.
+    horizonWallsRef.current = null;
+    horizonFlipRef.current = null;
+    horizonHistoryRef.current = [];
+    lastConfluenceRef.current = "";
+
     if (dteHorizon === "all") {
-      horizonWallsRef.current = null;
-      horizonFlipRef.current = null;
-      horizonHistoryRef.current = [];
       repaint();
       return;
     }
-
-    // Clear any prior horizon's recorded trail up front so a toggle never briefly shows the
-    // previous horizon's clusters while this fetch is in flight.
-    horizonHistoryRef.current = [];
 
     // Fetch the RECORDED per-horizon trail (frozen clusters) in parallel with the current walls.
     // Separate from fetchScoped so a slow/empty history read never delays the current-structure
