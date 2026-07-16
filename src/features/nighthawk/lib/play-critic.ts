@@ -1,48 +1,30 @@
-import { anthropicConfigured, anthropicText } from "@/lib/providers/anthropic";
+/**
+ * DETERMINISTIC PLAY CRITIC (Phase 3 rebuild — no Claude LLM).
+ *
+ * Replaces the Claude-based skeptical reviewer with rule-based quality checks that catch
+ * the same defect classes the LLM critic was designed for:
+ *   - Direction inconsistency (flow direction vs play direction)
+ *   - Thin signal confirmation (fewer than 2 positive scoring dimensions)
+ *   - Regime contradiction (bearish tide + bullish long play, etc.)
+ *   - Score floor (C-conviction plays are cut — not strong enough to publish)
+ *   - Conviction inflation (downgrade when confirming signals are weak)
+ *
+ * When Claude was off (staging), the old critic passed every play through unchanged — no
+ * quality review at all. This deterministic critic runs on every deploy, using the same
+ * scored-candidate data the ranker already computed.
+ */
 import type { TickerDossier } from "./dossier";
-import { buildMarketRecap, formatTickerDossierText } from "./format";
 import type { MarketWideContext } from "./market-wide";
 import type { ScoredCandidate } from "./scorer";
+import { convictionFromScore, convictionRank } from "./scorer";
 import type { PlaybookPlay } from "./types";
-import { checkNumbersGrounded, extractNumbersFromText } from "@/lib/grounding-guard";
 
-const SYSTEM = `You are a skeptical options risk manager reviewing a playbook before publication. Output ONLY a valid JSON array. No markdown fences.
+/** Minimum composite score for a play to publish — below this it's cut. */
+const CRITIC_SCORE_FLOOR = 25;
 
-For each play in the input list, output one object:
-{ "rank": <original rank>, "verdict": "keep"|"downgrade"|"cut", "reason": "<brief reason>", "corrected_conviction": "A+"|"A"|"B"|"C" }
-
-Verify each play for:
-- Flow direction matches thesis and play direction
-- Entry/target/stop use real levels from dossier data (not fabricated)
-- No contradiction with risk reversal skew
-- At least 2 confirming signals from dossier
-- Alignment with current market regime (tide, VIX IV rank)
-
-Be skeptical. Cut weak or contradictory plays. Downgrade inflated conviction.`;
-
-type CriticVerdict = {
-  rank: number;
-  verdict: "keep" | "downgrade" | "cut";
-  reason: string;
-  corrected_conviction: string;
-};
-
-function parseCriticJson(raw: string): CriticVerdict[] {
-  const trimmed = raw.trim();
-  try {
-    const parsed = JSON.parse(trimmed) as unknown;
-    if (Array.isArray(parsed)) return parsed as CriticVerdict[];
-  } catch {
-    /* fall through */
-  }
-  const match = trimmed.match(/\[[\s\S]*\]/);
-  if (!match) return [];
-  try {
-    return JSON.parse(match[0]) as CriticVerdict[];
-  } catch {
-    return [];
-  }
-}
+/** Minimum number of positive scoring dimensions (out of flow/tech/pos/news/smart_money)
+ *  for a play to pass without a downgrade. */
+const MIN_CONFIRMING_SIGNALS = 2;
 
 function scoredForPlay(
   play: PlaybookPlay,
@@ -55,6 +37,32 @@ function scoredForPlay(
   return dossier?.scored;
 }
 
+/** Count how many of the 5 core scoring dimensions are positive (>0). */
+function countConfirmingSignals(scored: ScoredCandidate): number {
+  let count = 0;
+  if (scored.flow_score > 0) count++;
+  if (scored.tech_score > 0) count++;
+  if (scored.pos_score > 0) count++;
+  if (scored.news_score > 0) count++;
+  if (scored.smart_money_score > 0) count++;
+  return count;
+}
+
+/** Check if the market tide contradicts the play direction. */
+function tideContradictsDirection(
+  tide: MarketWideContext["tide"],
+  direction: string
+): boolean {
+  if (!tide) return false;
+  const tideStr = typeof tide === "string" ? tide : String(tide);
+  const tideLower = tideStr.toLowerCase();
+  const isShort = direction.toUpperCase().includes("SHORT");
+
+  if (isShort && tideLower.includes("bullish")) return true;
+  if (!isShort && tideLower.includes("bearish")) return true;
+  return false;
+}
+
 export async function critiquePlays(params: {
   plays: PlaybookPlay[];
   dossiers: Record<string, TickerDossier>;
@@ -62,115 +70,90 @@ export async function critiquePlays(params: {
   ctx: MarketWideContext;
 }): Promise<{ plays: PlaybookPlay[]; notes: string[] }> {
   const { plays, dossiers, ranked, ctx } = params;
-  if (!anthropicConfigured() || !plays.length) {
-    return { plays, notes: [] };
-  }
-
-  const recap = buildMarketRecap(ctx);
-  const promptParts: string[] = [
-    "MARKET REGIME",
-    recap.summary,
-    `Tide: ${recap.tide}`,
-    `VIX IV rank: ${ctx.vix_iv_rank ?? "unknown"}`,
-    "",
-    "PLAYS TO REVIEW",
-  ];
-
-  // Per-play known-good text, captured so the critic's reason for THIS play can be grounded
-  // against exactly what THIS play's block showed Claude — not the whole batch's prompt (a
-  // reason for play #3 citing a number that only appears in play #7's block is still
-  // ungrounded for #3, even though the string technically appears somewhere in the prompt).
-  const knownTextByRank = new Map<number, string>();
-
-  for (const play of plays) {
-    const scored = scoredForPlay(play, dossiers, ranked);
-    const dossier = dossiers[play.ticker.toUpperCase()];
-    const playLines: string[] = [
-      `--- Play #${play.rank}: ${play.ticker} ${play.direction} (${play.conviction}) ---`,
-      `Thesis: ${play.thesis || play.key_signal}`,
-      `Entry: ${play.entry_range}`,
-      `Target: ${play.target}`,
-      `Stop: ${play.stop}`,
-      `Options: ${play.options_play}`,
-    ];
-    if (dossier && scored) {
-      playLines.push("", formatTickerDossierText(dossier, scored));
-    }
-    knownTextByRank.set(play.rank, playLines.join("\n"));
-    promptParts.push(...playLines, "");
-  }
-
-  // temperature:0 — structured JSON-array extraction (per-play keep/downgrade/cut verdicts),
-  // not prose; deterministic output avoids nondeterminism + wasted retries on schema-constrained output.
-  //
-  // TIMEOUT (#77). 3000 output tokens over a per-play dossier prompt also blows past the 20s client
-  // default; on timeout anthropicText returns null. Here that FAILS OPEN (the !raw branch returns the
-  // input plays unchanged), so a critic timeout does NOT zero the funnel — but it silently skips the
-  // quality review. Give it the same headroom as synthesis so the critic actually runs.
-  const raw = await anthropicText(promptParts.join("\n"), 3000, SYSTEM, {
-    temperature: 0,
-    timeoutMs: 60_000,
-    maxRetries: 1,
-  });
-  if (!raw) {
-    return { plays, notes: [] };
-  }
-
-  const verdicts = parseCriticJson(raw);
-  if (!verdicts.length) {
-    return { plays, notes: [] };
-  }
+  if (!plays.length) return { plays, notes: [] };
 
   const notes: string[] = [];
-  const verdictByRank = new Map(verdicts.map((v) => [Number(v.rank), v]));
   const surviving: PlaybookPlay[] = [];
 
   for (const play of plays) {
-    const verdict = verdictByRank.get(play.rank);
-    if (!verdict) {
+    const scored = scoredForPlay(play, dossiers, ranked);
+
+    // No scored data → pass through (backfill plays may not have scored candidates).
+    if (!scored) {
       surviving.push(play);
       continue;
     }
 
-    // FABRICATION GUARD: the critic cuts/downgrades a play based solely on Claude's
-    // self-reported "reason" with no check that the cited contradiction is real. Ground the
-    // reason against exactly what THIS play's own block showed Claude ("keep" verdicts have
-    // no consequence, so only cut/downgrade need gating). An unverified reason must not be
-    // allowed to silently zero or demote a play — reject the verdict and keep the play as-is.
-    if (verdict.verdict !== "keep" && verdict.reason) {
-      const known = extractNumbersFromText(knownTextByRank.get(play.rank) ?? "");
-      const grounding = checkNumbersGrounded(verdict.reason, known);
-      if (!grounding.grounded) {
-        console.warn(
-          `[nighthawk/play-critic] ungrounded value ${grounding.ungroundedValue} in critic reason for #${play.rank} ${play.ticker} — verdict rejected, play kept unchanged.`
-        );
-        notes.push(
-          `#${play.rank} ${play.ticker}: verdict REJECTED (reason cited an unverified level) — play kept unchanged.`
-        );
-        surviving.push(play);
-        continue;
+    // CUT: score below floor.
+    if (scored.score < CRITIC_SCORE_FLOOR) {
+      notes.push(
+        `#${play.rank} ${play.ticker}: CUT — score ${scored.score} below floor ${CRITIC_SCORE_FLOOR}`
+      );
+      continue;
+    }
+
+    // CUT: direction inconsistency — the play's direction doesn't match the flow-derived direction.
+    const playIsShort = play.direction.toUpperCase().includes("SHORT");
+    const scoredIsShort = scored.direction === "short";
+    if (playIsShort !== scoredIsShort) {
+      notes.push(
+        `#${play.rank} ${play.ticker}: CUT — play direction ${play.direction} contradicts flow-scored direction ${scored.direction}`
+      );
+      continue;
+    }
+
+    // CUT: trading halt (belt-and-suspenders — ranker should have excluded these).
+    if (scored.trading_halt) {
+      notes.push(`#${play.rank} ${play.ticker}: CUT — trading halt active`);
+      continue;
+    }
+
+    // DOWNGRADE: conviction inflation — deterministic score→letter is the ceiling.
+    const deterministicConviction = convictionFromScore(scored.score);
+    let conviction = play.conviction;
+    if (convictionRank(conviction) > convictionRank(deterministicConviction)) {
+      notes.push(
+        `#${play.rank} ${play.ticker}: DOWNGRADE conviction ${conviction} → ${deterministicConviction} (score ${scored.score})`
+      );
+      conviction = deterministicConviction;
+    }
+
+    // DOWNGRADE: thin signal confirmation.
+    const confirming = countConfirmingSignals(scored);
+    if (confirming < MIN_CONFIRMING_SIGNALS && convictionRank(conviction) > 2) {
+      const newConviction = "B";
+      notes.push(
+        `#${play.rank} ${play.ticker}: DOWNGRADE ${conviction} → ${newConviction} — only ${confirming} confirming signal(s)`
+      );
+      conviction = newConviction;
+    }
+
+    // NOTE: regime contradiction — flag but don't cut (regime is a macro overlay, not a veto).
+    if (tideContradictsDirection(ctx.tide, play.direction)) {
+      notes.push(
+        `#${play.rank} ${play.ticker}: NOTE — play direction ${play.direction} against current market tide`
+      );
+      // Downgrade by one notch if A+ or A.
+      if (convictionRank(conviction) >= 3) {
+        const prev = conviction;
+        conviction = convictionRank(conviction) === 4 ? "A" : "B";
+        notes.push(`#${play.rank} ${play.ticker}: DOWNGRADE ${prev} → ${conviction} (regime headwind)`);
       }
     }
 
-    notes.push(`#${play.rank} ${play.ticker}: ${verdict.verdict} — ${verdict.reason}`);
-
-    if (verdict.verdict === "cut") {
-      continue;
+    // NOTE: fundamental flags — informational, never a cut.
+    if (scored.fundamental_block && scored.fundamental_flags?.length) {
+      notes.push(
+        `#${play.rank} ${play.ticker}: NOTE — fundamental flags: ${scored.fundamental_flags.join("; ")}`
+      );
     }
 
-    if (verdict.verdict === "downgrade") {
-      surviving.push({
-        ...play,
-        conviction: verdict.corrected_conviction || play.conviction,
-      });
-    } else {
-      surviving.push(play);
-    }
+    surviving.push({ ...play, conviction });
   }
 
   if (surviving.length < plays.length) {
     notes.push(
-      `Publishing ${surviving.length} vetted play(s) — ${plays.length - surviving.length} cut (no mechanical backfill; fewer strong plays beats stub contracts).`
+      `Publishing ${surviving.length} vetted play(s) — ${plays.length - surviving.length} cut by deterministic critic.`
     );
   }
 

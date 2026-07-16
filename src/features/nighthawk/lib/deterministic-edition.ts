@@ -124,11 +124,18 @@ function resolveLevels(
   let support = firstFinite(tech?.support_levels) ?? tech?.prior_day?.low ?? null;
   let resistance = firstFinite(tech?.resistance_levels) ?? tech?.prior_day?.high ?? null;
 
+  // Use prior-day high/low as fallback S/R when technical levels are missing.
+  if (support == null && tech?.prior_day?.low != null) support = tech.prior_day.low;
+  if (resistance == null && tech?.prior_day?.high != null) resistance = tech.prior_day.high;
+
   // Guard: geometry needs a real band with resistance strictly above support. When S/R are missing or
-  // inverted (data thin), synthesize a tight band around spot — deterministic and price-anchored.
+  // inverted (data thin), synthesize a band around spot scaled to the ATR if available, else a tight
+  // 2% band — deterministic and price-anchored.
   if (px != null && (support == null || resistance == null || !(resistance > support))) {
-    support = px * 0.985;
-    resistance = px * 1.015;
+    const atr = tech?.atr14;
+    const half = atr != null && Number.isFinite(atr) && atr > 0 ? atr * 0.5 : px * 0.02;
+    support = px - half;
+    resistance = px + half;
   }
 
   return buildDirectionalStockLevels({ direction, support, resistance });
@@ -152,22 +159,34 @@ export function buildDeterministicThesis(
     { label: "smart-money", value: scored.smart_money_score },
     { label: "news/catalyst", value: scored.news_score },
   ];
+  // Include fundamental and short-interest if they're material.
+  if (scored.fundamental_score != null && Math.abs(scored.fundamental_score) >= 2) {
+    drivers.push({ label: "fundamentals", value: scored.fundamental_score });
+  }
+  if (scored.short_interest_score != null && scored.short_interest_score >= 3) {
+    drivers.push({ label: "short squeeze", value: scored.short_interest_score });
+  }
+
   const top = drivers
     .filter((d) => Number.isFinite(d.value) && Math.abs(d.value) >= 1)
     .sort((a, b) => Math.abs(b.value) - Math.abs(a.value))
-    .slice(0, 2);
+    .slice(0, 3);
   const driverText = top.length
     ? top.map((d) => `${d.label} (${d.value > 0 ? "+" : ""}${Math.round(d.value)})`).join(", ")
     : "composite confluence";
 
-  const key_signal = `${dirWord.toUpperCase()} — score ${scored.score} (${scored.conviction}); leading driver: ${driverText}.`;
+  const key_signal = `${dirWord.toUpperCase()} — score ${scored.score} (${scored.conviction}); ${driverText}.`;
 
   const parts: string[] = [
-    `Deterministic ${dirWord} read on ${scored.ticker}: composite score ${scored.score} (${scored.conviction} conviction), driven by ${driverText}.`,
+    `${dirWord.charAt(0).toUpperCase() + dirWord.slice(1)} ${scored.ticker}: score ${scored.score} (${scored.conviction}), driven by ${driverText}.`,
   ];
   if (dossier?.tech?.summary) parts.push(dossier.tech.summary);
-  if (dossier?.flow_streak?.streak_days) {
-    parts.push(`Flow streak: ${dossier.flow_streak.streak_days} day(s).`);
+  if (dossier?.flow_streak?.streak_days && dossier.flow_streak.streak_days >= 2) {
+    parts.push(`${dossier.flow_streak.streak_days}-day flow streak.`);
+  }
+  if (dossier?.iv_rank != null && dossier.iv_rank > 0) {
+    const ivLabel = dossier.iv_rank > 70 ? "elevated" : dossier.iv_rank > 40 ? "moderate" : "low";
+    parts.push(`IV rank ${Math.round(dossier.iv_rank)} (${ivLabel}).`);
   }
   const flags = [
     ...(scored.catalyst_flags ?? []),
@@ -226,8 +245,8 @@ export function buildDeterministicEditionPlays(params: {
   target?: number;
 }): { plays: PlaybookPlay[]; funnel: { candidates: number; contract_ok: number; geometry_ok: number; premium_ok: number; grounded: number; dropped_ungrounded: number } } {
   const target = params.target ?? DETERMINISTIC_EDITION_TARGET;
-  // Buffer past the target so grounding drops leave room for the next-ranked candidate to backfill.
-  const buffer = target + 3;
+  // Buffer past the target so grounding drops + sector-concentration + publish gates leave room.
+  const buffer = target + 6;
 
   let contractOk = 0;
   let geometryOk = 0;
