@@ -130,7 +130,7 @@ export function FlowFeed() {
   const [whalesOnly, setWhalesOnly]         = useState(false);
   const [dteFilter, setDteFilter]           = useState<HelixDteFilter>("all");
   const [indicesOnly, setIndicesOnly]       = useState(false);
-  const [density, setDensity]               = useState<HelixTableDensity>("full");
+  const density: HelixTableDensity = "full";
   const [analyticsOpen, setAnalyticsOpen] = useState(false);
   const [tickerFilter, setTickerFilter]   = useState("");
   // UI
