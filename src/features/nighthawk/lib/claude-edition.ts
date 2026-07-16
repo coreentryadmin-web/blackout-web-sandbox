@@ -12,7 +12,7 @@
  * are preserved identically.
  */
 import type { TickerDossier } from "./dossier";
-import { buildDeterministicEditionPlays } from "./deterministic-edition";
+import { buildDeterministicEditionPlays, buildRescuePlays } from "./deterministic-edition";
 import { buildMarketRecap, type EngineState } from "./format";
 import type { MarketWideContext } from "./market-wide";
 import type { SpxDeskSummary, FlowTapeSummary } from "@/lib/platform/types";
@@ -117,12 +117,30 @@ export async function generateEditionPlays(params: {
 
   const detTickers = params.ranked.slice(0, EDITION_CHAIN_PREFETCH).map((s) => s.ticker);
   const detChains = await fetchEditionChains({ stockTickers: detTickers, dossiers: params.dossiers });
-  const { plays: detPlays, funnel: detFunnel } = buildDeterministicEditionPlays({
+  let { plays: detPlays, funnel: detFunnel } = buildDeterministicEditionPlays({
     ranked: params.ranked,
     dossierMap,
     chains: detChains,
     target: EDITION_SYNTHESIS_OVERSHOOT,
   });
+
+  // PR-N13: when normal synthesis produces zero plays (all candidates failed geometry,
+  // premium cap, or grounding), build rescue plays from the ranked pool without those
+  // constraints so the edition always surfaces picks.
+  if (!detPlays.length && params.ranked.length) {
+    const rescue = buildRescuePlays({
+      ranked: params.ranked,
+      dossierMap,
+      chains: detChains,
+      target: EDITION_SYNTHESIS_OVERSHOOT,
+    });
+    if (rescue.length) {
+      detPlays = rescue;
+      console.info(
+        `[nighthawk/edition] normal synthesis zeroed — rescue produced ${rescue.length} best-available plays`
+      );
+    }
+  }
 
   // SECTOR CONCENTRATION CAP: nothing stopped the whole book being five correlated
   // same-sector longs. Applied on the deterministic output so a lower-ranked play

@@ -298,3 +298,69 @@ export function buildDeterministicEditionPlays(params: {
     },
   };
 }
+
+/**
+ * PR-N13 last-resort rescue: build plays from ranked candidates WITHOUT requiring option
+ * chains, geometry validation, or grounding. Called when the full synthesis pipeline produces
+ * zero plays (no affordable liquid contracts, all geometry invalid, etc.) and the edition
+ * would otherwise be recap-only.
+ *
+ * These are the BEST picks the platform can surface based on today's confluence scoring —
+ * they just couldn't be paired with a concrete option contract under the normal constraints.
+ * Each play is marked gate_promoted:true with gate_warnings explaining the limitation.
+ */
+export function buildRescuePlays(params: {
+  ranked: ScoredCandidate[];
+  dossierMap: Record<string, TickerDossier>;
+  chains: Record<string, EditionChainData>;
+  target?: number;
+}): PlaybookPlay[] {
+  const target = params.target ?? DETERMINISTIC_EDITION_TARGET;
+  const plays: PlaybookPlay[] = [];
+
+  for (const scored of params.ranked) {
+    if (plays.length >= target) break;
+    if (scored.trading_halt) continue;
+    const ticker = scored.ticker.toUpperCase();
+    const dossier = params.dossierMap[ticker] ?? params.dossierMap[scored.ticker];
+    const chain = params.chains[ticker];
+    const spot = chain?.spot ?? dossier?.tech?.price ?? null;
+
+    const levels = resolveLevels(dossier, scored.direction, spot);
+    const { thesis, key_signal } = buildDeterministicThesis(scored, dossier);
+
+    const warnings: string[] = [];
+    const contract = chain ? pickChainContract(chain, scored.direction) : null;
+    let options_play: string;
+    if (contract) {
+      options_play = `${ticker} ${contract.expiry} $${formatStrike(contract.strike)} ${contract.side.toUpperCase()} — entry prem ~$${contract.premium.toFixed(2)}`;
+      if (!validatePlayGeometry({ ...levels, direction: scored.direction === "short" ? "SHORT" : "LONG" } as any).ok) {
+        warnings.push("Entry/target geometry did not pass normal validation — verify levels before trading");
+      }
+    } else {
+      options_play = `${ticker} — check option chain for suitable contract`;
+      warnings.push("No affordable liquid option contract found under the $20/share cap — check the chain manually");
+    }
+
+    plays.push({
+      rank: plays.length + 1,
+      ticker,
+      direction: scored.direction === "short" ? "SHORT" : "LONG",
+      conviction: assignNighthawkTier(nhTierInputFromScored(scored)).tier,
+      play_type: "stock",
+      thesis,
+      key_signal,
+      entry_range: levels.entry_range,
+      target: levels.target,
+      stop: levels.stop,
+      options_play,
+      score: scored.score,
+      flow_streak_days: dossier?.flow_streak?.streak_days ?? undefined,
+      iv_rank: dossier?.iv_rank ?? undefined,
+      gate_promoted: true,
+      gate_warnings: warnings.length ? warnings : ["Play surfaced via best-available rescue — normal synthesis constraints could not be met"],
+    });
+  }
+
+  return plays;
+}

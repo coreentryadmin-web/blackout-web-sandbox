@@ -29,6 +29,14 @@ export type PlaybookPlay = {
   pulled?: boolean;
   /** Member-facing reason the play was pulled (the verdict's evidence sentence). */
   pulled_reason?: string;
+  /** True when a play did NOT fully clear the publish-time sanity gates but was promoted
+   *  into the edition anyway because the pipeline would otherwise publish zero plays.
+   *  These plays carry gate_warnings explaining which gates failed and by how much.
+   *  The UI must badge them so members know the entry may need extra validation. */
+  gate_promoted?: boolean;
+  /** Human-readable gate-failure reasons (one per failed gate). Only present when
+   *  gate_promoted is true. */
+  gate_warnings?: string[];
 };
 
 export type PlayExplainRequest = {

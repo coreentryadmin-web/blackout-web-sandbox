@@ -282,3 +282,45 @@ export function publishGateRecapReason(blocked: NighthawkGateBlockedPlay[]): str
     .join("; ");
   return `Publish gates blocked all ${blocked.length} play(s) (${detail}) — zero honest plays beats an unfillable pick.`;
 }
+
+// ── Best-available promotion (PR-N13): when the gates zero the entire edition,
+// promote the top-scoring blocked plays with warnings instead of publishing zero.
+// The pipeline MUST always surface picks for tomorrow — a member sees a warning
+// caveat, never an empty playbook.
+//
+// Ranking: fewer gate failures is strictly better (a play that only fails one gate
+// is more trustworthy than one that fails all three). Within the same failure
+// count, the play's original confluence score breaks the tie.
+
+/** Compute a promotion priority for a blocked play: lower = better candidate for
+ *  promotion. A single-gate failure with a high score is the best rescue pick. */
+function promotionBadness(b: NighthawkGateBlockedPlay): number {
+  const failCount = b.result.blocks.length;
+  const score = b.play.score ?? 0;
+  return failCount * 1000 - score;
+}
+
+/**
+ * Promote the top-scoring blocked plays into publishable plays with gate_promoted
+ * and gate_warnings flags. Called when all plays failed the publish gates and the
+ * edition would otherwise be zero-play.
+ *
+ * Returns up to `count` plays ranked 1..N, each carrying gate_promoted:true and
+ * gate_warnings with the human-readable failure reasons. The plays are valid
+ * PlaybookPlay objects ready for upsert — the caller just publishes them.
+ */
+export function promoteTopBlocked(
+  blocked: NighthawkGateBlockedPlay[],
+  count: number,
+): PlaybookPlay[] {
+  if (!blocked.length || count <= 0) return [];
+
+  const sorted = [...blocked].sort((a, b) => promotionBadness(a) - promotionBadness(b));
+
+  return sorted.slice(0, count).map((b, i) => ({
+    ...b.play,
+    rank: i + 1,
+    gate_promoted: true,
+    gate_warnings: b.result.blocks.map((block) => block.reason),
+  }));
+}
