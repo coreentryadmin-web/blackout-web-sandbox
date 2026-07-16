@@ -9,9 +9,13 @@ const WIDTH_MAX: LineWidth = 4;
 /** Slightly larger beads — reference product reads chunky on mobile, not pinpoints. */
 const RADIUS_MIN = 2;
 const RADIUS_MAX = 6;
-/** createSeriesMarkers `size` — per-bead, unlike LineSeries pointMarkersRadius (series-wide). */
-const MARKER_SIZE_MIN = 0.5;
-const MARKER_SIZE_MAX = 3.4;
+/** createSeriesMarkers `size` — per-bead, unlike LineSeries pointMarkersRadius (series-wide).
+ *  Range widened from [0.5, 3.4] → [0.3, 5.5] so a king wall is unmistakably fatter than a
+ *  straggler, and temporal magnitude changes (a wall fading from 30% to 5% over the session)
+ *  produce a visibly tapering trail — the "shrinking beads" cue that tells you at a glance
+ *  when dealers are unwinding a wall vs building one up. */
+const MARKER_SIZE_MIN = 0.3;
+const MARKER_SIZE_MAX = 5.5;
 
 /** A wall at/above this share of total |gamma| renders at full visual weight (alpha 1, max size).
  *  Real per-strike GEX share tops out around 6–8% even for the session king (gamma is spread across
@@ -73,8 +77,11 @@ export function glowAlphaForPct(pct: number): number {
 // preserved at any absolute concentration (6% SPX or 40% AMD alike).
 
 /** Contrast exponent for relative strength. >1 widens the gap so a half-strength wall reads
- *  clearly thinner than the king rather than nearly as fat. */
-const REL_CONTRAST_EXP = 1.4;
+ *  clearly thinner than the king rather than nearly as fat. Raised from 1.4 → 2.0 so a wall
+ *  at half the king's magnitude renders at 25% weight (not 38%) — the size gap between a king
+ *  and a fading wall is obvious at a glance rather than a subtle difference you have to squint
+ *  at, and a wall that builds up over the session visibly fattens its trail. */
+const REL_CONTRAST_EXP = 2.0;
 
 /** Frame-normalized strength in [0,1]: `pct` relative to the strongest wall in view (`maxPct`),
  *  raised to REL_CONTRAST_EXP for separation. 0 for non-positive/non-finite input or maxPct ≤ 0. */

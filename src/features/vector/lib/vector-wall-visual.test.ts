@@ -56,9 +56,9 @@ test("radiusForPct: stays within the 2-6px trail-dot range and scales monotonica
   assert.ok(radiusForPct(3) < radiusForPct(6));
 });
 
-test("markerSizeForPct: per-bead sizes span the Skylit-style range", () => {
-  assert.equal(markerSizeForPct(0), 0.5);
-  assert.equal(markerSizeForPct(7), 3.4); // MARKER_SIZE_MAX — bumped for a fatter dominant-wall band
+test("markerSizeForPct: per-bead sizes span the magnitude-scaled range", () => {
+  assert.equal(markerSizeForPct(0), 0.3);
+  assert.equal(markerSizeForPct(7), 5.5);
   assert.ok(markerSizeForPct(3) < markerSizeForPct(6));
 });
 
@@ -85,7 +85,23 @@ test("REGRESSION: two HIGH-concentration walls (41% vs 14%) render at clearly di
   const king = markerSizeForPctRel(41, 41);
   const lesser = markerSizeForPctRel(14, 41);
   assert.ok(king > lesser, "relative path: 41% is fatter than 14%");
-  assert.ok(king / lesser >= 1.8, `relative path gives real contrast (${(king / lesser).toFixed(2)}×)`);
+  assert.ok(king / lesser >= 2.5, `relative path gives strong contrast (${(king / lesser).toFixed(2)}×)`);
+});
+
+test("TEMPORAL MAGNITUDE: a wall fading from peak to 1/3 strength visibly shrinks", () => {
+  // A wall at 30% at 10am that fades to 10% by 2pm must produce beads that taper — the member
+  // should be able to see "this wall is weakening" at a glance from the shrinking trail.
+  const peak = markerSizeForPctRel(30, 30);
+  const faded = markerSizeForPctRel(10, 30);
+  const ratio = peak / faded;
+  assert.ok(ratio >= 4, `peak-to-faded size ratio should be ≥4× (got ${ratio.toFixed(2)}×)`);
+});
+
+test("TEMPORAL MAGNITUDE: a wall growing from weak to king visibly swells", () => {
+  // A wall that starts at 5% and builds to 25% should show beads getting fatter over time.
+  const weak = markerSizeForPctRel(5, 25);
+  const strong = markerSizeForPctRel(25, 25);
+  assert.ok(strong / weak >= 6, `strong-to-weak size ratio should be ≥6× (got ${(strong / weak).toFixed(2)}×)`);
 });
 
 test("markerSizeForPctRel / alphaForPctRel: king is max weight, straggler near the floor", () => {

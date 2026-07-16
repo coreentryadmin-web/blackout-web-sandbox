@@ -780,14 +780,16 @@ function buildWallBeadMarkers(
       const size = markerSizeForPctRel(p.pct, maxPct) * (modeled ? 0.6 : 1);
       const coreAlpha = alphaForPctRel(p.pct, maxPct) * alphaScale;
       const glowAlpha = glowAlphaForPctRel(p.pct, maxPct) * alphaScale;
-      // Halo + core — Skylit-style glow on dominant walls (per-bead size + opacity).
+      // Halo + core — glow on dominant walls (per-bead size + opacity). Multiplier reduced
+      // from 2.2 → 1.6 so the halo doesn't mask the core's magnitude-scaled size — a fat king
+      // bead must look clearly larger than a fading straggler, not two similar-looking blobs.
       markers.push({
         time,
         position: "atPriceMiddle",
         price: trail.strike,
         shape: "circle",
         color: withAlpha(baseColor, glowAlpha),
-        size: size * 2.2,
+        size: size * 1.6,
       });
       markers.push({
         time,
