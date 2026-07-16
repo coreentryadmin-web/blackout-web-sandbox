@@ -177,6 +177,43 @@ export function partitionPlaysByGeometry(plays: PlaybookPlay[]): {
   return { passing, failing };
 }
 
+// ── Ticker-family dedup (PR-N14: GOOGL/GOOG, BRK.A/BRK.B are the same company) ─────
+
+const TICKER_FAMILY_MAP: Record<string, string> = {
+  GOOG: "GOOGL",
+  "BRK.B": "BRK.A",
+  "BRK/B": "BRK.A",
+  BRKB: "BRK.A",
+  FOX: "FOXA",
+  LBRDK: "LBRDA",
+  DISCK: "DISCA",
+  NWSA: "NWS",
+};
+
+export function canonicalTicker(ticker: string): string {
+  const t = ticker.toUpperCase();
+  return TICKER_FAMILY_MAP[t] ?? t;
+}
+
+export function deduplicateTickerFamilies<T extends { ticker: string }>(
+  items: T[]
+): { kept: T[]; dropped: Array<{ item: T; canonical: string; kept_ticker: string }> } {
+  const seen = new Map<string, string>();
+  const kept: T[] = [];
+  const dropped: Array<{ item: T; canonical: string; kept_ticker: string }> = [];
+  for (const item of items) {
+    const canon = canonicalTicker(item.ticker);
+    const existing = seen.get(canon);
+    if (existing) {
+      dropped.push({ item, canonical: canon, kept_ticker: existing });
+    } else {
+      seen.set(canon, item.ticker.toUpperCase());
+      kept.push(item);
+    }
+  }
+  return { kept, dropped };
+}
+
 /** Default same-sector cap applied by {@link capSectorConcentration} (task #141: named so
  *  the durable rejection-audit row can cite the exact threshold that fired, instead of a
  *  bare literal duplicated at the call site). Value unchanged (was an inline `2` default). */

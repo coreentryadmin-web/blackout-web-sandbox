@@ -29,7 +29,7 @@ import type { ScoredCandidate } from "./scorer";
 import { assignNighthawkTier, nhTierInputFromScored } from "./nighthawk-tiers";
 import type { PlaybookPlay } from "./types";
 import { buildDirectionalStockLevels, formatStockLevel } from "./play-levels";
-import { applyPremiumCapToPlay, validatePlayGeometry } from "./play-constraints";
+import { applyPremiumCapToPlay, validatePlayGeometry, canonicalTicker } from "./play-constraints";
 import { groundPlays } from "./grounding";
 import { GROUNDING_MIN_OI, tieredMinOi } from "./grounding";
 import { MAX_OPTION_PREMIUM_PER_SHARE } from "./constants";
@@ -139,7 +139,7 @@ function resolveLevels(
     resistance = px + half;
   }
 
-  return buildDirectionalStockLevels({ direction, support, resistance });
+  return buildDirectionalStockLevels({ direction, support, resistance, spot: px });
 }
 
 /**
@@ -258,11 +258,14 @@ export function buildDeterministicEditionPlays(params: {
   let geometryOk = 0;
   let premiumOk = 0;
   const built: PlaybookPlay[] = [];
+  const selectedFamilies = new Set<string>();
 
   for (const scored of params.ranked) {
     if (built.length >= buffer) break;
     if (scored.trading_halt) continue; // never trade a halted name (mirrors rankCandidates' hard cut)
     const ticker = scored.ticker.toUpperCase();
+    const canon = canonicalTicker(ticker);
+    if (selectedFamilies.has(canon)) continue;
     const chain = params.chains[ticker];
     if (!chain) continue; // no chain ⇒ cannot ground an option ⇒ substitute the next-ranked candidate
     const dossier = params.dossierMap[ticker] ?? params.dossierMap[scored.ticker];
@@ -278,6 +281,7 @@ export function buildDeterministicEditionPlays(params: {
     if (!validatePlayGeometry(play).ok) continue;
     geometryOk += 1;
     built.push(play);
+    selectedFamilies.add(canon);
   }
 
   // Ground the survivors against the SAME chains + dossiers (reconciles premium to the live mark,
@@ -318,11 +322,14 @@ export function buildRescuePlays(params: {
 }): PlaybookPlay[] {
   const target = params.target ?? DETERMINISTIC_EDITION_TARGET;
   const plays: PlaybookPlay[] = [];
+  const selectedFamilies = new Set<string>();
 
   for (const scored of params.ranked) {
     if (plays.length >= target) break;
     if (scored.trading_halt) continue;
     const ticker = scored.ticker.toUpperCase();
+    const canon = canonicalTicker(ticker);
+    if (selectedFamilies.has(canon)) continue;
     const dossier = params.dossierMap[ticker] ?? params.dossierMap[scored.ticker];
     const chain = params.chains[ticker];
     const spot = chain?.spot ?? dossier?.tech?.price ?? null;
@@ -361,6 +368,7 @@ export function buildRescuePlays(params: {
       gate_promoted: true,
       gate_warnings: warnings.length ? warnings : ["Play surfaced via best-available rescue — normal synthesis constraints could not be met"],
     });
+    selectedFamilies.add(canon);
   }
 
   return plays;

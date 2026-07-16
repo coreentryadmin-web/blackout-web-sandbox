@@ -173,3 +173,32 @@ evidence / fix / status per the CLAUDE.md policy.)
 - **Fix:** Added `odteBundleInflight` promise variable (single key — always SPX). When a build is in progress, concurrent callers share the in-flight promise. The promise is cleared in `.finally()` so a thrown build can't wedge the slot. Cache checks (in-memory + Redis) remain outside the guard since they're fast reads. `polygon-options-gex.ts:92,225-247`.
 - **Blast radius:** Single caller at line 2932 (`aggregateGexRows` in the SPX desk route). Return type unchanged (`Promise<{ rows, maxPain }>`). The positioning bundle (`fetchPolygonPositioningBundle` at line 3063) has the same pattern but is keyed per-ticker, so stampede risk is distributed — not fixed here, lower priority.
 - **Status:** Fixed (this PR).
+
+## 2026-07-16 — Night Hawk overnight edition deep audit (play quality + gate bias)
+
+### P0 — Entry levels anchored at support, not spot — all 5 plays unfillable (FIXED)
+- **Severity:** P0 (every published play was unfillable — members cannot trade at the suggested entries)
+- **Root cause:** `buildDirectionalStockLevels()` in `play-levels.ts:68-77` set LONG entries at `support * 0.998 – support`, a "buy the pullback" shape. For overnight plays where members act at the next session's open, support is typically far below spot for trending stocks. The entry band sits 6–18% below market — unfillable. All 5 plays failed G-N1 (band_detached, max 3.5%) and G-N2 (target_unreachable, max 2× ATR14). The rescue cascade (PR-N13 `promoteTopBlocked`) correctly surfaced them with `gate_promoted: true` warnings, but the entries remain untradeable.
+- **Evidence:** Staging edition 2026-07-17: FHN entry $23.20 vs spot $25.40 (−8.5%), COF $174.07 vs $211.93 (−17.8%), GOOGL $329.87 vs $354.46 (−6.8%), GOOG $333.35 vs $353.81 (−5.7%), ZETA $17.75 vs $21.40 (−17.0%). All 5/5 `gate_promoted: true`.
+- **Fix:** Added optional `spot` parameter to `buildDirectionalStockLevels`. When present: LONG entry = spot ±0.5%, target = resistance, stop = support. SHORT entry = spot ±0.5%, target = support, stop = resistance. `resolveLevels()` in `deterministic-edition.ts` now passes spot through. Legacy callers (no spot param) unchanged. 4 new tests.
+- **Blast radius:** 2 callers — `resolveLevels` (now passes spot) and `play-backfill.ts` (unchanged).
+- **Status:** Fixed (PR #400).
+
+### P0 — No ticker-family dedup — GOOGL + GOOG (same company) both in top 5 (FIXED)
+- **Severity:** P0 (halves effective diversification; members get two plays on Alphabet)
+- **Root cause:** Zero ticker-family awareness anywhere in the pipeline. `aggregateTickerFlows()` keys by raw ticker string. `rankCandidates()` sorts independently. `capSectorConcentration()` caps at 2/sector but both GOOGL and GOOG fit under that. `cross-edition-governor.ts` does exact string match only. `deterministic-edition.ts` iterates ranked order with no family check.
+- **Evidence:** Staging edition 2026-07-17: GOOGL (rank 3, score 67) and GOOG (rank 4, score 63) both published as separate plays on Alphabet Inc.
+- **Fix:** Added `TICKER_FAMILIES` map (GOOG→GOOGL, BRK.B→BRK.A, FOX→FOXA, etc.), `canonicalTicker()`, and `deduplicateTickerFamilies()` in `play-constraints.ts`. Wired into both `buildDeterministicEditionPlays` and `buildRescuePlays` — once a family member is selected, subsequent members are skipped. 8 new tests.
+- **Status:** Fixed (PR #400).
+
+### P2 — All-LONG structural bias in non-bearish markets (BY DESIGN)
+- **Severity:** P2 (by design, but a diversification gap)
+- **Root cause:** Five structural biases: (1) direction tie-break `>=` defaults to LONG (`scorer.ts:412`), (2) short-interest score is LONG-only (`scorer.ts:761`), (3) call premiums dominate in normal markets, (4) bearish posture requires 2/3 bearish signals (`bearish-posture.ts:29`), (5) regime multiplier is direction-blind (`scorer.ts:68`).
+- **Evidence:** All 5 plays in the 2026-07-17 edition are LONG. The pipeline has no direction-balance constraint analogous to the sector concentration cap.
+- **Status:** By design. Documented for future enhancement consideration (min-1-short constraint).
+
+### P3 — Tier inversion: score 77 → B, score 67 → A (BY DESIGN)
+- **Severity:** P3 (confusing UX but data-justified)
+- **Root cause:** `nighthawk-tiers.ts:137-151` — scores ≥70 are ceiling-capped at B tier. The measured track record shows A+ (≥70) went 0 wins / 1 loss, while B (40-54) averaged +2.99%. The tier engine prices in the overnight inversion.
+- **Evidence:** FHN score 77 → B (capped), GOOGL score 67 → A (mid-band, 3+ confirming signals).
+- **Status:** By design. No member-facing explanation of the inversion exists (future UX item).
