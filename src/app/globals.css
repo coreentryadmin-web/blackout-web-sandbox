@@ -17234,7 +17234,7 @@ body::before {
   }
 
   .helix-desk-tape-col {
-    flex: 1 1 auto;
+    flex: 1 1 50%;
     min-width: 0;
     min-height: 0;
     display: flex;
@@ -17250,12 +17250,23 @@ body::before {
 
   @media (min-width: 1280px) {
     .helix-desk-analytics-rail {
-      width: 30%;
-      flex: 0 0 30%;
-      min-width: 280px;
-      max-width: 420px;
+      flex: 1 1 50%;
+      min-width: 0;
       overflow-y: auto;
       max-height: min(78vh, calc(100dvh - var(--nav-offset) - 11rem));
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 0.75rem;
+      align-content: start;
+    }
+
+    .helix-desk-analytics-rail > .helix-pro-rail-section-header,
+    .helix-desk-analytics-rail > div:first-child {
+      grid-column: 1 / -1;
+    }
+
+    .helix-analytics-wide {
+      grid-column: 1 / -1;
     }
   }
 
