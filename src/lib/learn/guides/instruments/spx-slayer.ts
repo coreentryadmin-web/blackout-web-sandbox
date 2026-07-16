@@ -68,7 +68,7 @@ export const spxSlayerGuide = defineToolGuide({
         "Toggle GEX / VEX lens",
         "Auto-scroll keeps the spot strike row centered when price moves",
       ],
-      cadence: "GEX heatmap poll: 8s RTH / 20s off-hours; live spot via pulse SSE",
+      cadence: "GEX heatmap poll: 5s RTH / 60s off-hours; live spot via pulse SSE",
       consume:
         "Use this panel to validate wall quotes from the header before sizing. Bright positive GEX above spot often acts as a speed bump; negative GEX below can accelerate breaks. Switch to VEX when vol is moving faster than price — vanna exposure shifts when IV changes. Cross-check flip location here against Thermal when the trade depends on a level.",
       tip: "The matrix is the visual proof behind scalar call/put walls — if Slayer says call wall at 6050, find that strike here before entry.",

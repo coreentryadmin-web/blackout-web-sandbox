@@ -127,7 +127,7 @@ export type CortexGexSlice = {
 
 /** One wall-history rail sample. Mirrors WallHistorySample's wall payload
  *  (src/features/vector/lib/vector-wall-history.ts) — `time` is EPOCH SECONDS
- *  (the vector wall-trail 15s bucket convention, see vector-wall-sample.ts). */
+ *  (the vector wall-trail 5s bucket convention, see vector-wall-sample.ts). */
 export type CortexWallTrendSample = {
   time: number;
   callWalls: CortexWall[];

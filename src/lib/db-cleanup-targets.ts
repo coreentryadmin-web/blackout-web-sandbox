@@ -30,7 +30,7 @@ export const CLEANUP_TARGETS: Readonly<Record<string, readonly string[]>> = {
   market_regime: ["captured_at"],
   flow_anomalies: ["detected_at"],
   coaching_alerts: ["generated_at"],
-  // Vector wall-history durable mirror — one upsert per 15s bucket during RTH. Redis is the
+  // Vector wall-history durable mirror — one upsert per 5s bucket during RTH. Redis is the
   // hot copy; Postgres keeps ~90 days for replay, pruned by updated_at.
   vector_wall_history: ["updated_at"],
 };

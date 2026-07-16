@@ -2025,9 +2025,9 @@ export function VectorChart({
 
     void fetchScoped();
     void fetchHistory();
-    // Only the current walls need the 15s cadence; the recorded trail advances at the recorder's
+    // Only the current walls need the 5s cadence; the recorded trail advances at the recorder's
     // 5-min bucket, so refresh it on a slower interval in RTH (and once, above, off-hours).
-    const id = liveSession ? setInterval(fetchScoped, 15_000) : null;
+    const id = liveSession ? setInterval(fetchScoped, 5_000) : null;
     const histId = liveSession ? setInterval(fetchHistory, 60_000) : null;
     return () => {
       cancelled = true;

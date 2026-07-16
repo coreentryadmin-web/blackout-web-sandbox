@@ -10,7 +10,7 @@ export type WallHistorySample = {
   /** GEX (dealer gamma) walls — live via UW WS with heatmap fallback. */
   walls: GexWalls;
   gammaFlip?: number | null;
-  /** VEX (dealer vanna) walls — heatmap cache (~8s SPX). Omitted on legacy Redis rows. */
+  /** VEX (dealer vanna) walls — heatmap cache (~5s). Omitted on legacy Redis rows. */
   vexWalls?: GexWalls | null;
   vexFlip?: number | null;
   /**
@@ -49,7 +49,7 @@ export const MAX_STRIKE_TRAILS_PER_SIDE = 8;
  * How many walls PER SIDE PER BUCKET count as "dominant" and therefore earn a bead that bucket.
  *
  * WHY THIS EXISTS: the recorder stores the full ladder (`VECTOR_WALL_NODES_PER_SIDE` = 20 strikes
- * per side) in every 15s sample. If a trail draws a bead in every bucket where a strike appears
+ * per side) in every 5s sample. If a trail draws a bead in every bucket where a strike appears
  * ANYWHERE in that 20-deep ladder, then the persistent structural strikes near spot (round numbers
  * that never leave a 20-wide set) get a bead in every bucket → every trail runs full-width from the
  * session open, and a wall that only became dominant intraday is invisible as a "new" wall because
@@ -259,7 +259,7 @@ export function trimHistoryForLiveTrails(
 }
 
 /**
- * Resample the 15s wall-history trail to the active chart interval — one bead per candle
+ * Resample the 5s wall-history trail to the active chart interval — one bead per candle
  * bucket (last reading in each bucket wins, same alignment as aggregateVectorBars).
  */
 export function bucketWallHistoryForInterval(

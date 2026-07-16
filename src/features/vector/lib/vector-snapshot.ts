@@ -199,7 +199,7 @@ export function getVectorGexWalls(ticker: string = VECTOR_DEFAULT_TICKER): GexWa
   return s.cachedWalls;
 }
 
-/** Vanna walls from the shared heatmap cache (Polygon-derived, ~8s). */
+/** Vanna walls from the shared heatmap cache (Polygon-derived, ~5s). */
 export function getVectorVexWalls(ticker: string = VECTOR_DEFAULT_TICKER): GexWalls | null {
   const t = normalizeVectorTicker(ticker);
   const s = state(t);

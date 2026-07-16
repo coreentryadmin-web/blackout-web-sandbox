@@ -135,7 +135,7 @@ export const BLACKOUT_GLOSSARY: GlossaryEntry[] = [
     aliases: ["bead", "beads", "rail", "wall rail", "wall history", "bead rail", "wall trail"],
     category: "structure",
     definition:
-      "The 'beads' are the wall-history RAIL — a time series sampled every ~15s of where the walls sat and how strong they were. Each bead is a per-strike dot on the trail, so you can watch walls FORM, GROW, and FADE across the session (the 'fadeness'). Modeled/reconstructed beads render dim vs live-observed ones, so the rail never overclaims what was actually seen.",
+      "The 'beads' are the wall-history RAIL — a time series sampled every ~5s of where the walls sat and how strong they were. Each bead is a per-strike dot on the trail, so you can watch walls FORM, GROW, and FADE across the session (the 'fadeness'). Modeled/reconstructed beads render dim vs live-observed ones, so the rail never overclaims what was actually seen.",
   },
   {
     term: "Confluence zone",

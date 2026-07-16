@@ -99,7 +99,7 @@ type OpeningRange = {
 
 type DeskProps = {
   live?: boolean;
-  /** When true (RTH or premarket), matrix polls at 8s; off-session uses 20s. */
+  /** When true (RTH or premarket), matrix polls at 6s; off-session uses 20s. */
   sessionActive?: boolean;
   liveSpot?: number | null;
   deskGammaFlip?: number | null;

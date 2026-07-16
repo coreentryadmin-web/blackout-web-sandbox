@@ -431,7 +431,7 @@ test("liveTrailAnchorSec: uses the later of wall history tail and last bar", () 
   assert.equal(liveTrailAnchorSec([{ time: 500, walls: walls([6800], []) }], [100, 700]), 700);
 });
 
-test("bucketWallHistoryForInterval: 1m collapses 15s samples to one bead per minute", () => {
+test("bucketWallHistoryForInterval: 1m collapses 5s samples to one bead per minute", () => {
   const history: WallHistorySample[] = [
     { time: 100, walls: walls([6800], [6700]) },
     { time: 115, walls: walls([6805], [6700]) },

@@ -110,7 +110,7 @@ export async function appendSessionWallSample(
 }
 
 /**
- * Debounced Redis persist — one write per 15s bucket per TICKER per replica.
+ * Debounced Redis persist — one write per 5s bucket per TICKER per replica.
  * The debounce state was previously module-global: with two tickers streaming
  * concurrently they shared one slot, so within each window only the first
  * ticker's write went through and the others' buckets were permanently missing

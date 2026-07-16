@@ -30,7 +30,7 @@ export const heatMapsGuide = defineToolGuide({
         "Fast-move flash when quote vs matrix spot diverges >0.5%",
       ],
       actions: ["Pick ticker from presets or search"],
-      cadence: "Matrix 20s RTH / 60s off-hours; quote 15s / 60s; index spot via pulse SSE",
+      cadence: "Matrix 5s RTH / 60s off-hours; quote 15s / 60s; index spot via pulse SSE",
       consume:
         "Confirm Live before sizing. Quote only means matrix may lag spot — wait for next poll. Fast-move flash triggers force refresh (throttled ≤1 per 8s) — pause until matrix catches spot.",
     },
@@ -61,7 +61,7 @@ export const heatMapsGuide = defineToolGuide({
         "MatrixFreshness as-of timestamp",
       ],
       actions: ["Switch to Profile view for overlays and ladders"],
-      cadence: "20s RTH / 60s off-hours",
+      cadence: "5s RTH / 60s off-hours",
       consume:
         "Scan horizontally for expiry concentration — 0DTE column dominates SPX intraday. Scan vertically for wall strikes. Compare spot row to flip from KeyLevelBox. Use before entries at Slayer-quoted walls.",
     },
@@ -84,7 +84,7 @@ export const heatMapsGuide = defineToolGuide({
       cadence: "Matrix payload; overlays ~30s server cache",
       consume:
         "ExpiryScope narrows noise — use 0DTE for Slayer alignment, All for swing context. Enable flow overlay to see where today's prints concentrated vs static GEX. Dark pool lines show off-lit equity levels that may interact with options structure.",
-      tip: "Overlays default on when data exists; muted FlowSummary when ticker not on overlay allowlist.",
+      tip: "Overlays default on when data exists; muted FlowSummary when no flow data available for this ticker.",
     },
     {
       name: "CumulativeCurve + ShiftView",
@@ -113,7 +113,7 @@ export const heatMapsGuide = defineToolGuide({
       purpose: "Positioning event alerts (wall breaks, flip crosses).",
       shows: ["Dismissible alert chips for structural events"],
       actions: ["Dismiss individual alerts"],
-      cadence: "Alerts on 20s payload",
+      cadence: "Alerts on 5s payload",
       consume:
         "Alerts are event markers — read once, then focus back on matrix. For historical flip/spot context, KeyLevelBox's day-over-day deltas cover whether structure moved vs prior sessions.",
     },
@@ -147,7 +147,7 @@ export const heatMapsGuide = defineToolGuide({
     features: [
       { title: "Unified payload", body: "Single gex-heatmap fetch powers matrix, profile, overlays, and key levels." },
       { title: "Fast-move guard", body: "Spot divergence >0.5% triggers throttled force refresh." },
-      { title: "Overlay allowlist", body: "Some tickers omit flow overlay — FlowSummary shows unavailable copy." },
+      { title: "Overlay availability", body: "Some tickers may lack flow overlay data — FlowSummary shows unavailable copy." },
       { title: "Slayer parity", body: "Same computation family as Slayer walls — Thermal is the full surface." },
     ],
   },

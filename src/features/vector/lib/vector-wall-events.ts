@@ -177,7 +177,7 @@ export function diffVectorWallSample(
   lens: VectorWallLens
 ): VectorWallEvent[] {
   // Same-bucket re-observations (prev.time === next.time) are 1s ticks inside
-  // one 15s sample bucket, not a new observation — diffing them emits an event
+  // one 5s sample bucket, not a new observation — diffing them emits an event
   // per tick for a single underlying change.
   if (!prev || prev.time >= next.time) return [];
   if (next.time - prev.time > MAX_DIFF_GAP_SEC) return [];

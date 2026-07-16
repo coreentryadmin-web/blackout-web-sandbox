@@ -349,7 +349,7 @@ export const CRON_JOBS: CronJobDefinition[] = [
     weekdays_only: true,
     market_hours_only: true,
     description:
-      "Pre-warm UW dark-pool levels per overlay-allowlist ticker into Redis so Vector SSE never hits UW REST on the hot path",
+      "Pre-warm UW dark-pool levels per warm-batch ticker into Redis so Vector SSE never hits UW REST on the hot path",
   },
   {
     key: "coaching-alerts",

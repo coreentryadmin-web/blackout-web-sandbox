@@ -33,7 +33,7 @@ const overlayMem = new Map<string, { at: number; overlays: GexHeatmapOverlays }>
 /**
  * Server-side force-refresh gate. `?force=1` bypasses BOTH the in-memory and Redis matrix cache,
  * so a crafted/buggy client (or many users force-ing different tickers) could hammer the Polygon
- * chain — shared at 40 RPS with the desk / Night Hawk / Largo. We mirror the client's 8s throttle
+ * chain — shared at 40 RPS with the desk / Night Hawk / Largo. We throttle force refreshes
  * server-side, PER TICKER: a force is honored only when ≥8s have elapsed since the last honored
  * force for that ticker; otherwise it's dropped and the request serves the normal cached read.
  */
@@ -177,10 +177,10 @@ async function getNightHawkContext(ticker: string): Promise<NightHawkContext> {
  * Redis miss/error just recomputes; the builders themselves never throw.
  *
  * CLUSTER-WIDE UW BUDGET PROTECTION: the UW overlay fetches (flow-per-strike + dark-pool) are
- * the ONLY part of the heatmap that touches UW's 2-RPS budget. They are gated to a small
- * server-side allowlist (preset chips + known-liquid names) so 1000 users on distinct tickers
- * can't each mint a fresh UW fetch and starve the desk/Largo/Night Hawk/HELIX. Off-allowlist
- * symbols serve the overlay-free contract (matrix only) — the matrix itself is a pure Polygon
+ * the ONLY part of the heatmap that touches UW's 2-RPS budget. They are protected by a 30s
+ * per-ticker overlay cache, single-flight coalescing, and the UW circuit breaker — so 1000
+ * users on distinct tickers can't each mint a fresh UW fetch and starve the desk/Largo/Night
+ * Hawk/HELIX. All tickers get overlays uniformly; the matrix itself is a pure Polygon
  * cache-reader and works for any ticker. A request-time circuit also drops overlays whenever the
  * UW breaker is open (a 429 storm), so the heatmap degrades to matrix-only instead of piling onto
  * a saturated UW. A warm overlay cache is STILL honored in both cases (it's already-paid data).

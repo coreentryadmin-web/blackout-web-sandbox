@@ -1264,7 +1264,7 @@ async function crossToolChecks(ctx: Ctx, hm: GexHeatmap): Promise<CheckResult[]>
   // snapshot this verifier already holds, via the PURE mapper gexPositioningFromHeatmap — NOT a
   // second fetchGexHeatmap. getGexPositioning is literally `fetchGexHeatmap → gexPositioningFrom
   // Heatmap`, so calling getGexPositioning here re-fetched the matrix a SECOND time, seconds after
-  // `hm` was captured (after the shadow + UW network layers ran). With a 5-20s cache TTL that second
+  // `hm` was captured (after the shadow + UW network layers ran). With a 5s cache TTL that second
   // read can land on a FRESH rebuild whose chain/spot moved a hair, so net_gex/flip differed by a
   // few % / sub-point — a CACHE-REFRESH timing skew, NOT a cross-tool derivation bug. Mapping the
   // held snapshot compares LIKE-FOR-LIKE at one instant: it still hard-flags a real derivation bug

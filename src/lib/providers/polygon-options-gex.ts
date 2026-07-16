@@ -2,7 +2,6 @@ import { polygonConfigured } from "./config";
 import { fetchStockSnapshot, fetchIndexSnapshot } from "./polygon";
 import { todayEtYmd } from "./spx-session";
 import { polygonTrackedFetch } from "./polygon-rate-limiter";
-import { isHeatmapPreset } from "../heatmap-allowlist";
 import { isLiveOdteSession } from "./unusual-whales";
 import { fmtPremium } from "@/lib/fmt-money";
 import { persistGexRegimeEvents } from "./gex-regime-events";
@@ -1149,10 +1148,10 @@ function gexHeatmapCacheMsFor(_root: string): number {
 
 /**
  * Max age of a matrix entry we'll still SERVE while refreshing in the background.
- * Covers the heatmap-warm cron gap (Railway fires once/min; matrix fresh TTL ~20s) so a
+ * Covers the heatmap-warm cron gap (ECS fires once/min; matrix fresh TTL ~5s) so a
  * cold replica or TTL-boundary miss returns the last good matrix instantly instead of
- * blocking 20–35s on a chain rebuild. Always enabled — including preset fast-move — so a
- * shortened accept TTL (5s) never forces every member GET to block on a full chain rebuild
+ * blocking on a chain rebuild. Always enabled — including fast-move — so the short
+ * accept TTL never forces every member GET to block on a full chain rebuild
  * (live-caught 2026-07-06: SPX /gex-heatmap 502 + dashboard matrix stuck loading).
  */
 function gexHeatmapMaxStaleMs(): number {
@@ -1983,7 +1982,7 @@ export async function fetchGexHeatmap(
   // ── Fast-move freshness bypass (ALL tickers) ────────────────────────────────
   // When a ticker moves >0.5% across its in-window price ring, shorten the cache TTL so the
   // matrix re-syncs to the new level sooner. Applies to ALL tickers uniformly.
-  const fastMove = isHeatmapPreset(root) && isHeatmapFastMove(root);
+  const fastMove = isHeatmapFastMove(root);
   const ttlMs = fastMove ? Math.min(baseTtlMs, GEX_HEATMAP_FAST_MOVE_TTL_MS) : baseTtlMs;
 
   if (!forceRefresh) {

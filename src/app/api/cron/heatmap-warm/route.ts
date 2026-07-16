@@ -9,7 +9,7 @@
 // preset ONCE per tick so user-facing reads stay pure cache hits and the cold-build burst never
 // happens. All upstream calls flow through the permissive Polygon rate-limiter, so a warm burst
 // can't trip the 429 breaker on the live desk / GEX path. Overlays (UW) are NOT warmed here — the
-// matrix is the only thing that goes cold; overlays are gated separately by the allowlist.
+// matrix is the only thing that goes cold; overlays are gated by cache TTL + circuit breaker.
 
 import { NextRequest, NextResponse } from "next/server";
 import { isCronAuthorized } from "@/lib/market-api-auth";

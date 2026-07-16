@@ -94,7 +94,7 @@ export type VectorHeatmapSummary = {
  *                      the top walls the snapshot carries.
  *  - `heatmap`       — compact presence summary of the strike×time GEX surface (see above).
  *  - `wallHistory`   — the session's wall-history RAIL (the "beads": each sample's walls +
- *                      per-strike strength across ~15s buckets), so BIE can speak to walls
+ *                      per-strike strength across ~5s buckets), so BIE can speak to walls
  *                      forming/holding/moving over time, not just the current snapshot.
  *  - `wallEvents`    — the "fadeness" narration derived FROM that rail (building / fading /
  *                      new / dissolved / shifted per strike) — what the tape is doing.
@@ -108,7 +108,7 @@ export type VectorFullState = VectorSnapshot & {
   flowMarkers: VectorFlowMarkers | null;
   ladder: GexLadder | null;
   heatmap: VectorHeatmapSummary | null;
-  /** The wall-history rail — the "beads" over the session (walls + strength per ~15s sample). */
+  /** The wall-history rail — the "beads" over the session (walls + strength per ~5s sample). */
   wallHistory: WallHistorySample[];
   /** Wall-dynamics events derived from the rail — building / fading / new / gone / shift. */
   wallEvents: VectorWallEvent[];

@@ -346,7 +346,7 @@ async function checkRedis(ctx: Ctx): Promise<CheckResult[]> {
   }
 
   // ── gex-heatmap cache via getGexPositioning (the cron-warmed GEX matrix the website reads). ──
-  // heatmap-warm refreshes SPX every ~30s during RTH; the matrix TTL is ~20s–2min.
+  // heatmap-warm refreshes SPX every ~30s during RTH; the matrix TTL is ~5s.
   for (const t of ["SPX", "SPY"]) {
     let pos: Awaited<ReturnType<typeof getGexPositioning>> = null;
     try {

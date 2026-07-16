@@ -85,7 +85,7 @@ export async function buildVectorUniverseSnapshot(
   const rows: VectorUniverseRow[] = [];
   // Snap every ticker's sample to ONE shared bucket for this build so a run
   // produces a single aligned column of beads across strikes (matches the live
-  // path's 15s bucketing), not 21 slightly-staggered timestamps.
+  // path's 5s bucketing), not 21 slightly-staggered timestamps.
   const sampleTime = bucketWallSampleTime(Math.floor(Date.now() / 1000));
 
   const results = await Promise.allSettled(
