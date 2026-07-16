@@ -136,6 +136,17 @@ function PlayRowDetail({ play, onSelect }: { play: PlaybookPlay; onSelect?: () =
         </div>
       )}
 
+      {play.gate_promoted && play.gate_warnings?.length ? (
+        <div>
+          <MicroLabel>Gate caveats</MicroLabel>
+          <ul className="mt-1 list-inside list-disc space-y-0.5">
+            {play.gate_warnings.map((w, i) => (
+              <li key={i} className="text-[11px] leading-snug text-gold/85">{w}</li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+
       {onSelect && (
         <div className="flex justify-end">
           <button
@@ -229,6 +240,15 @@ export function PlaybookPlayRow({
               title={play.pulled_reason ?? "Pulled pre-open by the morning confirmation check"}
             >
               Pulled
+            </Badge>
+          )}
+          {play.gate_promoted && !isPulled && (
+            <Badge
+              tone="neutral"
+              size="sm"
+              title={play.gate_warnings?.join(" · ") ?? "This play did not fully clear the standard publish-time quality gates"}
+            >
+              Best Available
             </Badge>
           )}
           {morningConfirm && (

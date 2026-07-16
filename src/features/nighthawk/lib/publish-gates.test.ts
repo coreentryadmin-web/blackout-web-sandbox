@@ -6,6 +6,7 @@ import {
   evaluateNighthawkPublishGates,
   GATE_BAND_MAX_DISTANCE_PCT,
   GATE_TARGET_MAX_ATR_MULTIPLE,
+  promoteTopBlocked,
   publishGateRecapReason,
 } from "./publish-gates";
 import {
@@ -415,4 +416,90 @@ test("acceptableQuoteSessionsEt walks weekends and holidays to the last COMPLETE
     "2026-07-06",
     "2026-07-02",
   ]);
+});
+
+// ── PR-N13 promoteTopBlocked ─────────────────────────────────────────────────
+
+test("promoteTopBlocked returns empty array on empty input", () => {
+  assert.deepEqual(promoteTopBlocked([], 5), []);
+});
+
+test("promoteTopBlocked returns empty array on count <= 0", () => {
+  const blocked = [{
+    ticker: "AMD",
+    play: play(),
+    result: {
+      verdict: "BLOCK" as const,
+      blocks: [{ code: "band_detached" as const, reason: "too far", threshold: 3.5, value: 5.2 }],
+      checks: [],
+    },
+    scored: null,
+  }];
+  assert.deepEqual(promoteTopBlocked(blocked, 0), []);
+});
+
+test("promoteTopBlocked ranks by fewer gate failures first, then by score", () => {
+  const blocked = [
+    {
+      ticker: "AAPL",
+      play: play({ ticker: "AAPL", score: 80 }),
+      result: {
+        verdict: "BLOCK" as const,
+        blocks: [
+          { code: "band_detached" as const, reason: "r1", threshold: 3.5, value: 4.1 },
+          { code: "target_unreachable" as const, reason: "r2", threshold: 2.0, value: 3.5 },
+        ],
+        checks: [],
+      },
+      scored: null,
+    },
+    {
+      ticker: "NVDA",
+      play: play({ ticker: "NVDA", score: 60 }),
+      result: {
+        verdict: "BLOCK" as const,
+        blocks: [{ code: "band_detached" as const, reason: "r3", threshold: 3.5, value: 3.8 }],
+        checks: [],
+      },
+      scored: null,
+    },
+    {
+      ticker: "TSLA",
+      play: play({ ticker: "TSLA", score: 90 }),
+      result: {
+        verdict: "BLOCK" as const,
+        blocks: [{ code: "target_unreachable" as const, reason: "r4", threshold: 2.0, value: 2.5 }],
+        checks: [],
+      },
+      scored: null,
+    },
+  ];
+
+  const promoted = promoteTopBlocked(blocked, 2);
+  assert.equal(promoted.length, 2);
+  // TSLA (1 failure, score 90) should rank first, NVDA (1 failure, score 60) second.
+  // AAPL (2 failures) is dropped.
+  assert.equal(promoted[0].ticker, "TSLA");
+  assert.equal(promoted[0].rank, 1);
+  assert.equal(promoted[0].gate_promoted, true);
+  assert.deepEqual(promoted[0].gate_warnings, ["r4"]);
+
+  assert.equal(promoted[1].ticker, "NVDA");
+  assert.equal(promoted[1].rank, 2);
+  assert.equal(promoted[1].gate_promoted, true);
+});
+
+test("promoteTopBlocked caps at count", () => {
+  const blocked = Array.from({ length: 10 }, (_, i) => ({
+    ticker: `T${i}`,
+    play: play({ ticker: `T${i}`, score: 50 + i }),
+    result: {
+      verdict: "BLOCK" as const,
+      blocks: [{ code: "band_detached" as const, reason: `r${i}`, threshold: 3.5, value: 4.0 }],
+      checks: [],
+    },
+    scored: null,
+  }));
+  const promoted = promoteTopBlocked(blocked, 3);
+  assert.equal(promoted.length, 3);
 });

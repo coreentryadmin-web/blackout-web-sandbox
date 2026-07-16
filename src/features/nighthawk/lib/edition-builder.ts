@@ -37,6 +37,7 @@ import { buildNighthawkPublishContexts } from "./publish-context";
 import {
   acceptableQuoteSessionsEt,
   applyNighthawkPublishGates,
+  promoteTopBlocked,
   publishGateRecapReason,
   type NighthawkPublishGateResult,
 } from "./publish-gates";
@@ -759,33 +760,15 @@ export async function buildEveningEdition(opts?: {
       funnel.synthesized = synthFunnel?.parsed ?? rawPlays.length;
 
       if (!rawPlays.length) {
-        // Name the funnel stage that zeroed the plays so the empty state is self-diagnosing in
-        // edition meta (no Railway-log dig needed). parsed→stock→within-cap→strike-valid.
-        // PR-N9: when posture is SHORT, annotate the recap reason so the skip is explicit.
+        // PR-N13: synthesis zeroed — the pipeline MUST always surface picks. Log it but
+        // DON'T exit to recap-only; the rescue fallback in generateEditionPlays already
+        // tried, so if we're still at zero the ranked pool was truly empty. In that case
+        // (defensive only), fall through to critic with an empty array — the critic-zeroed
+        // handler below will promote from pre-critic plays.
         const funnelReason = synthFunnel
           ? `All plays filtered out — funnel: ${synthFunnel.parsed} candidates → ${synthFunnel.stock} contract-ok → ${synthFunnel.premium_ok} within-cap → ${synthFunnel.strike_ok} strike-valid → 0 grounded (${synthFunnel.dropped_ungrounded} dropped ungrounded, ${synthFunnel.flagged} flagged).`
           : "Deterministic synthesis produced no plays.";
-        const reason = postureResult.posture === "SHORT"
-          ? `${BEARISH_RECAP_REASON} ${funnelReason}`
-          : funnelReason;
-        // Synthesis produced no plays — publish a recap-only edition instead of failing dark, so the
-        // UI always shows tonight's market read. Never fabricate plays from nothing.
-        console.warn(`[nighthawk/edition] stage_synthesis zeroed — recap-only fallback: ${reason}`);
-        funnel.critic_passed = 0;
-        funnel.published = 0;
-        logFunnel(editionFor, funnel);
-        await alertRecapOnlyIfAnomalous(editionFor, funnel, reason);
-        await publishRecapOnlyEdition({ editionFor, ctx, reason, candidates: candidates.length, checkpointing, force: Boolean(opts?.force) });
-        return {
-          ok: true,
-          edition_for: editionFor,
-          plays_count: 0,
-          candidates: candidates.length,
-          recap_only: true,
-          duration_ms: Date.now() - started,
-          job_status: "published",
-          current_stage: "published",
-        };
+        console.warn(`[nighthawk/edition] stage_synthesis zeroed — will attempt rescue at publish stage: ${funnelReason}`);
       }
 
       const { plays: vettedPlays, notes: criticNotes } = await critiquePlays({
@@ -799,25 +782,23 @@ export async function buildEveningEdition(opts?: {
       finalCriticNotes = criticNotes;
       funnel.critic_passed = finalPlays.length;
       if (!finalPlays.length) {
-        // Critic rejected every play — do NOT publish unvetted fallback content (no fabricated plays).
-        // But still write a real published recap-only edition so the UI shows tonight's market read
-        // instead of "being built" forever.
-        const reason = "Critic rejected all plays — none passed quality review.";
-        console.warn(`[nighthawk/edition] stage_critic zeroed — recap-only fallback: ${reason}`);
-        funnel.published = 0;
-        logFunnel(editionFor, funnel);
-        await alertRecapOnlyIfAnomalous(editionFor, funnel, reason);
-        await publishRecapOnlyEdition({ editionFor, ctx, reason, candidates: candidates.length, checkpointing, force: Boolean(opts?.force) });
-        return {
-          ok: true,
-          edition_for: editionFor,
-          plays_count: 0,
-          candidates: candidates.length,
-          recap_only: true,
-          duration_ms: Date.now() - started,
-          job_status: "published",
-          current_stage: "published",
-        };
+        // PR-N13: critic zeroed all plays, but the pipeline MUST always surface picks.
+        // Promote the raw pre-critic plays with gate_promoted warnings — they passed
+        // synthesis constraints, just not the critic's quality bar.
+        if (rawPlays.length) {
+          finalPlays = rawPlays.slice(0, EDITION_TARGET_PLAYS).map((p, i) => ({
+            ...p,
+            rank: i + 1,
+            gate_promoted: true,
+            gate_warnings: ["Play did not pass the critic's quality review — use extra caution"],
+          }));
+          funnel.critic_passed = finalPlays.length;
+          console.info(
+            `[nighthawk/edition] critic zeroed — promoted ${finalPlays.length} raw plays with gate warnings`
+          );
+        }
+        // If rawPlays was also empty (synthesis AND critic both zeroed), fall through —
+        // the publish-gate handler below will catch the empty array and promote from blocked.
       }
 
       // Checkpoint the vetted Claude output so a resume skips synthesis + critic.
@@ -902,25 +883,35 @@ export async function buildEveningEdition(opts?: {
         funnel.critic_passed = finalPlays.length;
       }
       if (!finalPlays.length) {
-        // The gates zeroed the edition — publish an HONEST recap-only edition (the doc's
-        // rule: zero honest plays beats one unfillable play; tonight's real 7/14 edition
-        // was already honestly zero-play). Mirrors the synthesis/critic-zeroed exits.
-        const reason = publishGateRecapReason(blocked);
-        console.warn(`[nighthawk/edition] publish gates zeroed — recap-only fallback: ${reason}`);
-        funnel.published = 0;
-        logFunnel(editionFor, funnel);
-        await alertRecapOnlyIfAnomalous(editionFor, funnel, reason);
-        await publishRecapOnlyEdition({ editionFor, ctx, reason, candidates: candidates.length, checkpointing, force: Boolean(opts?.force) });
-        return {
-          ok: true,
-          edition_for: editionFor,
-          plays_count: 0,
-          candidates: candidates.length,
-          recap_only: true,
-          duration_ms: Date.now() - started,
-          job_status: "published",
-          current_stage: "published",
-        };
+        // PR-N13: the gates zeroed all plays, but the pipeline MUST always surface picks.
+        // Promote the top-scoring blocked plays with warnings instead of publishing zero.
+        const promoted = promoteTopBlocked(blocked, EDITION_TARGET_PLAYS);
+        if (promoted.length) {
+          finalPlays = promoted;
+          funnel.critic_passed = finalPlays.length;
+          console.info(
+            `[nighthawk/edition] publish gates zeroed — promoted ${promoted.length} best-available plays with gate warnings ` +
+            `(${blocked.length} total blocked: ${blocked.map((b) => `${b.ticker}:${b.result.blocks.map((x) => x.code).join(",")}`).join("; ")})`
+          );
+        } else {
+          // True zero: no blocked plays either (shouldn't happen — defensive only).
+          const reason = publishGateRecapReason(blocked);
+          console.warn(`[nighthawk/edition] publish gates zeroed, no plays to promote — recap-only: ${reason}`);
+          funnel.published = 0;
+          logFunnel(editionFor, funnel);
+          await alertRecapOnlyIfAnomalous(editionFor, funnel, reason);
+          await publishRecapOnlyEdition({ editionFor, ctx, reason, candidates: candidates.length, checkpointing, force: Boolean(opts?.force) });
+          return {
+            ok: true,
+            edition_for: editionFor,
+            plays_count: 0,
+            candidates: candidates.length,
+            recap_only: true,
+            duration_ms: Date.now() - started,
+            job_status: "published",
+            current_stage: "published",
+          };
+        }
       }
     }
 
