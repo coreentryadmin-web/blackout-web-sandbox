@@ -48,6 +48,13 @@ const TONE_LABELS: Record<PulseSignalTone, string> = {
   info: "INFO",
 };
 
+const TONE_ICONS: Record<PulseSignalTone, string> = {
+  bull: "▲",
+  bear: "▼",
+  warn: "◆",
+  info: "●",
+};
+
 function formatTimestamp(ms: number): string {
   const d = new Date(ms);
   const h = d.getHours().toString().padStart(2, "0");
@@ -86,7 +93,6 @@ export function VectorPulse({
   const processedWallEventsRef = useRef(0);
   const feedRef = useRef<HTMLDivElement>(null);
 
-  // Reset feed on ticker change.
   const prevTickerRef = useRef(normalized);
   useEffect(() => {
     if (prevTickerRef.current !== normalized) {
@@ -98,7 +104,6 @@ export function VectorPulse({
     }
   }, [normalized]);
 
-  // Detect transitions on every data tick.
   useEffect(() => {
     const now = streamUpdatedAt ?? Date.now();
     const integ = wallIntegrity ?? { call: null, put: null };
@@ -139,7 +144,6 @@ export function VectorPulse({
     prevSnapshotRef.current = current;
   }, [regime, proximity, magnet, wallIntegrity, wallEvents, streamUpdatedAt]);
 
-  // SPX playbook (carried forward from old terminal — SPX gets the linked playbook).
   const { data: spxPlay } = useSWR(
     isSpx && liveSession ? "vector-spx-playbook" : null,
     fetchSpxPlay,
@@ -151,112 +155,133 @@ export function VectorPulse({
     return buildPlaybookTerminalLines(spxPlay.playbook_shadow, liveSession).slice(1);
   }, [isSpx, spxPlay, liveSession]);
 
-  // Regime tone class.
-  const regimeToneClass =
-    regime.posture === "long" ? "vp-tone-bull"
-      : regime.posture === "short" ? "vp-tone-bear"
-        : regime.posture === "transition" ? "vp-tone-warn"
-          : "vp-tone-muted";
+  const regimeTone =
+    regime.posture === "long" ? "bull"
+      : regime.posture === "short" ? "bear"
+        : regime.posture === "transition" ? "warn"
+          : "muted";
+
+  const hasIntegrity = lens === "gex" && wallIntegrity;
+  const integrityEntries = hasIntegrity
+    ? [wallIntegrity.call, wallIntegrity.put].filter(Boolean)
+    : [];
 
   return (
     <div className="vector-pulse" role="complementary" aria-label={`Vector Pulse for ${normalized}`}>
-      {/* ── REGIME STRIP ── */}
-      <div className="vp-regime-strip">
-        <div className="vp-regime-header">
-          <span className="vp-ticker">{normalized}</span>
-          <span className={`vp-regime-badge ${regimeToneClass}`}>{regime.headline}</span>
+      {/* ── REGIME HERO ── */}
+      <div className={`vp-regime vp-regime--${regimeTone}`}>
+        <div className="vp-regime-top">
+          <span className="vp-regime-ticker">{normalized}</span>
           {liveSession && streamUpdatedAt && (
-            <span className="vp-live-dot" title="Live">
-              <span className="vp-live-dot-ping" />
-              <span className="vp-live-dot-core" />
+            <span className="vp-live-badge">
+              <span className="vp-live-dot" />
+              LIVE
             </span>
           )}
         </div>
-        <p className="vp-regime-read">{regime.read}</p>
+        <div className="vp-regime-headline">{regime.headline}</div>
+        <div className="vp-regime-read">{regime.read}</div>
         {liveSpot != null && liveSpot > 0 && (
-          <div className="vp-spot-row">
-            <span className="vp-spot-label">SPOT</span>
+          <div className="vp-spot">
             <span className="vp-spot-value">{fmtSpot(liveSpot)}</span>
           </div>
         )}
       </div>
 
-      {/* ── PROXIMITY ALERT ── */}
+      {/* ── PROXIMITY BANNER ── */}
       {proximity && (
-        <div className={`vp-proximity ${proximity.nearness === "at" ? "vp-tone-warn" : "vp-tone-info"}`}>
-          <span className="vp-proximity-badge">{proximity.nearness.toUpperCase()}</span>
-          <span className="vp-proximity-text">{proximity.callout}</span>
+        <div className={`vp-prox ${proximity.nearness === "at" ? "vp-prox--hot" : "vp-prox--warm"}`}>
+          <span className="vp-prox-badge">{proximity.nearness.toUpperCase()}</span>
+          <span className="vp-prox-text">{proximity.callout}</span>
         </div>
       )}
 
       {/* ── SIGNAL FEED ── */}
-      <div className="vp-feed" ref={feedRef}>
-        <div className="vp-feed-header">
-          <span className="vp-feed-title">SIGNALS</span>
-          <span className="vp-feed-count">{feed.length}</span>
+      <div className="vp-signals" ref={feedRef}>
+        <div className="vp-signals-header">
+          <span className="vp-signals-label">SIGNALS</span>
+          {feed.length > 0 && <span className="vp-signals-count">{feed.length}</span>}
         </div>
         {feed.length === 0 ? (
-          <div className="vp-feed-empty">Watching for transitions{liveSession ? "..." : " — session closed"}</div>
+          <div className="vp-signals-empty">
+            {liveSession ? "Watching for transitions..." : "Session closed — no live signals"}
+          </div>
         ) : (
-          <div className="vp-feed-list">
+          <div className="vp-signals-list">
             {feed.map((sig, i) => (
-              <div key={`${sig.key}-${sig.at}-${i}`} className="vp-signal">
-                <span className={`vp-signal-tone vp-tone-${sig.tone}`}>{TONE_LABELS[sig.tone]}</span>
-                <span className="vp-signal-time">{formatTimestamp(sig.at)}</span>
-                <span className="vp-signal-line">{sig.line}</span>
+              <div key={`${sig.key}-${sig.at}-${i}`} className={`vp-sig vp-sig--${sig.tone}`}>
+                <div className="vp-sig-head">
+                  <span className={`vp-sig-badge vp-sig-badge--${sig.tone}`}>
+                    <span className="vp-sig-icon">{TONE_ICONS[sig.tone]}</span>
+                    {TONE_LABELS[sig.tone]}
+                  </span>
+                  <span className="vp-sig-time">{formatTimestamp(sig.at)}</span>
+                </div>
+                <div className="vp-sig-line">{sig.line}</div>
               </div>
             ))}
           </div>
         )}
       </div>
 
-      {/* ── INTEL SECTIONS ── */}
+      {/* ── INTEL GRID ── */}
       <div className="vp-intel">
         {/* Magnet */}
         {magnet && (
-          <div className="vp-intel-row">
-            <span className="vp-intel-icon">⬡</span>
-            <span className={`vp-intel-text ${magnet.posture === "short" ? "vp-tone-warn" : ""}`}>
+          <div className="vp-intel-card">
+            <div className="vp-intel-card-head">
+              <span className="vp-intel-card-icon">⬡</span>
+              <span className="vp-intel-card-title">GAMMA MAGNET</span>
+            </div>
+            <div className={`vp-intel-card-body ${magnet.posture === "short" ? "vp-t-warn" : "vp-t-muted"}`}>
               {renderEmphasis(magnet.callout)}
-            </span>
+            </div>
+          </div>
+        )}
+
+        {/* Wall integrity */}
+        {integrityEntries.length > 0 && (
+          <div className="vp-intel-card">
+            <div className="vp-intel-card-head">
+              <span className="vp-intel-card-icon">◈</span>
+              <span className="vp-intel-card-title">WALL INTEGRITY</span>
+            </div>
+            {integrityEntries.map((wi) => (
+              <div
+                key={wi!.side}
+                className={`vp-intel-card-body ${wi!.tier === "thin" ? "vp-t-warn" : wi!.tier === "firm" ? "vp-t-bull" : "vp-t-muted"}`}
+              >
+                {renderEmphasis(`${wi!.note} · ${wi!.score}/100`)}
+              </div>
+            ))}
           </div>
         )}
 
         {/* Confluence */}
         {confluence && confluence.length > 0 && (
-          <div className="vp-intel-section">
-            <div className="vp-intel-section-header">CONFLUENCE</div>
+          <div className="vp-intel-card">
+            <div className="vp-intel-card-head">
+              <span className="vp-intel-card-icon">◎</span>
+              <span className="vp-intel-card-title">CONFLUENCE</span>
+            </div>
             {confluence.map((c, i) => (
-              <div key={i} className="vp-intel-row">
-                <span className="vp-intel-icon">▸</span>
-                <span className="vp-intel-text">{renderEmphasis(c)}</span>
+              <div key={i} className="vp-intel-card-body vp-t-muted">
+                {renderEmphasis(c)}
               </div>
             ))}
           </div>
         )}
 
-        {/* Wall integrity */}
-        {lens === "gex" && wallIntegrity && (
-          <>
-            {[wallIntegrity.call, wallIntegrity.put].filter(Boolean).map((wi) => (
-              <div key={wi!.side} className="vp-intel-row">
-                <span className="vp-intel-icon">▸</span>
-                <span className={`vp-intel-text ${wi!.tier === "thin" ? "vp-tone-warn" : wi!.tier === "firm" ? "vp-tone-bull" : ""}`}>
-                  {renderEmphasis(`${wi!.note} · ${wi!.score}/100`)}
-                </span>
-              </div>
-            ))}
-          </>
-        )}
-
         {/* Technicals */}
         {technicals && technicals.length > 0 && (
-          <div className="vp-intel-section">
-            <div className="vp-intel-section-header">TECHNICALS</div>
+          <div className="vp-intel-card">
+            <div className="vp-intel-card-head">
+              <span className="vp-intel-card-icon">≡</span>
+              <span className="vp-intel-card-title">TECHNICALS</span>
+            </div>
             {technicals.map((t, i) => (
-              <div key={i} className="vp-intel-row">
-                <span className="vp-intel-icon">▸</span>
-                <span className="vp-intel-text">{renderEmphasis(t)}</span>
+              <div key={i} className="vp-intel-card-body vp-t-muted">
+                {renderEmphasis(t)}
               </div>
             ))}
           </div>
@@ -264,12 +289,14 @@ export function VectorPulse({
 
         {/* Expected move */}
         {expectedMove && expectedMove.length > 0 && (
-          <div className="vp-intel-section">
-            <div className="vp-intel-section-header">EXPECTED MOVE</div>
+          <div className="vp-intel-card">
+            <div className="vp-intel-card-head">
+              <span className="vp-intel-card-icon">↔</span>
+              <span className="vp-intel-card-title">EXPECTED MOVE</span>
+            </div>
             {expectedMove.map((e, i) => (
-              <div key={i} className="vp-intel-row">
-                <span className="vp-intel-icon">▸</span>
-                <span className="vp-intel-text">{renderEmphasis(e)}</span>
+              <div key={i} className="vp-intel-card-body vp-t-muted">
+                {renderEmphasis(e)}
               </div>
             ))}
           </div>
@@ -277,25 +304,34 @@ export function VectorPulse({
 
         {/* Alerts */}
         {alerts && alerts.length > 0 && (
-          <div className="vp-intel-section">
-            <div className="vp-intel-section-header">ALERTS</div>
+          <div className="vp-intel-card">
+            <div className="vp-intel-card-head">
+              <span className="vp-intel-card-icon">⚡</span>
+              <span className="vp-intel-card-title">ALERTS</span>
+            </div>
             {alerts.map((a, i) => (
-              <div key={i} className="vp-intel-row">
-                <span className="vp-intel-icon">▸</span>
-                <span className="vp-intel-text vp-tone-bull">{renderEmphasis(a)}</span>
+              <div key={i} className="vp-intel-card-body vp-t-bull">
+                {renderEmphasis(a)}
               </div>
             ))}
           </div>
         )}
 
-        {/* SPX playbook (linked monitor) */}
+        {/* SPX playbook */}
         {playbookLines && playbookLines.length > 0 && (
-          <div className="vp-intel-section">
-            <div className="vp-intel-section-header">SPX PLAYBOOK</div>
+          <div className="vp-intel-card">
+            <div className="vp-intel-card-head">
+              <span className="vp-intel-card-icon">❯</span>
+              <span className="vp-intel-card-title">SPX PLAYBOOK</span>
+            </div>
             {playbookLines.map((line, i) => (
-              <div key={i} className={`vp-intel-row vp-pb-${line.tone}`} style={{ paddingLeft: (line.indent ?? 0) * 12 }}>
-                <span className="vp-intel-icon">{PB_ICON[line.icon] ?? "▸"}</span>
-                <span className="vp-intel-text">{renderEmphasis(line.text)}</span>
+              <div
+                key={i}
+                className={`vp-intel-card-body vp-pb-${line.tone}`}
+                style={{ paddingLeft: (line.indent ?? 0) * 14 }}
+              >
+                <span className="vp-pb-icon">{PB_ICON[line.icon] ?? "▸"}</span>
+                {renderEmphasis(line.text)}
               </div>
             ))}
           </div>

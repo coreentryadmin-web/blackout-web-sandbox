@@ -10283,14 +10283,18 @@ body::before {
     }
   }
 
-  /* ── Vector Pulse — live signal feed replacing the desk terminal ── */
+  /* ══════════════════════════════════════════════════════════════════
+     Vector Pulse — bold, event-driven signal dashboard
+     ══════════════════════════════════════════════════════════════════ */
   .vector-pulse {
-    @apply flex flex-col min-h-0 h-full min-w-0 overflow-hidden rounded-2xl border border-white/10 bg-[#050508];
+    @apply flex flex-col min-h-0 h-full min-w-0 overflow-hidden rounded-2xl;
     min-height: min(72vh, 640px);
-    font-family: ui-monospace, "SF Mono", "Cascadia Mono", "Segoe UI Mono", Menlo, monospace;
-    font-size: 0.72rem;
-    line-height: 1.4;
-    color: rgba(226, 232, 240, 0.85);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+    font-size: 0.8125rem;
+    line-height: 1.5;
+    color: rgba(226, 232, 240, 0.92);
+    background: #06080c;
+    border: 1px solid rgba(255, 255, 255, 0.06);
   }
   .vector-terminal-rail .vector-pulse {
     @apply flex-1 min-h-0;
@@ -10301,192 +10305,275 @@ body::before {
     }
   }
 
-  /* Regime strip */
-  .vp-regime-strip {
-    @apply px-3 pt-3 pb-2 flex-shrink-0;
+  /* ── Regime hero ── */
+  .vp-regime {
+    @apply flex-shrink-0 px-5 pt-5 pb-4;
     border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+    position: relative;
+    overflow: hidden;
   }
-  .vp-regime-header {
-    @apply flex items-center gap-2;
+  .vp-regime::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    opacity: 0.04;
+    pointer-events: none;
   }
-  .vp-ticker {
-    font-size: 0.8rem;
-    font-weight: 700;
-    letter-spacing: 0.05em;
-    color: rgba(226, 232, 240, 0.95);
+  .vp-regime--bull::before { background: linear-gradient(135deg, #22c55e 0%, transparent 60%); }
+  .vp-regime--bear::before { background: linear-gradient(135deg, #ef4444 0%, transparent 60%); }
+  .vp-regime--warn::before { background: linear-gradient(135deg, #f59e0b 0%, transparent 60%); }
+  .vp-regime--muted::before { background: linear-gradient(135deg, #64748b 0%, transparent 60%); }
+
+  .vp-regime-top {
+    @apply flex items-center gap-3;
+    position: relative;
   }
-  .vp-regime-badge {
-    @apply px-2 py-0.5 rounded-md text-xs font-bold tracking-wider;
-    background: rgba(255, 255, 255, 0.06);
+  .vp-regime-ticker {
+    font-size: 0.75rem;
+    font-weight: 800;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: rgba(148, 163, 184, 0.6);
   }
-  .vp-regime-badge.vp-tone-bull { background: rgba(34, 197, 94, 0.15); color: #4ade80; }
-  .vp-regime-badge.vp-tone-bear { background: rgba(239, 68, 68, 0.15); color: #f87171; }
-  .vp-regime-badge.vp-tone-warn { background: rgba(245, 158, 11, 0.15); color: #fbbf24; }
-  .vp-regime-badge.vp-tone-muted { background: rgba(148, 163, 184, 0.1); color: #94a3b8; }
-  .vp-regime-read {
-    @apply mt-1 text-xs leading-snug;
-    color: rgba(148, 163, 184, 0.7);
-    margin-bottom: 0;
-  }
-  .vp-spot-row {
-    @apply mt-1.5 flex items-baseline gap-2;
-  }
-  .vp-spot-label {
+  .vp-live-badge {
+    @apply flex items-center gap-1.5 ml-auto px-2 py-0.5 rounded-full;
     font-size: 0.6rem;
-    font-weight: 600;
+    font-weight: 700;
     letter-spacing: 0.1em;
-    color: rgba(148, 163, 184, 0.5);
+    color: #4ade80;
+    background: rgba(34, 197, 94, 0.08);
+    border: 1px solid rgba(34, 197, 94, 0.15);
+  }
+  .vp-live-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: #22c55e;
+    box-shadow: 0 0 6px #22c55e;
+    animation: vp-glow 2s ease-in-out infinite;
+  }
+  @keyframes vp-glow {
+    0%, 100% { box-shadow: 0 0 4px #22c55e; opacity: 1; }
+    50% { box-shadow: 0 0 12px #22c55e, 0 0 24px rgba(34, 197, 94, 0.3); opacity: 0.8; }
+  }
+
+  .vp-regime-headline {
+    font-size: 1.125rem;
+    font-weight: 800;
+    letter-spacing: 0.06em;
+    margin-top: 10px;
+    position: relative;
+  }
+  .vp-regime--bull .vp-regime-headline { color: #4ade80; }
+  .vp-regime--bear .vp-regime-headline { color: #f87171; }
+  .vp-regime--warn .vp-regime-headline { color: #fbbf24; }
+  .vp-regime--muted .vp-regime-headline { color: #94a3b8; }
+
+  .vp-regime-read {
+    font-size: 0.8125rem;
+    color: rgba(148, 163, 184, 0.65);
+    margin-top: 4px;
+    position: relative;
+    line-height: 1.45;
+  }
+
+  .vp-spot {
+    margin-top: 8px;
+    position: relative;
   }
   .vp-spot-value {
-    font-size: 0.85rem;
-    font-weight: 700;
+    font-size: 1.5rem;
+    font-weight: 800;
     font-variant-numeric: tabular-nums;
-    color: rgba(226, 232, 240, 0.95);
+    color: rgba(241, 245, 249, 0.95);
+    letter-spacing: -0.02em;
   }
 
-  /* Live dot */
-  .vp-live-dot {
-    @apply relative inline-flex ml-auto;
-    width: 8px;
-    height: 8px;
+  /* ── Proximity banner ── */
+  .vp-prox {
+    @apply mx-4 mt-3 mb-1 px-4 py-3 rounded-xl flex items-center gap-3;
+    font-size: 0.8125rem;
+    line-height: 1.4;
+    position: relative;
+    overflow: hidden;
   }
-  .vp-live-dot-ping {
-    @apply absolute inset-0 rounded-full;
-    background: #22c55e;
-    animation: vp-ping 1.5s cubic-bezier(0, 0, 0.2, 1) infinite;
+  .vp-prox::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 3px;
   }
-  .vp-live-dot-core {
-    @apply relative rounded-full;
-    width: 8px;
-    height: 8px;
-    background: #22c55e;
-  }
-  @keyframes vp-ping {
-    75%, 100% { transform: scale(2); opacity: 0; }
-  }
-
-  /* Proximity alert */
-  .vp-proximity {
-    @apply mx-3 my-1.5 px-2.5 py-1.5 rounded-lg text-xs leading-snug flex items-start gap-2;
-    border: 1px solid rgba(255, 255, 255, 0.06);
-  }
-  .vp-proximity.vp-tone-warn {
+  .vp-prox--hot {
     background: rgba(245, 158, 11, 0.06);
-    border-color: rgba(245, 158, 11, 0.15);
+    border: 1px solid rgba(245, 158, 11, 0.12);
+    color: #fcd34d;
+  }
+  .vp-prox--hot::before { background: #f59e0b; }
+  .vp-prox--warm {
+    background: rgba(96, 165, 250, 0.04);
+    border: 1px solid rgba(96, 165, 250, 0.08);
+    color: rgba(203, 213, 225, 0.9);
+  }
+  .vp-prox--warm::before { background: #60a5fa; }
+
+  .vp-prox-badge {
+    @apply flex-shrink-0 px-2 py-0.5 rounded-md font-bold;
+    font-size: 0.625rem;
+    letter-spacing: 0.12em;
+  }
+  .vp-prox--hot .vp-prox-badge {
+    background: rgba(245, 158, 11, 0.15);
     color: #fbbf24;
   }
-  .vp-proximity.vp-tone-info {
-    background: rgba(59, 130, 246, 0.04);
-    border-color: rgba(59, 130, 246, 0.1);
-    color: rgba(148, 163, 184, 0.85);
+  .vp-prox--warm .vp-prox-badge {
+    background: rgba(96, 165, 250, 0.1);
+    color: #60a5fa;
   }
-  .vp-proximity-badge {
-    @apply px-1.5 py-0.5 rounded text-xs font-bold tracking-wider flex-shrink-0;
-    font-size: 0.55rem;
-    background: rgba(255, 255, 255, 0.08);
-  }
-  .vp-proximity-text {
+  .vp-prox-text {
     flex: 1;
     min-width: 0;
   }
 
-  /* Signal feed */
-  .vp-feed {
+  /* ── Signal feed ── */
+  .vp-signals {
     @apply flex-1 min-h-0 flex flex-col overflow-hidden;
   }
-  .vp-feed-header {
-    @apply flex items-center justify-between px-3 py-1.5 flex-shrink-0;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  .vp-signals-header {
+    @apply flex items-center gap-2 px-5 py-3 flex-shrink-0;
+    border-top: 1px solid rgba(255, 255, 255, 0.04);
   }
-  .vp-feed-title {
-    font-size: 0.6rem;
+  .vp-signals-label {
+    font-size: 0.6875rem;
+    font-weight: 800;
+    letter-spacing: 0.16em;
+    color: rgba(148, 163, 184, 0.45);
+  }
+  .vp-signals-count {
+    @apply px-1.5 py-0.5 rounded-md;
+    font-size: 0.625rem;
     font-weight: 700;
-    letter-spacing: 0.12em;
-    color: rgba(148, 163, 184, 0.5);
-  }
-  .vp-feed-count {
-    font-size: 0.6rem;
     font-variant-numeric: tabular-nums;
-    color: rgba(148, 163, 184, 0.3);
+    background: rgba(255, 255, 255, 0.06);
+    color: rgba(148, 163, 184, 0.6);
   }
-  .vp-feed-empty {
-    @apply px-3 py-4 text-center text-xs;
-    color: rgba(148, 163, 184, 0.3);
-    font-style: italic;
+  .vp-signals-empty {
+    @apply px-5 py-6 text-center;
+    font-size: 0.8125rem;
+    color: rgba(148, 163, 184, 0.25);
+    letter-spacing: 0.02em;
   }
-  .vp-feed-list {
-    @apply flex-1 overflow-y-auto min-h-0 py-1;
+  .vp-signals-list {
+    @apply flex-1 overflow-y-auto min-h-0 px-4 py-2 flex flex-col gap-2;
   }
 
-  /* Signal entries */
-  .vp-signal {
-    @apply flex items-start gap-1.5 px-3 py-1;
+  /* Signal cards */
+  .vp-sig {
+    @apply rounded-xl px-4 py-3;
+    border: 1px solid rgba(255, 255, 255, 0.04);
+    background: rgba(255, 255, 255, 0.015);
+    position: relative;
+    overflow: hidden;
+    transition: background 0.15s ease;
   }
-  .vp-signal:hover {
-    background: rgba(255, 255, 255, 0.02);
+  .vp-sig::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 3px;
   }
-  .vp-signal-tone {
-    @apply px-1 py-0.5 rounded text-center flex-shrink-0 font-bold;
+  .vp-sig:hover {
+    background: rgba(255, 255, 255, 0.03);
+  }
+  .vp-sig--bull::before { background: #22c55e; }
+  .vp-sig--bear::before { background: #ef4444; }
+  .vp-sig--warn::before { background: #f59e0b; }
+  .vp-sig--info::before { background: #3b82f6; }
+
+  .vp-sig-head {
+    @apply flex items-center justify-between gap-2;
+  }
+  .vp-sig-badge {
+    @apply inline-flex items-center gap-1 px-2 py-0.5 rounded-md font-bold;
+    font-size: 0.625rem;
+    letter-spacing: 0.08em;
+  }
+  .vp-sig-badge--bull { background: rgba(34, 197, 94, 0.12); color: #4ade80; }
+  .vp-sig-badge--bear { background: rgba(239, 68, 68, 0.12); color: #f87171; }
+  .vp-sig-badge--warn { background: rgba(245, 158, 11, 0.1); color: #fbbf24; }
+  .vp-sig-badge--info { background: rgba(59, 130, 246, 0.1); color: #60a5fa; }
+
+  .vp-sig-icon {
     font-size: 0.5rem;
-    letter-spacing: 0.06em;
-    min-width: 30px;
+    line-height: 1;
   }
-  .vp-signal-tone.vp-tone-bull { background: rgba(34, 197, 94, 0.12); color: #4ade80; }
-  .vp-signal-tone.vp-tone-bear { background: rgba(239, 68, 68, 0.12); color: #f87171; }
-  .vp-signal-tone.vp-tone-warn { background: rgba(245, 158, 11, 0.12); color: #fbbf24; }
-  .vp-signal-tone.vp-tone-info { background: rgba(59, 130, 246, 0.1); color: #60a5fa; }
-  .vp-signal-time {
-    font-size: 0.6rem;
+  .vp-sig-time {
+    font-size: 0.6875rem;
     font-variant-numeric: tabular-nums;
-    color: rgba(148, 163, 184, 0.35);
-    flex-shrink: 0;
-    padding-top: 1px;
+    color: rgba(148, 163, 184, 0.3);
+    font-weight: 500;
   }
-  .vp-signal-line {
-    flex: 1;
-    min-width: 0;
+  .vp-sig-line {
+    margin-top: 6px;
+    font-size: 0.8125rem;
+    line-height: 1.45;
+    color: rgba(226, 232, 240, 0.82);
     word-break: break-word;
   }
 
-  /* Intel sections */
+  /* ── Intel cards ── */
   .vp-intel {
-    @apply flex-shrink-0 overflow-y-auto;
+    @apply flex-shrink-0 overflow-y-auto px-4 pb-4 flex flex-col gap-2;
     max-height: 45%;
-    border-top: 1px solid rgba(255, 255, 255, 0.06);
+    border-top: 1px solid rgba(255, 255, 255, 0.04);
+    padding-top: 12px;
   }
-  .vp-intel-section {
-    @apply py-1;
+  .vp-intel-card {
+    @apply rounded-xl px-4 py-3;
+    background: rgba(255, 255, 255, 0.02);
+    border: 1px solid rgba(255, 255, 255, 0.04);
   }
-  .vp-intel-section-header {
-    @apply px-3 py-1;
-    font-size: 0.6rem;
-    font-weight: 700;
-    letter-spacing: 0.12em;
-    color: rgba(148, 163, 184, 0.4);
-    border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+  .vp-intel-card-head {
+    @apply flex items-center gap-2 mb-2;
   }
-  .vp-intel-row {
-    @apply flex items-start gap-1.5 px-3 py-0.5;
-    color: rgba(148, 163, 184, 0.7);
-  }
-  .vp-intel-icon {
-    @apply flex-shrink-0;
-    width: 12px;
-    text-align: center;
-    font-size: 0.65rem;
+  .vp-intel-card-icon {
+    font-size: 0.75rem;
     color: rgba(148, 163, 184, 0.35);
+    flex-shrink: 0;
   }
-  .vp-intel-text {
-    flex: 1;
-    min-width: 0;
+  .vp-intel-card-title {
+    font-size: 0.625rem;
+    font-weight: 800;
+    letter-spacing: 0.14em;
+    color: rgba(148, 163, 184, 0.4);
+  }
+  .vp-intel-card-body {
+    font-size: 0.8125rem;
+    line-height: 1.5;
+    padding-left: 2px;
+  }
+  .vp-intel-card-body + .vp-intel-card-body {
+    margin-top: 4px;
+    padding-top: 4px;
+    border-top: 1px solid rgba(255, 255, 255, 0.03);
   }
 
-  /* Tone utility classes for intel rows */
-  .vp-intel-text.vp-tone-warn { color: #fbbf24; }
-  .vp-intel-text.vp-tone-bull { color: #4ade80; }
-  .vp-intel-text.vp-tone-bear { color: #f87171; }
+  /* Intel tone utility */
+  .vp-t-muted { color: rgba(148, 163, 184, 0.7); }
+  .vp-t-bull { color: #4ade80; }
+  .vp-t-bear { color: #f87171; }
+  .vp-t-warn { color: #fbbf24; }
 
-  /* Playbook tone passthrough */
+  /* Playbook icon + tone passthrough */
+  .vp-pb-icon {
+    display: inline;
+    margin-right: 6px;
+    font-size: 0.75rem;
+    color: rgba(148, 163, 184, 0.4);
+  }
   .vp-pb-accent { color: rgba(96, 165, 250, 0.85); }
   .vp-pb-bull { color: #4ade80; }
   .vp-pb-bear { color: #f87171; }
