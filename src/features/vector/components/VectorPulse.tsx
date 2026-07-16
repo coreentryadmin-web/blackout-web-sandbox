@@ -2,18 +2,21 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import useSWR from "swr";
-import { fetchSpxPlay } from "@/lib/api";
+import { fetchSpxPlay, fetchFlows, type FlowAlert } from "@/lib/api";
 import { buildPlaybookTerminalLines } from "@/features/spx/lib/spx-play-terminal-lines";
 import type { PlayTerminalLine } from "@/features/spx/lib/spx-play-terminal-lines";
 import {
   buildPulseSnapshot,
   detectPulseSignals,
+  detectPlayStateSignals,
   filterFreshPulseSignals,
   wallEventToPulseSignal,
+  flowAlertToPulseSignal,
   PULSE_FEED_MAX,
   type PulseSnapshot,
   type PulseSignal,
   type PulseSignalTone,
+  type PlayStateSnapshot,
 } from "@/features/vector/lib/vector-pulse";
 import type { VectorRegime } from "@/features/vector/lib/vector-regime";
 import type { WallProximity } from "@/features/vector/lib/vector-wall-proximity";
@@ -55,6 +58,11 @@ const TONE_ICONS: Record<PulseSignalTone, string> = {
   info: "●",
 };
 
+const KIND_ICONS: Partial<Record<PulseSignal["kind"], string>> = {
+  "play-state": "⚑",
+  "flow-print": "◈",
+};
+
 function formatTimestamp(ms: number): string {
   const d = new Date(ms);
   const h = d.getHours().toString().padStart(2, "0");
@@ -93,6 +101,13 @@ export function VectorPulse({
   const processedWallEventsRef = useRef(0);
   const feedRef = useRef<HTMLDivElement>(null);
 
+  // ── Play state diffing refs (SPX only) ──
+  const prevPlayRef = useRef<PlayStateSnapshot | null>(null);
+
+  // ── Flow dedup ref ──
+  const seenFlowIdsRef = useRef<Set<string>>(new Set());
+
+  // ── Ticker reset ──
   const prevTickerRef = useRef(normalized);
   useEffect(() => {
     if (prevTickerRef.current !== normalized) {
@@ -100,10 +115,13 @@ export function VectorPulse({
       prevSnapshotRef.current = null;
       seenMapRef.current = {};
       processedWallEventsRef.current = 0;
+      prevPlayRef.current = null;
+      seenFlowIdsRef.current = new Set();
       prevTickerRef.current = normalized;
     }
   }, [normalized]);
 
+  // ── Core Vector signal detection (regime, proximity, magnet, integrity, walls) ──
   useEffect(() => {
     const now = streamUpdatedAt ?? Date.now();
     const integ = wallIntegrity ?? { call: null, put: null };
@@ -144,17 +162,91 @@ export function VectorPulse({
     prevSnapshotRef.current = current;
   }, [regime, proximity, magnet, wallIntegrity, wallEvents, streamUpdatedAt]);
 
+  // ── SPX play engine (state + playbook) ──
   const { data: spxPlay } = useSWR(
     isSpx && liveSession ? "vector-spx-playbook" : null,
     fetchSpxPlay,
     { refreshInterval: liveSession ? 1_000 : 0, revalidateOnFocus: false, revalidateOnReconnect: false }
   );
 
+  // Diff play state for transition signals
+  useEffect(() => {
+    if (!spxPlay || !isSpx || !liveSession) return;
+    const now = Date.now();
+
+    const current: PlayStateSnapshot = {
+      phase: spxPlay.phase,
+      direction: spxPlay.direction,
+      grade: spxPlay.grade,
+      headline: spxPlay.headline,
+      score: spxPlay.score,
+      optionLabel: spxPlay.option_ticket?.contract_label ?? null,
+    };
+
+    const playSignals = detectPlayStateSignals(prevPlayRef.current, current, now);
+    prevPlayRef.current = current;
+
+    if (playSignals.length > 0) {
+      const { fresh, seen } = filterFreshPulseSignals(
+        playSignals,
+        seenMapRef.current,
+        now
+      );
+      seenMapRef.current = seen;
+
+      if (fresh.length > 0) {
+        setFeed((prev) => [...fresh, ...prev].slice(0, PULSE_FEED_MAX));
+      }
+    }
+  }, [spxPlay, isSpx, liveSession]);
+
   const playbookLines: PlayTerminalLine[] | null = useMemo(() => {
     if (!isSpx || !spxPlay?.playbook_shadow) return null;
     return buildPlaybookTerminalLines(spxPlay.playbook_shadow, liveSession).slice(1);
   }, [isSpx, spxPlay, liveSession]);
 
+  // ── Helix flow prints (large options flow for current ticker) ──
+  const { data: flowData } = useSWR(
+    liveSession ? `pulse-flows-${normalized}` : null,
+    () => fetchFlows({ ticker: normalized, limit: 20, min_premium: 500_000 }),
+    { refreshInterval: liveSession ? 10_000 : 0, revalidateOnFocus: false, revalidateOnReconnect: false }
+  );
+
+  useEffect(() => {
+    if (!flowData?.flows?.length || !liveSession) return;
+    const now = Date.now();
+    const newSignals: PulseSignal[] = [];
+
+    for (const flow of flowData.flows) {
+      const id = flow.alert_id ?? `${flow.ticker}:${flow.strike}:${flow.expiry}:${flow.alerted_at}`;
+      if (seenFlowIdsRef.current.has(id)) continue;
+      seenFlowIdsRef.current.add(id);
+
+      const sig = flowAlertToPulseSignal(flow, now);
+      if (sig) newSignals.push(sig);
+    }
+
+    // Cap seen set to prevent unbounded growth
+    if (seenFlowIdsRef.current.size > 200) {
+      const arr = Array.from(seenFlowIdsRef.current);
+      seenFlowIdsRef.current = new Set(arr.slice(arr.length - 100));
+    }
+
+    if (newSignals.length > 0) {
+      const { fresh, seen } = filterFreshPulseSignals(
+        newSignals,
+        seenMapRef.current,
+        now
+      );
+      seenMapRef.current = seen;
+
+      if (fresh.length > 0) {
+        setFeed((prev) => [...fresh, ...prev].slice(0, PULSE_FEED_MAX));
+      }
+    }
+  }, [flowData, liveSession]);
+
+  // ── Derived state ──
   const regimeTone =
     regime.posture === "long" ? "bull"
       : regime.posture === "short" ? "bear"
@@ -165,6 +257,9 @@ export function VectorPulse({
   const integrityEntries = hasIntegrity
     ? [wallIntegrity.call, wallIntegrity.put].filter(Boolean)
     : [];
+
+  // Play state summary for the hero area (SPX only, when WATCHING or OPEN)
+  const playBanner = isSpx && spxPlay && spxPlay.phase !== "SCANNING" ? spxPlay : null;
 
   return (
     <div className="vector-pulse" role="complementary" aria-label={`Vector Pulse for ${normalized}`}>
@@ -188,6 +283,27 @@ export function VectorPulse({
         )}
       </div>
 
+      {/* ── PLAY STATE BANNER (SPX only, WATCHING/OPEN) ── */}
+      {playBanner && (
+        <div className={`vp-play vp-play--${playBanner.phase === "OPEN" ? "open" : "watch"}`}>
+          <div className="vp-play-head">
+            <span className="vp-play-phase">{playBanner.phase}</span>
+            <span className="vp-play-grade">{playBanner.grade}</span>
+            {playBanner.option_ticket?.contract_label && (
+              <span className="vp-play-ticket">{playBanner.option_ticket.contract_label}</span>
+            )}
+          </div>
+          <div className="vp-play-thesis">{playBanner.headline}</div>
+          {playBanner.open_play && (
+            <div className="vp-play-levels">
+              <span>Entry {fmtSpot(playBanner.open_play.entry_price)}</span>
+              {playBanner.open_play.stop != null && <span>Stop {fmtSpot(playBanner.open_play.stop)}</span>}
+              {playBanner.open_play.target != null && <span>Target {fmtSpot(playBanner.open_play.target)}</span>}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* ── PROXIMITY BANNER ── */}
       {proximity && (
         <div className={`vp-prox ${proximity.nearness === "at" ? "vp-prox--hot" : "vp-prox--warm"}`}>
@@ -209,10 +325,10 @@ export function VectorPulse({
         ) : (
           <div className="vp-signals-list">
             {feed.map((sig, i) => (
-              <div key={`${sig.key}-${sig.at}-${i}`} className={`vp-sig vp-sig--${sig.tone}`}>
+              <div key={`${sig.key}-${sig.at}-${i}`} className={`vp-sig vp-sig--${sig.tone} vp-sig--${sig.kind}`}>
                 <div className="vp-sig-head">
                   <span className={`vp-sig-badge vp-sig-badge--${sig.tone}`}>
-                    <span className="vp-sig-icon">{TONE_ICONS[sig.tone]}</span>
+                    <span className="vp-sig-icon">{KIND_ICONS[sig.kind] ?? TONE_ICONS[sig.tone]}</span>
                     {TONE_LABELS[sig.tone]}
                   </span>
                   <span className="vp-sig-time">{formatTimestamp(sig.at)}</span>

@@ -3,16 +3,20 @@ import assert from "node:assert/strict";
 import {
   buildPulseSnapshot,
   detectPulseSignals,
+  detectPlayStateSignals,
   filterFreshPulseSignals,
   wallEventToPulseSignal,
+  flowAlertToPulseSignal,
   type PulseSnapshot,
   type PulseSignal,
+  type PlayStateSnapshot,
 } from "./vector-pulse";
 import type { VectorRegime } from "./vector-regime";
 import type { WallProximity } from "./vector-wall-proximity";
 import type { GammaMagnet } from "./vector-gamma-magnet";
 import type { WallIntegrity } from "./vector-wall-integrity";
 import type { VectorWallEvent } from "./vector-wall-events";
+import type { FlowAlert } from "@/lib/api";
 
 const BASE_REGIME: VectorRegime = {
   posture: "long",
@@ -296,4 +300,88 @@ test("wallEventToPulseSignal: put_wall_fading → bear tone", () => {
   };
   const sig = wallEventToPulseSignal(ev);
   assert.equal(sig.tone, "bear");
+});
+
+// ── Play state signal tests ──
+
+test("detectPlayStateSignals: SCANNING→WATCHING emits watch signal", () => {
+  const prev: PlayStateSnapshot = { phase: "SCANNING", direction: null, grade: "", headline: "", score: 0, optionLabel: null };
+  const next: PlayStateSnapshot = { phase: "WATCHING", direction: "long", grade: "B+", headline: "VWAP reclaim", score: 68, optionLabel: null };
+  const sigs = detectPlayStateSignals(prev, next, 1000);
+  assert.equal(sigs.length, 1);
+  assert.equal(sigs[0].kind, "play-state");
+  assert.equal(sigs[0].tone, "warn");
+  assert.ok(sigs[0].line.includes("WATCHING"));
+  assert.ok(sigs[0].line.includes("long"));
+  assert.ok(sigs[0].line.includes("B+"));
+});
+
+test("detectPlayStateSignals: WATCHING→OPEN emits open signal", () => {
+  const prev: PlayStateSnapshot = { phase: "WATCHING", direction: "short", grade: "A", headline: "fade", score: 75, optionLabel: null };
+  const next: PlayStateSnapshot = { phase: "OPEN", direction: "short", grade: "A", headline: "fade", score: 78, optionLabel: "SPX 5600P 0DTE" };
+  const sigs = detectPlayStateSignals(prev, next, 2000);
+  assert.equal(sigs.length, 1);
+  assert.equal(sigs[0].kind, "play-state");
+  assert.equal(sigs[0].tone, "bear");
+  assert.ok(sigs[0].line.includes("PLAY OPENED"));
+  assert.ok(sigs[0].line.includes("PUTS"));
+  assert.ok(sigs[0].line.includes("SPX 5600P 0DTE"));
+});
+
+test("detectPlayStateSignals: OPEN→SCANNING emits close signal", () => {
+  const prev: PlayStateSnapshot = { phase: "OPEN", direction: "long", grade: "A", headline: "buy", score: 80, optionLabel: null };
+  const next: PlayStateSnapshot = { phase: "SCANNING", direction: null, grade: "", headline: "", score: 0, optionLabel: null };
+  const sigs = detectPlayStateSignals(prev, next, 3000);
+  assert.equal(sigs.length, 1);
+  assert.equal(sigs[0].kind, "play-state");
+  assert.equal(sigs[0].tone, "info");
+  assert.ok(sigs[0].line.includes("closed"));
+});
+
+test("detectPlayStateSignals: same phase → no signals", () => {
+  const prev: PlayStateSnapshot = { phase: "SCANNING", direction: null, grade: "", headline: "", score: 0, optionLabel: null };
+  const next: PlayStateSnapshot = { phase: "SCANNING", direction: null, grade: "", headline: "", score: 10, optionLabel: null };
+  assert.equal(detectPlayStateSignals(prev, next, 4000).length, 0);
+});
+
+test("detectPlayStateSignals: null prev → no signals", () => {
+  const next: PlayStateSnapshot = { phase: "OPEN", direction: "long", grade: "A", headline: "go", score: 85, optionLabel: null };
+  assert.equal(detectPlayStateSignals(null, next, 5000).length, 0);
+});
+
+// ── Flow alert signal tests ──
+
+test("flowAlertToPulseSignal: large call buy → bull signal", () => {
+  const flow: FlowAlert = {
+    ticker: "SPY", premium: 1_200_000, option_type: "call", expiry: "2026-07-16",
+    strike: 560, direction: "buy", score: 90, route: "SWEEP", alerted_at: "2026-07-16T14:00:00Z",
+    gex_proximity: "near_call_wall",
+  };
+  const sig = flowAlertToPulseSignal(flow, 6000);
+  assert.ok(sig);
+  assert.equal(sig!.kind, "flow-print");
+  assert.equal(sig!.tone, "bull");
+  assert.ok(sig!.line.includes("$1.2M"));
+  assert.ok(sig!.line.includes("560C"));
+  assert.ok(sig!.line.includes("SWEEP"));
+  assert.ok(sig!.line.includes("near call wall"));
+});
+
+test("flowAlertToPulseSignal: put buy → bear signal", () => {
+  const flow: FlowAlert = {
+    ticker: "SPX", premium: 800_000, option_type: "put", expiry: "2026-07-16",
+    strike: 5500, direction: "buy", score: 85, route: "BLOCK", alerted_at: "2026-07-16T14:05:00Z",
+  };
+  const sig = flowAlertToPulseSignal(flow, 7000);
+  assert.ok(sig);
+  assert.equal(sig!.tone, "bear");
+  assert.ok(sig!.line.includes("5500P"));
+});
+
+test("flowAlertToPulseSignal: below threshold → null", () => {
+  const flow: FlowAlert = {
+    ticker: "AAPL", premium: 100_000, option_type: "call", expiry: "2026-07-16",
+    strike: 200, direction: "buy", score: 70, route: "", alerted_at: "2026-07-16T14:10:00Z",
+  };
+  assert.equal(flowAlertToPulseSignal(flow, 8000), null);
 });
