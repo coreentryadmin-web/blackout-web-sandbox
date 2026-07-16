@@ -177,6 +177,8 @@ export function rescoreDossier(
       tomorrow_ymd: ctx.tomorrow,
       benzinga_price_target: dossier.benzinga_price_target,
       greek_flow: dossier.greek_flow,
+      iv_rank: dossier.iv_rank,
+      fda_events: dossier.fda_events,
     },
     dossier.flow_streak,
     regime,

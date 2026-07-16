@@ -786,6 +786,10 @@ export function scoreCandidate(
     benzinga_price_target?: BenzingaPriceTarget | null;
     /** Per-ticker dealer greek flow summary (net delta/gamma bias). */
     greek_flow?: TickerGreekFlowSummary | null;
+    /** IV rank percentile (0-100). Elevated IV = expensive options, risk flag. */
+    iv_rank?: number | null;
+    /** Upcoming FDA calendar events for this ticker (UW). */
+    fda_events?: Record<string, unknown>[];
   },
   flowStreak?: FlowStreak,
   regime?: NightHawkRegimeContext | null,
@@ -868,7 +872,24 @@ export function scoreCandidate(
     }
   }
 
-  const totalCatalystScore = Math.max(-CATALYST_CAP, Math.min(CATALYST_CAP, catalyst.score + earningsPenalty + ptNudge));
+  // IV rank flag: elevated IV warns members options are expensive (wider spreads, higher decay).
+  const ivRank = dossierExtras.iv_rank;
+  let ivPenalty = 0;
+  if (ivRank != null && Number.isFinite(ivRank) && ivRank > 70) {
+    ivPenalty = -1;
+    catalyst.flags.push(`IV rank ${Math.round(ivRank)} — options expensive, tighter stops`);
+  }
+
+  // FDA calendar reinforcement: if UW FDA calendar has upcoming dates, strengthen the binary
+  // penalty (scoreCatalystAwareness may have already flagged from Benzinga catalysts).
+  let fdaPenalty = 0;
+  const fdaRows = dossierExtras.fda_events ?? [];
+  if (fdaRows.length > 0 && !catalyst.flags.some((f) => f.includes("FDA"))) {
+    fdaPenalty = -2;
+    catalyst.flags.push("FDA calendar event upcoming — binary risk");
+  }
+
+  const totalCatalystScore = Math.max(-CATALYST_CAP, Math.min(CATALYST_CAP, catalyst.score + earningsPenalty + ptNudge + ivPenalty + fdaPenalty));
 
   // Flow-anomaly penalty: names flagged critical in the last hour get demoted unless flow is exceptional.
   let anomalyPenalty = 0;

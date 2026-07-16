@@ -334,3 +334,45 @@ test("scoreCandidate returns confirming_signals count based on material threshol
   assert.ok(result.confirming_signals! <= 7);
 });
 
+// ── IV rank penalty ────────────────────────────────────────────────────────
+
+test("scoreCandidate: elevated IV rank (>70) adds catalyst flag and penalty", () => {
+  const flows = [{ type: "call", total_premium: 5_000_000, ticker: "TEST" }];
+  const base = scoreCandidate("TEST", flows, null, {});
+  const withHighIv = scoreCandidate("TEST", flows, null, { iv_rank: 85 });
+  assert.ok(withHighIv.catalyst_flags!.some((f) => f.includes("IV rank 85")));
+  assert.ok(withHighIv.score <= base.score);
+});
+
+test("scoreCandidate: moderate IV rank (<=70) has no penalty or flag", () => {
+  const flows = [{ type: "call", total_premium: 5_000_000, ticker: "TEST" }];
+  const base = scoreCandidate("TEST", flows, null, {});
+  const withModIv = scoreCandidate("TEST", flows, null, { iv_rank: 55 });
+  assert.equal(withModIv.score, base.score);
+  assert.ok(!withModIv.catalyst_flags?.some((f) => f.includes("IV rank")));
+});
+
+// ── FDA calendar reinforcement ──────────────────────────────────────────────
+
+test("scoreCandidate: FDA events add penalty when Benzinga didn't already flag FDA", () => {
+  const flows = [{ type: "call", total_premium: 5_000_000, ticker: "TEST" }];
+  const base = scoreCandidate("TEST", flows, null, {});
+  const withFda = scoreCandidate("TEST", flows, null, {
+    fda_events: [{ date: "2026-08-01", event_type: "PDUFA" }],
+  });
+  assert.ok(withFda.catalyst_flags!.some((f) => f.includes("FDA calendar")));
+  assert.ok(withFda.score < base.score);
+});
+
+test("scoreCandidate: FDA events skip when Benzinga already flagged FDA", () => {
+  const flows = [{ type: "call", total_premium: 5_000_000, ticker: "TEST" }];
+  const withBenzFda = scoreCandidate("TEST", flows, null, {
+    catalysts: [{ type: "binary" }] as never,
+  });
+  const withBoth = scoreCandidate("TEST", flows, null, {
+    catalysts: [{ type: "binary" }] as never,
+    fda_events: [{ date: "2026-08-01", event_type: "PDUFA" }],
+  });
+  assert.equal(withBoth.score, withBenzFda.score);
+});
+

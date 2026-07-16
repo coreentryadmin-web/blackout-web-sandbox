@@ -524,6 +524,8 @@ export async function fetchTickerDossier(
       short_days_to_cover: shortSi?.days_to_cover ?? null,
       benzinga_price_target: benzingaPriceTarget,
       greek_flow: greekFlow,
+      iv_rank: ivRank,
+      fda_events: fdaEvents,
     },
     flowStreak,
     regime
