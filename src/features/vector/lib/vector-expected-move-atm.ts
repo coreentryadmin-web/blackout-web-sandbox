@@ -15,10 +15,19 @@
  */
 
 import { expiriesForHorizon, type VectorDteHorizon } from "./vector-dte-horizon";
-import { yearsToExpiry, type ReconstructContract } from "./vector-gex-reconstruct";
+import type { ReconstructContract } from "./vector-gex-reconstruct";
 import type { ExpectedMoveInput } from "./vector-expected-move";
 
 const DAYS_PER_YEAR = 365;
+
+/** Remaining wall-clock time to expiry in ACT/365 years — options expire ~16:00 ET (20:00 UTC).
+ *  Unlike yearsToExpiry (anchored at session open for stable GEX gamma), this shrinks through the
+ *  trading day so 0DTE expected-move bands narrow as expiry approaches. */
+function remainingYearsToExpiry(expiry: string): number {
+  const exp = Date.parse(`${expiry}T20:00:00Z`);
+  if (!Number.isFinite(exp)) return 0;
+  return Math.max((exp - Date.now()) / (365 * 86_400_000), 1 / (365 * 24 * 60));
+}
 
 export type ExpectedMoveDerived = ExpectedMoveInput & {
   /** The front expiry the quote is scoped to (YYYY-MM-DD). */
@@ -68,9 +77,9 @@ export function deriveExpectedMoveInputs(
   if (ivs.length === 0) return null;
   const atmIv = ivs.reduce((s, v) => s + v, 0) / ivs.length;
 
-  // Time to expiry in days: reuse the tested ACT/365 helper (floored at ~1 min, so a same-day 0DTE
-  // yields a real narrow horizon rather than 0). Convert years → days for the engine's API.
-  const dteDays = yearsToExpiry(frontExpiry, todayYmd) * DAYS_PER_YEAR;
+  // Remaining wall-clock time to expiry so 0DTE bands shrink through the session (not pinned
+  // at session-open like the GEX gamma helper). Floored at ~1 min to avoid a zero/negative DTE.
+  const dteDays = remainingYearsToExpiry(frontExpiry) * DAYS_PER_YEAR;
 
   return { spot, atmIv, dteDays, expiry: frontExpiry };
 }
