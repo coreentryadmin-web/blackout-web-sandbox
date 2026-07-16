@@ -30,7 +30,20 @@ test("heatmapCellColor: alpha scales with |cell|/maxAbs and clamps at 1", () => 
   const overMax = rgba(heatmapCellColor(500, 100)).a;
   assert.equal(atMax, overMax, "intensity clamps at 1");
   // Background ceiling stays subtle so candles read on top.
-  assert.ok(atMax <= 0.42 + 1e-9);
+  assert.ok(atMax <= 0.55 + 1e-9);
+});
+
+test("heatmapCellColor: power curve separates weak/medium/strong — weak much fainter than strong", () => {
+  const weak = rgba(heatmapCellColor(10, 100)).a;   // intensity 0.1
+  const mid = rgba(heatmapCellColor(50, 100)).a;     // intensity 0.5
+  const strong = rgba(heatmapCellColor(90, 100)).a;  // intensity 0.9
+  const max = rgba(heatmapCellColor(100, 100)).a;    // intensity 1.0
+  // Weak cells should be very faint (near MIN_ALPHA 0.03)
+  assert.ok(weak < 0.06, `weak alpha ${weak} should be < 0.06`);
+  // Strong cells should be significantly more opaque than medium
+  assert.ok(strong > mid * 1.5, `strong ${strong} should be >1.5× medium ${mid}`);
+  // Max should be near MAX_ALPHA 0.55
+  assert.ok(max > 0.5, `max alpha ${max} should be > 0.5`);
 });
 
 test("heatmapCellColor: zero / empty grid / non-finite → transparent (honest absence)", () => {

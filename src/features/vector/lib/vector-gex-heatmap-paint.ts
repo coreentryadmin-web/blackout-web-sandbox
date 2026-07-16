@@ -18,10 +18,15 @@ const PUT_RGB = [217, 70, 239] as const; // #d946ef
  * Alpha envelope. This is a BACKGROUND layer drawn at `zOrder: "bottom"` (under the candles, walls
  * and overlays), so the ceiling is deliberately low — even the heaviest cell must stay subtle enough
  * that the price action reads cleanly on top. `MIN_ALPHA` keeps a faint-but-present tint on the
- * weakest non-zero cell so the surface's extent is legible; intensity scales linearly to `MAX_ALPHA`.
+ * weakest non-zero cell so the surface's extent is legible.
+ *
+ * A power curve (GAMMA > 1) compresses weak cells toward transparency and stretches strong cells
+ * toward the ceiling, so the dominant strikes pop while the noise fades out — without the linear
+ * ramp's "everything looks the same" flatness.
  */
-const MIN_ALPHA = 0.05;
-const MAX_ALPHA = 0.42;
+const MIN_ALPHA = 0.03;
+const MAX_ALPHA = 0.55;
+const GAMMA = 1.6;
 
 /** Fully-transparent sentinel — returned for empty/zero cells so a caller can skip the blit. */
 export const HEATMAP_TRANSPARENT = "rgba(0,0,0,0)";
@@ -35,7 +40,8 @@ export const HEATMAP_TRANSPARENT = "rgba(0,0,0,0)";
 export function heatmapCellColor(signed: number, maxAbs: number): string {
   if (!(maxAbs > 0) || !Number.isFinite(signed) || signed === 0) return HEATMAP_TRANSPARENT;
   const intensity = Math.min(1, Math.abs(signed) / maxAbs);
-  const alpha = MIN_ALPHA + intensity * (MAX_ALPHA - MIN_ALPHA);
+  const curved = Math.pow(intensity, GAMMA);
+  const alpha = MIN_ALPHA + curved * (MAX_ALPHA - MIN_ALPHA);
   const [r, g, b] = signed > 0 ? CALL_RGB : PUT_RGB;
   return `rgba(${r}, ${g}, ${b}, ${alpha.toFixed(3)})`;
 }
