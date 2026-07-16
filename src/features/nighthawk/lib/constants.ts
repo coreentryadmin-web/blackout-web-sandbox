@@ -28,8 +28,9 @@ export const LEVERAGED_ETP_SET = new Set<string>([
   "TSLL", "TSLQ", "TSLS", "NVDL", "NVDD", "NVDS", "MSTU", "MSTZ", "MSTX", "CONL", "AMDL", "AMZU", "GGLL", "METU", "FBL",
 ]);
 
-/** Minimum underlying price for a single-name candidate (penny/garbage-runner floor). */
-export const CANDIDATE_MIN_UNDERLYING_PRICE = 2;
+/** Minimum underlying price for a single-name candidate (penny/garbage-runner floor).
+ *  Raised from $2 to $5 — $2-$4 names have unreliable options chains and whipsaw. */
+export const CANDIDATE_MIN_UNDERLYING_PRICE = 5;
 
 export const SECTOR_WATCH = [
   { key: "technology", label: "Technology" },
@@ -50,7 +51,7 @@ export const CANDIDATE_UNUSUALNESS_LOOKBACK_DAYS = 30;
 export const CANDIDATE_MIN_BASELINE_PREMIUM = 75_000;
 export const MAX_DOSSIER_STOCKS = 40;
 /** Top dossiers sent to Claude for play synthesis (not the full ranked pool). */
-export const EDITION_SYNTHESIS_POOL = 12;
+export const EDITION_SYNTHESIS_POOL = 18;
 /** Final play count shown in the UI (PlaybookBoard renders 5 slots). */
 export const EDITION_TARGET_PLAYS = 5;
 /** Minimum plays before ops pages on a thin edition — backfill from ranked pool when below. */
@@ -58,7 +59,7 @@ export const EDITION_MIN_PUBLISH_PLAYS = 3;
 /** Overshoot sent through synthesis + critic — critic cuts weak plays with no backfill. */
 export const EDITION_SYNTHESIS_OVERSHOOT = 7;
 /** Stock tickers to prefetch option chains for (buffer above 5 final plays). */
-export const EDITION_CHAIN_PREFETCH = 12;
+export const EDITION_CHAIN_PREFETCH = 18;
 export const MIN_STOCK_FLOW_PREMIUM = 100_000;
 export const MIN_HOT_CHAIN_PREMIUM = 500_000;
 /** Market-wide flow tape — higher limit captures late-session event volume. */

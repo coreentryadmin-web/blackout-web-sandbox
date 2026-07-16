@@ -11,7 +11,7 @@ import { fetchOptionsUnifiedSnapshot, type OptionSnapshot } from "@/lib/provider
 import type { PlaybookPlay } from "./types";
 
 const ATM_BAND_PCT = 0.05;
-const FRONT_EXPIRIES = 2;
+const FRONT_EXPIRIES = 3;
 
 export type ChainStrikeRow = {
   expiry: string;

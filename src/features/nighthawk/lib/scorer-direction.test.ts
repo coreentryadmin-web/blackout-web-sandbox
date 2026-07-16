@@ -8,7 +8,11 @@ import {
   scoreSkewConfirmation,
   scoreFlowQuality,
   scoreCandidate,
+  scoreWallProximity,
+  scoreVexAlignment,
+  computeRegimeMultiplier,
 } from "./scorer";
+import type { PositioningSummary } from "./positioning";
 import type { TechnicalCard } from "./technicals";
 
 // Direction-correctness regression suite (2026-07-02 audit): several factors scored
@@ -374,5 +378,92 @@ test("scoreCandidate: FDA events skip when Benzinga already flagged FDA", () => 
     fda_events: [{ date: "2026-08-01", event_type: "PDUFA" }],
   });
   assert.equal(withBoth.score, withBenzFda.score);
+});
+
+// ── scoreWallProximity ──────────────────────────────────────────────────────────
+
+function mkPositioning(overrides: Partial<PositioningSummary> = {}): PositioningSummary {
+  return {
+    net_gex: 0, gex_king_strike: null, gamma_flip: null,
+    gamma_regime: "unknown", net_vex: null, max_pain: null,
+    negative_gamma: false, wall_summary: "n/a",
+    ...overrides,
+  };
+}
+
+test("scoreWallProximity: put wall within 1% of spot → +5 for long", () => {
+  const pos = mkPositioning({ wall_summary: "put wall $5690 (-5pts)" });
+  assert.equal(scoreWallProximity(pos, "long"), 5);
+});
+
+test("scoreWallProximity: put wall within 3% of spot → +3 for long", () => {
+  const pos = mkPositioning({ wall_summary: "put wall $100 (-2pts)" });
+  assert.equal(scoreWallProximity(pos, "long"), 3);
+});
+
+test("scoreWallProximity: call wall within 1% for short → +5", () => {
+  const pos = mkPositioning({ wall_summary: "call wall $100 (+1pts)" });
+  assert.equal(scoreWallProximity(pos, "short"), 5);
+});
+
+test("scoreWallProximity: contradicting call wall close for long → -2", () => {
+  const pos = mkPositioning({ wall_summary: "call wall $100 (+1pts)" });
+  assert.equal(scoreWallProximity(pos, "long"), -2);
+});
+
+test("scoreWallProximity: no positioning → 0", () => {
+  assert.equal(scoreWallProximity(null, "long"), 0);
+  assert.equal(scoreWallProximity(mkPositioning(), "long"), 0);
+});
+
+test("scoreWallProximity: combined supporting + contradicting walls", () => {
+  const pos = mkPositioning({ wall_summary: "put wall $5680 (-20pts) · call wall $5720 (+20pts)" });
+  const score = scoreWallProximity(pos, "long");
+  assert.ok(score >= 1, `expected >= 1, got ${score}`);
+});
+
+// ── scoreVexAlignment ───────────────────────────────────────────────────────────
+
+test("scoreVexAlignment: positive VEX aligns with long → +3", () => {
+  assert.equal(scoreVexAlignment(mkPositioning({ net_vex: 50000 }), "long"), 3);
+});
+
+test("scoreVexAlignment: negative VEX aligns with short → +3", () => {
+  assert.equal(scoreVexAlignment(mkPositioning({ net_vex: -50000 }), "short"), 3);
+});
+
+test("scoreVexAlignment: positive VEX contradicts short → -1", () => {
+  assert.equal(scoreVexAlignment(mkPositioning({ net_vex: 50000 }), "short"), -1);
+});
+
+test("scoreVexAlignment: null VEX → 0", () => {
+  assert.equal(scoreVexAlignment(mkPositioning({ net_vex: null }), "long"), 0);
+});
+
+test("scoreVexAlignment: zero VEX → 0", () => {
+  assert.equal(scoreVexAlignment(mkPositioning({ net_vex: 0 }), "long"), 0);
+});
+
+// ── computeRegimeMultiplier (widened range) ─────────────────────────────────────
+
+test("computeRegimeMultiplier: extreme bearish VIX>80 → 0.6", () => {
+  const m = computeRegimeMultiplier({ vix_iv_rank: 85, tide_bias: "BEARISH" as const, advance_pct: null });
+  assert.equal(m, 0.6);
+});
+
+test("computeRegimeMultiplier: extreme bullish VIX<20 → 1.2 base", () => {
+  const m = computeRegimeMultiplier({ vix_iv_rank: 15, tide_bias: "BULLISH" as const, advance_pct: null });
+  assert.equal(m, 1.2);
+});
+
+test("computeRegimeMultiplier: trending composite regime adds 0.05", () => {
+  const base = computeRegimeMultiplier({ vix_iv_rank: 30, tide_bias: "NEUTRAL" as const, advance_pct: null });
+  const trending = computeRegimeMultiplier({ vix_iv_rank: 30, tide_bias: "NEUTRAL" as const, advance_pct: null, composite_regime: "trending_up" });
+  assert.ok(trending > base, `trending ${trending} should exceed base ${base}`);
+});
+
+test("computeRegimeMultiplier: cap at 1.30", () => {
+  const m = computeRegimeMultiplier({ vix_iv_rank: 15, tide_bias: "BULLISH" as const, advance_pct: 80, composite_regime: "breakout" });
+  assert.ok(m <= 1.30, `should be <= 1.30, got ${m}`);
 });
 

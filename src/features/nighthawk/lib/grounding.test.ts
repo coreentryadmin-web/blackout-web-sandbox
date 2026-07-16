@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { groundPlay, groundPlays } from "./grounding";
+import { groundPlay, groundPlays, tieredMinOi } from "./grounding";
 import { parseOptionsContract, type ChainStrikeRow } from "./option-chain-prompt";
 import type { PlaybookPlay } from "./types";
 
@@ -183,4 +183,21 @@ test("groundPlay drops contradictory user-visible prose strike claims", () => {
 
   assert.equal(result.severity, "drop");
   assert.match(result.issues.map((i) => i.detail).join(" "), /contradictory setup text/);
+});
+
+// ── tieredMinOi ─────────────────────────────────────────────────────────────────
+
+test("tieredMinOi: large-cap (>=$200) uses 500", () => {
+  assert.equal(tieredMinOi(500), 500);
+  assert.equal(tieredMinOi(200), 500);
+});
+
+test("tieredMinOi: mid-cap ($50-$199) uses 200", () => {
+  assert.equal(tieredMinOi(100), 200);
+  assert.equal(tieredMinOi(50), 200);
+});
+
+test("tieredMinOi: small-cap (<$50) uses 100", () => {
+  assert.equal(tieredMinOi(25), 100);
+  assert.equal(tieredMinOi(5), 100);
 });
