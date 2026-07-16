@@ -32,6 +32,7 @@ import {
   fetchUwOiChange,
   fetchUwPredictionsConsensus,
   fetchUwRealizedVol,
+  fetchUwGreekFlow,
   fetchUwRiskReversalSkew,
   fetchUwScreenerStocks,
   type PredictionConsensusSignal,
@@ -47,6 +48,40 @@ import { runUwSequential } from "@/lib/providers/uw-rate-limiter";
 import { DOSSIER_BATCH_SIZE, DOSSIER_FETCH_TIMEOUT_MS, DOSSIER_INTER_BATCH_MS } from "./constants";
 import { dossierFetch } from "./fetch-timeout";
 import { parseLatestRealizedVol, parseLatestRiskReversalSkew } from "./vol-metrics";
+
+export type TickerGreekFlowSummary = {
+  net_delta: number;
+  net_gamma: number;
+  bias: "bullish" | "bearish" | "neutral";
+  row_count: number;
+};
+
+function gfNum(row: Record<string, unknown>, ...keys: string[]): number {
+  for (const k of keys) {
+    const v = row[k];
+    if (v != null && Number.isFinite(Number(v))) return Number(v);
+  }
+  return 0;
+}
+
+export function summarizeTickerGreekFlow(
+  rows: Record<string, unknown>[]
+): TickerGreekFlowSummary | null {
+  if (!rows.length) return null;
+  let netDelta = 0;
+  let netGamma = 0;
+  for (const r of rows) {
+    const d = gfNum(r, "net_delta", "delta", "net_deltas");
+    const cd = gfNum(r, "call_delta", "call_deltas");
+    const pd = gfNum(r, "put_delta", "put_deltas");
+    netDelta += d !== 0 ? d : cd + pd;
+    netGamma += gfNum(r, "net_gamma", "gamma", "net_gex", "gex");
+  }
+  if (netDelta === 0 && netGamma === 0) return null;
+  const bias: TickerGreekFlowSummary["bias"] =
+    netDelta > 10_000 ? "bullish" : netDelta < -10_000 ? "bearish" : "neutral";
+  return { net_delta: netDelta, net_gamma: netGamma, bias, row_count: rows.length };
+}
 
 export type TickerDossier = {
   ticker: string;
@@ -88,6 +123,7 @@ export type TickerDossier = {
    * Empty array when no FDA catalyst is flagged or UW is unconfigured.
    */
   fda_events: Record<string, unknown>[];
+  greek_flow: TickerGreekFlowSummary | null;
   scored?: ScoredCandidate;
 };
 
@@ -379,6 +415,7 @@ export async function fetchTickerDossier(
     insider,
     congressUnusual,
     institutional,
+    greekFlowRaw,
   ] = uw
     ? await runUwSequential([
         () => dossierFetch(() => fetchUwDarkPool(sym), null, t),
@@ -394,8 +431,9 @@ export async function fetchTickerDossier(
         () => dossierFetch(() => fetchUwInsiderTransactions(sym, 20), [], t),
         () => dossierFetch(() => fetchUwCongressUnusualTrades(sym, 5), [], t),
         () => dossierFetch(() => fetchUwInstitutionOwnership(sym, 8), [], t),
+        () => dossierFetch(() => fetchUwGreekFlow(sym), [], t),
       ])
-    : [null, [], [], [], [], [], [], [], []];
+    : [null, [], [], [], [], [], [], [], [], []];
 
   const flows = flowRows.map((r) => r.raw);
   const strikeStacks = computeFlowStrikeStacks(flows, { minAlerts: 2, limit: 8 });
@@ -426,6 +464,7 @@ export async function fetchTickerDossier(
   // when the UW trading_halts channel is naturally quiet (= "stale"); fail-closing there
   // wrongly marks every ticker halted and zeroes the entire edition.
   const tradingHalt = shouldBlockForTradingHalt([sym], { failClosedOnStale: false }).block;
+  const greekFlow = summarizeTickerGreekFlow((greekFlowRaw ?? []) as Record<string, unknown>[]);
 
   const dossier: TickerDossier = {
     ticker: sym,
@@ -459,6 +498,7 @@ export async function fetchTickerDossier(
     benzinga_price_target: benzingaPriceTarget,
     trading_halt: tradingHalt,
     fda_events: fdaEvents,
+    greek_flow: greekFlow,
   };
 
   dossier.scored = scoreCandidate(
@@ -482,9 +522,8 @@ export async function fetchTickerDossier(
       trading_halt: tradingHalt,
       risk_reversal_skew: riskReversalSkew,
       short_days_to_cover: shortSi?.days_to_cover ?? null,
-      // Wire the analyst-PT nudge input — scoreCandidate has implemented it since day
-      // one but no caller ever passed the field, leaving it dead code (audit finding).
       benzinga_price_target: benzingaPriceTarget,
+      greek_flow: greekFlow,
     },
     flowStreak,
     regime

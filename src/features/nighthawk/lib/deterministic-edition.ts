@@ -188,6 +188,10 @@ export function buildDeterministicThesis(
     const ivLabel = dossier.iv_rank > 70 ? "elevated" : dossier.iv_rank > 40 ? "moderate" : "low";
     parts.push(`IV rank ${Math.round(dossier.iv_rank)} (${ivLabel}).`);
   }
+  if (dossier?.greek_flow) {
+    const gf = dossier.greek_flow;
+    parts.push(`Dealer flow ${gf.bias} (net Δ ${gf.net_delta > 0 ? "+" : ""}${Math.round(gf.net_delta).toLocaleString()}).`);
+  }
   const flags = [
     ...(scored.catalyst_flags ?? []),
     ...(scored.fundamental_block ? scored.fundamental_flags ?? [] : []),

@@ -118,8 +118,9 @@ export async function critiquePlays(params: {
       conviction = deterministicConviction;
     }
 
-    // DOWNGRADE: thin signal confirmation.
-    const confirming = countConfirmingSignals(scored);
+    // DOWNGRADE: thin signal confirmation. Prefer the scorer's threshold-based count
+    // (material contribution, not just >0) when available.
+    const confirming = scored.confirming_signals ?? countConfirmingSignals(scored);
     if (confirming < MIN_CONFIRMING_SIGNALS && convictionRank(conviction) > 2) {
       const newConviction = "B";
       notes.push(

@@ -7,6 +7,7 @@ import {
   scoreTechnicalSetup,
   scoreSkewConfirmation,
   scoreFlowQuality,
+  scoreCandidate,
 } from "./scorer";
 import type { TechnicalCard } from "./technicals";
 
@@ -249,3 +250,87 @@ test("scoreFlowQuality: strong negative (bullish) skew flips a put-leaning flow 
   assert.equal(result.direction, "long");
   assert.equal(result.directionFlippedBySkew, true);
 });
+
+// ── scoreOptionsPositioning: dealer greek flow alignment ────────────────────
+
+test("positioning: bullish dealer greek flow adds +3 for LONG", () => {
+  const base = scoreOptionsPositioning({}, "long");
+  const withGreek = scoreOptionsPositioning(
+    { greek_flow: { net_delta: 50_000, net_gamma: 1_000, bias: "bullish", row_count: 5 } },
+    "long"
+  );
+  assert.equal(withGreek - base, 3);
+});
+
+test("positioning: bullish dealer greek flow penalizes SHORT (−1 before floor)", () => {
+  // From a non-zero base so the -1 penalty is visible.
+  const withOi = {
+    oi_change: [
+      { oi_change: 100, option_type: "put" },
+      { oi_change: 200, option_type: "put" },
+    ],
+  };
+  const base = scoreOptionsPositioning(withOi, "short");
+  const withGreek = scoreOptionsPositioning(
+    { ...withOi, greek_flow: { net_delta: 50_000, net_gamma: 1_000, bias: "bullish", row_count: 5 } },
+    "short"
+  );
+  assert.equal(withGreek - base, -1);
+});
+
+test("positioning: bearish dealer greek flow adds +3 for SHORT", () => {
+  const base = scoreOptionsPositioning({}, "short");
+  const withGreek = scoreOptionsPositioning(
+    { greek_flow: { net_delta: -50_000, net_gamma: -1_000, bias: "bearish", row_count: 5 } },
+    "short"
+  );
+  assert.equal(withGreek - base, 3);
+});
+
+test("positioning: neutral dealer greek flow has no effect", () => {
+  const base = scoreOptionsPositioning({}, "long");
+  const withGreek = scoreOptionsPositioning(
+    { greek_flow: { net_delta: 500, net_gamma: 100, bias: "neutral", row_count: 3 } },
+    "long"
+  );
+  assert.equal(withGreek, base);
+});
+
+test("positioning: null greek_flow has no effect", () => {
+  const base = scoreOptionsPositioning({}, "long");
+  const withNull = scoreOptionsPositioning({ greek_flow: null }, "long");
+  assert.equal(withNull, base);
+});
+
+test("positioning: greek flow score still capped at 18 total", () => {
+  const result = scoreOptionsPositioning(
+    {
+      dark_pool: { total_premium: 100_000_000, bias: "bullish" },
+      strike_stacks: [
+        { strike: 100, repeated_hits: true, same_strike_accumulation: true, option_type: "call" } as any,
+      ],
+      positioning: { negative_gamma: true } as any,
+      oi_change: [
+        { oi_change: 100, option_type: "call" },
+        { oi_change: 200, option_type: "call" },
+      ],
+      greek_flow: { net_delta: 50_000, net_gamma: 1_000, bias: "bullish", row_count: 5 },
+    },
+    "long"
+  );
+  assert.equal(result, 18);
+});
+
+// ── confirming_signals ──────────────────────────────────────────────────────
+
+test("scoreCandidate returns confirming_signals count based on material thresholds", () => {
+  const flows = [
+    { type: "call", total_premium: 10_000_000, ticker: "TEST" },
+    { type: "call", total_premium: 5_000_000, ticker: "TEST" },
+  ];
+  const result = scoreCandidate("TEST", flows, null, {});
+  assert.equal(typeof result.confirming_signals, "number");
+  assert.ok(result.confirming_signals! >= 0);
+  assert.ok(result.confirming_signals! <= 7);
+});
+
