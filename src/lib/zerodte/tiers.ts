@@ -202,12 +202,23 @@ export function assignZeroDteTier(input: ZeroDteTierInput): ZeroDteTierAssignmen
     });
   } else if (input.score >= SCORE_TOP_MIN) {
     points += W_SCORE_TOP;
+    // F-5 inversion: 85+ ran 33.3% vs 63.6% at 75-84 — the top band is where the
+    // money dies. Beyond discounting the weight, cap the reachable tier at B: a raw
+    // score extreme cannot earn A regardless of how many other factors align.
+    ceiling = capTier(ceiling, "B");
     factors.push({
       label: "Score 85+ (discounted)",
       direction: "up",
       detail:
         `Score ${Math.round(input.score)} counts only as a mid-band positive — the measured top-band ` +
         "inversion (85+ ran 33.3% WR vs 63.6% at 75-84, F-5) means raw-score maximalism is not earned credit.",
+    });
+    factors.push({
+      label: "Score 85+ tier cap",
+      direction: "down",
+      detail:
+        "Score ≥85 also caps the tier at B — A-tier must come through the 75-84 prime band " +
+        "where the evidence says quality is, not through raw-score maximalism.",
     });
   } else if (input.score >= SCORE_PRIME_MIN) {
     points += W_SCORE_PRIME;

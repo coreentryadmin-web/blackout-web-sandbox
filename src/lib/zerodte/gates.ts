@@ -48,15 +48,15 @@ export const MARKET_BIAS_MAX_AGE_MS = 15 * 60 * 1000;
 export const OPENING_WINDOW_UNLOCK_ET_MINUTES = 9 * 60 + 45;
 export const OPENING_WINDOW_UNLOCK_LABEL = "9:45 ET";
 
-// ── G-4 · VIX regime throttle — CALIBRATION MODE (logs, never blocks) ───────────
+// ── G-4 · VIX regime throttle — HARD GATE (promoted from calibration 2026-07-16) ──
 // Evidence (F-1): the strongest per-play split in the whole forensics dataset —
 // Slayer plays on days opening VIX 15-17 ran 69.2% WR (n=13, +1.85 pts avg) vs
-// 25.0% WR (n=12, −1.54 pts) at 17-20. But it's a LOW-N Slayer-side cut, so per the
-// decision doc it runs as calibration for ≥30 sessions: the verdict is computed and
-// PINNED on every commit (gate_calibration_json), and the data decides whether to
-// harden or drop it. would_block encodes the rule that WOULD apply:
-//   VIX ≥ 17 → require tape alignment AND score ≥ 75;
-//   VIX ≥ 20 → index/ETF products only, at half plan size.
+// 25.0% WR (n=12, −1.54 pts) at 17-20. Originally ran as calibration for ≥30
+// sessions; promoted to a hard gate because the signal is too strong to leave
+// unenforced — the 44pp WR gap (69% vs 25%) is the widest in the dataset.
+//   VIX ≥ 17 → require score ≥ 75 (G-1 already enforces tape alignment);
+//   VIX ≥ 20 → index/ETF products only (single names blocked outright).
+// The calibration record still pins on every commit for ongoing measurement.
 export const VIX_ELEVATED_THRESHOLD = 17;
 export const VIX_EXTREME_THRESHOLD = 20;
 export const VIX_ELEVATED_SCORE_FLOOR = 75;
@@ -76,11 +76,11 @@ export type ZeroDteVixCalibration = {
   note: string;
 };
 
-// ── G-6 · Cross-system conflict — CALIBRATION MODE (logs, never blocks) ─────────
+// ── G-6 · Cross-system conflict — HARD GATE (promoted from calibration 2026-07-16) ─
 // Evidence (v1 §2.2): 7/13's META short opposed Night Hawk's 7/10 edition LONG A on
 // META and was surfaced to members only as a whisper-echo. Slayer has an explicit
-// satellite-conflict module; this is the 0DTE analogue. Hardened form would require
-// score ≥ 80 to print a CONFLICT-flagged setup.
+// satellite-conflict module; this is the 0DTE analogue. Now enforced: a conflict
+// with score < 80 is a hard block. Calibration record still pins for measurement.
 export const CONFLICT_SCORE_FLOOR = 80;
 /** Tickers that trade the same broad-market direction as Slayer's SPX play — a
  *  0DTE short on any of these against a live Slayer long IS a desk disagreement. */
@@ -224,6 +224,36 @@ export function evaluateZeroDteGates(input: ZeroDteGateInput): ZeroDteGateVerdic
     });
   }
 
+  // G-4 — VIX regime hard gate (promoted from calibration 2026-07-16).
+  // F-1: 69.2% WR at VIX<17 vs 25.0% at ≥17 — the strongest measured factor.
+  // G-1 already enforces tape alignment; G-4 raises the score floor at elevated VIX
+  // and blocks single names outright at extreme VIX.
+  const vix = input.vixDayOpen ?? null;
+  if (vix != null) {
+    const tickerUp = input.ticker.toUpperCase();
+    if (vix >= VIX_EXTREME_THRESHOLD) {
+      if (!INDEX_ETF_TICKERS.has(tickerUp)) {
+        blocks.push({
+          code: "vix_extreme",
+          reason:
+            `VIX ${vix} ≥ ${VIX_EXTREME_THRESHOLD} — single-name 0DTE blocked in extreme-vol regime. ` +
+            "Only index/ETF products survive at this volatility.",
+          threshold: VIX_EXTREME_THRESHOLD,
+          unlock_et: null,
+        });
+      }
+    } else if (vix >= VIX_ELEVATED_THRESHOLD && input.score < VIX_ELEVATED_SCORE_FLOOR) {
+      blocks.push({
+        code: "vix_elevated",
+        reason:
+          `VIX ${vix} in the elevated regime (≥${VIX_ELEVATED_THRESHOLD}) — score ${Math.round(input.score)} ` +
+          `needs ≥${VIX_ELEVATED_SCORE_FLOOR} to commit. The 17-20 VIX regime ran 25% WR vs 69% below 17 (F-1).`,
+        threshold: VIX_ELEVATED_SCORE_FLOOR,
+        unlock_et: null,
+      });
+    }
+  }
+
   // G-5 — session governor (./governor.ts). Unreadable state fails closed: a desk
   // that can't count its own open risk doesn't add more.
   if (input.governor == null) {
@@ -244,6 +274,36 @@ export function evaluateZeroDteGates(input: ZeroDteGateInput): ZeroDteGateVerdic
     );
   }
 
+  // G-6 — cross-system conflict hard gate (promoted from calibration 2026-07-16).
+  // A 0DTE entry opposing a live Slayer play or Night Hawk take on a correlated
+  // ticker needs score ≥ 80 to override the desk disagreement.
+  {
+    const tickerUp = input.ticker.toUpperCase();
+    const conflictSources: string[] = [];
+    if (
+      input.slayerLive != null &&
+      SPX_CORRELATED_TICKERS.has(tickerUp) &&
+      input.slayerLive.direction !== input.direction
+    ) {
+      conflictSources.push(`live SPX Slayer ${input.slayerLive.direction}`);
+    }
+    if (input.nighthawkTake != null && input.nighthawkTake.direction !== input.direction) {
+      conflictSources.push(
+        `Night Hawk ${input.nighthawkTake.direction} take (edition ${input.nighthawkTake.edition_for})`
+      );
+    }
+    if (conflictSources.length > 0 && input.score < CONFLICT_SCORE_FLOOR) {
+      blocks.push({
+        code: "cross_system_conflict",
+        reason:
+          `${input.direction === "long" ? "Long" : "Short"} opposes ${conflictSources.join(" and ")} — ` +
+          `score ${Math.round(input.score)} needs ≥${CONFLICT_SCORE_FLOOR} to override a cross-system conflict.`,
+        threshold: CONFLICT_SCORE_FLOOR,
+        unlock_et: null,
+      });
+    }
+  }
+
   return {
     verdict: blocks.length > 0 ? "BLOCKED" : "COMMIT",
     blocks,
@@ -259,10 +319,11 @@ function etLabel(etMinutes: number): string {
 }
 
 /**
- * G-4 (VIX regime) + G-6 (cross-system conflict) — CALIBRATION MODE. Computed on
- * every evaluation and pinned to the ledger row at commit; deliberately NOT in the
- * blocking path until ≥30 sessions of would_block data say they earn it (both rest
- * on LOW-N cuts today — see the G-4/G-6 module docs above). Pure and deterministic.
+ * G-4 (VIX regime) + G-6 (cross-system conflict) — calibration RECORD (still
+ * computed and pinned to every ledger row for ongoing measurement). The blocking
+ * itself now lives in evaluateZeroDteGates above (promoted 2026-07-16); this
+ * function produces the durable calibration columns that the record analysis
+ * reads. Pure and deterministic.
  */
 export function computeGateCalibration(input: ZeroDteGateInput): ZeroDteGateCalibration {
   const ticker = input.ticker.toUpperCase();

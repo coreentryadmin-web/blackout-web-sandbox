@@ -97,14 +97,18 @@ function replaySession(): Map<string, ZeroDteGateVerdict> {
 test("7/13 replay: full verdict table matches the decision doc's §2 projection (G-2 attribution updated per user direction)", () => {
   const verdicts = replaySession();
 
-  // The doc's projection (§2, adjusted): 6 of 8 blocked, QQQ + META print.
+  // The doc's projection (§2, adjusted for hardened G-6): 7 of 8 blocked, QQQ only prints.
   //   AMD  long  09:50 → BLOCKED  G-1 + G-3  (score 58 also under the floor)
   //   SPY  long  09:55 → BLOCKED  G-1        (93-score counter-tape long — the
   //                                           exact play the score dent waved in)
   //   MU   long  09:55 → BLOCKED  G-1        (ledger score 73 clears the floor — tape alone)
   //   SPXW long  10:00 → BLOCKED  G-1
   //   QQQ  short 10:20 → COMMIT              (aligned, ≥ 9:45, score 65 = floor)
-  //   META short 10:40 → COMMIT + G-6 CONFLICT (calibration mode — logged, not blocked)
+  //   META short 10:40 → BLOCKED  G-6        (score 67 < 80, opposes Night Hawk
+  //                                           7/10 edition LONG A — the canonical
+  //                                           cross-system conflict. Was calibration-
+  //                                           only; promoted to hard gate 2026-07-16.
+  //                                           META stopped out at −50.11% — correctly blocked.)
   //   NVDA long  12:40 → BLOCKED  G-1 + G-3  (doc's table names G-1; score 40 also
   //                                           fails the floor — both are recorded,
   //                                           blocks[] carries every failing gate)
@@ -119,7 +123,7 @@ test("7/13 replay: full verdict table matches the decision doc's §2 projection 
     MU: ["tape_alignment"],
     SPXW: ["tape_alignment"],
     QQQ: "COMMIT",
-    META: "COMMIT",
+    META: ["cross_system_conflict"],
     NVDA: ["tape_alignment", "score_floor"],
     INTC: ["score_floor"],
   };
@@ -150,13 +154,12 @@ test("7/13 replay: G-2 catches none of the entries (all flagged ≥ 9:50 > 9:45)
   }
 });
 
-test("7/13 replay: META short prints but carries the G-6 CONFLICT flag (calibration, not a block)", () => {
+test("7/13 replay: META short BLOCKED by G-6 (score 67 < 80, opposes Night Hawk long)", () => {
   const meta = replaySession().get("META")!;
-  assert.equal(meta.verdict, "COMMIT");
+  assert.equal(meta.verdict, "BLOCKED");
+  assert.equal(meta.blocks.some((b) => b.code === "cross_system_conflict"), true);
   assert.equal(meta.calibration.g6_conflict.conflict, true);
   assert.deepEqual(meta.calibration.g6_conflict.against, ["nighthawk_edition"]);
-  // Hardened G-6 would have blocked it (score 67 < 80) — that's the would_block
-  // data point the 30-session calibration run exists to accumulate.
   assert.equal(meta.calibration.g6_conflict.would_block, true);
   assert.match(meta.calibration.g6_conflict.note, /2026-07-10/);
 });
@@ -169,16 +172,16 @@ test("7/13 replay: G-4 verdict is tier=normal at the dataset's 16.32 day-open VI
   }
 });
 
-test("7/13 replay: session economics — the gated desk prints 1W/1L instead of 1W/7L", () => {
+test("7/13 replay: session economics — the gated desk prints 1W/0L instead of 1W/7L (G-6 catches META)", () => {
   const verdicts = replaySession();
   const printed = LEDGER_2026_07_13.filter((p) => verdicts.get(p.ticker)!.verdict === "COMMIT");
   const blocked = LEDGER_2026_07_13.filter((p) => verdicts.get(p.ticker)!.verdict === "BLOCKED");
 
-  assert.deepEqual(printed.map((p) => p.ticker), ["QQQ", "META"]);
-  // The winner survives; six of the seven losers are removed before entry.
+  assert.deepEqual(printed.map((p) => p.ticker), ["QQQ"]);
+  // The winner survives; ALL seven losers are removed before entry — perfect session.
   assert.equal(printed.filter((p) => p.pnl > 0).length, 1);
-  assert.equal(printed.filter((p) => p.pnl < 0).length, 1);
-  assert.equal(blocked.length, 6);
+  assert.equal(printed.filter((p) => p.pnl < 0).length, 0);
+  assert.equal(blocked.length, 7);
   assert.ok(blocked.every((p) => p.pnl < 0), "every blocked play was a real loser — no winner was gated away");
 
   // Calibration context rides every verdict, committed or not (C-2 columns).

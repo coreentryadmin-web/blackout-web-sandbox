@@ -10581,6 +10581,78 @@ body::before {
   .vp-pb-neutral { color: rgba(148, 163, 184, 0.7); }
   .vp-pb-dim { color: rgba(148, 163, 184, 0.4); }
 
+  /* ── Play state banner (SPX WATCHING / OPEN) ── */
+  .vp-play {
+    position: relative;
+    padding: 10px 14px;
+    border-radius: 12px;
+    margin-bottom: 6px;
+    overflow: hidden;
+  }
+  .vp-play::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    opacity: 0.06;
+    border-radius: 12px;
+  }
+  .vp-play--open { border: 1px solid rgba(34, 197, 94, 0.3); }
+  .vp-play--open::before { background: linear-gradient(135deg, #22c55e 0%, transparent 60%); }
+  .vp-play--watch { border: 1px solid rgba(245, 158, 11, 0.25); }
+  .vp-play--watch::before { background: linear-gradient(135deg, #f59e0b 0%, transparent 60%); }
+  .vp-play-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 4px;
+  }
+  .vp-play-phase {
+    font-size: 0.6875rem;
+    font-weight: 800;
+    letter-spacing: 0.1em;
+    padding: 1px 8px;
+    border-radius: 4px;
+    text-transform: uppercase;
+  }
+  .vp-play--open .vp-play-phase {
+    background: rgba(34, 197, 94, 0.15);
+    color: #4ade80;
+  }
+  .vp-play--watch .vp-play-phase {
+    background: rgba(245, 158, 11, 0.15);
+    color: #fbbf24;
+  }
+  .vp-play-grade {
+    font-size: 0.75rem;
+    font-weight: 700;
+    color: rgba(255, 255, 255, 0.7);
+  }
+  .vp-play-ticket {
+    font-size: 0.6875rem;
+    font-weight: 600;
+    color: rgba(148, 163, 184, 0.6);
+    font-variant-numeric: tabular-nums;
+  }
+  .vp-play-thesis {
+    font-size: 0.8125rem;
+    color: rgba(255, 255, 255, 0.8);
+    line-height: 1.4;
+  }
+  .vp-play-levels {
+    display: flex;
+    gap: 12px;
+    margin-top: 6px;
+    font-size: 0.6875rem;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    color: rgba(148, 163, 184, 0.6);
+  }
+
+  /* ── Signal kind-specific accents ── */
+  .vp-sig--play-state { border-left-color: #a78bfa; }
+  .vp-sig--play-state .vp-sig-badge { letter-spacing: 0.08em; }
+  .vp-sig--flow-print { border-left-color: #38bdf8; }
+
   /* ── Gamma regime banner — plain-English positioning read above the chart ── */
   .vector-regime-banner {
     @apply flex flex-wrap items-center gap-x-3 gap-y-1 rounded-xl border px-3 py-2 text-sm;

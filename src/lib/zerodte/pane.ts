@@ -217,6 +217,9 @@ const GATE_LABELS: Record<string, string> = {
   governor_reentry_lock: "governor · re-entry lock",
   correlated_conflict: "governor · correlated conflict",
   gate_context_unavailable: "fail-closed · gate context",
+  vix_elevated: "G-4 · VIX elevated",
+  vix_extreme: "G-4 · VIX extreme",
+  cross_system_conflict: "G-6 · cross-system conflict",
   // Cortex wire-in codes (#318). cortex_veto carries a `:<source>` suffix — handled
   // by the prefix branch in zeroDteGateLabel below.
   cortex_net_negative: "cortex · net-negative",

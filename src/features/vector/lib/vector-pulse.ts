@@ -7,11 +7,13 @@
  * emits keyed signals for the UI feed. Pure, deterministic, no I/O, no Date.now().
  *
  * Signal kinds (priority order):
- *  1. regime-flip    — gamma posture change (long↔short↔transition)
- *  2. wall-structure — wall shift/build/fade/break events (passthrough from VectorChart)
- *  3. proximity      — spot approaching/testing/at a key level, or leaving proximity
- *  4. magnet-shift   — dealer hedging center of mass crossed spot
- *  5. integrity      — wall confidence tier changed (firm↔moderate↔thin)
+ *  1. play-state     — 0DTE play phase change (SCANNING→WATCHING→OPEN) — SPX only
+ *  2. regime-flip    — gamma posture change (long↔short↔transition)
+ *  3. wall-structure — wall shift/build/fade/break events (passthrough from VectorChart)
+ *  4. proximity      — spot approaching/testing/at a key level, or leaving proximity
+ *  5. magnet-shift   — dealer hedging center of mass crossed spot
+ *  6. integrity      — wall confidence tier changed (firm↔moderate↔thin)
+ *  7. flow-print     — large options flow print (sweeps, blocks, dark pool)
  */
 
 import type { VectorRegime, VectorRegimePosture } from "./vector-regime";
@@ -19,6 +21,7 @@ import type { WallProximity, WallProximitySide } from "./vector-wall-proximity";
 import type { GammaMagnet, GammaMagnetPull } from "./vector-gamma-magnet";
 import type { WallIntegrity, WallIntegrityTier } from "./vector-wall-integrity";
 import type { VectorWallEvent } from "./vector-wall-events";
+import type { FlowAlert } from "@/lib/api";
 
 // ---------------------------------------------------------------------------
 // Signal — the unit of the live event feed
@@ -27,11 +30,13 @@ import type { VectorWallEvent } from "./vector-wall-events";
 export type PulseSignalTone = "bull" | "bear" | "warn" | "info";
 
 export type PulseSignalKind =
+  | "play-state"
   | "regime-flip"
   | "proximity"
   | "magnet-shift"
   | "integrity"
-  | "wall-structure";
+  | "wall-structure"
+  | "flow-print";
 
 export type PulseSignal = {
   key: string;
@@ -266,6 +271,102 @@ export function wallEventToPulseSignal(ev: VectorWallEvent): PulseSignal {
     line: ev.message,
     at: ev.time * 1000,
   };
+}
+
+// ---------------------------------------------------------------------------
+// Play state → PulseSignal (0DTE play engine transitions)
+// ---------------------------------------------------------------------------
+
+export type PlayPhase = "SCANNING" | "WATCHING" | "OPEN";
+
+export type PlayStateSnapshot = {
+  phase: PlayPhase;
+  direction: string | null;
+  grade: string;
+  headline: string;
+  score: number;
+  optionLabel: string | null;
+};
+
+export function detectPlayStateSignals(
+  prev: PlayStateSnapshot | null,
+  next: PlayStateSnapshot,
+  at: number
+): PulseSignal[] {
+  if (!prev) return [];
+  if (prev.phase === next.phase) return [];
+
+  const signals: PulseSignal[] = [];
+
+  if (next.phase === "OPEN") {
+    const dir = next.direction === "long" ? "CALLS" : "PUTS";
+    const label = next.optionLabel ? ` — ${next.optionLabel}` : "";
+    signals.push({
+      key: `play:open:${at}`,
+      kind: "play-state",
+      tone: next.direction === "long" ? "bull" : "bear",
+      at,
+      line: `🎯 PLAY OPENED ${dir} (${next.grade})${label}`,
+    });
+  } else if (prev.phase === "OPEN") {
+    signals.push({
+      key: `play:close:${at}`,
+      kind: "play-state",
+      tone: "info",
+      at,
+      line: "⏹ play closed — back to scanning",
+    });
+  } else if (next.phase === "WATCHING" && prev.phase === "SCANNING") {
+    const dir = next.direction === "long" ? "long" : next.direction === "short" ? "short" : "—";
+    signals.push({
+      key: `play:watch:${at}`,
+      kind: "play-state",
+      tone: "warn",
+      at,
+      line: `👁 WATCHING ${dir} setup (${next.grade}, score ${next.score}) — ${next.headline}`,
+    });
+  }
+
+  return signals;
+}
+
+// ---------------------------------------------------------------------------
+// Flow alert → PulseSignal (large options prints from Helix)
+// ---------------------------------------------------------------------------
+
+const FLOW_MIN_PREMIUM = 500_000;
+
+function fmtPremium(n: number): string {
+  if (n >= 1_000_000) return `$${(n / 1_000_000).toFixed(1)}M`;
+  return `$${(n / 1_000).toFixed(0)}K`;
+}
+
+export function flowAlertToPulseSignal(flow: FlowAlert, at: number): PulseSignal | null {
+  if (flow.premium < FLOW_MIN_PREMIUM) return null;
+
+  const dir = flow.direction?.toLowerCase() ?? "";
+  const isBullish = (flow.option_type === "call" && dir.includes("buy")) ||
+    (flow.option_type === "put" && dir.includes("sell"));
+  const isBearish = (flow.option_type === "put" && dir.includes("buy")) ||
+    (flow.option_type === "call" && dir.includes("sell"));
+
+  const tone: PulseSignalTone = isBullish ? "bull" : isBearish ? "bear" : "info";
+
+  const route = flow.route ? ` [${flow.route}]` : "";
+  const gex = flow.gex_proximity ? ` · ${flow.gex_proximity.replace(/_/g, " ")}` : "";
+
+  return {
+    key: `flow:${flow.alert_id ?? `${flow.ticker}:${flow.strike}:${flow.expiry}:${at}`}`,
+    kind: "flow-print",
+    tone,
+    at,
+    line: `💰 ${fmtPremium(flow.premium)} ${flow.ticker} ${flow.strike}${flow.option_type === "call" ? "C" : "P"} ${flow.expiry} ${dir}${route}${gex}`,
+  };
+}
+
+/** Filter flows to only those above the noise floor. */
+export function isSignificantFlow(flow: FlowAlert): boolean {
+  return flow.premium >= FLOW_MIN_PREMIUM;
 }
 
 /** Max signals kept in the feed — older ones pruned to bound memory. */

@@ -24,6 +24,7 @@ export type PlayEntrySnapshot = {
   confirmations: PlayConfirmationResult | null;
   mtf: MtfHybrid | null;
   claude: ClaudePlayVerdict | null;
+  cortex?: import("@/lib/zerodte/cortex-gate").ZeroDteCortexEntryContext | null;
   option_ticket: OptionTicket | null;
   opened_at: string;
   playbook_id?: string | null;

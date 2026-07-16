@@ -13,6 +13,7 @@ import type { PowerHourPlayPayload } from "@/features/spx/lib/spx-power-hour-eng
 import type { PlayTechnicals } from "@/features/spx/lib/spx-play-technicals";
 import type { PlayConfirmationResult } from "@/features/spx/lib/spx-play-confirmations";
 import type { ClaudePlayVerdict } from "@/features/spx/lib/spx-play-claude";
+import type { ZeroDteCortexSummary } from "@/lib/zerodte/cortex-gate";
 import type { PlaybookShadowPanel } from "@/features/spx/lib/playbook-shadow-panel";
 import { buildPlayIdeaIntel, humanizeGateBlock, humanizeGateBlocks } from "@/features/spx/lib/spx-play-intel";
 import type { MtfHybrid } from "@/features/spx/lib/spx-play-mtf";
@@ -48,6 +49,7 @@ export type SpxPlayPayload = {
     play_idea: string | null;
   };
   claude: ClaudePlayVerdict | null;
+  cortex: ZeroDteCortexSummary | null;
   open_play: {
     id: number;
     direction: SpxPlayDirection;
@@ -196,6 +198,7 @@ export function scanningPayload(
       play_idea: null,
     },
     claude: null,
+    cortex: null,
     open_play: null,
     confirmations: null,
     technicals: null,

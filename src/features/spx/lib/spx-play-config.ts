@@ -132,10 +132,22 @@ export function playThesisBreakMinHoldSec(): number {
 
 /**
  * Minimum |score| for cold BUY (no prior WATCH). WATCH→ENTRY promote bypasses this.
- * Cold path win rate was 17% vs 38% promote — default 68 keeps B-grade cold entries out.
+ * Cold path win rate was 17% vs 38% promote — default 78 keeps sub-A cold entries out.
+ * Raised from 68 → 78: track record forensics showed cold buy at 17% WR burns capital
+ * that watch-promote at 38% WR earns back. Only genuine A-grade structures cold-enter.
  */
 export function playColdBuyMinScore(): number {
-  return num(process.env.SPX_PLAY_COLD_BUY_MIN_SCORE, 68);
+  return num(process.env.SPX_PLAY_COLD_BUY_MIN_SCORE, 78);
+}
+
+/**
+ * When true, cold BUY entries require Cortex PASS (not ABSTAIN). Watch-promote and
+ * playbook paths allow ABSTAIN fallback to mechanical gates. Default true — the cold
+ * path's 17% WR demands evidence backing; the watch-promote path's 38% WR earns the
+ * right to trade on gates alone when the Cortex is unavailable.
+ */
+export function playCortexRequiredForColdBuy(): boolean {
+  return flag(process.env.SPX_CORTEX_REQUIRED_COLD_BUY, true);
 }
 
 /** Max closed losses per ET session before new BUY entries block (WATCH ok). */
