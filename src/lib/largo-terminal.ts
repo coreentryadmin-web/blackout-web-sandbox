@@ -283,6 +283,18 @@ async function prepareLargoTurn(
  *  resolved at BUILD time, not by Node's runtime ESM loader), so this was invisible
  *  until largo-terminal.test.ts (this file's first-ever test) exercised it under CI's
  *  Node 20. See logBie's doc comment below for the identical root cause on the DB write. */
+
+function composerFailedMessage(route: BieRoute): string {
+  const t = route.ticker?.toUpperCase() || "that ticker";
+  const intent = route.intent.replace(/_/g, " ");
+  return (
+    `I matched your question to a **${intent}** read` +
+    (route.ticker ? ` for **${t}**` : "") +
+    `, but I couldn't compose the answer right now — the data may be temporarily unavailable. ` +
+    `Try again in a moment, or rephrase your question.`
+  );
+}
+
 async function tryBieRoute(
   question: string
 ): Promise<{ route: BieRoute; answer: string; context: unknown; envelope: BieAnswerEnvelope | null } | null> {
@@ -310,6 +322,16 @@ async function tryBieRoute(
     if (route) {
       const composed = await composeBieAnswer(route, { question });
       if (composed) return { route, answer: composed.answer, context: composed.context, envelope: composed.envelope ?? null };
+      // Router matched but composer returned null (threw internally). Return an honest
+      // "can't read this right now" instead of falling through to the Claude tool-loop
+      // which only has SPX context — that path would silently answer a SPY/QQQ/NVDA
+      // question with SPX data (RTH 2026-07-16 Largo hardcore regression).
+      return {
+        route,
+        answer: composerFailedMessage(route),
+        context: { reason: "composer_returned_null", route },
+        envelope: null,
+      };
     }
 
     // BIE-only staging: broad SPX asks that missed the router still get the Live Desk brief.
