@@ -358,3 +358,55 @@ test("SHORT target is pushed below put strike - 2×premium when stock target > s
   assert.ok(target <= 1100, `target ${target} should be <= strike 1100`);
   assert.ok(target <= 1085, `target ${target} should be <= strike - 2×premium ~1084.50`);
 });
+
+// ── PR-N31: diversity hedge floor ────────────────────────────────────────────────────
+test("PR-N31: diversity swap fires for contrarian candidate above DIVERSITY_HEDGE_FLOOR (20) but below MIN_PUBLISH_SCORE (35)", () => {
+  // 5 long candidates scoring above 35, plus one short scoring 25 (above 20, below 35)
+  const ranked = [
+    scored("AA", "long", 70),
+    scored("BB", "long", 65),
+    scored("CC", "long", 60),
+    scored("DD", "long", 55),
+    scored("EE", "long", 50),
+    scored("FF", "short", 25),
+  ];
+  const chains: Record<string, any> = {};
+  const dossierMap: Record<string, any> = {};
+  for (const r of ranked) {
+    const spot = 100;
+    chains[r.ticker] = chainAround(spot);
+    dossierMap[r.ticker] = dossier(r.ticker, spot);
+  }
+  const { plays } = buildDeterministicEditionPlays({ ranked, dossierMap, chains, target: 5 });
+  assert.equal(plays.length, 5);
+  const shorts = plays.filter((p) => p.direction === "SHORT");
+  assert.ok(shorts.length >= 1, `expected at least 1 SHORT hedge play, got ${shorts.length}`);
+  assert.equal(shorts[0]!.ticker, "FF");
+  assert.ok(
+    shorts[0]!.gate_warnings?.some((w) => w.includes("Hedge/contrarian")),
+    "hedge play should have a gate_warning indicating it's a contrarian hedge"
+  );
+});
+
+test("PR-N31: diversity swap does NOT fire when contrarian candidate is below DIVERSITY_HEDGE_FLOOR (20)", () => {
+  // 5 long candidates, but the short candidate scores only 15 (below the 20 floor)
+  const ranked = [
+    scored("AA", "long", 70),
+    scored("BB", "long", 65),
+    scored("CC", "long", 60),
+    scored("DD", "long", 55),
+    scored("EE", "long", 50),
+    scored("FF", "short", 15),
+  ];
+  const chains: Record<string, any> = {};
+  const dossierMap: Record<string, any> = {};
+  for (const r of ranked) {
+    const spot = 100;
+    chains[r.ticker] = chainAround(spot);
+    dossierMap[r.ticker] = dossier(r.ticker, spot);
+  }
+  const { plays } = buildDeterministicEditionPlays({ ranked, dossierMap, chains, target: 5 });
+  assert.equal(plays.length, 5);
+  const shorts = plays.filter((p) => p.direction === "SHORT");
+  assert.equal(shorts.length, 0, "no SHORT should appear — score 15 is below hedge floor 20");
+});
