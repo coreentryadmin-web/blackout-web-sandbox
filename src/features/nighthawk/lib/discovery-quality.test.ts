@@ -7,8 +7,9 @@ process.env.DATABASE_PUBLIC_URL = "";
 
 import assert from "node:assert/strict";
 import test from "node:test";
-import { isExcludedInstrument, extractCandidateTickers } from "./candidates";
+import { isExcludedInstrument, extractCandidateTickers, extractMultiSourceCandidates } from "./candidates";
 import { computeFlowStreakFromBuckets } from "./flow-streak";
+import type { MarketWideContext } from "./market-wide";
 
 // Batch C regression suite (2026-07-02 audit): discovery-quality filters,
 // cross-source seeds, and consecutive-trading-day streaks.
@@ -98,4 +99,110 @@ test("direction flip still breaks the streak", () => {
     { day: "2026-06-30", net: -400_000, call: 0, put: 1 },
   ];
   assert.equal(computeFlowStreakFromBuckets(flipped).streak_days, 1);
+});
+
+// ── multi-source candidate extraction ─────────────────────────────────────────
+
+function emptyCtx(): MarketWideContext {
+  return {
+    today: "2026-07-17",
+    tomorrow: "2026-07-18",
+    tide: null,
+    stock_flows: [],
+    hot_chains: [],
+    index_flows: {},
+    spx_bars: [],
+    spx_intraday_5m: [],
+    spx_gap: null,
+    vix_bars: [],
+    market_news: [],
+    macro_events: [],
+    tomorrow_earnings: [],
+    sector_tides: [],
+    etf_tides: {},
+    sector_performance: [],
+    top_net_impact: [],
+    vix_term: [],
+    vix_iv_rank: null,
+    market_breadth: null,
+    predictions_consensus: [],
+    mag7_greek_flow: null,
+    macro_indicators: [],
+    after_hours_catalysts: [],
+    total_options_volume: null,
+    market_oi_change: [],
+    platform_intel: null,
+    unusual_trades: [],
+    market_movers: [],
+  } as unknown as MarketWideContext;
+}
+
+test("multi-source: flow-only candidates are discovered", async () => {
+  const ctx = emptyCtx();
+  ctx.stock_flows = [
+    { ticker: "NVDA", total_premium: 5_000_000, underlying_price: 150, has_sweep: true },
+    { ticker: "AMD", total_premium: 2_000_000, underlying_price: 120 },
+  ];
+  const out = await extractMultiSourceCandidates(ctx, 10);
+  assert.ok(out.includes("NVDA"));
+  assert.ok(out.includes("AMD"));
+});
+
+test("multi-source: OI-change lane adds new tickers", async () => {
+  const ctx = emptyCtx();
+  ctx.market_oi_change = [
+    { ticker: "TSLA", oi_change: 50000 },
+    { ticker: "MSFT", oi_change: 30000 },
+  ];
+  const out = await extractMultiSourceCandidates(ctx, 10);
+  assert.ok(out.includes("TSLA"));
+  assert.ok(out.includes("MSFT"));
+});
+
+test("multi-source: corroboration boosts multi-lane tickers", async () => {
+  const ctx = emptyCtx();
+  ctx.stock_flows = [
+    { ticker: "NVDA", total_premium: 5_000_000, underlying_price: 150 },
+    { ticker: "SOLO", total_premium: 4_500_000, underlying_price: 80 },
+  ];
+  ctx.market_oi_change = [{ ticker: "NVDA", oi_change: 30000 }];
+  ctx.market_movers = [{ ticker: "NVDA", change_pct: 3.5, price: 150 }];
+  const out = await extractMultiSourceCandidates(ctx, 2);
+  assert.equal(out[0], "NVDA", "NVDA should rank first due to 3-lane corroboration (1.3x)");
+});
+
+test("multi-source: excluded instruments are filtered across all lanes", async () => {
+  const ctx = emptyCtx();
+  ctx.stock_flows = [{ ticker: "TQQQ", total_premium: 10_000_000 }];
+  ctx.market_oi_change = [{ ticker: "SQQQ", oi_change: 100000 }];
+  ctx.market_movers = [{ ticker: "UVXY", change_pct: 15, price: 30 }];
+  const out = await extractMultiSourceCandidates(ctx, 10);
+  assert.equal(out.length, 0);
+});
+
+test("multi-source: predictions lane contributes directional tickers", async () => {
+  const ctx = emptyCtx();
+  ctx.predictions_consensus = [
+    { ticker: "META", direction: "bullish", confidence_pct: 85, sources: ["a", "b"], headline: "test" },
+    { ticker: "NFLX", direction: "neutral", confidence_pct: 50, sources: ["c"], headline: "test" },
+  ];
+  const out = await extractMultiSourceCandidates(ctx, 10);
+  assert.ok(out.includes("META"));
+  assert.ok(!out.includes("NFLX"), "neutral predictions should be excluded");
+});
+
+test("multi-source: penny stocks filtered from movers lane", async () => {
+  const ctx = emptyCtx();
+  ctx.market_movers = [
+    { ticker: "CHEAP", change_pct: 50, price: 1.50 },
+    { ticker: "GOOD", change_pct: 8, price: 45 },
+  ];
+  const out = await extractMultiSourceCandidates(ctx, 10);
+  assert.ok(!out.includes("CHEAP"));
+  assert.ok(out.includes("GOOD"));
+});
+
+test("multi-source: empty context returns empty list", async () => {
+  const out = await extractMultiSourceCandidates(emptyCtx(), 10);
+  assert.equal(out.length, 0);
 });

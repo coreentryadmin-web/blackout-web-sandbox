@@ -21,7 +21,7 @@ import {
   recordNighthawkStageRejectedAuditTrail,
   syncNighthawkPlayOutcomes,
 } from "./play-outcomes";
-import { extractCandidateTickers } from "./candidates";
+import { extractMultiSourceCandidates } from "./candidates";
 import { fetchAllDossiers, resetEditionCongressCache, type TickerDossier } from "./dossier";
 import { generateEditionPlays } from "./claude-edition";
 import { fetchPlayOutcomeStats } from "@/features/spx/lib/spx-play-outcomes";
@@ -54,7 +54,7 @@ import type { NightHawkEdition, PlaybookPlay } from "./types";
  * candidate→play pipeline writes its count here, and `logFunnel` emits a single line at EVERY exit
  * (success and all five recap-only fallbacks) so the next run pinpoints the exact drop without a
  * Railway-log dig. Stages, left→right, mirror the pipeline order:
- *   candidates  — extractCandidateTickers (flow feed → candidate tickers)
+ *   candidates  — extractMultiSourceCandidates (6-lane multi-source → candidate tickers)
  *   ranked      — rankCandidates output (scored dossiers → ranked pool)
  *   dossiers    — dossiers actually sent to Claude synthesis (synthesisDossiers)
  *   synthesized — RAW plays Claude returned & parsed, BEFORE strike/premium/stock filters (funnel.parsed)
@@ -430,13 +430,9 @@ export async function buildEveningEdition(opts?: {
     if (!candidates?.length) {
       if (checkpointing) await upsertNighthawkJob(editionFor, { status: "running", current_stage: "stage_candidates" });
       console.info("[nighthawk/edition] stage_candidates: selection");
-      candidates = await extractCandidateTickers(ctx.stock_flows, ctx.hot_chains, MAX_CANDIDATES, {
-        topNetImpact: ctx.top_net_impact,
-      });
+      candidates = await extractMultiSourceCandidates(ctx, MAX_CANDIDATES);
       if (!candidates.length) {
-        // Funnel collapsed at stage_candidates — the flow feed was genuinely empty (thin tape, or UW
-        // returned nothing). Do NOT leave the UI "being built": publish a recap-only edition.
-        const reason = `No flow candidates (stock_flows ${ctx.stock_flows.length}, hot_chains ${ctx.hot_chains.length}).`;
+        const reason = `No candidates from any source (flows ${ctx.stock_flows.length}, OI ${ctx.market_oi_change.length}, unusual ${ctx.unusual_trades.length}, movers ${ctx.market_movers.length}).`;
         console.warn(`[nighthawk/edition] stage_candidates zeroed — recap-only fallback: ${reason}`);
         funnel.candidates = 0;
         funnel.published = 0;
