@@ -343,6 +343,23 @@ function buildPlay(
   levels: { entry_range: string; target: string; stop: string },
   rank: number
 ): PlaybookPlay {
+  // PR-N29: ensure the stock target makes the option profitable — a LONG target below
+  // the call strike means the option expires worthless at "target", which is incoherent.
+  // Push target to at least strike + 2×premium so the play shows real option P&L.
+  if (contract) {
+    const targetNum = Number(String(levels.target).replace(/[$,]/g, ""));
+    if (Number.isFinite(targetNum)) {
+      const isLong = scored.direction !== "short";
+      const minOptionTarget = isLong
+        ? contract.strike + contract.premium * 2
+        : contract.strike - contract.premium * 2;
+      if (isLong && targetNum < minOptionTarget) {
+        levels = { ...levels, target: minOptionTarget.toFixed(2) };
+      } else if (!isLong && targetNum > minOptionTarget) {
+        levels = { ...levels, target: minOptionTarget.toFixed(2) };
+      }
+    }
+  }
   const { thesis, key_signal } = buildDeterministicThesis(scored, dossier, levels);
   const options_play = formatOptionsPlay(scored.ticker, contract);
   const dir = scored.direction === "short" ? "SHORT" : "LONG";
