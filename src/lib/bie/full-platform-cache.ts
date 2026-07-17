@@ -34,6 +34,12 @@ export type BieFullState = {
   regime: unknown | null;
   /** get_market_context tool payload — indices, tide, breadth. */
   marketContext: unknown | null;
+  /** HELIX flow-anomaly near-miss log (scanner rejections). */
+  helixNearMisses: unknown | null;
+  /** Recent GEX regime transition events (SPX default). */
+  gexRegimeEvents: unknown | null;
+  /** 0DTE Command gate-rejection summary. */
+  zerodteRejections: unknown | null;
   /** Per-loader errors (name → message) for observability; empty when all succeeded. */
   errors: Record<string, string>;
 };

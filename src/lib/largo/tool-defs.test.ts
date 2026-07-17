@@ -606,9 +606,9 @@ test("get_platform_snapshot documents that its spx/flows fields are the exact sa
   assert.match(def.description, /get_flow_tape returns/);
 });
 
-test("get_platform_snapshot documents that its 'largo' include option is currently a no-op", () => {
+test("get_platform_snapshot documents largo include attaches BIE full-platform state", () => {
   const def = nighthawkDef("get_platform_snapshot");
-  assert.match(def.description, /'largo'.*no-op|no-op.*'largo'/is);
+  assert.match(def.description, /snapshot\.largo|BIE full-platform/i);
 });
 
 // ── Task #143: NIGHTHAWK_RE's "edition" gap ──

@@ -132,7 +132,7 @@ export function formatBieFullStateAnswer(state: BieFullState): string {
 
   const hot = state.hotTickers as Array<{ ticker?: string; premium?: number }> | null;
   if (hot?.length) {
-    lines.push("", "**Hot flow names**", `- ${hot.slice(0, 6).map((h) => `${h.ticker ?? "?"} ($${fmt(h.premium, 0)})`).join(" · ")}`);
+    lines.push("", "**Hot flow names**", `- ${hot.slice(0, 6).map((h) => `${h.ticker ?? "?"} ($${fmt((h as { total_premium?: number }).total_premium ?? (h as { premium?: number }).premium, 0)})`).join(" · ")}`);
   }
 
   const vu = state.vectorUniverse as { rows?: Array<{ ticker: string; spot?: number }> } | null;
@@ -143,6 +143,16 @@ export function formatBieFullStateAnswer(state: BieFullState): string {
   const errKeys = Object.keys(state.errors ?? {});
   if (errKeys.length) {
     lines.push("", `_Partial snapshot — loaders with errors: ${errKeys.join(", ")}._`);
+  }
+
+  const zr = state.zerodteRejections as { available?: boolean; rejections?: Array<{ ticker: string; gate_failed: string }> } | null;
+  if (zr?.available && zr.rejections?.length) {
+    lines.push("", "**0DTE scanner rejections (sample)**", `- ${zr.rejections.slice(0, 4).map((r) => `${r.ticker}:${r.gate_failed}`).join(" · ")}`);
+  }
+
+  const hn = state.helixNearMisses as { available?: boolean; near_misses?: Array<{ ticker: string; anomaly_type: string }> } | null;
+  if (hn?.available && hn.near_misses?.length) {
+    lines.push("", "**HELIX anomaly near-misses (sample)**", `- ${hn.near_misses.slice(0, 4).map((r) => `${r.ticker}:${r.anomaly_type}`).join(" · ")}`);
   }
 
   lines.push(

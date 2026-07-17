@@ -161,7 +161,7 @@ Legend: **BIE** = router composer path. **Tools** = Claude path only (`runLargoT
 
 | Cannot / limited |
 |------------------|
-| HELIX UI analytics rail scope (ticker-filtered panels) — **UI-only**, not exposed to Largo |
+| ~~HELIX UI analytics rail scope~~ → **`helix_read`** (tape + strike stacks + near-misses + dark pool) |
 | Live SSE stream from browser (server has ingest; Largo queries DB/cache) |
 | Polygon as primary flow source (UW WS → persist → Postgres) |
 
@@ -175,9 +175,9 @@ Legend: **BIE** = router composer path. **Tools** = Claude path only (`runLargoT
 
 | Cannot / limited |
 |------------------|
-| No dedicated **`thermal_read`** BIE intent (use `vector_read`, `concept_read`, or internal API) |
-| `get_gex` tool ≠ Thermal cache (uses SPX desk / Polygon 0DTE bundle) |
-| Cell-level matrix not in default BIE platform context (only slice in SPX intel) |
+| ~~No dedicated **`thermal_read`** BIE intent~~ → **`thermal_read`** (GEX/VEX/DEX/CHARM + matrix ladder) |
+| ~~`get_gex` ≠ Thermal cache~~ → composers use **`getGexPositioning`** / **`fetchGexHeatmap`** explicitly |
+| Full cell grid on demand — use **`thermal_read`** or **`call_internal_api`** → `/api/market/gex-heatmap` |
 
 ### Night Hawk
 
@@ -210,7 +210,7 @@ Legend: **BIE** = router composer path. **Tools** = Claude path only (`runLargoT
 | Can read | How |
 |----------|-----|
 | Today's board, fresh finds | BIE `zerodte_plays`; `get_zerodte_plays` |
-| Rejections | `get_zerodte_rejections` |
+| Rejections | BIE **`grid_rejections_read`**; tool `get_zerodte_rejections`; in **`platform_read`** snapshot |
 | Per-ticker play state | BIE `ticker_play_state` |
 | Cortex commit/skip | BIE `cortex_read` |
 
@@ -232,7 +232,7 @@ Legend: **BIE** = router composer path. **Tools** = Claude path only (`runLargoT
 | Can read | How |
 |----------|-----|
 | Ecosystem (multi-product on one ticker) | BIE `ticker_ecosystem`; `get_ecosystem_context` |
-| Platform snapshot | `get_platform_snapshot` (note: `include: "largo"` is documented no-op) |
+| Platform snapshot | `get_platform_snapshot` — **`include: largo`** → full BIE state; BIE **`platform_read`** |
 | Confluence outcome stats | `get_confluence_outcomes` |
 | Voyage precedents | `get_similar_precedents`, knowledge search |
 | Governed internal GET APIs | `call_internal_api` — see `src/lib/largo/route-registry.ts` |
@@ -267,10 +267,10 @@ All tools route through **`runLargoTool`** — same Postgres/Redis/service reade
 
 ### Phase 2 — Router parity (no Claude needed for common prod questions)
 
-- Relax length/sentence gates in BIE-only mode (route long questions to fallback, not null)
-- Add **`thermal_read`** intent (heatmap matrix summary from `getGexPositioning` + heatmap API slice)
-- Expand **`REASONING_RE` exceptions** for SPX/NH/flow when `largoBieOnly()` (already partially handled by fallback)
-- Deterministic follow-ups everywhere (`bieFollowups`) — already used on BIE path; Haiku follow-ups only on Claude path
+- [x] Add **`thermal_read`**, **`helix_read`**, **`grid_rejections_read`** intents
+- [x] Wire **`get_platform_snapshot` `largo`** include → `bie:full-state`
+- [ ] Relax length/sentence gates in BIE-only mode (staging fallback already covers)
+- [ ] Deterministic follow-ups everywhere (`bieFollowups`) — Haiku only on Claude path
 
 ### Phase 3 — “All numerical data” without raw dumps
 

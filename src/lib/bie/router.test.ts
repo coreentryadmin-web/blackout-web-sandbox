@@ -559,6 +559,13 @@ describe("router: nighthawk_edition intent (PR-N9 — BIE × Night Hawk edition 
     assert.equal(classifyBieIntent("I need to know in and out about every product", new Set())?.intent, "platform_read");
   });
 
+  test("primary router routes product gap intents", () => {
+    assert.equal(classifyBieIntent("show the heatmap on SPX", new Set())?.intent, "thermal_read");
+    assert.equal(classifyBieIntent("helix analytics for NVDA", new Set())?.intent, "helix_read");
+    assert.equal(classifyBieIntent("why didn't TSLA make the grid board", new Set())?.intent, "grid_rejections_read");
+    assert.equal(classifyBieIntent("GEX on SPY", new Set())?.intent, "thermal_read");
+  });
+
   test("staging fallback routes track-record shapes", () => {
     assert.equal(classifyBieStagingFallback("what is the track record").intent, "record_read");
     assert.equal(classifyBieStagingFallback("historical performance win rate").intent, "record_read");

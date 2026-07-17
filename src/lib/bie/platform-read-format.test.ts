@@ -15,7 +15,7 @@ describe("platform-read-format", () => {
       intel: { composite_regime: "TREND", gex_regime: "POS", flow_regime: "BULL", critical_anomaly_count: 0 },
       vectorUniverse: null,
       darkPool: null,
-      hotTickers: [{ ticker: "SPY", premium: 2_000_000 }],
+      hotTickers: [{ ticker: "SPY", total_premium: 2_000_000, print_count: 8 }],
       thermalSpx: {
         ticker: "SPX",
         spot: 6300,

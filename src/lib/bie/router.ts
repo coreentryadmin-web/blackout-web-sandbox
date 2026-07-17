@@ -32,7 +32,10 @@ export type BieIntent =
   | "cortex_read"
   | "nighthawk_edition"
   | "scenario"
-  | "platform_read";
+  | "platform_read"
+  | "thermal_read"
+  | "helix_read"
+  | "grid_rejections_read";
 
 export type BieRoute = {
   intent: BieIntent;
@@ -74,6 +77,15 @@ const MARKET_CONTEXT_LOOSE_RE =
 
 const FLOW_TAPE_RE =
   /\b(unusual flow|whale print|flow tape|any flow|big flow|hedging flows?|massive flow|lit flow)\b/i;
+
+const HELIX_READ_RE =
+  /\b(helix|flow analytics|strike stack|anomaly near.?miss|dark pool panel|helix rail|helix tape)\b/i;
+
+const THERMAL_READ_RE =
+  /\b(thermal|heatmap|heat map|blackout thermal|gex matrix|matrix data|dealer gamma|gamma matrix|gex positioning|vex lens|dex lens|charm lens|gex on|vex on|dex on|charm on)\b/i;
+
+const GRID_REJECTIONS_RE =
+  /\b(grid rejection|0dte rejection|scanner rejection|why didn'?t .{0,30}(make|hit) the (grid|board|scanner)|near.?miss.{0,20}(grid|0dte|scanner)|gate reject.{0,20}(grid|0dte|scanner))\b/i;
 
 const ADVICE_RE =
   /\b(should i|would you|can i|worth (buying|selling)|buy|sell|hold|trim|into earnings|before earnings|after earnings)\b/i;
@@ -432,6 +444,10 @@ export function classifyBieIntent(question: string, ledgerTickers: Set<string>):
     return { intent: "platform_read", ticker: null };
   }
 
+  if (GRID_REJECTIONS_RE.test(q)) {
+    return { intent: "grid_rejections_read", ticker: extractKnownTicker(q) };
+  }
+
   if (isConceptQuestion(q)) return { intent: "concept_read", ticker: null };
 
   // "pull/look up X from <internal path | provider>" → the governed universal reader. Only fires
@@ -520,6 +536,14 @@ export function classifyBieIntent(question: string, ledgerTickers: Set<string>):
     return { intent: "flow_tape", ticker: extractKnownTicker(q) };
   }
 
+  if (HELIX_READ_RE.test(q)) {
+    return { intent: "helix_read", ticker: extractKnownTicker(q) };
+  }
+
+  if (THERMAL_READ_RE.test(q)) {
+    return { intent: "thermal_read", ticker: extractKnownTicker(q) ?? "SPX" };
+  }
+
   // A Vector-surface concept (walls/gamma flip/magnet/expected move/beads/…) asked about a
   // specific NON-SPX ticker → Vector desk read. SPX keeps its own richer Sniper-desk routing
   // below (spx_structure / spx_desk_read); a bare "gamma flip on NVDA" has no SPX home otherwise.
@@ -581,6 +605,10 @@ export function classifyBieStagingFallback(question: string): BieRoute {
     return { intent: "platform_read", ticker: null };
   }
 
+  if (GRID_REJECTIONS_RE.test(q)) {
+    return { intent: "grid_rejections_read", ticker: extractKnownTicker(q) };
+  }
+
   if (isConceptQuestion(q)) return { intent: "concept_read", ticker: null };
   if (isUniversalLookup(q)) return { intent: "universal_lookup", ticker: extractKnownTicker(q) };
   if (isDiagnosticQuestion(q)) return { intent: "system_diagnostic", ticker: extractKnownTicker(q) };
@@ -618,6 +646,9 @@ export function classifyBieStagingFallback(question: string): BieRoute {
     return { intent: "spx_desk_read", ticker: "SPX" };
   }
   if (FLOW_TAPE_RE.test(q)) return { intent: "flow_tape", ticker: extractKnownTicker(q) };
+  if (HELIX_READ_RE.test(q)) return { intent: "helix_read", ticker: extractKnownTicker(q) };
+  if (THERMAL_READ_RE.test(q)) return { intent: "thermal_read", ticker: extractKnownTicker(q) ?? "SPX" };
+  if (GRID_REJECTIONS_RE.test(q)) return { intent: "grid_rejections_read", ticker: extractKnownTicker(q) };
   {
     const vTicker = extractKnownTicker(q);
     if (VECTOR_STRUCTURE_RE.test(q) && vTicker && vTicker !== "SPX") {
@@ -699,6 +730,12 @@ export function bieFollowups(intent: BieIntent): string[] {
       return ["What is the SPX setup right now?", "Show unusual flow", "SPX vs Night Hawk record?"];
     case "platform_read":
       return ["What's the SPX desk read?", "Show the Thermal matrix flip", "Any 0DTE plays live?"];
+    case "thermal_read":
+      return ["Show VEX flip too", "What's the SPX desk setup?", "Compare Thermal SPY vs QQQ"];
+    case "helix_read":
+      return ["Any whale prints?", "What's going on with the top ticker?", "What's the SPX setup?"];
+    case "grid_rejections_read":
+      return ["Show today's 0DTE plays", "Cortex verdict on NVDA", "Why was the top play picked?"];
     default:
       return [];
   }

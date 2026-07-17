@@ -20,6 +20,7 @@ import {
   compactThermalPositioning,
 } from "@/lib/bie/thermal-matrix-summary";
 import { zeroDtePlaysForLargo } from "@/lib/platform/zerodte-service";
+import { zeroDteRejectionsForLargo } from "@/lib/zerodte/rejections";
 import { runLargoTool } from "@/lib/largo/run-tool";
 
 async function safe<T>(name: string, errors: Record<string, string>, fn: () => Promise<T>): Promise<T | null> {
@@ -80,6 +81,9 @@ export async function buildBieFullState(): Promise<BieFullState> {
     zerodte,
     regime,
     marketContext,
+    helixNearMisses,
+    gexRegimeEvents,
+    zerodteRejections,
   ] = await Promise.all([
     // getPlatformSnapshot bundles the SPX desk + flow tape + Night Hawk edition in one call.
     safe("platform", errors, () => getPlatformSnapshot({ include: ["spx", "flows", "nighthawk"], fullEdition: true })),
@@ -98,6 +102,9 @@ export async function buildBieFullState(): Promise<BieFullState> {
     safe("zerodte", errors, () => zeroDtePlaysForLargo()),
     safe("regime", errors, () => runLargoTool("get_market_regime", {}) as Promise<Record<string, unknown>>),
     safe("marketContext", errors, () => runLargoTool("get_market_context", {}) as Promise<Record<string, unknown>>),
+    safe("helixNearMisses", errors, () => runLargoTool("get_flow_anomaly_near_misses", { limit: 10 })),
+    safe("gexRegimeEvents", errors, () => runLargoTool("get_gex_regime_events", { ticker: "SPX", limit: 8 })),
+    safe("zerodteRejections", errors, () => zeroDteRejectionsForLargo(undefined, 8)),
   ]);
 
   const state: BieFullState = roundFloats<BieFullState>({
@@ -119,6 +126,9 @@ export async function buildBieFullState(): Promise<BieFullState> {
       marketContext && typeof marketContext === "object" && !(marketContext as { error?: unknown }).error
         ? marketContext
         : null,
+    helixNearMisses: helixNearMisses ?? null,
+    gexRegimeEvents: gexRegimeEvents ?? null,
+    zerodteRejections: zerodteRejections ?? null,
     errors,
   });
 

@@ -14,7 +14,7 @@ function fixture(): BieFullState {
     intel: { composite_regime: "RANGE_BOUND" },
     vectorUniverse: { rows: [{ ticker: "SPX", spot: 7560 }] },
     darkPool: { prints: [] },
-    hotTickers: [{ ticker: "NVDA", premium: 1_000_000 }],
+    hotTickers: [{ ticker: "NVDA", total_premium: 1_000_000, print_count: 12 }],
     thermalSpx: { ticker: "SPX", spot: 7560, net_gex: 1e9, net_vex: 0, gamma_regime_read: "long", vanna_regime_read: "pos" },
     thermalSpy: null,
     thermalQqq: null,
@@ -23,6 +23,9 @@ function fixture(): BieFullState {
     zerodte: { plays: [] },
     regime: { regime_label: "RANGE" },
     marketContext: { spy: { price: 620 } },
+    helixNearMisses: null,
+    gexRegimeEvents: null,
+    zerodteRejections: null,
     errors: {},
   };
 }

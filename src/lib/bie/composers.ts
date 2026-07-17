@@ -739,6 +739,9 @@ function headlineForRoute(route: BieRoute): string {
     scenario: `${t}scenario`,
     record_read: "Track record",
     platform_read: "Platform read",
+    thermal_read: "Thermal read",
+    helix_read: "HELIX analytics",
+    grid_rejections_read: "0DTE rejections",
   };
   return map[route.intent] ?? "BIE read";
 }
@@ -823,6 +826,18 @@ async function composeBieAnswerUncached(route: BieRoute, opts?: ComposeBieOpts):
       case "platform_read": {
         const { composePlatformRead } = await import("@/lib/bie/platform-read");
         return await composePlatformRead();
+      }
+      case "thermal_read": {
+        const { composeThermalRead } = await import("@/lib/bie/thermal-read");
+        return await composeThermalRead(route.ticker ?? "SPX");
+      }
+      case "helix_read": {
+        const { composeHelixRead } = await import("@/lib/bie/helix-read");
+        return await composeHelixRead(route.ticker);
+      }
+      case "grid_rejections_read": {
+        const { composeGridRejectionsRead } = await import("@/lib/bie/grid-rejections-read");
+        return await composeGridRejectionsRead(route.ticker);
       }
       default:
         return null;
