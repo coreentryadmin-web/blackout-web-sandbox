@@ -28,7 +28,7 @@ import type { TickerDossier } from "./dossier";
 import type { ScoredCandidate } from "./scorer";
 import { assignNighthawkTier, nhTierInputFromScored } from "./nighthawk-tiers";
 import type { PlaybookPlay } from "./types";
-import { buildDirectionalStockLevels, formatStockLevel, computeRiskReward } from "./play-levels";
+import { buildDirectionalStockLevels, computeRiskReward } from "./play-levels";
 import { applyPremiumCapToPlay, validatePlayGeometry, canonicalTicker } from "./play-constraints";
 import { groundPlays } from "./grounding";
 import { GROUNDING_MIN_OI, tieredMinOi } from "./grounding";
@@ -189,7 +189,6 @@ export function buildDeterministicThesis(
   const parts: string[] = [];
   const setupTags = tech?.setup_tags ?? [];
   const trend = tech?.trend ?? "";
-  const price = tech?.price ?? null;
 
   if (setupTags.length) {
     const tagText = setupTags.slice(0, 2).join(", ");
