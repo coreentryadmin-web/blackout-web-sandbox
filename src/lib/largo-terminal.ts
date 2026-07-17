@@ -8,7 +8,7 @@ import {
   type AnthropicSystemBlock,
   type AnthropicToolLoopEvent,
 } from "@/lib/providers/anthropic";
-import { claudeEnabled, isStagingBieMode, largoAvailable } from "@/lib/ai-env";
+import { claudeEnabled, isStagingBieMode, largoAvailable, largoBieOnly } from "@/lib/ai-env";
 import { dbConfigured, insertBieInteraction } from "@/lib/db";
 import { LARGO_SYSTEM_PROMPT } from "@/lib/largo/system-prompt";
 import { LARGO_TOOL_DEFS, getToolsForIntent } from "@/lib/largo/tool-defs";
@@ -347,8 +347,8 @@ async function tryBieRoute(
       }
     }
 
-    // Staging BIE-only: never return null — always compose a deterministic answer.
-    if (!route && isStagingBieMode()) {
+    // BIE-only (staging default or LARGO_BIE_ONLY=1): never return null — compose deterministically.
+    if (!route && largoBieOnly()) {
       const fallback = classifyBieStagingFallback(question);
       const composed = await composeBieAnswer(fallback, { question });
       if (composed) {
@@ -466,8 +466,14 @@ export async function runLargoQuery(
     };
   }
 
+  if (largoBieOnly()) {
+    throw new Error(
+      "Largo couldn't map that question to a platform read. Try SPX desk, market context, flow tape, track record, or a named ticker."
+    );
+  }
+
   if (!claudeEnabled()) {
-    throw new Error("Largo BIE-only mode — ask about SPX setup, market context, or today's 0DTE plays");
+    throw new Error("Largo requires Anthropic — not configured in this environment.");
   }
 
   const { sid, history, system, filteredTools, toolsUsed, tickerHint } = await prepareLargoTurn(
@@ -625,11 +631,19 @@ export async function runLargoQueryStream(
     return;
   }
 
-  if (!claudeEnabled()) {
+  if (largoBieOnly()) {
     onEvent({
       type: "error",
       message:
-        "Largo BIE-only mode on staging — try: What's the SPX setup? · How are today's plays? · What is the market doing?",
+        "Largo couldn't map that question to a platform read. Try SPX desk, market context, flow tape, track record, or a named ticker.",
+    });
+    return;
+  }
+
+  if (!claudeEnabled()) {
+    onEvent({
+      type: "error",
+      message: "Largo requires Anthropic — not configured in this environment.",
     });
     return;
   }

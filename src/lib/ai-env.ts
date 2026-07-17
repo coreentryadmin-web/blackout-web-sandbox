@@ -21,3 +21,8 @@ export function largoAvailable(): boolean {
 export function isStagingBieMode(): boolean {
   return isStagingDeploy() && process.env.STAGING_CLAUDE !== "1";
 }
+
+/** Largo never calls Claude — staging default or explicit prod opt-in via LARGO_BIE_ONLY=1. */
+export function largoBieOnly(): boolean {
+  return isStagingBieMode() || process.env.LARGO_BIE_ONLY === "1";
+}

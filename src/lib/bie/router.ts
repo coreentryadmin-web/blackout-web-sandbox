@@ -602,6 +602,7 @@ export function classifyBieStagingFallback(question: string): BieRoute {
     return { intent: "spx_desk_read", ticker: "SPX" };
   }
   if (FLOW_TAPE_RE.test(q)) return { intent: "flow_tape", ticker: extractKnownTicker(q) };
+  if (RECORD_RE.test(q)) return { intent: "record_read", ticker: extractKnownTicker(q) };
   {
     const vTicker = extractKnownTicker(q);
     if (VECTOR_STRUCTURE_RE.test(q) && vTicker && vTicker !== "SPX") {

@@ -737,6 +737,7 @@ function headlineForRoute(route: BieRoute): string {
     cortex_read: `${t}Cortex read`,
     nighthawk_edition: `${t}Night Hawk edition`,
     scenario: `${t}scenario`,
+    record_read: "Track record",
   };
   return map[route.intent] ?? "BIE read";
 }
@@ -813,6 +814,10 @@ async function composeBieAnswerUncached(route: BieRoute, opts?: ComposeBieOpts):
         // The shift is parsed from the member's question text.
         const { composeScenario } = await import("@/lib/bie/scenario-read");
         return await composeScenario(route.ticker ?? "SPX", opts?.question ?? "", { horizon: route.horizon ?? "all" });
+      }
+      case "record_read": {
+        const { composeRecordRead } = await import("@/lib/bie/record-read");
+        return await composeRecordRead();
       }
       default:
         return null;
