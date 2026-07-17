@@ -491,10 +491,6 @@ export function FlowFeed() {
       nighthawkPlaysWithFlow: playsWithFlow,
       hawkTickers: new Set(nighthawkEdition.plays.map((p) => p.ticker)),
     };
-  }, [nighthawkEdition, alerts]);
-
-      hawkTickers: new Set(nighthawkEdition.plays.map((p) => p.ticker)),
-    };
   }, [nighthawkEdition, filteredTapeBuffer]);
 
   const flowFetchParams = useCallback(

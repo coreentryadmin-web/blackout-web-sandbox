@@ -47,7 +47,9 @@ export function appendFlowTapePage(existing: FlowAlert[], older: FlowAlert[]): F
 }
 
 /** Cursor for the next older page — timestamp of the oldest row in the current page. */
-export function flowPageCursor(rows: FlowAlert[]): string | null {
+export function flowPageCursor(
+  rows: readonly { alerted_at: string; event_at?: string | null }[]
+): string | null {
   if (!rows.length) return null;
   let oldestMs = Infinity;
   let cursor: string | null = null;
