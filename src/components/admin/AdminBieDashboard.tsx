@@ -60,30 +60,7 @@ type BieReportPayload = {
     | { configured: false }
     | { configured: true; connected: false; error: string }
     | { configured: true; connected: true; used_memory_mb: number; connected_clients: number; uptime_hours: number; keys: number };
-  railway?:
-    | { configured: false }
-    | { configured: true; ok: false; error: string }
-    | { configured: true; ok: true; deployments: Array<{ status: string; createdAt: string; commitHash: string | null; commitMessage: string | null }> };
-  railway_resource_usage?:
-    | { configured: false }
-    | { configured: true; ok: false; error: string }
-    | {
-        configured: true;
-        ok: true;
-        window_minutes: number;
-        cpu_avg_vcpu: number | null;
-        cpu_latest_vcpu: number | null;
-        memory_avg_gb: number | null;
-        memory_latest_gb: number | null;
-      };
-  railway_env_vars?:
-    | { configured: false }
-    | { configured: true; ok: false; error: string }
-    | { configured: true; ok: true; total_count: number; missing_critical: string[] };
-  railway_runtime_errors?:
-    | { configured: false }
-    | { configured: true; ok: false; error: string }
-    | { configured: true; ok: true; window_minutes: number; error_count: number; error_count_capped: boolean; sample_messages: string[] };
+  runtime_env_vars?: { ok: true; total_count: number; missing_critical: string[] };
   missed_alerts?: { outage_count: number; windows: Array<{ job_key: string; status: string; status_label: string }> };
   pg_stat_statements?:
     | { configured: false }
@@ -609,19 +586,14 @@ export function AdminBieDashboard() {
               tone={data?.redis?.configured && !data.redis.connected ? "amber" : "bull"}
             />
             <MetricChip
-              label="Railway deploy"
+              label="Env vars"
               value={
-                !data?.railway?.configured
-                  ? "OFF"
-                  : data.railway.ok
-                    ? (data.railway.deployments[0]?.status ?? "—")
-                    : "DOWN"
+                data?.runtime_env_vars?.ok
+                  ? String(data.runtime_env_vars.total_count)
+                  : "—"
               }
               tone={
-                data?.railway?.configured &&
-                (!data.railway.ok ||
-                  data.railway.deployments[0]?.status === "FAILED" ||
-                  data.railway.deployments[0]?.status === "CRASHED")
+                data?.runtime_env_vars?.ok && data.runtime_env_vars.missing_critical.length > 0
                   ? "amber"
                   : "bull"
               }
@@ -1345,53 +1317,19 @@ export function AdminBieDashboard() {
         )}
       </GlassPanel>
 
-      {/* Stage 3 infra probes — Railway resource usage / env-var presence audit /
-          runtime error count, plus a Postgres pg_stat_statements presence check
-          (never enables it). All read-only, all fail-open (a probe failure shows
-          as "—", never breaks the rest of this panel). */}
+      {/* Runtime env presence audit for this ECS task (keys only — never values). */}
       <GlassPanel kicker="Stage 3 — infra access" title="Infra" accent="violet">
         <div className="admin-bie-stat-row">
           <MegaStat
-            label={`CPU (${data?.railway_resource_usage?.configured && data.railway_resource_usage.ok ? data.railway_resource_usage.window_minutes : 60}m avg)`}
-            value={
-              data?.railway_resource_usage?.configured && data.railway_resource_usage.ok && data.railway_resource_usage.cpu_avg_vcpu != null
-                ? `${data.railway_resource_usage.cpu_avg_vcpu} vCPU`
-                : "—"
-            }
-            tone="cyan"
-          />
-          <MegaStat
-            label="Memory (avg)"
-            value={
-              data?.railway_resource_usage?.configured && data.railway_resource_usage.ok && data.railway_resource_usage.memory_avg_gb != null
-                ? `${data.railway_resource_usage.memory_avg_gb} GB`
-                : "—"
-            }
-            tone="violet"
-          />
-          <MegaStat
-            label="Runtime errors (30m)"
-            value={
-              data?.railway_runtime_errors?.configured && data.railway_runtime_errors.ok
-                ? `${data.railway_runtime_errors.error_count}${data.railway_runtime_errors.error_count_capped ? "+" : ""}`
-                : "—"
-            }
-            tone={
-              data?.railway_runtime_errors?.configured && data.railway_runtime_errors.ok && data.railway_runtime_errors.error_count > 0
-                ? "bear"
-                : "bull"
-            }
-          />
-          <MegaStat
             label="Env vars set"
-            value={data?.railway_env_vars?.configured && data.railway_env_vars.ok ? String(data.railway_env_vars.total_count) : "—"}
+            value={data?.runtime_env_vars?.ok ? String(data.runtime_env_vars.total_count) : "—"}
             sub={
-              data?.railway_env_vars?.configured && data.railway_env_vars.ok && data.railway_env_vars.missing_critical.length > 0
-                ? `${data.railway_env_vars.missing_critical.length} critical missing`
+              data?.runtime_env_vars?.ok && data.runtime_env_vars.missing_critical.length > 0
+                ? `${data.runtime_env_vars.missing_critical.length} critical missing`
                 : undefined
             }
             tone={
-              data?.railway_env_vars?.configured && data.railway_env_vars.ok && data.railway_env_vars.missing_critical.length > 0
+              data?.runtime_env_vars?.ok && data.runtime_env_vars.missing_critical.length > 0
                 ? "bear"
                 : "bull"
             }
@@ -1404,10 +1342,9 @@ export function AdminBieDashboard() {
             : data.pg_stat_statements.enabled
               ? `enabled (${data.pg_stat_statements.tracked_statement_count} tracked statements)`
               : "not enabled (checked, not attempted — server-level config change needs explicit go-ahead)"}
-          {data?.railway_env_vars?.configured &&
-            data.railway_env_vars.ok &&
-            data.railway_env_vars.missing_critical.length > 0 &&
-            ` · Missing critical vars: ${data.railway_env_vars.missing_critical.join(", ")}`}
+          {data?.runtime_env_vars?.ok &&
+            data.runtime_env_vars.missing_critical.length > 0 &&
+            ` · Missing critical vars: ${data.runtime_env_vars.missing_critical.join(", ")}`}
         </p>
       </GlassPanel>
 

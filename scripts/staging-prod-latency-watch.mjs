@@ -12,6 +12,7 @@ import { execSync, spawnSync } from "node:child_process";
 import { appendFileSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { chromium } from "playwright";
+import { loadProdAppSecret, loadStagingAppSecret } from "./aws-app-secret.mjs";
 import { fetchRetry } from "./audit/lib/fetch-retry.mjs";
 import { mintAppSession } from "./audit/lib/app-session.mjs";
 import { mintClerkPremiumSession } from "./audit/lib/prod-clerk-session.mjs";
@@ -56,32 +57,11 @@ const PAGE_PATHS = [
 let cycle = 0;
 
 function loadSecrets() {
-  const stagingRaw = execSync(
-    'aws secretsmanager get-secret-value --secret-id blackout-staging/app/env --query SecretString --output text',
-    { encoding: "utf8" }
-  );
-  const staging = JSON.parse(stagingRaw);
+  const staging = loadStagingAppSecret();
   let prodCron = process.env.CRON_SECRET?.trim();
   if (!prodCron) {
     try {
-      unsetRailwayApiToken();
-      const out = spawnSync(
-        "railway",
-        [
-          "variables",
-          "--service",
-          "blackout-web",
-          "--environment",
-          "production",
-          "--project",
-          process.env.RAILWAY_PROJECT_ID ?? "9282f541-a288-4c8b-a174-ee22016f4b1a",
-          "--json",
-        ],
-        { encoding: "utf8", env: { ...process.env, RAILWAY_API_TOKEN: "" } }
-      );
-      if (out.status === 0) {
-        prodCron = JSON.parse(out.stdout).CRON_SECRET?.trim();
-      }
+      prodCron = loadProdAppSecret().CRON_SECRET?.trim();
     } catch {
       /* fall through */
     }
@@ -92,10 +72,6 @@ function loadSecrets() {
     clerkSecret: staging.CLERK_SECRET_KEY,
     clerkPub: staging.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY,
   };
-}
-
-function unsetRailwayApiToken() {
-  delete process.env.RAILWAY_API_TOKEN;
 }
 
 async function probeApi(base, cron, path) {

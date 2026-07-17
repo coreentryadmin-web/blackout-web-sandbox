@@ -6,6 +6,7 @@
 import { execSync, spawnSync } from "node:child_process";
 import { writeFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
+import { loadProdAppSecret, loadStagingAppSecret } from "./aws-app-secret.mjs";
 import { fetchRetry } from "./audit/lib/fetch-retry.mjs";
 
 const ROUNDS = Number(process.argv.find((a) => a.startsWith("--rounds="))?.split("=")[1] ?? 5);
@@ -27,30 +28,19 @@ const PATHS = [
 ];
 
 function loadProdCron() {
-  const res = spawnSync(
-    "railway",
-    [
-      "variables",
-      "--service",
-      "blackout-web",
-      "--environment",
-      "production",
-      "--project",
-      process.env.RAILWAY_PROJECT_ID ?? "9282f541-a288-4c8b-a174-ee22016f4b1a",
-      "--json",
-    ],
-    { encoding: "utf8", env: process.env }
-  );
-  if (res.status !== 0) return process.env.CRON_SECRET?.trim() ?? null;
-  return JSON.parse(res.stdout).CRON_SECRET?.trim() ?? process.env.CRON_SECRET?.trim() ?? null;
+  try {
+    return loadProdAppSecret().CRON_SECRET?.trim() ?? process.env.CRON_SECRET?.trim() ?? null;
+  } catch {
+    return process.env.CRON_SECRET?.trim() ?? null;
+  }
 }
 
 function loadStagingCron() {
-  const raw = execSync(
-    'aws secretsmanager get-secret-value --secret-id blackout-staging/app/env --query SecretString --output text',
-    { encoding: "utf8" }
-  );
-  return JSON.parse(raw).CRON_SECRET?.trim();
+  try {
+    return loadStagingAppSecret().CRON_SECRET?.trim() ?? null;
+  } catch {
+    return null;
+  }
 }
 
 async function warm(base, cron) {

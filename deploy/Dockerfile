@@ -1,4 +1,4 @@
-# NOT at repo root — Railway auto-detects a root Dockerfile and ignores railway.toml's
+# ECS / Docker build — deploy/Dockerfile is the canonical image build (not repo root).
 # nixpacks builder + startCommand (next start). ECS/Fargate builds use this file.
 # Requires `output: "standalone"` in next.config.mjs.
 #

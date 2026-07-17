@@ -5,12 +5,12 @@
  *
  * Usage: npm run validate:cron
  */
-import { ALL_CRON_KEYS } from "./railway-cron-services.mjs";
+import { ALL_CRON_KEYS } from "./cron-jobs.mjs";
 import { createAuditClient, resolveAuditDbUrl } from "./pg-audit.mjs";
 
 const JOB_KEYS = [...ALL_CRON_KEYS];
 
-/** Registered in code + TOML but Railway trigger service not yet provisioned — warn, don't fail CI. */
+/** Registered in code but EventBridge rule not yet provisioned — warn, don't fail CI. */
 const PROVISION_PENDING = new Set([]);
 
 const dbUrl = resolveAuditDbUrl();
