@@ -28,7 +28,7 @@ import type { TickerDossier } from "./dossier";
 import type { ScoredCandidate } from "./scorer";
 import { assignNighthawkTier, nhTierInputFromScored } from "./nighthawk-tiers";
 import type { PlaybookPlay } from "./types";
-import { buildDirectionalStockLevels, formatStockLevel } from "./play-levels";
+import { buildDirectionalStockLevels, formatStockLevel, computeRiskReward } from "./play-levels";
 import { applyPremiumCapToPlay, validatePlayGeometry, canonicalTicker } from "./play-constraints";
 import { groundPlays } from "./grounding";
 import { GROUNDING_MIN_OI, tieredMinOi } from "./grounding";
@@ -139,14 +139,13 @@ function resolveLevels(
     resistance = px + half;
   }
 
-  // PR-N21: when the target-side S/R is too close to spot, the target becomes trivially
-  // small (~1%) while the stop stretches to 8%, producing terrible R:R. Push the target-side
-  // level out to at least 1× ATR from spot so overnight plays have meaningful reward.
+  // PR-N21/N22: push the target-side S/R out so overnight plays have meaningful reward.
+  // 1.5× ATR ensures a full average day's range of upside minimum.
   if (px != null && support != null && resistance != null && resistance > support) {
     const atr = tech?.atr14;
     const minTargetDist = atr != null && Number.isFinite(atr) && atr > 0
-      ? atr * 1.0
-      : px * 0.02;
+      ? atr * 1.5
+      : px * 0.025;
     if (direction === "long" && (resistance - px) < minTargetDist) {
       resistance = px + minTargetDist;
     } else if (direction === "short" && (px - support) < minTargetDist) {
@@ -158,60 +157,103 @@ function resolveLevels(
 }
 
 /**
- * Build a concise, GROUNDED thesis from the deterministic score breakdown + dossier technicals. Leads
- * with the dominant scoring drivers (flow / technical / positioning / smart-money / news) so members
- * see WHY the play ranked, then appends the technicals one-liner and any risk flags. No prose the
- * numbers can't back — this is the same data the score itself is computed from.
+ * Build an actionable thesis from the scoring breakdown + dossier data. Leads with the specific
+ * technical setup and flow signal (WHY this play, not just what scored), includes key levels and
+ * risk/reward context, and flags catalysts. Members should read this and immediately understand
+ * the trade idea — not decode a score breakdown.
  */
 export function buildDeterministicThesis(
   scored: ScoredCandidate,
-  dossier: TickerDossier | undefined
+  dossier: TickerDossier | undefined,
+  levels?: { entry_range: string; target: string; stop: string }
 ): { thesis: string; key_signal: string } {
-  const dirWord = scored.direction === "short" ? "bearish" : "bullish";
-  const drivers: Array<{ label: string; value: number }> = [
-    { label: "options flow", value: scored.flow_score },
-    { label: "technical setup", value: scored.tech_score },
-    { label: "dealer/OI positioning", value: scored.pos_score },
+  const tech = dossier?.tech ?? null;
+  const isLong = scored.direction !== "short";
+  const dirWord = isLong ? "bullish" : "bearish";
+
+  // --- Key signal (compact one-liner for cards/badges) ---
+  const topDrivers = [
+    { label: "flow", value: scored.flow_score },
+    { label: "technicals", value: scored.tech_score },
+    { label: "positioning", value: scored.pos_score },
     { label: "smart-money", value: scored.smart_money_score },
-    { label: "news/catalyst", value: scored.news_score },
-  ];
-  // Include fundamental and short-interest if they're material.
-  if (scored.fundamental_score != null && Math.abs(scored.fundamental_score) >= 2) {
-    drivers.push({ label: "fundamentals", value: scored.fundamental_score });
-  }
-  if (scored.short_interest_score != null && scored.short_interest_score >= 3) {
-    drivers.push({ label: "short squeeze", value: scored.short_interest_score });
-  }
-
-  const top = drivers
-    .filter((d) => Number.isFinite(d.value) && Math.abs(d.value) >= 1)
+    { label: "news", value: scored.news_score },
+  ]
+    .filter((d) => Number.isFinite(d.value) && Math.abs(d.value) >= 3)
     .sort((a, b) => Math.abs(b.value) - Math.abs(a.value))
-    .slice(0, 3);
-  const driverText = top.length
-    ? top.map((d) => `${d.label} (${d.value > 0 ? "+" : ""}${Math.round(d.value)})`).join(", ")
-    : "composite confluence";
+    .slice(0, 2);
+  const driverTags = topDrivers.map((d) => d.label).join(" + ") || "confluence";
+  const key_signal = `${dirWord.toUpperCase()} — ${driverTags} · score ${scored.score} (${scored.conviction})`;
 
-  const key_signal = `${dirWord.toUpperCase()} — score ${scored.score} (${scored.conviction}); ${driverText}.`;
+  // --- Technical opener ---
+  const parts: string[] = [];
+  const setupTags = tech?.setup_tags ?? [];
+  const trend = tech?.trend ?? "";
+  const price = tech?.price ?? null;
 
-  const parts: string[] = [
-    `${dirWord.charAt(0).toUpperCase() + dirWord.slice(1)} ${scored.ticker}: score ${scored.score} (${scored.conviction}), driven by ${driverText}.`,
-  ];
-  if (dossier?.tech?.summary) parts.push(dossier.tech.summary);
-  if (dossier?.flow_streak?.streak_days && dossier.flow_streak.streak_days >= 2) {
-    parts.push(`${dossier.flow_streak.streak_days}-day flow streak.`);
+  if (setupTags.length) {
+    const tagText = setupTags.slice(0, 2).join(", ");
+    parts.push(`${scored.ticker} showing ${tagText}${trend ? ` in ${trend} trend` : ""}.`);
+  } else if (trend) {
+    parts.push(`${scored.ticker} in ${trend} trend.`);
+  } else {
+    parts.push(`${scored.ticker} ${dirWord} setup.`);
   }
-  if (dossier?.iv_rank != null && dossier.iv_rank > 0) {
-    const ivLabel = dossier.iv_rank > 70 ? "elevated" : dossier.iv_rank > 40 ? "moderate" : "low";
-    parts.push(`IV rank ${Math.round(dossier.iv_rank)} (${ivLabel}).`);
+
+  // --- Key S/R levels + R:R ---
+  if (levels) {
+    const rr = computeRiskReward({ direction: isLong ? "LONG" : "SHORT", ...levels });
+    if (rr != null) {
+      const rrLabel = rr >= 2 ? "strong" : rr >= 1 ? "favorable" : rr >= 0.5 ? "acceptable" : "tight";
+      parts.push(`R:R ${rr.toFixed(1)}:1 (${rrLabel}).`);
+    }
   }
-  if (dossier?.greek_flow) {
+
+  // --- Flow conviction ---
+  if (scored.flow_score >= 20) {
+    const flowParts: string[] = [];
+    if (dossier?.flow_streak?.streak_days && dossier.flow_streak.streak_days >= 2) {
+      flowParts.push(`${dossier.flow_streak.streak_days}-day ${dirWord} flow streak`);
+    }
+    if (scored.flow_score >= 30) {
+      flowParts.push("aggressive options activity");
+    } else {
+      flowParts.push(`${dirWord} flow conviction`);
+    }
+    parts.push(flowParts.join(" with ") + ".");
+  } else if (dossier?.flow_streak?.streak_days && dossier.flow_streak.streak_days >= 3) {
+    parts.push(`${dossier.flow_streak.streak_days}-day flow streak building.`);
+  }
+
+  // --- Positioning context ---
+  if (scored.pos_score >= 8 && dossier?.greek_flow) {
     const gf = dossier.greek_flow;
-    parts.push(`Dealer flow ${gf.bias} (net Δ ${gf.net_delta > 0 ? "+" : ""}${Math.round(gf.net_delta).toLocaleString()}).`);
+    parts.push(`Dealer positioning ${gf.bias}.`);
   }
+  if (scored.wall_proximity_score != null && scored.wall_proximity_score >= 4) {
+    parts.push(`GEX wall alignment supports ${isLong ? "upside" : "downside"}.`);
+  }
+
+  // --- Technicals one-liner from dossier (concise) ---
+  if (tech?.rsi14 != null && Number.isFinite(tech.rsi14)) {
+    if (tech.rsi14 < 30) parts.push("RSI oversold.");
+    else if (tech.rsi14 > 70) parts.push("RSI overbought.");
+  }
+  if (tech?.rel_volume != null && tech.rel_volume > 1.5) {
+    parts.push(`${tech.rel_volume.toFixed(1)}× relative volume.`);
+  }
+
+  // --- IV context ---
+  if (dossier?.iv_rank != null && dossier.iv_rank > 0) {
+    if (dossier.iv_rank > 70) parts.push(`IV rank elevated (${Math.round(dossier.iv_rank)}).`);
+  }
+
+  // --- Risk flags ---
   const flags = [
     ...(scored.catalyst_flags ?? []),
     ...(scored.fundamental_block ? scored.fundamental_flags ?? [] : []),
   ];
+  if (scored.earnings_risk) flags.push("earnings proximity");
   if (flags.length) parts.push(`Watch: ${flags.join("; ")}.`);
 
   return { thesis: parts.join(" "), key_signal };
@@ -227,14 +269,16 @@ function buildPlay(
   levels: { entry_range: string; target: string; stop: string },
   rank: number
 ): PlaybookPlay {
-  const { thesis, key_signal } = buildDeterministicThesis(scored, dossier);
+  const { thesis, key_signal } = buildDeterministicThesis(scored, dossier, levels);
   const options_play = contract
     ? `${scored.ticker} ${contract.expiry} $${formatStrike(contract.strike)} ${contract.side.toUpperCase()} — entry prem ~$${contract.premium.toFixed(2)}`
     : `${scored.ticker} — check option chain for suitable contract`;
+  const dir = scored.direction === "short" ? "SHORT" : "LONG";
+  const rr = computeRiskReward({ direction: dir, entry_range: levels.entry_range, target: levels.target, stop: levels.stop });
   const base: PlaybookPlay = {
     rank,
     ticker: scored.ticker,
-    direction: scored.direction === "short" ? "SHORT" : "LONG",
+    direction: dir,
     conviction: assignNighthawkTier(nhTierInputFromScored(scored)).tier,
     play_type: "stock",
     thesis,
@@ -246,6 +290,7 @@ function buildPlay(
     score: scored.score,
     flow_streak_days: dossier?.flow_streak?.streak_days ?? undefined,
     iv_rank: dossier?.iv_rank ?? undefined,
+    rr_ratio: rr ?? undefined,
   };
   if (contract) {
     return applyPremiumCapToPlay(base, { entry_premium: contract.premium, options_play });

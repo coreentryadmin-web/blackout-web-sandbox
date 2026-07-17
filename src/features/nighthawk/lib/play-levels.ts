@@ -11,8 +11,8 @@ const MAX_STOP_DISTANCE_PCT = 0.08;
 /** Max target distance from spot (fraction). Keeps targets achievable for overnight plays. */
 const MAX_TARGET_DISTANCE_PCT = 0.12;
 /** Minimum R:R ratio (target_dist / stop_dist). When the ratio falls below this, the stop
- *  is tightened to maintain at least this R:R. Prevents 1% target / 8% stop plays. */
-const MIN_RR_RATIO = 0.5;
+ *  is tightened to maintain at least this R:R. */
+const MIN_RR_RATIO = 0.75;
 
 export type ParsedPlayLevels = {
   entry_range_low: number | null;
@@ -53,6 +53,26 @@ export function parsePlayLevels(play: PlaybookPlay): ParsedPlayLevels {
     target: parseDecimal(play.target),
     stop: parseDecimal(play.stop),
   };
+}
+
+export function computeRiskReward(play: {
+  direction?: string;
+  entry_range?: string | null;
+  target?: string | null;
+  stop?: string | null;
+}): number | null {
+  const parsed = parsePlayLevels(play as PlaybookPlay);
+  if (parsed.entry_range_low == null || parsed.target == null || parsed.stop == null) return null;
+  const mid = parsed.entry_range_high != null
+    ? (parsed.entry_range_low + parsed.entry_range_high) / 2
+    : parsed.entry_range_low;
+  if (mid <= 0) return null;
+  const isLong = play.direction !== "SHORT";
+  const targetDist = isLong ? parsed.target - mid : mid - parsed.target;
+  const stopDist = isLong ? mid - parsed.stop : parsed.stop - mid;
+  if (stopDist <= 0) return null;
+  const rr = targetDist / stopDist;
+  return Number.isFinite(rr) && rr > 0 ? Number(rr.toFixed(2)) : null;
 }
 
 /** Format a stock price for member-visible entry/target/stop strings. */

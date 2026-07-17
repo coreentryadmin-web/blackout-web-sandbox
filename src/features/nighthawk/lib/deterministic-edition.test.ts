@@ -233,6 +233,6 @@ test("thesis is grounded in the score breakdown and cites the leading driver", (
   const s = scored("XYZ", "long", 66);
   const { thesis, key_signal } = buildDeterministicThesis(s, dossier("XYZ", 120));
   assert.match(thesis, /XYZ/);
-  assert.match(thesis, /score 66/);
-  assert.match(key_signal, /options flow/); // flow_score 18 is the dominant driver
+  assert.match(key_signal, /score 66/);
+  assert.match(key_signal, /flow/);
 });
