@@ -389,8 +389,11 @@ test("PR-N31: diversity swap fires for contrarian candidate above DIVERSITY_HEDG
   );
 });
 
-test("PR-N31: diversity swap does NOT fire when contrarian candidate is below DIVERSITY_HEDGE_FLOOR (20)", () => {
-  // 5 long candidates, but the short candidate scores only 15 (below the 20 floor)
+test("PR-N31+N33: Phase 1 rejects natural short below DIVERSITY_HEDGE_FLOOR; Phase 2 forced contrarian may still fire", () => {
+  // FF is a natural short with score 15 — below DIVERSITY_HEDGE_FLOOR (20), so Phase 1 skips it.
+  // Phase 2 then tries forced contrarian re-scoring on the all-LONG pool. With default dossier
+  // data those forced scores land ~12 (above FORCED_CONTRARIAN_FLOOR=8), so a short appears.
+  // The key assertion: the short that appears is a FORCED contrarian (Phase 2), not the natural FF.
   const ranked = [
     scored("AA", "long", 70),
     scored("BB", "long", 65),
@@ -409,7 +412,11 @@ test("PR-N31: diversity swap does NOT fire when contrarian candidate is below DI
   const { plays } = buildDeterministicEditionPlays({ ranked, dossierMap, chains, target: 5 });
   assert.equal(plays.length, 5);
   const shorts = plays.filter((p) => p.direction === "SHORT");
-  assert.equal(shorts.length, 0, "no SHORT should appear — score 15 is below hedge floor 20");
+  assert.ok(shorts.length >= 1, "Phase 2 forced contrarian should produce a SHORT");
+  assert.ok(
+    shorts[0]!.gate_warnings?.some((w) => w.includes("Forced contrarian")),
+    "should be a Phase 2 forced contrarian, not a Phase 1 natural swap (FF was below DIVERSITY_HEDGE_FLOOR)"
+  );
 });
 
 // ── PR-N32: Forced contrarian re-score ──────────────────────────────────────────────────────────
@@ -535,4 +542,38 @@ test("PR-N32: forced contrarian does NOT fire when natural opposite-direction ca
     !shorts[0]!.gate_warnings?.some((w) => w.includes("Forced contrarian")),
     "should NOT have forced contrarian warning when natural opposite exists"
   );
+});
+
+test("PR-N33: forced contrarian fires with low-score candidate (between FORCED_CONTRARIAN_FLOOR=8 and old floor=20)", () => {
+  // All LONG, minimal flow to make contrarian score very low (flow_score=5 → discounted=2).
+  // With neutral dossier, forced contrarian should score ~8-15 — above the new floor of 8
+  // but below the old floor of 20. Before N33 this would produce all-LONG; now it should swap.
+  const ranked = [
+    scored("AA", "long", 72),
+    scored("BB", "long", 68),
+    scored("CC", "long", 63),
+    scored("DD", "long", 58),
+    scored("EE", "long", 52),
+    scored("GG", "long", 42),
+  ];
+  for (const r of ranked) r.flow_score = 5;
+
+  const chains: Record<string, any> = {};
+  const dossierMap: Record<string, any> = {};
+  for (const r of ranked) {
+    const spot = 100;
+    chains[r.ticker] = chainAround(spot);
+    dossierMap[r.ticker] = dossier(r.ticker, spot);
+  }
+
+  const { plays } = buildDeterministicEditionPlays({ ranked, dossierMap, chains, target: 5 });
+  assert.equal(plays.length, 5);
+  const shorts = plays.filter((p) => p.direction === "SHORT");
+  assert.ok(shorts.length >= 1, `N33: expected forced contrarian SHORT even with low flow, got ${shorts.length}`);
+  assert.ok(
+    shorts[0]!.gate_warnings?.some((w) => w.includes("Forced contrarian")),
+    "should carry forced contrarian gate_warning"
+  );
+  const hedgeScore = shorts[0]!.score ?? 0;
+  assert.ok(hedgeScore >= 8, `hedge score ${hedgeScore} should be >= FORCED_CONTRARIAN_FLOOR (8)`);
 });
