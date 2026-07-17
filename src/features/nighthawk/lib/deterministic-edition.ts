@@ -45,7 +45,7 @@ import { buildDirectionalStockLevels, computeRiskReward } from "./play-levels";
 import { applyPremiumCapToPlay, validatePlayGeometry, canonicalTicker } from "./play-constraints";
 import { groundPlays } from "./grounding";
 import { GROUNDING_MIN_OI, tieredMinOi } from "./grounding";
-import { MAX_OPTION_PREMIUM_PER_SHARE, MIN_PUBLISH_SCORE, DIVERSITY_HEDGE_FLOOR } from "./constants";
+import { MAX_OPTION_PREMIUM_PER_SHARE, MIN_PUBLISH_SCORE, DIVERSITY_HEDGE_FLOOR, FORCED_CONTRARIAN_FLOOR } from "./constants";
 import { todayEtYmd } from "@/lib/providers/spx-session";
 
 /** Default number of plays a full edition publishes. Mirrors the Claude path's top-5 shape. */
@@ -599,39 +599,45 @@ export function buildDeterministicEditionPlays(params: {
         break;
       }
 
-      // Phase 2 (PR-N32): forced contrarian re-score — no natural opposites found
+      // Phase 2 (PR-N32 + N33): forced contrarian re-score — no natural opposites found.
+      // Uses FORCED_CONTRARIAN_FLOOR (softer than DIVERSITY_HEDGE_FLOOR) because forced
+      // contrarian scores are inherently lower: flow is discounted 0.3x and tech/positioning
+      // score against the dominant trend. The play carries a gate_warning so members know.
       if (!diversitySwapped) {
-        console.info(`[nighthawk/edition] no natural ${oppositeDir} candidates — trying forced contrarian re-score`);
+        console.info(`[nighthawk/edition] no natural ${oppositeDir} candidates — trying forced contrarian re-score (floor=${FORCED_CONTRARIAN_FLOOR})`);
         let bestContrarian: { scored: ScoredCandidate; play: PlaybookPlay } | null = null;
 
-        // Use finalPlays families (not selectedFamilies) — a candidate ranked 6th that was
-        // built but didn't make the top-5 cut is a valid contrarian source. We only block
-        // tickers already appearing in the 5 plays the member sees.
         const finalFamilies = new Set(finalPlays.map(p => canonicalTicker(p.ticker.toUpperCase())));
         const contrarianCandidates = params.ranked
           .filter(s => !s.trading_halt && !finalFamilies.has(canonicalTicker(s.ticker.toUpperCase())))
           .slice(0, CONTRARIAN_POOL_SIZE);
 
+        const contrarianScores: string[] = [];
         for (const original of contrarianCandidates) {
           const t = original.ticker.toUpperCase();
           const dos = params.dossierMap[t] ?? params.dossierMap[original.ticker];
-          if (!dos) continue;
+          if (!dos) { contrarianScores.push(`${t}:no-dossier`); continue; }
           const ch = params.chains[t];
           const sp = ch?.spot ?? dos?.tech?.price ?? null;
-          if (sp == null || !Number.isFinite(sp) || sp <= 0) continue;
+          if (sp == null || !Number.isFinite(sp) || sp <= 0) { contrarianScores.push(`${t}:no-spot`); continue; }
 
           const contrarian = scoreContrarianHedge(original, dos, oppositeDir as "long" | "short");
-          if (contrarian.score < DIVERSITY_HEDGE_FLOOR) continue;
+          contrarianScores.push(
+            `${t}:${contrarian.score}(fl=${contrarian.flow_score},te=${contrarian.tech_score},po=${contrarian.pos_score},nw=${contrarian.news_score},sm=${contrarian.smart_money_score},fu=${contrarian.fundamental_score},si=${contrarian.short_interest_score},wl=${contrarian.wall_proximity_score},vx=${contrarian.vex_alignment_score},ca=${contrarian.catalyst_score})`
+          );
+          if (contrarian.score < FORCED_CONTRARIAN_FLOOR) continue;
 
           const ctr = ch ? pickChainContract(ch, contrarian.direction) : null;
           const lvl = resolveLevels(dos, contrarian.direction, sp);
           const p = buildPlay(contrarian, dos, ctr, lvl, target);
-          if (!validatePlayGeometry(p).ok) continue;
+          if (!validatePlayGeometry(p).ok) { contrarianScores[contrarianScores.length - 1] += ":geom-fail"; continue; }
 
           if (!bestContrarian || contrarian.score > bestContrarian.scored.score) {
             bestContrarian = { scored: contrarian, play: p };
           }
         }
+
+        console.info(`[nighthawk/edition] forced contrarian scores (${oppositeDir}): ${contrarianScores.join(", ")}`);
 
         if (bestContrarian) {
           const { scored: cScored, play: cPlay } = bestContrarian;
@@ -647,7 +653,7 @@ export function buildDeterministicEditionPlays(params: {
         }
 
         if (!diversitySwapped) {
-          console.info(`[nighthawk/edition] forced contrarian: no candidates scored >= ${DIVERSITY_HEDGE_FLOOR} in ${oppositeDir} direction — all-${dominant} book accepted`);
+          console.info(`[nighthawk/edition] forced contrarian: no candidates scored >= ${FORCED_CONTRARIAN_FLOOR} in ${oppositeDir} direction — all-${dominant} book accepted`);
         }
       }
     }

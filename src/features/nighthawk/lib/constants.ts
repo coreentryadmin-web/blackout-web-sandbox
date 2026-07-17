@@ -68,6 +68,13 @@ export const MIN_PUBLISH_SCORE = 35;
  *  reject garbage, but low enough to let a legitimate contrarian play through when flow or
  *  technicals support a minority view. */
 export const DIVERSITY_HEDGE_FLOOR = 20;
+/** PR-N33: even softer floor for the FORCED contrarian path (Phase 2). When zero natural
+ *  opposite-direction candidates exist, forced re-scoring discounts flow 0.3× and honestly
+ *  scores tech/positioning against the dominant trend — realistic raw totals land 5-18 in
+ *  an extreme bull/bear. The play already carries a gate_warning marking it as a forced hedge,
+ *  so the quality bar is intentionally lower. 8 rejects outright garbage (all zeros + rounding
+ *  noise) while letting any candidate with real contrarian signal through. */
+export const FORCED_CONTRARIAN_FLOOR = 8;
 /** Overshoot sent through synthesis + critic — critic cuts weak plays with no backfill. */
 export const EDITION_SYNTHESIS_OVERSHOOT = 9;
 /** Stock tickers to prefetch option chains for (buffer above 5 final plays).
