@@ -771,7 +771,6 @@ export function FlowFeed() {
     typeFilter,
     tickerFilter,
     hasData: alerts.length > 0,
-    filteredCount: displayAlerts.length,
     compoundTickers,
     onTickerClick: setSelectedTicker,
     onContractClick: (flow: FlowAlert) => setSelectedContract(flow),
@@ -787,7 +786,6 @@ export function FlowFeed() {
     loadingOlder: loadingOlder || autoBackfilling,
     autoBackfilling,
     onLoadOlder: loadOlderFlows,
-    totalLoaded: tapeBuffer.length,
   };
 
   const analyticsRail = (

@@ -17816,29 +17816,6 @@ body::before {
     overflow: hidden;
   }
 
-  .helix-tape-chrome {
-    @apply flex items-center justify-end gap-4 shrink-0 px-5 py-2 border-b border-white/[0.06];
-    background: rgba(8, 9, 15, 0.6);
-    backdrop-filter: blur(12px);
-  }
-
-  .helix-tape-hint {
-    @apply font-mono text-[11px] text-sky-300/50 hidden sm:block;
-  }
-
-  .helix-tape-chrome-meta {
-    @apply flex items-center gap-2.5 font-mono text-[10px] text-sky-300/65 shrink-0;
-  }
-
-  .helix-tape-meta-count {
-    @apply font-semibold text-white tabular-nums;
-  }
-
-  .helix-tape-meta-sub,
-  .helix-tape-meta-density {
-    @apply text-[9px] uppercase tracking-wider text-sky-300/45;
-  }
-
   .helix-tape-alert {
     @apply shrink-0 mx-3 mt-2 px-3 py-2 rounded-lg border border-gold/40 bg-gold/10 font-mono text-[10px] text-gold;
   }
