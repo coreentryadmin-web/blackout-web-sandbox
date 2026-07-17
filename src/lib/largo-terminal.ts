@@ -16,6 +16,7 @@ import { runLargoTool } from "@/lib/largo/run-tool";
 import { bieFollowups, bieIntentBucket, classifyBieIntent, classifyBieStagingFallback, isSpxDeskFallbackQuestion, type BieRoute } from "@/lib/bie/router";
 import { composeBieAnswer, composeCompound } from "@/lib/bie/composers";
 import type { BieAnswerEnvelope } from "@/lib/bie/answer-envelope";
+import { isRichBieEnvelope } from "@/lib/bie/envelope-richness";
 import { isCompoundQuestion } from "@/lib/bie/decompose";
 import { collectContextNumbers, verifyClaims, type ClaimVerification } from "@/lib/bie/verifier";
 import { resetLargoSpxDeskCache } from "@/lib/largo/spx-desk-cache";
@@ -73,34 +74,9 @@ export type LargoStreamEvent =
   | { type: "error"; message: string };
 
 /**
- * Is this a RICH structured envelope worth surfacing as member-facing cards — as opposed to the
- * transition shim composeBieAnswer wraps a plain-string leg in (one "Read" section, no
- * evidence/levels/scenarios/provenance)? Only rich envelopes are attached to the query response as
- * `envelope`; a trivial string answer omits it so the client renders its `answer` markdown honestly
- * (its own shim), never a hollow single-section card that adds nothing over the text.
- *
- * There is no marker field on the (stable) envelope contract, so this is a STRUCTURAL test: the shim
- * is exactly one bare section and nothing else, so any of multi-section / top-level evidence /
- * scenarios / levels / unavailableSources / a section carrying its own evidence·levels·provenance·
- * bias·confidence means the synthesis layer actually populated it.
+ * Re-exported from `@/lib/bie/envelope-richness` — structural test for rich synthesis envelopes.
  */
-export function isRichBieEnvelope(env: BieAnswerEnvelope | null | undefined): boolean {
-  if (!env) return false;
-  const sections = env.sections ?? [];
-  if (sections.length > 1) return true;
-  if ((env.evidence?.length ?? 0) > 0) return true;
-  if ((env.scenarios?.length ?? 0) > 0) return true;
-  if ((env.levels?.length ?? 0) > 0) return true;
-  if ((env.unavailableSources?.length ?? 0) > 0) return true;
-  return sections.some(
-    (s) =>
-      (s.evidence?.length ?? 0) > 0 ||
-      (s.levels?.length ?? 0) > 0 ||
-      s.provenance != null ||
-      s.bias != null ||
-      s.confidence != null
-  );
-}
+export { isRichBieEnvelope } from "@/lib/bie/envelope-richness";
 
 /**
  * Dynamic follow-up prompts — 3 short questions that continue THIS exact exchange

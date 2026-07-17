@@ -67,6 +67,12 @@ export type BieLevel = {
   provenance?: BieProvenance;
 };
 
+/** Tabular block the UI can bind to directly (markdown is derived via renderEnvelopeMarkdown). */
+export type BieTable = {
+  headers: string[];
+  rows: string[][];
+};
+
 /** One section — typically one per sub-question/topic (title + body), optionally self-contained. */
 export type BieSection = {
   title: string;
@@ -76,6 +82,8 @@ export type BieSection = {
   evidence?: BieEvidence[];
   confidence?: BieConfidence;
   levels?: BieLevel[];
+  /** Structured table — rendered as markdown when body omits it. */
+  table?: BieTable | null;
   /** Set when this section could not be answered — honest, never silently dropped. */
   unavailable?: { reason: string } | null;
   provenance?: BieProvenance;
@@ -165,6 +173,18 @@ function renderLevels(levels: BieLevel[] | undefined): string[] {
   return ["**Key levels:**", ...rows];
 }
 
+function renderTable(table: BieTable | null | undefined): string[] {
+  if (!table?.headers?.length) return [];
+  const esc = (s: string) => s.replace(/\|/g, "\\|");
+  const sep = table.headers.map(() => "---");
+  const lines = [
+    `| ${table.headers.map(esc).join(" | ")} |`,
+    `| ${sep.join(" | ")} |`,
+    ...table.rows.map((r) => `| ${r.map((c) => esc(String(c))).join(" | ")} |`),
+  ];
+  return lines;
+}
+
 function renderScenarios(scen: BieScenario[] | undefined): string[] {
   if (!scen || scen.length === 0) return [];
   const cards = scen.map((s) => {
@@ -196,7 +216,9 @@ export function renderEnvelopeMarkdown(
       out.push(`_unavailable — ${s.unavailable.reason}_`);
       continue;
     }
+    const tableLines = renderTable(s.table);
     if (s.body) out.push(s.body);
+    if (tableLines.length) out.push(...tableLines);
     const ev = renderEvidence(s.evidence);
     if (ev.length) out.push(...ev);
     const lv = renderLevels(s.levels);

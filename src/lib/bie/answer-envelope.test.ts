@@ -84,6 +84,29 @@ describe("makeEnvelope", () => {
 });
 
 describe("renderEnvelopeMarkdown", () => {
+  test("renders structured section tables", () => {
+    const md = renderEnvelopeMarkdown({
+      version: 1,
+      headline: "HELIX",
+      bias: "neutral",
+      sections: [
+        {
+          title: "Data",
+          body: "",
+          table: {
+            headers: ["Ticker", "Premium"],
+            rows: [["SPX", "$1.2M"]],
+          },
+        },
+      ],
+      evidence: [],
+      confidence: { level: "high", why: "live tape" },
+      asOf: "2026-07-13T15:00:00.000Z",
+    });
+    assert.match(md, /\| Ticker \| Premium \|/);
+    assert.match(md, /\| SPX \| \$1\.2M \|/);
+  });
+
   test("is a pure function of the structured fields (ignores a pre-set markdown)", () => {
     const base: Omit<BieAnswerEnvelope, "markdown"> = {
       version: 1,

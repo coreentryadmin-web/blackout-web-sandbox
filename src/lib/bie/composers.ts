@@ -809,6 +809,10 @@ export async function composeBieAnswer(route: BieRoute, opts?: ComposeBieOpts): 
       intent: route.intent,
     });
   }
+  if (composed) {
+    const { applyDynamicFormat } = await import("@/lib/bie/dynamic-format");
+    return applyDynamicFormat(route, opts?.question, composed);
+  }
   return composed;
 }
 
