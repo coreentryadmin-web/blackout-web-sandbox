@@ -40,9 +40,10 @@ export const SECTOR_WATCH = [
   { key: "consumer", label: "Consumer" },
 ] as const;
 
-// Lowered 60 → 40 to cut the dossier-stage UW fan-out: 60 candidates × multiple UW calls
-// each was tripping the rate-limit circuit breaker. Only the top 12 reach synthesis anyway.
-export const MAX_CANDIDATES = 40;
+// Raised back to 60 — multi-source candidate discovery needs room for corroboration across
+// flow, OI change, unusual trades, catalysts, and predictions. Dossier-stage UW fan-out is
+// paced by the rate limiter (uw-rate-limiter.ts), so the cap belongs there, not here.
+export const MAX_CANDIDATES = 60;
 /** Candidate pool: weighted-premium leaders + unusual-flow movers. */
 export const CANDIDATE_PREMIUM_SLOTS = 28;
 export const CANDIDATE_UNUSUAL_SLOTS = 12;
