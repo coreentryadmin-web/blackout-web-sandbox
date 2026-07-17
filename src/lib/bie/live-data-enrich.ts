@@ -31,7 +31,7 @@ const TOOLS_BY_INTENT: Partial<Record<string, string[]>> = {
   market_context: ["get_market_context"],
   play_suggest_read: ["get_spx_play"],
   ticker_advice: ["get_quote", "get_technicals"],
-  vector_read: ["get_gex"],
+  vector_read: ["get_gex", "get_positioning"],
   vector_pulse_read: ["get_gex", "get_positioning"],
   spx_desk_read: ["get_spx_structure"],
   ticker_compare: ["get_quote"],

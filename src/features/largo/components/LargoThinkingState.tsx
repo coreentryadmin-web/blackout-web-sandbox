@@ -9,6 +9,7 @@ export const LARGO_THINKING_PHRASES = [
   "Cross-referencing flow against GEX…",
   "Cortex is lining up the evidence…",
   "Talking to HELIX — largest prints this session…",
+  "Vector Pulse — diffing wall transitions…",
   "Syncing the SPX Slayer desk…",
   "Running confluence on your ask…",
   "Stress-testing your thesis…",
