@@ -8,6 +8,7 @@ import {
   fmtExpiryShort,
   fmtFullTimestamp,
   ruleLabel,
+  executionRouteKey,
   sortFlows,
 } from "./helix-flow-format";
 
@@ -79,4 +80,18 @@ test("flowSignals includes whale and 0dte tags", () => {
 test("daysToExpiry floors at zero for same-day expiry", () => {
   const today = new Date("2026-07-11T18:00:00Z");
   assert.equal(daysToExpiry("2026-07-11", today), 0);
+});
+
+test("executionRouteKey reads UW alert_rule, not internal route", () => {
+  assert.equal(executionRouteKey({ alert_rule: "RepeatedHitsSweep" }), "SWEEP");
+  assert.equal(executionRouteKey({ alert_rule: "BigBlockTrade" }), "BLOCK");
+  assert.equal(executionRouteKey({ alert_rule: undefined }), "OTHER");
+});
+
+test("flowSignals includes near wall tags", () => {
+  const signals = flowSignals(
+    flow({ ticker: "SPY", gex_proximity: "near_call_wall" }),
+    {}
+  );
+  assert.ok(signals.some((s) => s.id === "ncwall"));
 });

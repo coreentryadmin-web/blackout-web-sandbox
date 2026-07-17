@@ -1918,6 +1918,8 @@ export async function fetchRecentFlows(params: {
    * setups because the window's 400th-largest print was >$500k across all expiries.
    */
   max_dte?: number;
+  /** ISO timestamp — return rows strictly OLDER than this (cursor pagination for HELIX tape). */
+  before?: string;
 }): Promise<FlowRow[]> {
   await ensureSchema();
   const clauses: string[] = [];
@@ -1944,6 +1946,10 @@ export async function fetchRecentFlows(params: {
       `(expiry - (NOW() AT TIME ZONE 'America/New_York')::date) BETWEEN 0 AND $${i++}`
     );
     values.push(Math.floor(params.max_dte));
+  }
+  if (params.before) {
+    clauses.push(`COALESCE(created_at, inserted_at) < $${i++}::timestamptz`);
+    values.push(params.before);
   }
 
   const where = `WHERE ${clauses.join(" AND ")}`;

@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useRef, useState } from "react";
+import { useVirtualizer } from "@tanstack/react-virtual";
 import { clsx } from "clsx";
 import type { FlowAlert } from "@/lib/api";
 import { EmptyState, Skeleton } from "@/components/ui";
@@ -30,9 +31,12 @@ import {
   type HelixFlowSortDir,
   type HelixFlowSortKey,
 } from "@/features/helix/lib/helix-flow-format";
+import {
+  HELIX_TAPE_OVERSCAN,
+  HELIX_TAPE_ROW_HEIGHT,
+} from "@/features/helix/lib/helix-flow-limits";
 
 const WHALE_PREMIUM = 1_000_000;
-const RENDER_LIMIT = 250;
 
 type SignalTone = "bull" | "bear" | "gold" | "sky" | "purple" | "ember";
 
@@ -242,6 +246,10 @@ export function HelixFlowTable({
   watchlistTickers,
   onToggleStar,
   filteredCount,
+  hasMorePages = false,
+  loadingOlder = false,
+  onLoadOlder,
+  totalLoaded,
 }: {
   flows: FlowAlert[];
   live?: boolean;
@@ -263,6 +271,12 @@ export function HelixFlowTable({
   onToggleStar?: (ticker: string) => void;
   /** Total matching rows before render cap — shown in tape chrome */
   filteredCount?: number;
+  /** Server cursor pagination — more history exists in Postgres */
+  hasMorePages?: boolean;
+  loadingOlder?: boolean;
+  onLoadOlder?: () => void;
+  /** Total rows loaded in memory (may exceed filtered count) */
+  totalLoaded?: number;
 }) {
   const cols = useMemo(() => columnsForDensity(density), [density]);
   const groupSpans = useMemo(() => groupHeaderSpans(cols), [cols]);
@@ -277,7 +291,6 @@ export function HelixFlowTable({
 
   const [sortKey, setSortKey] = useState<HelixFlowSortKey>("time");
   const [sortDir, setSortDir] = useState<HelixFlowSortDir>("desc");
-  const [renderLimit, setRenderLimit] = useState(RENDER_LIMIT);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const typed = useMemo(
@@ -298,9 +311,16 @@ export function HelixFlowTable({
     return sortFlows(base, sortKey, sortDir);
   }, [typed, typeFilter, sortKey, sortDir]);
 
-  const displayed = filtered.slice(0, renderLimit);
+  const virtualizer = useVirtualizer({
+    count: filtered.length,
+    getScrollElement: () => scrollRef.current,
+    estimateSize: () => HELIX_TAPE_ROW_HEIGHT,
+    overscan: HELIX_TAPE_OVERSCAN,
+  });
+
+  const virtualRows = virtualizer.getVirtualItems();
   const total = filteredCount ?? filtered.length;
-  const hasMore = filtered.length > renderLimit;
+  const loaded = totalLoaded ?? flows.length;
   const feedDown = !loading && !replayMode && !live;
 
   const toggleSort = (key: HelixFlowSortKey) => {
@@ -323,10 +343,12 @@ export function HelixFlowTable({
         {!loading && (
           <div className="helix-tape-chrome-meta tabular-nums">
             <span className="helix-tape-meta-count">{total.toLocaleString()} prints</span>
-            {hasMore && (
-              <span className="helix-tape-meta-sub">showing {renderLimit.toLocaleString()}</span>
+            {loaded > total && (
+              <span className="helix-tape-meta-sub">{loaded.toLocaleString()} loaded</span>
             )}
-            {/* density label removed — always full now */}
+            {hasMorePages && (
+              <span className="helix-tape-meta-sub">more in history</span>
+            )}
           </div>
         )}
       </div>
@@ -425,8 +447,15 @@ export function HelixFlowTable({
               </div>
             </div>
           ) : (
-            <div className="helix-tape-body" role="rowgroup">
-              {displayed.map((flow, i) => {
+            <div
+              className="helix-tape-body"
+              role="rowgroup"
+              style={{ height: virtualizer.getTotalSize(), position: "relative" }}
+            >
+              {virtualRows.map((vRow) => {
+                const flow = filtered[vRow.index];
+                if (!flow) return null;
+                const i = vRow.index;
                 const isCall = flow.option_type?.toUpperCase() === "CALL";
                 const isWhale = flow.premium >= WHALE_PREMIUM;
                 const dte = flow.dte ?? daysToExpiry(flow.expiry);
@@ -452,6 +481,8 @@ export function HelixFlowTable({
                     key={`${flow.ticker}-${flow.alerted_at}-${flow.strike}-${i}`}
                     role="row"
                     data-helix-tape-row=""
+                    data-index={vRow.index}
+                    ref={virtualizer.measureElement}
                     className={clsx(
                       "helix-tape-row",
                       i % 2 === 1 && "helix-tape-row--zebra",
@@ -460,6 +491,13 @@ export function HelixFlowTable({
                       isWhale && "helix-tape-row--whale",
                       isNew && "helix-tape-row--flash"
                     )}
+                    style={{
+                      position: "absolute",
+                      top: 0,
+                      left: 0,
+                      width: "100%",
+                      transform: `translateY(${vRow.start}px)`,
+                    }}
                     onClick={() => {
                       if (onContractClick) onContractClick(flow);
                       else onTickerClick?.(flow.ticker);
@@ -497,14 +535,14 @@ export function HelixFlowTable({
             </div>
           )}
         </div>
-        {hasMore && !loading && (
+        {hasMorePages && onLoadOlder && !loading && (
           <button
             type="button"
             className="helix-tape-load-more"
-            onClick={() => setRenderLimit((r) => r + RENDER_LIMIT)}
+            disabled={loadingOlder}
+            onClick={onLoadOlder}
           >
-            Load {Math.min(RENDER_LIMIT, filtered.length - renderLimit).toLocaleString()} more ·{" "}
-            {(filtered.length - renderLimit).toLocaleString()} remaining
+            {loadingOlder ? "Loading older prints…" : "Load older prints from history"}
           </button>
         )}
       </div>

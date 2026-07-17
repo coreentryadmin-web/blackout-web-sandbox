@@ -94,6 +94,7 @@
     "@clerk/nextjs": "^7.5.17",
     "@clerk/types": "^4.101.25",
     "@sentry/nextjs": "^10.65.0",
+    "@tanstack/react-virtual": "^3.14.6",
     "@types/web-push": "^3.6.4",
     "@whop/sdk": "0.0.40",
     "clsx": "^2.1.1",

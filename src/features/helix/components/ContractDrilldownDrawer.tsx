@@ -29,6 +29,7 @@ import {
   estContractSize,
   estNotional,
   gexProximityLabel,
+  printBias,
 } from "@/features/helix/lib/helix-print-detail";
 
 /** Kept for callers that only need the contract identity (ticker/strike/expiry/type). */
@@ -170,7 +171,8 @@ export function ContractDrilldownDrawer({
     const notional = estNotional(flow.strike, flow.premium, flow.fill_price);
     const aggr = aggressorRead(flow.ask_pct);
     const wall = gexProximityLabel(flow.gex_proximity);
-    return { dte, size, notional, aggr, wall };
+    const bias = printBias(flow);
+    return { dte, size, notional, aggr, wall, bias };
   }, [flow]);
 
   const header = flow ? (
@@ -237,6 +239,21 @@ export function ContractDrilldownDrawer({
                   value={detail.aggr?.label ?? null}
                   tone={
                     detail.aggr?.tone === "bull" ? "bull" : detail.aggr?.tone === "bear" ? "bear" : "neutral"
+                  }
+                />
+                <PrintStat
+                  label="Lean"
+                  value={
+                    detail.bias === "bullish"
+                      ? "Bullish"
+                      : detail.bias === "bearish"
+                        ? "Bearish"
+                        : detail.bias === "neutral"
+                          ? "Neutral"
+                          : null
+                  }
+                  tone={
+                    detail.bias === "bullish" ? "bull" : detail.bias === "bearish" ? "bear" : "neutral"
                   }
                 />
                 <PrintStat label="Score" value={flow.score > 0 ? flow.score.toFixed(1) : null} />

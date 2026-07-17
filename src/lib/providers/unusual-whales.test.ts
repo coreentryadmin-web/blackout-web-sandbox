@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { isLiveOdteSession, safeTicker, safePathSegment, safeDateSegment, sym } from "./unusual-whales";
+import { isLiveOdteSession, safeTicker, safePathSegment, safeDateSegment, sym, optionTradePrintToFlowRaw } from "./unusual-whales";
 import { UW_REST_SECTIONS } from "../uw-docs-catalog";
 
 // 2026-07-03 is a US market holiday (July 4th observed) per nighthawk/session.ts's calendar.
@@ -98,4 +98,19 @@ test("the old broken UW paths are NOT in the catalog (they were the bug)", () =>
   ]) {
     assert.ok(!CATALOG_PATHS.has(p), `${p} is a non-existent route — must not be reintroduced`);
   }
+});
+
+test("optionTradePrintToFlowRaw forwards per-contract price for Fill column", () => {
+  const raw = optionTradePrintToFlowRaw({
+    id: "x1",
+    underlying: "SPY",
+    option_symbol: "SPY260717C00600000",
+    price: 3.45,
+    size: 500,
+    premium: 172_500,
+    executed_at: "2026-07-17T15:30:00",
+    tags: ["SWEEP"],
+  });
+  assert.equal(raw.price, 3.45);
+  assert.equal(raw.size, 500);
 });

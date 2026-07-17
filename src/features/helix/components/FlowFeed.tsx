@@ -18,6 +18,15 @@ import {
   type HelixTableDensity,
 } from "@/features/helix/lib/helix-table-columns";
 import { daysToExpiry } from "@/features/helix/lib/helix-flow-format";
+import { findMatchingFlow, mergeFlowAlerts } from "@/features/helix/lib/helix-flow-merge";
+import {
+  appendFlowTapePage,
+  mergeFlowTapeHead,
+} from "@/features/helix/lib/helix-flow-tape-merge";
+import {
+  HELIX_FLOW_DEFAULT_SINCE_HOURS,
+  HELIX_FLOW_PAGE_SIZE,
+} from "@/features/helix/lib/helix-flow-limits";
 import { FlowBrief } from "@/features/helix/components/FlowBrief";
 import { NetPremiumLeaderboard } from "@/features/helix/components/NetPremiumLeaderboard";
 import { StrikeStackDetector } from "@/features/helix/components/StrikeStackDetector";
@@ -101,11 +110,30 @@ function playWhaleBeep() {
 
 function exportCSV(alerts: FlowAlert[]) {
   try {
-    const header = "Ticker,Type,Strike,Expiry,Premium,Fill,DTE,Score,Route,Alert Rule,Alerted At\n";
-    const rows = alerts.map((a) =>
-      [a.ticker, a.option_type, a.strike, a.expiry, a.premium, a.fill_price ?? "",
-       a.dte ?? "", a.score ?? "", a.route ?? "", a.alert_rule ?? "", a.alerted_at].join(",")
-    ).join("\n");
+    const header =
+      "Ticker,Type,Strike,Expiry,Premium,Fill,Spot,Ask%,OI,IV,OTM%,DTE,Score,Route,Alert Rule,Alerted At\n";
+    const rows = alerts
+      .map((a) =>
+        [
+          a.ticker,
+          a.option_type,
+          a.strike,
+          a.expiry,
+          a.premium,
+          a.fill_price ?? "",
+          a.underlying_price ?? "",
+          a.ask_pct ?? "",
+          a.open_interest ?? "",
+          a.implied_volatility ?? "",
+          a.otm_pct ?? "",
+          a.dte ?? "",
+          a.score ?? "",
+          a.route ?? "",
+          a.alert_rule ?? "",
+          a.alerted_at,
+        ].join(",")
+      )
+      .join("\n");
     const blob = new Blob([header + rows], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
@@ -126,6 +154,9 @@ export function FlowFeed() {
   const [iosView, setIosView] = useState<"tape" | "analytics">("tape");
   const [helixToolsOpen, setHelixToolsOpen] = useState(false);
   const [loading, setLoading]             = useState(true);
+  const [loadingOlder, setLoadingOlder]   = useState(false);
+  const [hasMorePages, setHasMorePages]   = useState(false);
+  const [nextBefore, setNextBefore]       = useState<string | null>(null);
   const [live, setLive]                   = useState(false);
   // Filters
   const [minPremium, setMinPremium]       = useState(200_000);
@@ -162,6 +193,7 @@ export function FlowFeed() {
   const [nighthawkEdition, setNighthawkEdition] = useState<NightHawkEdition | null>(null);
 
   const seenRef         = useRef(new Set<string>());
+  const hasOlderPagesRef = useRef(false);
   const loadGenerationRef = useRef(0);
   const replaySourceRef = useRef<FlowAlert[]>([]);
   const replayIdxRef    = useRef(0);
@@ -261,11 +293,21 @@ export function FlowFeed() {
     return { callCount: call, putCount: put, allCount: call + put };
   }, [countSource]);
 
-  // Bug 9: limit input to recent 500 alerts for strike-stack computation performance
+  const tapeBuffer = replayMode ? replayAlerts : alerts;
+
+  const filteredTapeBuffer = useMemo(
+    () => applyTapeFilters(tapeBuffer),
+    [tapeBuffer, applyTapeFilters]
+  );
+
+  // Bug 9: strike-stack computation over the filtered in-memory buffer (up to 5k rows).
   const compoundTickers = useMemo<Set<string>>(() => {
-    const stacks = computeFlowStrikeStacks(alerts.slice(0, 500), { minAlerts: 2, limit: 20 });
+    const stacks = computeFlowStrikeStacks(filteredTapeBuffer.slice(0, 5000), {
+      minAlerts: 2,
+      limit: 20,
+    });
     return new Set(stacks.map((s) => s.ticker));
-  }, [alerts]);
+  }, [filteredTapeBuffer]);
 
   // Feature 6: detect opposing call+put flow within 30-min window (>= $500K each leg)
   const splitFlowMap = useMemo<Map<string, SplitFlowEntry>>(() => {
@@ -274,7 +316,7 @@ export function FlowFeed() {
     const MIN_LEG   = 500_000;
     const byTicker  = new Map<string, { callPrem: number; putPrem: number }>();
 
-    for (const alert of alerts) {
+    for (const alert of filteredTapeBuffer) {
       // Gap #6: a row with no trustworthy alerted_at must be EXCLUDED from the 30-min
       // split window — not silently kept (NaN compare fell through the old guard) where
       // it could fabricate an opposing-flow signal out of an undated print.
@@ -302,7 +344,7 @@ export function FlowFeed() {
       }
     }
     return result;
-  }, [alerts]);
+  }, [filteredTapeBuffer]);
 
   const splitFlowTickers = useMemo(() => new Set(splitFlowMap.keys()), [splitFlowMap]);
   const splitFlowEntries = useMemo(
@@ -330,7 +372,7 @@ export function FlowFeed() {
     const P_MS     = 30 * 60 * 1000; // prior window end
     const byTicker = new Map<string, { recent: number; prior: number; recentPremium: number }>();
 
-    for (const alert of alerts) {
+    for (const alert of filteredTapeBuffer) {
       // Velocity must use the REAL alert time (event_at), not alerted_at — a
       // just-ingested stale print has alerted_at≈now and would fake a spike. Prints
       // with no known event_at (UW gave no timestamp) are skipped, not assumed recent.
@@ -360,7 +402,7 @@ export function FlowFeed() {
       velocityEntries: spikes.slice(0, 8),
       velocitySpikeTickers: new Set(spikes.map((e) => e.ticker)),
     };
-  }, [alerts]);
+  }, [filteredTapeBuffer]);
 
   // Feature 2: coordinated signal — dark pool block + options sweep on same ticker within 5 min
   const coordinatedTickers = useMemo<Set<string>>(() => {
@@ -368,7 +410,7 @@ export function FlowFeed() {
     const WINDOW_MS = 5 * 60 * 1000;
     const coordinated = new Set<string>();
 
-    for (const alert of alerts) {
+    for (const alert of filteredTapeBuffer) {
       // Gap #6: raw new Date(alerted_at) was NaN for undated rows, so abs(NaN) > WINDOW
       // is always false and COORD never fired. Use alertedAtMs (the file's helper) and
       // skip rows with no trustworthy time — they can't be time-correlated to a block.
@@ -382,13 +424,13 @@ export function FlowFeed() {
       if (hasBlock) coordinated.add(alert.ticker);
     }
     return coordinated;
-  }, [alerts, darkPoolPrints]);
+  }, [filteredTapeBuffer, darkPoolPrints]);
 
   // Feature 11: sector rotation — aggregate flow premium by sector
   const sectorFlowEntries = useMemo<SectorFlowEntry[]>(() => {
     const map = new Map<string, { callPremium: number; putPremium: number }>();
 
-    for (const alert of alerts) {
+    for (const alert of filteredTapeBuffer) {
       const sector = getSector(alert.ticker);
       const cur = map.get(sector) ?? { callPremium: 0, putPremium: 0 };
       if (alert.option_type === "CALL") cur.callPremium += alert.premium;
@@ -406,20 +448,16 @@ export function FlowFeed() {
       .filter((e) => e.total >= 100_000)
       .sort((a, b) => b.total - a.total)
       .slice(0, 10);
-  }, [alerts]);
+  }, [filteredTapeBuffer]);
 
-  // Feature 12: Night Hawk plays enriched with flow conviction from the 7d tape.
-  // R-46: pre-group alerts by ticker in one O(n) pass so each play lookup below is
-  // O(1) — eliminates the original O(n·m) where n=alerts.length, m=plays.length.
+  // Feature 12: Night Hawk plays enriched with flow conviction from the loaded tape.
   const { nighthawkPlaysWithFlow, hawkTickers } = useMemo(() => {
     if (!nighthawkEdition?.plays?.length) {
       return { nighthawkPlaysWithFlow: [] as NightHawkPlayWithFlow[], hawkTickers: new Set<string>() };
     }
 
-    // Build a ticker → alerts Map in one pass so each play does an O(1) Map.get()
-    // instead of scanning the full alerts array with filter() × 3.
     const alertsByTicker = new Map<string, { callPremium: number; putPremium: number; topPrint: number; count: number }>();
-    for (const a of alerts) {
+    for (const a of filteredTapeBuffer) {
       const e = alertsByTicker.get(a.ticker) ?? { callPremium: 0, putPremium: 0, topPrint: 0, count: 0 };
       if (a.option_type === "CALL") e.callPremium += a.premium;
       else if (a.option_type === "PUT") e.putPremium += a.premium;
@@ -453,17 +491,24 @@ export function FlowFeed() {
       nighthawkPlaysWithFlow: playsWithFlow,
       hawkTickers: new Set(nighthawkEdition.plays.map((p) => p.ticker)),
     };
-  }, [nighthawkEdition, alerts]);
+  }, [nighthawkEdition, filteredTapeBuffer]);
+
+  const flowFetchParams = useCallback(
+    () => ({
+      limit: HELIX_FLOW_PAGE_SIZE,
+      since_hours: HELIX_FLOW_DEFAULT_SINCE_HOURS,
+      min_premium: Math.max(FLOOR_PREMIUM, minPremium),
+      ticker: tickerFilter || undefined,
+    }),
+    [minPremium, tickerFilter]
+  );
 
   // ── Data loading ──────────────────────────────────────────────────────────
   const loadFlows = useCallback(async () => {
     const generation = ++loadGenerationRef.current;
     try {
-      const d = await fetchFlows({ min_premium: Math.max(FLOOR_PREMIUM, minPremium), ticker: tickerFilter || undefined });
+      const d = await fetchFlows(flowFetchParams());
       if (generation !== loadGenerationRef.current) return;
-      // Bug 1 + gap #13: rebuild seenRef from REST so SSE can't re-add duplicates after a
-      // reconnect. Seed BOTH the canonical alert_id (when the row carries one) and the
-      // composite fallback, so an incoming SSE echo matches on whichever key it shares.
       const seeded = new Set<string>();
       for (const a of d.flows as Array<FlowAlert & { alert_id?: string }>) {
         const id = flowAlertId(a);
@@ -471,6 +516,9 @@ export function FlowFeed() {
         seeded.add(flowCompositeKey(a));
       }
       seenRef.current = seeded;
+      setHasMorePages(Boolean(d.has_more));
+      setNextBefore(d.next_before ?? null);
+      hasOlderPagesRef.current = false;
       setAlerts(d.flows);
       setLive(true);
     } catch {
@@ -478,13 +526,55 @@ export function FlowFeed() {
     } finally {
       setLoading(false);
     }
-  }, [minPremium, tickerFilter]);
+  }, [flowFetchParams]);
+
+  const loadOlderFlows = useCallback(async () => {
+    if (!nextBefore || loadingOlder) return;
+    setLoadingOlder(true);
+    try {
+      const d = await fetchFlows({ ...flowFetchParams(), before: nextBefore });
+      for (const a of d.flows as Array<FlowAlert & { alert_id?: string }>) {
+        const id = flowAlertId(a);
+        if (id) seenRef.current.add(id);
+        seenRef.current.add(flowCompositeKey(a));
+      }
+      setAlerts((prev) => appendFlowTapePage(prev, d.flows));
+      setHasMorePages(Boolean(d.has_more));
+      setNextBefore(d.next_before ?? null);
+      hasOlderPagesRef.current = true;
+    } catch (e) {
+      console.warn("[FlowFeed] load older:", e);
+    } finally {
+      setLoadingOlder(false);
+    }
+  }, [flowFetchParams, nextBefore, loadingOlder]);
+
+  const refreshHead = useCallback(async () => {
+    const generation = ++loadGenerationRef.current;
+    try {
+      const d = await fetchFlows(flowFetchParams());
+      if (generation !== loadGenerationRef.current) return;
+      for (const a of d.flows as Array<FlowAlert & { alert_id?: string }>) {
+        const id = flowAlertId(a);
+        if (id) seenRef.current.add(id);
+        seenRef.current.add(flowCompositeKey(a));
+      }
+      setHasMorePages((prev) => (hasOlderPagesRef.current ? prev : Boolean(d.has_more)));
+      setNextBefore((prev) => (hasOlderPagesRef.current ? prev : d.next_before ?? null));
+      setAlerts((prev) =>
+        hasOlderPagesRef.current ? mergeFlowTapeHead(prev, d.flows) : d.flows
+      );
+      setLive(true);
+    } catch {
+      setLive(false);
+    }
+  }, [flowFetchParams]);
 
   useEffect(() => { setLoading(true); loadFlows(); }, [loadFlows]);
 
   useEffect(() => {
     let poll: ReturnType<typeof setInterval> | null = null;
-    const go   = () => { if (!poll) poll = setInterval(loadFlows, FLOW_POLL_MS); };
+    const go   = () => { if (!poll) poll = setInterval(refreshHead, FLOW_POLL_MS); };
     const stop = () => { if (poll) { clearInterval(poll); poll = null; } };
 
     const conn = createFlowEventSource(
@@ -503,17 +593,25 @@ export function FlowFeed() {
           const entries = Array.from(seenRef.current);
           seenRef.current = new Set(entries.slice(-1000));
         }
-        setAlerts((prev) => [alert, ...prev]);
+        setAlerts((prev) => {
+          const idx = findMatchingFlow(prev, alert);
+          if (idx >= 0) {
+            const merged = mergeFlowAlerts(alert, prev[idx]);
+            const rest = prev.filter((_, i) => i !== idx);
+            return [merged, ...rest];
+          }
+          return [alert, ...prev];
+        });
         setLive(true);
         // Bug 14: play beep for whale prints when audio is enabled
         if (audioEnabledRef.current && alert.premium >= 1_000_000) playWhaleBeep();
       },
-      { onOpen: () => { setLive(true); stop(); }, onClose: () => { setLive(false); go(); loadFlows(); } }
+      { onOpen: () => { setLive(true); stop(); }, onClose: () => { setLive(false); go(); refreshHead(); } }
     );
     if (conn) return () => { conn.close(); stop(); };
     go();
     return () => stop();
-  }, [loadFlows]);
+  }, [refreshHead]);
 
   // ── Replay ────────────────────────────────────────────────────────────────
   const startReplay = useCallback(() => {
@@ -556,9 +654,7 @@ export function FlowFeed() {
   useEffect(() => () => { if (replayTimerRef.current) clearInterval(replayTimerRef.current); }, []);
 
   const displayAlerts = useMemo(() => {
-    const base = replayMode ? replayAlerts : alerts;
-    const filtered = applyTapeFilters(base);
-    return [...filtered].sort((a, b) => {
+    return [...filteredTapeBuffer].sort((a, b) => {
       const am = alertedAtMs(a);
       const bm = alertedAtMs(b);
       if (am == null && bm == null) return 0;
@@ -566,7 +662,7 @@ export function FlowFeed() {
       if (bm == null) return -1;
       return bm - am;
     });
-  }, [replayMode, replayAlerts, alerts, applyTapeFilters]);
+  }, [filteredTapeBuffer]);
 
   // Tape freshness — newest print age drives an honest LIVE/STALE badge.
   // Connection success alone is NOT data freshness: a stale tape over a weekend
@@ -629,6 +725,10 @@ export function FlowFeed() {
     hawkTickers,
     watchlistTickers: watchlist.watchlistSet,
     onToggleStar: watchlist.toggle,
+    hasMorePages: !replayMode && hasMorePages,
+    loadingOlder,
+    onLoadOlder: loadOlderFlows,
+    totalLoaded: tapeBuffer.length,
   };
 
   const analyticsRail = (
@@ -653,13 +753,13 @@ export function FlowFeed() {
           </button>
         </div>
       )}
-      <HighScorePrints alerts={alerts} loading={loading} onSelect={setSelectedContract} />
+      <HighScorePrints alerts={displayAlerts} loading={loading} onSelect={setSelectedContract} />
       <div className="helix-analytics-wide">
-        <NetPremiumLeaderboard alerts={alerts} loading={loading} />
+        <NetPremiumLeaderboard alerts={displayAlerts} loading={loading} />
       </div>
-      <ExpiryConcentration alerts={alerts} loading={loading} />
+      <ExpiryConcentration alerts={displayAlerts} loading={loading} />
       <div className="helix-analytics-wide">
-        <StrikeStackDetector alerts={alerts} onSelectTicker={setSelectedTicker} />
+        <StrikeStackDetector alerts={displayAlerts} onSelectTicker={setSelectedTicker} />
       </div>
       <DarkPoolPanel />
       {showMorePanels && (
@@ -671,10 +771,10 @@ export function FlowFeed() {
             onTickerClick={setSelectedTicker}
           />
           <SplitFlowRadar entries={splitFlowEntries} onTickerClick={setSelectedTicker} />
-          <RouteBreakdown alerts={alerts} loading={loading} />
+          <RouteBreakdown alerts={displayAlerts} loading={loading} />
           <SectorFlowPanel entries={sectorFlowEntries} />
           <div className="helix-analytics-wide">
-            <FlowMomentumChart alerts={alerts} />
+            <FlowMomentumChart alerts={displayAlerts} />
           </div>
         </>
       )}
