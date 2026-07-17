@@ -27,7 +27,7 @@ type RestFallbackEntry = {
 };
 const restFallback = new Map<string, RestFallbackEntry>();
 const restInflight = new Map<string, Promise<void>>();
-const REST_REFRESH_MS = 5_000;
+const REST_REFRESH_MS = 1_000;
 const REST_MAX_AGE_MS = 120_000;
 
 function refreshRestFallback(ticker: string): void {
