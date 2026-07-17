@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { freshestMessageAt, isUwSocketStalled, mergeFreshestTimestamps } from "./uw-socket-stall";
+import { freshestMessageAt, isUwSocketStalled, mergeFreshestTimestamps, UW_SOCKET_FIRST_MSG_GRACE_MS, UW_SOCKET_STALL_OFFHOURS_MS } from "./uw-socket-stall";
 
 const CHANNELS = ["flow_alerts", "market_tide", "gex"] as const;
 
@@ -17,7 +17,7 @@ test("freshestMessageAt: a ts on a channel NOT in the active set is ignored", ()
   assert.equal(freshestMessageAt({ flow_alerts: 10, off_lit_trades: 9_999 }, CHANNELS), 10);
 });
 
-test("isUwSocketStalled: never delivered (null) -> false", () => {
+test("isUwSocketStalled: never delivered, no openedAt -> false (legacy compat)", () => {
   assert.equal(isUwSocketStalled(null, 75_000, 1_000_000), false);
 });
 
@@ -31,6 +31,50 @@ test("isUwSocketStalled: beyond window -> true", () => {
 
 test("isUwSocketStalled: boundary now-freshest === stallMs -> false (strict >)", () => {
   assert.equal(isUwSocketStalled(1_000_000 - 75_000, 75_000, 1_000_000), false);
+});
+
+// --- first-message grace period (silent-connection detection) ---
+
+test("isUwSocketStalled: never delivered + openedAt within grace -> false", () => {
+  const now = 1_000_000;
+  const openedAt = now - 10_000; // 10s ago — within 30s grace
+  assert.equal(isUwSocketStalled(null, 75_000, now, openedAt, UW_SOCKET_FIRST_MSG_GRACE_MS), false);
+});
+
+test("isUwSocketStalled: never delivered + openedAt past grace -> true (silent socket)", () => {
+  const now = 1_000_000;
+  const openedAt = now - 35_000; // 35s ago — past 30s grace
+  assert.equal(isUwSocketStalled(null, 75_000, now, openedAt, UW_SOCKET_FIRST_MSG_GRACE_MS), true);
+});
+
+test("isUwSocketStalled: never delivered + openedAt at boundary -> false (strict >)", () => {
+  const now = 1_000_000;
+  const openedAt = now - UW_SOCKET_FIRST_MSG_GRACE_MS; // exactly at boundary
+  assert.equal(isUwSocketStalled(null, 75_000, now, openedAt, UW_SOCKET_FIRST_MSG_GRACE_MS), false);
+});
+
+test("isUwSocketStalled: has delivered + openedAt has no effect (uses stallMs)", () => {
+  const now = 1_000_000;
+  const freshest = now - 10_000; // within stall window
+  assert.equal(isUwSocketStalled(freshest, 75_000, now, now - 100_000, UW_SOCKET_FIRST_MSG_GRACE_MS), false);
+});
+
+test("UW_SOCKET_FIRST_MSG_GRACE_MS is 30_000", () => {
+  assert.equal(UW_SOCKET_FIRST_MSG_GRACE_MS, 30_000);
+});
+
+test("UW_SOCKET_STALL_OFFHOURS_MS is 5 minutes", () => {
+  assert.equal(UW_SOCKET_STALL_OFFHOURS_MS, 5 * 60_000);
+});
+
+test("isUwSocketStalled: off-hours stall window (5min) within -> false", () => {
+  const now = 1_000_000;
+  assert.equal(isUwSocketStalled(now - 4 * 60_000, UW_SOCKET_STALL_OFFHOURS_MS, now), false);
+});
+
+test("isUwSocketStalled: off-hours stall window (5min) beyond -> true", () => {
+  const now = 1_000_000;
+  assert.equal(isUwSocketStalled(now - 6 * 60_000, UW_SOCKET_STALL_OFFHOURS_MS, now), true);
 });
 
 test("mergeFreshestTimestamps: null handling + max", () => {

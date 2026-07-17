@@ -11,7 +11,10 @@ import {
 } from "@/lib/live-api-integrations";
 import {
   UW_SOCKET_STALL_MS,
+  UW_SOCKET_STALL_OFFHOURS_MS,
+  UW_SOCKET_FIRST_MSG_GRACE_MS,
   freshestMessageAt as freshestFromMap,
+  isUwSocketStalled,
   mergeFreshestTimestamps,
 } from "./uw-socket-stall";
 import { isUwErrorFrame } from "@/lib/ws/uw-frame";
@@ -65,20 +68,15 @@ const CHANNEL_JOIN_NAME: Record<UwWsChannel, string> = Object.fromEntries(
 
 const AUTH_FAILED_BACKOFF_MS = 5 * 60_000;
 
-/** Escape hatch: keep UW socket alive off-hours when set (operator rollback). */
-function uwOffHoursReconnectForced(): boolean {
-  const f = (process.env.UW_WS_OFFHOURS_RECONNECT ?? "").trim().toLowerCase();
-  return f === "1" || f === "true" || f === "yes" || f === "on";
-}
-
-/** May the cluster leader hold / (re)open the UW multiplex socket right now? */
-export function uwSocketGateOpen(isLeader: boolean, forced: boolean, now: Date): boolean {
-  if (!isLeader) return false;
-  return forced || inOptionsMarketHours(now);
-}
-
-function shouldMaintainUwSocket(now = new Date()): boolean {
-  return uwSocketGateOpen(uwIsLeader, uwOffHoursReconnectForced(), now);
+/**
+ * May the cluster leader hold / (re)open the UW multiplex socket right now?
+ * Always true for the leader — the `price` channel delivers spot prices for
+ * SPY/equities after-hours and futures-correlated indices 24/7. Options-only
+ * channels (GEX, flow) go quiet off-hours but that's expected silence, not a
+ * reason to tear down the entire socket.
+ */
+export function uwSocketGateOpen(isLeader: boolean): boolean {
+  return isLeader;
 }
 
 const UW_API_KEY = (process.env.UW_API_KEY ?? "").trim();
@@ -253,6 +251,8 @@ class UwSocketManager {
   private authFailedLogged = false;
   private connectStarted = false;
   private shuttingDown = false;
+  /** Timestamp when the current socket's `onopen` fired — used for first-message grace timeout. */
+  private openedAt: number | null = null;
 
   private channelsWithHandlers(): UwWsChannel[] {
     return ALL_CHANNELS.filter((ch) => (this.handlers.get(ch)?.size ?? 0) > 0);
@@ -283,6 +283,7 @@ class UwSocketManager {
     const ws = this.ws;
     this.ws = null;
     this.connectStarted = false;
+    this.openedAt = null;
     if (ws) {
       // Detach handlers BEFORE closing: the ws close handshake can DEFER the 'close' event up to ~30s
       // on a half-open peer (exactly when reconnectIfStalled tears down), so a still-attached onclose
@@ -308,7 +309,6 @@ class UwSocketManager {
 
   private scheduleReconnect() {
     if (this.shuttingDown) return; // shutting down — do not resurrect the socket
-    if (!shouldMaintainUwSocket()) return; // off-hours / non-leader — defer reconnect
     if (!uwIsLeader) return; // only the cluster leader holds the UW socket; standbys stay closed
     if (this.channelsWithHandlers().length === 0) return;
     this.clearReconnect();
@@ -483,6 +483,7 @@ class UwSocketManager {
         if (this.ws !== ws) return; // superseded socket — ignore late open
         this.connectStarted = false;
         this.reconnectDelay = 1000;
+        this.openedAt = Date.now();
         console.log("[uw-socket] multiplex connected — joining channels");
         this.joinActiveChannels();
       };
@@ -502,6 +503,7 @@ class UwSocketManager {
         // path that bypasses it).
         if (this.ws !== ws) return;
         this.connectStarted = false;
+        this.openedAt = null;
         const reason = event.reason?.trim() || `code=${event.code}`;
         this.lastCloseReason = reason;
         this.ws = null;
@@ -572,20 +574,31 @@ class UwSocketManager {
   }
 
   /**
-   * Half-open watchdog: when the socket is OPEN but has stopped delivering
-   * (no message on any channel-with-handlers within the stall window despite
-   * prior delivery), tear it down and reconnect. A socket that has never
-   * delivered yet (freshest == null) is left alone so a freshly opened socket
-   * is not churned before first data arrives.
+   * Half-open watchdog. Two stall modes:
+   * 1. Had data before: stalled when freshest delivery > `stallMs` ago.
+   * 2. Never received ANY data: stalled when socket has been open >
+   *    `firstMsgGraceMs` — catches UW silently accepting a duplicate API-key
+   *    connection and never sending data (the connection looks healthy but is
+   *    dead). Without this, the socket sat OPEN+silent indefinitely after ECS
+   *    deploy races.
    */
-  reconnectIfStalled(freshestMessageAt: number | null, stallMs: number, now = Date.now()): boolean {
+  reconnectIfStalled(
+    freshestMessageAt: number | null,
+    stallMs: number,
+    now = Date.now(),
+    firstMsgGraceMs?: number
+  ): boolean {
     if (!this.isOpen()) return false;
-    if (!inOptionsMarketHours(new Date(now)) && !uwOffHoursReconnectForced()) return false;
     if (this.channelsWithHandlers().length === 0) return false;
-    if (freshestMessageAt == null) return false;
-    if (now - freshestMessageAt <= stallMs) return false;
+    if (!isUwSocketStalled(freshestMessageAt, stallMs, now, this.openedAt, firstMsgGraceMs)) return false;
+    const silentConnect = freshestMessageAt == null;
+    const elapsed = silentConnect
+      ? Math.round((now - (this.openedAt ?? now)) / 1000)
+      : Math.round((now - freshestMessageAt) / 1000);
     console.warn(
-      `[uw-socket] stall watchdog — OPEN but no data for ${Math.round((now - freshestMessageAt) / 1000)}s, reconnecting`
+      silentConnect
+        ? `[uw-socket] stall watchdog — OPEN ${elapsed}s with ZERO messages, reconnecting (possible API-key contention)`
+        : `[uw-socket] stall watchdog — OPEN but no data for ${elapsed}s, reconnecting`
     );
     this.reconnectDelay = 1000;
     this.teardownSocket();
@@ -605,6 +618,7 @@ class UwSocketManager {
     const ws = this.ws;
     this.ws = null;
     this.connectStarted = false;
+    this.openedAt = null;
     if (ws) {
       // Detach handlers first so onclose can't schedule a reconnect.
       try {
@@ -1283,13 +1297,12 @@ async function runUwReconcileTick(): Promise<void> {
     uwSocket.standDown();
     return;
   }
-  if (!shouldMaintainUwSocket()) {
-    uwSocket.standDown();
-    return;
-  }
   uwSocket.ensureConnected();
   uwSocket.heartbeat();
-  uwSocket.reconnectIfStalled(freshestUwMessageAt(), UW_SOCKET_STALL_MS);
+  // Off-hours: price channel still delivers but options channels go quiet —
+  // use a wider stall window so expected AH silence doesn't trigger reconnects.
+  const stallMs = inOptionsMarketHours() ? UW_SOCKET_STALL_MS : UW_SOCKET_STALL_OFFHOURS_MS;
+  uwSocket.reconnectIfStalled(freshestUwMessageAt(), stallMs, Date.now(), UW_SOCKET_FIRST_MSG_GRACE_MS);
   pruneIdleDynamicGexTickers();
 }
 
