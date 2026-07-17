@@ -1077,14 +1077,36 @@ export type RankCandidatesResult = {
   exclusionReason?: string;
 };
 
+/** Penalty applied to fundamentally-flagged candidates in ranking (soft demotion, not hard cut). */
+const FUNDAMENTAL_BLOCK_PENALTY = 10;
+/** Bonus per confirming signal dimension (≥ threshold). Rewards multi-signal confluence. */
+const CONFIRMING_SIGNAL_BONUS = 2;
+/** Minimum confirming signals before the bonus kicks in (avoid rewarding noise). */
+const CONFIRMING_SIGNAL_FLOOR = 3;
+
+/**
+ * Effective ranking score: base score + confluence bonus − fundamental penalty.
+ * Multi-signal confluence (flow + tech + positioning + news all confirming) is rewarded
+ * because broad agreement across independent data sources is a stronger signal than
+ * depth in one dimension alone. Fundamental flags are a point penalty, not a partition.
+ */
+export function rankingScore(c: ScoredCandidate): number {
+  let effective = c.score;
+  if (c.fundamental_block) effective -= FUNDAMENTAL_BLOCK_PENALTY;
+  const signals = c.confirming_signals ?? 0;
+  if (signals >= CONFIRMING_SIGNAL_FLOOR) {
+    effective += (signals - CONFIRMING_SIGNAL_FLOOR + 1) * CONFIRMING_SIGNAL_BONUS;
+  }
+  return effective;
+}
+
 /**
  * Rank candidates for synthesis. ONLY `trading_halt` is a hard exclusion — you genuinely cannot trade
- * a halted name. `fundamental_block` (extreme P/E, negative ROE, elevated D/E) is a SOFT demotion, not
- * a hard cut: a high-flow momentum name with a stretched P/E is exactly the kind of forward-looking
+ * a halted name. `fundamental_block` (extreme P/E, negative ROE, elevated D/E) is a SOFT demotion via
+ * a point penalty: a high-flow momentum name with a stretched P/E is exactly the kind of forward-looking
  * setup Night Hawk exists to surface, and the critic + Claude still vet every play downstream. The old
- * behaviour hard-cut every fundamental_block candidate, which on a momentum-heavy session could zero
- * the entire pool (or strip out the strongest-flow names, leaving a thin feed that the critic then
- * emptied). Demoting instead keeps the feed populated while still preferring clean fundamentals. (#77)
+ * partition sort hard-cut flagged candidates below every clean candidate regardless of score, which on
+ * a momentum-heavy session suppressed the strongest-flow names behind weak clean ones (#77).
  */
 export function rankCandidates(
   scored: ScoredCandidate[],
@@ -1092,14 +1114,16 @@ export function rankCandidates(
 ): RankCandidatesResult {
   const tradable = scored.filter((c) => !c.trading_halt);
 
-  // Sort: clean fundamentals first, then by score. fundamental_block names sink below their clean
-  // peers but remain eligible — they only get used when there aren't enough clean candidates to fill.
+  // Effective ranking score: base score + confluence bonus − fundamental penalty.
+  // The old partition sort (clean-first, then by score) made fundamental_block a HARD
+  // cut in practice — a clean ticker scoring 25 outranked a flagged ticker scoring 85.
+  // A point penalty within the score sort preserves the intent (prefer clean) without
+  // suppressing strong-flow momentum names behind weak clean ones.
   const ranked = [...tradable]
     .sort((a, b) => {
-      const blockA = a.fundamental_block ? 1 : 0;
-      const blockB = b.fundamental_block ? 1 : 0;
-      if (blockA !== blockB) return blockA - blockB; // clean (0) before blocked (1)
-      return b.score - a.score;
+      const effectiveA = rankingScore(a);
+      const effectiveB = rankingScore(b);
+      return effectiveB - effectiveA;
     })
     .slice(0, max);
 
