@@ -248,6 +248,7 @@ export function HelixFlowTable({
   filteredCount,
   hasMorePages = false,
   loadingOlder = false,
+  autoBackfilling = false,
   onLoadOlder,
   totalLoaded,
 }: {
@@ -274,6 +275,8 @@ export function HelixFlowTable({
   /** Server cursor pagination — more history exists in Postgres */
   hasMorePages?: boolean;
   loadingOlder?: boolean;
+  /** True while auto-backfill is fetching older pages for an active filter. */
+  autoBackfilling?: boolean;
   onLoadOlder?: () => void;
   /** Total rows loaded in memory (may exceed filtered count) */
   totalLoaded?: number;
@@ -542,7 +545,13 @@ export function HelixFlowTable({
             disabled={loadingOlder}
             onClick={onLoadOlder}
           >
-            {loadingOlder ? "Loading older prints…" : "Load older prints from history"}
+            {loadingOlder
+              ? autoBackfilling
+                ? "Loading matching prints…"
+                : "Loading older prints…"
+              : autoBackfilling
+                ? "Loading matching prints…"
+                : "Load older prints from history"}
           </button>
         )}
       </div>

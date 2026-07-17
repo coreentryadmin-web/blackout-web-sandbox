@@ -52,6 +52,11 @@ export async function GET(req: NextRequest) {
   const beforeRaw = sp.get("before")?.trim();
   const before =
     beforeRaw && Number.isFinite(new Date(beforeRaw).getTime()) ? beforeRaw : undefined;
+  const maxDteRaw = sp.get("max_dte");
+  const max_dte =
+    maxDteRaw != null && maxDteRaw !== "" && Number.isFinite(Number(maxDteRaw))
+      ? Math.max(0, Math.floor(Number(maxDteRaw)))
+      : undefined;
 
   if (dbConfigured()) {
     maybeRunFlowIngest().catch((err) => console.error("[flows] lazy ingest error:", err));
@@ -65,6 +70,7 @@ export async function GET(req: NextRequest) {
           since_hours,
           order: "recent",
           before,
+          max_dte,
         }),
         before
           ? Promise.resolve(null)
@@ -78,7 +84,7 @@ export async function GET(req: NextRequest) {
       const enrichedFlows = await enrichFlowsWithGex(page, 8);
 
       console.log(
-        `[market/flows] postgres ok — ${page.length} rows (min_premium=${min_premium}, since_hours=${since_hours}, before=${before ? "yes" : "no"})`
+        `[market/flows] postgres ok — ${page.length} rows (min_premium=${min_premium}, since_hours=${since_hours}, max_dte=${max_dte ?? "any"}, before=${before ? "yes" : "no"})`
       );
 
       return {
@@ -96,7 +102,7 @@ export async function GET(req: NextRequest) {
       const payload = before
         ? await runQuery()
         : await serverCache(
-            `flows:pg:${since_hours}:${min_premium ?? 0}:${ticker ?? "all"}:${pageLimit}`,
+            `flows:pg:${since_hours}:${min_premium ?? 0}:${ticker ?? "all"}:${max_dte ?? "any"}:${pageLimit}`,
             TTL.DARK_POOL,
             runQuery
           );

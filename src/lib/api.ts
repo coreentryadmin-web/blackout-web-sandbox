@@ -253,6 +253,8 @@ export async function fetchFlows(params?: {
   ticker?: string;
   min_premium?: number;
   since_hours?: number;
+  /** Scope to expiries within N ET calendar days (0 = 0DTE only). */
+  max_dte?: number;
   /** ISO cursor — fetch prints strictly older than this timestamp. */
   before?: string;
 }): Promise<FlowsResponse> {
@@ -261,6 +263,7 @@ export async function fetchFlows(params?: {
   if (params?.ticker) qs.set("ticker", params.ticker);
   if (params?.min_premium) qs.set("min_premium", String(params.min_premium));
   if (params?.since_hours) qs.set("since_hours", String(params.since_hours));
+  if (params?.max_dte != null && params.max_dte >= 0) qs.set("max_dte", String(params.max_dte));
   if (params?.before) qs.set("before", params.before);
   const query = qs.toString();
 

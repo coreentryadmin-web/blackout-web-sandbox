@@ -24,6 +24,10 @@ import {
   mergeFlowTapeHead,
 } from "@/features/helix/lib/helix-flow-tape-merge";
 import {
+  dteFilterMaxDte,
+  shouldAutoBackfillTape,
+} from "@/features/helix/lib/helix-flow-filter-backfill";
+import {
   HELIX_FLOW_DEFAULT_SINCE_HOURS,
   HELIX_FLOW_PAGE_SIZE,
 } from "@/features/helix/lib/helix-flow-limits";
@@ -155,6 +159,7 @@ export function FlowFeed() {
   const [helixToolsOpen, setHelixToolsOpen] = useState(false);
   const [loading, setLoading]             = useState(true);
   const [loadingOlder, setLoadingOlder]   = useState(false);
+  const [autoBackfilling, setAutoBackfilling] = useState(false);
   const [hasMorePages, setHasMorePages]   = useState(false);
   const [nextBefore, setNextBefore]       = useState<string | null>(null);
   const [live, setLive]                   = useState(false);
@@ -195,6 +200,8 @@ export function FlowFeed() {
   const seenRef         = useRef(new Set<string>());
   const hasOlderPagesRef = useRef(false);
   const loadGenerationRef = useRef(0);
+  const filterBackfillPagesRef = useRef(0);
+  const filterBackfillInFlightRef = useRef(false);
   const replaySourceRef = useRef<FlowAlert[]>([]);
   const replayIdxRef    = useRef(0);
   const replayTimerRef  = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -499,8 +506,9 @@ export function FlowFeed() {
       since_hours: HELIX_FLOW_DEFAULT_SINCE_HOURS,
       min_premium: Math.max(FLOOR_PREMIUM, minPremium),
       ticker: tickerFilter || undefined,
+      max_dte: dteFilterMaxDte(dteFilter),
     }),
-    [minPremium, tickerFilter]
+    [minPremium, tickerFilter, dteFilter]
   );
 
   // ── Data loading ──────────────────────────────────────────────────────────
@@ -571,6 +579,56 @@ export function FlowFeed() {
   }, [flowFetchParams]);
 
   useEffect(() => { setLoading(true); loadFlows(); }, [loadFlows]);
+
+  const tapeFilterSnapshot = useMemo(
+    () => ({
+      dteFilter,
+      typeFilter,
+      whalesOnly,
+      indicesOnly,
+      watchlistOnly,
+      tickerFilter,
+    }),
+    [dteFilter, typeFilter, whalesOnly, indicesOnly, watchlistOnly, tickerFilter]
+  );
+
+  useEffect(() => {
+    filterBackfillPagesRef.current = 0;
+    filterBackfillInFlightRef.current = false;
+  }, [tapeFilterSnapshot]);
+
+  useEffect(() => {
+    if (filterBackfillInFlightRef.current) return;
+    if (
+      !shouldAutoBackfillTape({
+        filters: tapeFilterSnapshot,
+        filteredCount: filteredTapeBuffer.length,
+        hasMorePages,
+        loading,
+        loadingOlder,
+        replayMode,
+        pagesLoaded: filterBackfillPagesRef.current,
+      })
+    ) {
+      return;
+    }
+
+    filterBackfillInFlightRef.current = true;
+    filterBackfillPagesRef.current += 1;
+    setAutoBackfilling(true);
+    void loadOlderFlows().finally(() => {
+      filterBackfillInFlightRef.current = false;
+      setAutoBackfilling(false);
+    });
+  }, [
+    tapeFilterSnapshot,
+    filteredTapeBuffer.length,
+    hasMorePages,
+    loading,
+    loadingOlder,
+    replayMode,
+    loadOlderFlows,
+  ]);
 
   useEffect(() => {
     let poll: ReturnType<typeof setInterval> | null = null;
@@ -726,7 +784,8 @@ export function FlowFeed() {
     watchlistTickers: watchlist.watchlistSet,
     onToggleStar: watchlist.toggle,
     hasMorePages: !replayMode && hasMorePages,
-    loadingOlder,
+    loadingOlder: loadingOlder || autoBackfilling,
+    autoBackfilling,
     onLoadOlder: loadOlderFlows,
     totalLoaded: tapeBuffer.length,
   };
