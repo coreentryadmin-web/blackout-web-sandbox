@@ -304,3 +304,57 @@ test("thesis explains flow/tech divergence when direction opposes trend (PR-N28)
   const { thesis } = buildDeterministicThesis(s, d);
   assert.match(thesis, /Flow conviction overrides bearish technicals/);
 });
+
+test("LONG target is pushed above call strike + 2×premium when stock target < strike (PR-N29)", () => {
+  // High-priced stock where ATR-based target lands below the ATM strike
+  const highChain: EditionChainData = {
+    spot: 1175,
+    rows: [row(1260, { oi: 5_000, callAsk: 7.5, callBid: 7.0 })],
+  };
+  const ranked = [scored("HPS", "long", 65)];
+  const chains = { HPS: highChain };
+  const dossierMap = {
+    HPS: dossier("HPS", 1175, {
+      tech: {
+        ...dossier("HPS", 1175).tech!,
+        // Tight S/R so stock target < strike
+        resistance_levels: [1249],
+        support_levels: [1100],
+        atr14: 50,
+      },
+    } as any),
+  };
+  const { plays } = buildDeterministicEditionPlays({ ranked, dossierMap, chains });
+  assert.equal(plays.length, 1);
+  const p = plays[0]!;
+  const target = Number(String(p.target).replace(/[$,]/g, ""));
+  // Target must be at least strike + 2×premium = 1260 + 2×7.25 = 1274.50
+  assert.ok(target >= 1260, `target ${target} should be >= strike 1260`);
+  assert.ok(target >= 1274, `target ${target} should be >= strike + 2×premium ~1274.50`);
+});
+
+test("SHORT target is pushed below put strike - 2×premium when stock target > strike (PR-N29)", () => {
+  const highChain: EditionChainData = {
+    spot: 1175,
+    rows: [row(1100, { oi: 5_000, putAsk: 8.0, putBid: 7.5 })],
+  };
+  const ranked = [scored("HPS", "short", 65)];
+  const chains = { HPS: highChain };
+  const dossierMap = {
+    HPS: dossier("HPS", 1175, {
+      tech: {
+        ...dossier("HPS", 1175).tech!,
+        resistance_levels: [1200],
+        support_levels: [1150],
+        atr14: 20,
+      },
+    } as any),
+  };
+  const { plays } = buildDeterministicEditionPlays({ ranked, dossierMap, chains });
+  assert.equal(plays.length, 1);
+  const p = plays[0]!;
+  const target = Number(String(p.target).replace(/[$,]/g, ""));
+  // Target must be at most strike - 2×premium = 1100 - 2×7.75 = 1084.50
+  assert.ok(target <= 1100, `target ${target} should be <= strike 1100`);
+  assert.ok(target <= 1085, `target ${target} should be <= strike - 2×premium ~1084.50`);
+});
