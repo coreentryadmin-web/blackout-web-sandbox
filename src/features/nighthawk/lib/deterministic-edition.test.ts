@@ -240,6 +240,35 @@ test("pickChainContract returns null only when no rows have any quotes", () => {
   assert.equal(pickChainContract(chain, "long"), null);
 });
 
+test("pickChainContract prefers 5+ DTE over near-term contracts (PR-N26)", () => {
+  // Short-dated (3 days out) vs long-dated (30 days out) — should pick the 30-day
+  const today = new Date();
+  const shortExpiry = new Date(today.getTime() + 3 * 86400_000).toISOString().slice(0, 10);
+  const longExpiry = new Date(today.getTime() + 30 * 86400_000).toISOString().slice(0, 10);
+  const chain: EditionChainData = {
+    spot: 100,
+    rows: [
+      row(100, { oi: 5_000, callAsk: 4, callBid: 3.6, expiry: shortExpiry }),
+      row(100, { oi: 5_000, callAsk: 5, callBid: 4.6, expiry: longExpiry }),
+    ],
+  };
+  const c = pickChainContract(chain, "long");
+  assert.ok(c != null);
+  assert.equal(c!.expiry, longExpiry, "should prefer the longer-dated contract");
+});
+
+test("pickChainContract falls back to short-dated when no 5+ DTE exists (PR-N26)", () => {
+  const today = new Date();
+  const shortExpiry = new Date(today.getTime() + 2 * 86400_000).toISOString().slice(0, 10);
+  const chain: EditionChainData = {
+    spot: 100,
+    rows: [row(100, { oi: 5_000, callAsk: 4, callBid: 3.6, expiry: shortExpiry })],
+  };
+  const c = pickChainContract(chain, "long");
+  assert.ok(c != null, "should fall back to short-dated rather than null");
+  assert.equal(c!.expiry, shortExpiry);
+});
+
 test("thesis is grounded in the score breakdown and cites the leading driver", () => {
   const s = scored("XYZ", "long", 66);
   const { thesis, key_signal } = buildDeterministicThesis(s, dossier("XYZ", 120));
