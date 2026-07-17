@@ -172,7 +172,7 @@ test("retroWouldBlock: uses the LIVE thresholds against the PINNED geometry; no 
   assert.equal(retroWouldBlock(detached, "band_detached"), true);
   assert.equal(retroWouldBlock(healthy, "band_detached"), false);
   assert.equal(retroWouldBlock(row({ publish_context: null }), "band_detached"), null);
-  // Target gate: |110-102|/3 = 2.67× > 2.0× → block; |110-102|/8 = 1× → pass.
+  // Target gate: |110-102|/3 = 2.67× > 2.5× → block; |110-102|/8 = 1× → pass.
   assert.equal(retroWouldBlock(healthy, "target_unreachable"), true);
   assert.equal(
     retroWouldBlock(row({ publish_context: { context_version: 2, atr14: 8 } }), "target_unreachable"),

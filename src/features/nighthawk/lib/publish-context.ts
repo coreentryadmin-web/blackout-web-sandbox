@@ -67,6 +67,30 @@ function finiteOrNull(n: unknown): number | null {
   return typeof n === "number" && Number.isFinite(n) ? n : null;
 }
 
+import type { TechnicalCard } from "./technicals";
+
+/**
+ * PR-N21: estimate ATR when the real ATR14 is unavailable (Polygon returned fewer than
+ * 14 daily bars). Uses prior-day H/L range when available, else 1.5% of spot — conservative
+ * defaults that let the target_unreachable gate evaluate rather than fail-closed with
+ * geometry_unknown. The estimate is CLEARLY labeled in the geometry so calibration knows
+ * it's synthetic.
+ */
+function estimateAtr(
+  tech: TechnicalCard | null | undefined,
+  spot: number | null
+): number | null {
+  const pdHigh = finiteOrNull(tech?.prior_day?.high);
+  const pdLow = finiteOrNull(tech?.prior_day?.low);
+  if (pdHigh != null && pdLow != null && pdHigh > pdLow) {
+    return Number((pdHigh - pdLow).toFixed(4));
+  }
+  if (spot != null && spot > 0) {
+    return Number((spot * 0.015).toFixed(4));
+  }
+  return null;
+}
+
 /**
  * The band/target/stop geometry BOTH the publish pin and the publish gates (PR-N3,
  * publish-gates.ts) read — one computation, so the number the gate thresholds on is
@@ -117,7 +141,7 @@ export function computeNighthawkPublishGeometry(
     direction,
     spot,
     prior_close: finiteOrNull(tech?.prior_day?.close),
-    atr14: finiteOrNull(tech?.atr14),
+    atr14: finiteOrNull(tech?.atr14) ?? estimateAtr(tech, spot),
     quote_session: typeof tech?.price_session === "string" ? tech.price_session : null,
     entry_range_low: levels.entry_range_low,
     entry_range_high: levels.entry_range_high,
