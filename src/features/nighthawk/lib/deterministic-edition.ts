@@ -32,7 +32,7 @@ import { buildDirectionalStockLevels, computeRiskReward } from "./play-levels";
 import { applyPremiumCapToPlay, validatePlayGeometry, canonicalTicker } from "./play-constraints";
 import { groundPlays } from "./grounding";
 import { GROUNDING_MIN_OI, tieredMinOi } from "./grounding";
-import { MAX_OPTION_PREMIUM_PER_SHARE, MIN_PUBLISH_SCORE } from "./constants";
+import { MAX_OPTION_PREMIUM_PER_SHARE, MIN_PUBLISH_SCORE, DIVERSITY_HEDGE_FLOOR } from "./constants";
 import { todayEtYmd } from "@/lib/providers/spx-session";
 
 /** Default number of plays a full edition publishes. Mirrors the Claude path's top-5 shape. */
@@ -488,9 +488,12 @@ export function buildDeterministicEditionPlays(params: {
     (a, b) => (b.score ?? 0) - (a.score ?? 0)
   );
 
-  // PR-N15: directional diversity — if all plays are the same direction and we have room,
-  // ensure at least one contrarian play for hedge/balance. A 5-play all-LONG book in a
-  // bullish market leaves members with zero downside protection.
+  // PR-N15 + PR-N31: directional diversity — if all plays are the same direction and we have
+  // room, ensure at least one contrarian play for hedge/balance. A 5-play all-LONG book in a
+  // bullish market leaves members with zero downside protection. PR-N31: use DIVERSITY_HEDGE_FLOOR
+  // (20) instead of MIN_PUBLISH_SCORE (35) — in a one-directional market the normal floor blocks
+  // every contrarian candidate. The hedge slot also gets a gate_warning so members know it's a
+  // minority-view hedge, not a primary conviction play.
   let finalPlays = merged.slice(0, target);
   if (finalPlays.length >= 4) {
     const dirs = new Set(finalPlays.map((p) => p.direction));
@@ -499,7 +502,7 @@ export function buildDeterministicEditionPlays(params: {
       const oppositeDir = dominant === "LONG" ? "short" : "long";
       for (const scored of params.ranked) {
         if (scored.trading_halt) continue;
-        if (scored.score < MIN_PUBLISH_SCORE) continue;
+        if (scored.score < DIVERSITY_HEDGE_FLOOR) continue;
         if (scored.direction !== oppositeDir) continue;
         const t = scored.ticker.toUpperCase();
         if (selectedFamilies.has(canonicalTicker(t))) continue;
@@ -511,8 +514,10 @@ export function buildDeterministicEditionPlays(params: {
         const lvl = resolveLevels(dos, scored.direction, sp);
         const p = buildPlay(scored, dos, ctr, lvl, target);
         if (!validatePlayGeometry(p).ok) continue;
-        // Replace the weakest same-direction play with this contrarian play
-        finalPlays[finalPlays.length - 1] = p;
+        const hedgeWarnings = p.gate_warnings ? [...p.gate_warnings] : [];
+        hedgeWarnings.push(`Hedge/contrarian play (score ${scored.score}) — minority-view balance against ${dominant} book`);
+        finalPlays[finalPlays.length - 1] = { ...p, gate_warnings: hedgeWarnings };
+        console.info(`[nighthawk/edition] diversity swap: replaced #${finalPlays.length} with ${scored.ticker} ${oppositeDir} (score ${scored.score}) as hedge against all-${dominant} book`);
         break;
       }
     }

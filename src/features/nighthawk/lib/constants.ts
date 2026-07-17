@@ -62,6 +62,12 @@ export const EDITION_MIN_PUBLISH_PLAYS = 3;
  *  35 catches clearly weak candidates while keeping near-prime plays that add directional
  *  diversity. Better to publish 3 strong plays than 5 where half are garbage. */
 export const MIN_PUBLISH_SCORE = 35;
+/** PR-N31: lower floor for the diversity/hedge slot. In a one-directional market the normal
+ *  35 floor blocks every contrarian candidate, leaving a 5-play all-LONG (or all-SHORT) book
+ *  with zero downside protection. The hedge slot uses this softer floor — still high enough to
+ *  reject garbage, but low enough to let a legitimate contrarian play through when flow or
+ *  technicals support a minority view. */
+export const DIVERSITY_HEDGE_FLOOR = 20;
 /** Overshoot sent through synthesis + critic — critic cuts weak plays with no backfill. */
 export const EDITION_SYNTHESIS_OVERSHOOT = 9;
 /** Stock tickers to prefetch option chains for (buffer above 5 final plays).
