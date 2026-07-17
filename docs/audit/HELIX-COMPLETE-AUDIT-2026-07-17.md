@@ -56,29 +56,33 @@ FlowFeed.tsx ──► applyTapeFilters ──► HelixFlowTable (RENDER_LIMIT v
 
 ---
 
-## 2. Why not “all flows ever”?
+## 2. Why not “all flows ever”? (updated — pagination shipped)
 
 ### 2.1 Ingest floor ($200K)
 
-`persistAndPublishFlowAlert` drops `flow.premium < MIN_PREMIUM` (default **$200,000**). The UI floor in `FlowFeed` (`FLOOR_PREMIUM = 200_000`) is intentionally aligned. Lowering the UI slider below $200K without changing server env **cannot** show more prints — they were never stored.
+Unchanged — prints below **$200,000** are never persisted.
 
-### 2.2 API window + limit
+### 2.2 API window + paging (this PR)
 
-Postgres query uses `since_hours` (default **168h / 7 days** on `/flows`) and `LIMIT` (default **500**, max **1000**). This is a **recency-ordered** window, not full history. Heavy tape days can have thousands of qualifying prints; only the newest N survive the cap.
+| Setting | Value |
+|---------|-------|
+| Page size | **500** (`HELIX_FLOW_PAGE_SIZE`) |
+| Max per request | **5000** (`HELIX_FLOW_MAX_LIMIT`) |
+| Lookback | **168h default**, **720h max** (`since_hours`) |
+| Cursor | `?before=<ISO>` — next older page |
 
-**Recommendation (P2):** cursor/`before=` pagination API + optional “deep history” mode for power users.
+Response fields: `has_more`, `next_before`.
 
-### 2.3 Client render cap (250)
+The HELIX client:
 
-`HelixFlowTable.tsx` sets `RENDER_LIMIT = 250` to avoid main-thread jank (each row is a CSS grid + signal pills). “Load more” adds +250 from **already-fetched** client data — no extra API call.
+1. Loads the newest **500** on mount  
+2. **“Load older prints from history”** fetches the next page (500 each click, up to 30 days of history)  
+3. **30s poll** merges the fresh head without dropping already-loaded older pages  
+4. **Virtualized table** renders the full in-memory buffer (no 250-row DOM cap)
 
-Legacy `FlowAlertStream.tsx` still uses **150** — unused on the current `/flows` desk but worth consolidating if that component is revived.
+### 2.3 Legacy 1000 hard cap — removed
 
-**Recommendation (P2):** virtualized table (e.g. `@tanstack/react-virtual`) to show 1000+ rows without DOM blow-up.
-
-### 2.4 This PR
-
-- Client poll now requests **`limit: 1000`** so the in-memory buffer matches the API max.
+The old `Math.min(..., 1000)` route clamp is replaced by **5000** with cursor pagination as the primary path to depth.
 
 ---
 

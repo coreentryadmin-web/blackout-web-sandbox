@@ -239,20 +239,32 @@ export interface DarkPoolTickerSnapshot {
 }
 
 /** Flow tape — engine Postgres ingest first, UW direct fallback. */
+export type FlowsResponse = {
+  flows: FlowAlert[];
+  count: number;
+  has_more?: boolean;
+  next_before?: string | null;
+  source?: string;
+  error?: string;
+};
+
 export async function fetchFlows(params?: {
   limit?: number;
   ticker?: string;
   min_premium?: number;
-}) {
+  since_hours?: number;
+  /** ISO cursor — fetch prints strictly older than this timestamp. */
+  before?: string;
+}): Promise<FlowsResponse> {
   const qs = new URLSearchParams();
   if (params?.limit) qs.set("limit", String(params.limit));
   if (params?.ticker) qs.set("ticker", params.ticker);
   if (params?.min_premium) qs.set("min_premium", String(params.min_premium));
+  if (params?.since_hours) qs.set("since_hours", String(params.since_hours));
+  if (params?.before) qs.set("before", params.before);
   const query = qs.toString();
 
-  return marketFetch<{ flows: FlowAlert[]; count: number; source?: string }>(
-    `/flows${query ? `?${query}` : ""}`
-  );
+  return marketFetch<FlowsResponse>(`/flows${query ? `?${query}` : ""}`);
 }
 
 export interface OptionContractIntradayRow {
