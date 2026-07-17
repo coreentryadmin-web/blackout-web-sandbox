@@ -250,16 +250,20 @@ export function buildDeterministicEditionPlays(params: {
   dossierMap: Record<string, TickerDossier>;
   chains: Record<string, EditionChainData>;
   target?: number;
-}): { plays: PlaybookPlay[]; funnel: { candidates: number; contract_ok: number; stock_only: number; geometry_ok: number; premium_ok: number; grounded: number; dropped_ungrounded: number } } {
+}): { plays: PlaybookPlay[]; funnel: { candidates: number; contract_ok: number; stock_only: number; no_chain: number; no_spot: number; premium_capped: number; geometry_fail: number; geometry_ok: number; premium_ok: number; grounded: number; dropped_ungrounded: number } } {
   const target = params.target ?? DETERMINISTIC_EDITION_TARGET;
-  // PR-N15: increased buffer from target+6 to target+12 — with more candidates trying,
-  // grounding/sector-cap/publish-gate drops are absorbed without emptying the book.
-  const buffer = target + 12;
+  // PR-N18: increased buffer from target+12 to target+20 — with 60 candidates and wider
+  // chain coverage, grounding/geometry drops are absorbed without emptying the book.
+  const buffer = target + 20;
 
   let contractOk = 0;
   let stockOnly = 0;
   let geometryOk = 0;
   let premiumOk = 0;
+  let noChainCount = 0;
+  let noSpotCount = 0;
+  let premiumCapCount = 0;
+  let geometryFailCount = 0;
   const built: PlaybookPlay[] = [];
   const selectedFamilies = new Set<string>();
 
@@ -273,28 +277,38 @@ export function buildDeterministicEditionPlays(params: {
     const dossier = params.dossierMap[ticker] ?? params.dossierMap[scored.ticker];
     const spot = chain?.spot ?? dossier?.tech?.price ?? null;
 
-    // PR-N15: option contract is now OPTIONAL — a strong stock setup publishes even when
-    // no affordable option exists. The geometry gate is the only hard requirement.
     const contract = chain ? pickChainContract(chain, scored.direction) : null;
     if (contract) {
       contractOk += 1;
     } else {
-      // No chain or no affordable contract — still build as stock-only play
-      if (spot == null || !Number.isFinite(spot) || spot <= 0) continue;
+      if (!chain) noChainCount += 1;
+      if (spot == null || !Number.isFinite(spot) || spot <= 0) {
+        noSpotCount += 1;
+        continue;
+      }
       stockOnly += 1;
     }
 
     const levels = resolveLevels(dossier, scored.direction, spot);
     const play = buildPlay(scored, dossier, contract, levels, built.length + 1);
 
-    if (contract && play.premium_cap_ok === false) continue;
+    if (contract && play.premium_cap_ok === false) {
+      premiumCapCount += 1;
+      continue;
+    }
     premiumOk += 1;
 
-    if (!validatePlayGeometry(play).ok) continue;
+    const geom = validatePlayGeometry(play);
+    if (!geom.ok) {
+      geometryFailCount += 1;
+      continue;
+    }
     geometryOk += 1;
     built.push(play);
     selectedFamilies.add(canon);
   }
+
+  console.info(`[nighthawk/det-edition] funnel: ${params.ranked.length} candidates → chains for ${Object.keys(params.chains).length} tickers → ${contractOk} with contract, ${stockOnly} stock-only, ${noChainCount} no chain, ${noSpotCount} no spot, ${premiumCapCount} premium-capped, ${geometryFailCount} geometry-fail → ${built.length} built`);
 
   // Ground survivors that HAVE chain contracts (stock-only plays skip grounding since
   // there's no contract to reconcile — their levels are already from real S/R data).
@@ -344,6 +358,10 @@ export function buildDeterministicEditionPlays(params: {
       candidates: params.ranked.length,
       contract_ok: contractOk,
       stock_only: stockOnly,
+      no_chain: noChainCount,
+      no_spot: noSpotCount,
+      premium_capped: premiumCapCount,
+      geometry_fail: geometryFailCount,
       geometry_ok: geometryOk,
       premium_ok: premiumOk,
       grounded: summary.grounded,
