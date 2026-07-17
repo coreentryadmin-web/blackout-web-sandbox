@@ -100,14 +100,8 @@ function releaseStocksLead(): void {
     .catch(() => undefined);
 }
 
-function offHoursReconnectForced(): boolean {
-  const f = (process.env.STOCKS_WS_OFFHOURS_RECONNECT ?? "").trim().toLowerCase();
-  return f === "1" || f === "true" || f === "yes" || f === "on";
-}
-
-function shouldMaintainSocket(now = new Date()): boolean {
-  if (!stocksIsLeader) return false;
-  return offHoursReconnectForced() || inOptionsMarketHours(now);
+function shouldMaintainSocket(): boolean {
+  return stocksIsLeader;
 }
 
 let stocksWs: WebSocket | null = null;
@@ -144,6 +138,9 @@ function startStocksWatchdog() {
   if (stocksWatchdog) return;
   stocksWatchdog = setInterval(() => {
     if (stocksShuttingDown || !shouldMaintainSocket()) return;
+    // Off-hours silence is expected (no trades), not a stall — only treat
+    // silence as a feed stall during RTH when A.* should be streaming.
+    if (!inOptionsMarketHours()) return;
     // Stall detection: use the most recent of ANY message (agg or LULD)
     const at = Math.max(lastStocksMessageAt, luldHaltsStore.last_message_at);
     if (stocksWs?.readyState === WebSocket.OPEN && at > 0 && Date.now() - at > STOCKS_STALL_MS) {
