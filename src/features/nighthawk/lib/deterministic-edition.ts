@@ -42,8 +42,10 @@ type PickedContract = {
   strike: number;
   side: "call" | "put";
   expiry: string;
-  /** Per-share premium (mid when both sides quote, else the ask). Always ≤ the premium cap. */
+  /** Per-share premium (mid when both sides quote, else the ask). */
   premium: number;
+  /** When set, the contract didn't clear the strict gates — members see a caveat. */
+  caveat?: "premium_high" | "low_liquidity" | "premium_high_low_liquidity";
 };
 
 function firstFinite(nums: Array<number | null | undefined> | undefined): number | null {
@@ -70,16 +72,46 @@ function contractOi(row: ChainStrikeRow, side: "call" | "put"): number {
 }
 
 /** Format a strike for the option-card string so parseOptionsContract can re-read it. Integers stay
- *  integers ("$120"); fractional strikes keep up to two decimals with no trailing zeros ("$122.5"). */
+ *  integers ("120"); fractional strikes keep up to two decimals with no trailing zeros ("122.5"). */
 function formatStrike(strike: number): string {
   return Number.isInteger(strike) ? String(strike) : String(Number(strike.toFixed(2)));
 }
 
+const MONTH_NAMES = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"] as const;
+
+/** Format ISO date "2026-07-18" → "Jul 18" for compact, parseable display. */
+function shortExpiry(iso: string): string {
+  const parts = iso.split("-");
+  if (parts.length < 3) return iso;
+  const monthIdx = parseInt(parts[1]!, 10) - 1;
+  const day = parseInt(parts[2]!, 10);
+  if (monthIdx < 0 || monthIdx > 11 || !Number.isFinite(day)) return iso;
+  return `${MONTH_NAMES[monthIdx]} ${day}`;
+}
+
+/** Build the member-facing options_play string.
+ *  With contract: "AAPL $120 CALL @ $4.00 — Jul 18"
+ *  With caveat:   "AAPL $120 CALL @ $4.00 — Jul 18 (premium above cap, verify size)"
+ *  No contract:   "AAPL — no options data available" */
+function formatOptionsPlay(ticker: string, contract: PickedContract | null): string {
+  if (!contract) return `${ticker} — no options data available`;
+  const sideWord = contract.side.toUpperCase();
+  const base = `${ticker} $${formatStrike(contract.strike)} ${sideWord} @ $${contract.premium.toFixed(2)} — ${shortExpiry(contract.expiry)}`;
+  if (!contract.caveat) return base;
+  const tag =
+    contract.caveat === "premium_high" ? "(premium above $35 cap, verify size)" :
+    contract.caveat === "low_liquidity" ? "(thin liquidity, use limit order)" :
+    "(premium high + thin liquidity, verify)";
+  return `${base} ${tag}`;
+}
+
 /**
- * Pick the most at-the-money strike on the chosen side that is BOTH liquid (OI ≥ the grounding floor)
- * AND affordable (premium ≤ the per-share cap). Long ⇒ calls, short ⇒ puts. Deterministic tie-break:
- * closest strike to spot first, then nearest expiry, then lower strike — so identical inputs always
- * yield the identical contract. Returns null when no strike clears both gates (⇒ skip the candidate).
+ * Pick the most at-the-money strike on the chosen side. Tries strict gates first (OI ≥ floor AND
+ * premium ≤ cap). When nothing clears both, relaxes progressively: premium-only, OI-only, then
+ * any quoted strike — always returning a concrete contract so members never see "check option chain".
+ * Relaxed picks carry a `caveat` so the UI can flag them.
+ *
+ * Deterministic tie-break: closest strike to spot, then nearest expiry, then lower strike.
  */
 export function pickChainContract(
   chain: EditionChainData,
@@ -88,26 +120,43 @@ export function pickChainContract(
   const side: "call" | "put" = direction === "long" ? "call" : "put";
   const spot = chain.spot;
   const minOi = spot > 0 ? tieredMinOi(spot) : GROUNDING_MIN_OI;
-  const eligible: Array<PickedContract & { dist: number }> = [];
+
+  type Candidate = PickedContract & { dist: number };
+  const strict: Candidate[] = [];
+  const relaxedPremium: Candidate[] = [];
+  const relaxedOi: Candidate[] = [];
+  const anyQuoted: Candidate[] = [];
+
   for (const row of chain.rows) {
-    const oi = contractOi(row, side);
-    if (oi < minOi) continue;
     const premium = contractPremium(row, side);
-    if (premium == null || premium > MAX_OPTION_PREMIUM_PER_SHARE) continue;
-    eligible.push({
+    if (premium == null) continue;
+    const oi = contractOi(row, side);
+    const entry: Candidate = {
       strike: row.strike,
       side,
       expiry: row.expiry,
       premium: Number(premium.toFixed(2)),
       dist: spot > 0 ? Math.abs(row.strike - spot) : row.strike,
-    });
+    };
+    const oiOk = oi >= minOi;
+    const premOk = premium <= MAX_OPTION_PREMIUM_PER_SHARE;
+    if (oiOk && premOk) strict.push(entry);
+    else if (oiOk && !premOk) relaxedPremium.push({ ...entry, caveat: "premium_high" });
+    else if (!oiOk && premOk) relaxedOi.push({ ...entry, caveat: "low_liquidity" });
+    else anyQuoted.push({ ...entry, caveat: "premium_high_low_liquidity" });
   }
-  if (!eligible.length) return null;
-  eligible.sort(
-    (a, b) => a.dist - b.dist || a.expiry.localeCompare(b.expiry) || a.strike - b.strike
-  );
-  const best = eligible[0]!;
-  return { strike: best.strike, side: best.side, expiry: best.expiry, premium: best.premium };
+
+  const sortFn = (a: Candidate, b: Candidate) =>
+    a.dist - b.dist || a.expiry.localeCompare(b.expiry) || a.strike - b.strike;
+
+  for (const pool of [strict, relaxedPremium, relaxedOi, anyQuoted]) {
+    if (pool.length) {
+      pool.sort(sortFn);
+      const best = pool[0]!;
+      return { strike: best.strike, side: best.side, expiry: best.expiry, premium: best.premium, caveat: best.caveat };
+    }
+  }
+  return null;
 }
 
 /**
@@ -269,9 +318,7 @@ function buildPlay(
   rank: number
 ): PlaybookPlay {
   const { thesis, key_signal } = buildDeterministicThesis(scored, dossier, levels);
-  const options_play = contract
-    ? `${scored.ticker} ${contract.expiry} $${formatStrike(contract.strike)} ${contract.side.toUpperCase()} — entry prem ~$${contract.premium.toFixed(2)}`
-    : `${scored.ticker} — check option chain for suitable contract`;
+  const options_play = formatOptionsPlay(scored.ticker, contract);
   const dir = scored.direction === "short" ? "SHORT" : "LONG";
   const rr = computeRiskReward({ direction: dir, entry_range: levels.entry_range, target: levels.target, stop: levels.stop });
   const base: PlaybookPlay = {
@@ -291,8 +338,13 @@ function buildPlay(
     iv_rank: dossier?.iv_rank ?? undefined,
     rr_ratio: rr ?? undefined,
   };
-  if (contract) {
+  if (contract && !contract.caveat) {
     return applyPremiumCapToPlay(base, { entry_premium: contract.premium, options_play });
+  }
+  if (contract && contract.caveat) {
+    base.entry_premium = contract.premium;
+    base.entry_cost_per_contract = contract.premium * 100;
+    base.premium_cap_ok = !contract.caveat.includes("premium_high");
   }
   return base;
 }
@@ -337,8 +389,11 @@ export function buildDeterministicEditionPlays(params: {
     const spot = chain?.spot ?? dossier?.tech?.price ?? null;
 
     const contract = chain ? pickChainContract(chain, scored.direction) : null;
-    if (contract) {
+    if (contract && !contract.caveat) {
       contractOk += 1;
+    } else if (contract && contract.caveat) {
+      contractOk += 1;
+      stockOnly += 1;
     } else {
       if (!chain) noChainCount += 1;
       if (spot == null || !Number.isFinite(spot) || spot <= 0) {
@@ -351,7 +406,7 @@ export function buildDeterministicEditionPlays(params: {
     const levels = resolveLevels(dossier, scored.direction, spot);
     const play = buildPlay(scored, dossier, contract, levels, built.length + 1);
 
-    if (contract && play.premium_cap_ok === false) {
+    if (contract && !contract.caveat && play.premium_cap_ok === false) {
       premiumCapCount += 1;
       continue;
     }
@@ -369,14 +424,22 @@ export function buildDeterministicEditionPlays(params: {
 
   console.info(`[nighthawk/det-edition] funnel: ${params.ranked.length} candidates → chains for ${Object.keys(params.chains).length} tickers → ${contractOk} with contract, ${stockOnly} stock-only, ${noChainCount} no chain, ${noSpotCount} no spot, ${premiumCapCount} premium-capped, ${geometryFailCount} geometry-fail → ${built.length} built`);
 
-  // Ground survivors that HAVE chain contracts (stock-only plays skip grounding since
-  // there's no contract to reconcile — their levels are already from real S/R data).
-  const withContract = built.filter((p) => p.entry_premium != null);
-  const stockOnlyPlays = built.filter((p) => p.entry_premium == null);
+  // Ground survivors that HAVE strict (non-caveated) chain contracts. Caveated-contract and
+  // stock-only plays skip grounding — their levels come from real S/R data and the contract
+  // is a best-effort suggestion, not the basis for the play.
+  const strictContractTickers = new Set<string>();
+  for (const scored of params.ranked) {
+    const chain = params.chains[scored.ticker.toUpperCase()];
+    if (!chain) continue;
+    const c = pickChainContract(chain, scored.direction);
+    if (c && !c.caveat) strictContractTickers.add(scored.ticker.toUpperCase());
+  }
+  const withContract = built.filter((p) => p.entry_premium != null && strictContractTickers.has(p.ticker.toUpperCase()));
+  const skipGrounding = built.filter((p) => p.entry_premium == null || !strictContractTickers.has(p.ticker.toUpperCase()));
   const { plays: grounded, summary } = groundPlays(withContract, params.chains, params.dossierMap);
 
-  // Merge grounded option plays + stock-only plays, sorted by score descending
-  const merged = [...grounded, ...stockOnlyPlays].sort(
+  // Merge grounded option plays + caveated/stock-only plays, sorted by score descending
+  const merged = [...grounded, ...skipGrounding].sort(
     (a, b) => (b.score ?? 0) - (a.score ?? 0)
   );
 

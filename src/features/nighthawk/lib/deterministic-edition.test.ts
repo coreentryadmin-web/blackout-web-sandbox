@@ -140,7 +140,7 @@ test("SHORT play has target below entry and stop above (correct short geometry)"
   assert.ok(stop! > mid, "short stop above entry");
 });
 
-test("premium cap: a candidate whose only liquid strike exceeds the cap publishes as stock-only (PR-N15)", () => {
+test("premium cap: expensive strike still shows a contract with caveat (PR-N23)", () => {
   const expensive: EditionChainData = {
     spot: 500,
     rows: [row(500, { oi: 5_000, callAsk: 60, callBid: 58 })], // mid 59 > $35 cap
@@ -151,14 +151,15 @@ test("premium cap: a candidate whose only liquid strike exceeds the cap publishe
   const { plays } = buildDeterministicEditionPlays({ ranked, dossierMap, chains });
   assert.equal(plays.length, 2);
   const exp = plays.find((p) => p.ticker === "EXP")!;
-  assert.ok(exp, "EXP should be included as stock-only");
-  assert.equal(exp.entry_premium, undefined, "stock-only play has no entry_premium");
-  assert.match(exp.options_play, /check option chain/);
+  assert.ok(exp, "EXP should be included with caveated contract");
+  assert.ok(exp.entry_premium != null, "caveated contract still shows premium");
+  assert.match(exp.options_play, /premium above/);
+  assert.ok(parseOptionsContract(exp.options_play) != null, "caveated contract is parseable");
   const ok = plays.find((p) => p.ticker === "OK")!;
   assert.ok(ok.entry_premium != null && ok.entry_premium <= MAX_OPTION_PREMIUM_PER_SHARE);
 });
 
-test("OI floor: a candidate below the liquidity floor publishes as stock-only (PR-N15)", () => {
+test("OI floor: illiquid strike still shows a contract with liquidity caveat (PR-N23)", () => {
   const illiquid: EditionChainData = {
     spot: 120,
     rows: [row(120, { oi: 100, callAsk: 4, callBid: 3.6 })], // OI 100 < 500 floor
@@ -169,12 +170,13 @@ test("OI floor: a candidate below the liquidity floor publishes as stock-only (P
   const { plays } = buildDeterministicEditionPlays({ ranked, dossierMap, chains });
   assert.equal(plays.length, 2);
   const ilq = plays.find((p) => p.ticker === "ILQ")!;
-  assert.ok(ilq, "ILQ should be included as stock-only");
-  assert.equal(ilq.entry_premium, undefined, "stock-only play has no entry_premium");
-  assert.match(ilq.options_play, /check option chain/);
+  assert.ok(ilq, "ILQ should be included with caveated contract");
+  assert.ok(ilq.entry_premium != null, "caveated contract still shows premium");
+  assert.match(ilq.options_play, /thin liquidity/);
+  assert.ok(parseOptionsContract(ilq.options_play) != null, "caveated contract is parseable");
 });
 
-test("no chain for a candidate builds stock-only play (PR-N15: decoupled options)", () => {
+test("no chain for a candidate builds stock-only play with no-data message (PR-N23)", () => {
   const ranked = [scored("NOCH", "long", 70), scored("HAS", "long", 50)];
   const chains = { HAS: chainAround(150) };
   const dossierMap = { NOCH: dossier("NOCH", 150), HAS: dossier("HAS", 150) };
@@ -183,7 +185,7 @@ test("no chain for a candidate builds stock-only play (PR-N15: decoupled options
   const noch = plays.find((p) => p.ticker === "NOCH")!;
   assert.ok(noch, "NOCH should be included as stock-only");
   assert.equal(noch.entry_premium, undefined, "stock-only play has no entry_premium");
-  assert.match(noch.options_play, /check option chain/);
+  assert.match(noch.options_play, /no options data/);
   const has = plays.find((p) => p.ticker === "HAS")!;
   assert.ok(has.entry_premium != null, "HAS should have a contract");
 });
@@ -222,10 +224,19 @@ test("pickChainContract picks the most ATM strike among eligible, deterministica
   const c = pickChainContract(chain, "long");
   assert.equal(c?.strike, 100);
   assert.equal(c?.side, "call");
+  assert.equal(c?.caveat, undefined, "strict pick has no caveat");
 });
 
-test("pickChainContract returns null when nothing clears both gates", () => {
+test("pickChainContract returns best-effort contract with caveat when strict gates fail", () => {
   const chain: EditionChainData = { spot: 100, rows: [row(100, { oi: 50, callAsk: 999, callBid: 998 })] };
+  const result = pickChainContract(chain, "long");
+  assert.ok(result != null, "returns best-effort instead of null");
+  assert.equal(result!.strike, 100);
+  assert.equal(result!.caveat, "premium_high_low_liquidity");
+});
+
+test("pickChainContract returns null only when no rows have any quotes", () => {
+  const chain: EditionChainData = { spot: 100, rows: [row(100, { oi: 50 })] };
   assert.equal(pickChainContract(chain, "long"), null);
 });
 
