@@ -20,7 +20,7 @@ function row(
 ): ChainStrikeRow {
   const oi = opts.oi ?? 5_000;
   return {
-    expiry: opts.expiry ?? "2026-07-18",
+    expiry: opts.expiry ?? "2026-12-18",
     strike,
     call_bid: opts.callBid ?? null,
     call_ask: opts.callAsk ?? null,

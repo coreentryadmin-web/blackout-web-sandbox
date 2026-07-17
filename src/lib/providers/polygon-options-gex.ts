@@ -2905,6 +2905,45 @@ export async function fetchPolygonAtmOptionsChain(
   return fetchChainBand(root, spot, expiry, bandPct);
 }
 
+/**
+ * ATM ± bandPct chain snapshot across ALL non-expired expiries (no expiry filter).
+ * Single API call that returns contracts for every available expiry in the strike band,
+ * so the caller discovers expiries AND gets chain data in one round-trip. Used by
+ * Night Hawk's resolveTickerChainRows to bypass the broken reference-API-based
+ * expiry discovery (that endpoint doesn't include open_interest).
+ */
+export async function fetchPolygonAtmChainAllExpiries(
+  underlying: string,
+  spot: number,
+  bandPct = 0.05
+): Promise<ChainContract[]> {
+  if (!polygonConfigured() || spot <= 0) return [];
+  const root = underlying.toUpperCase();
+  const optionsRoot = root === "SPX" ? "I:SPX" : root;
+
+  const band = Math.max(spot * bandPct, 80);
+  const lo = Math.floor(spot - band);
+  const hi = Math.ceil(spot + band);
+
+  const params = new URLSearchParams({
+    "strike_price.gte": String(lo),
+    "strike_price.lte": String(hi),
+    limit: "250",
+    apiKey: KEY,
+  });
+
+  const out: ChainContract[] = [];
+  let page = await polygonFetchUrl(`/v3/snapshot/options/${optionsRoot}?${params}`);
+  let guard = 0;
+  while (page && guard < CHAIN_BAND_PAGE_GUARD) {
+    out.push(...(page.results ?? []));
+    if (!page.next_url) break;
+    page = await polygonFetchUrl(page.next_url);
+    guard += 1;
+  }
+  return out;
+}
+
 export function summarizeOiByStrike(contracts: ChainContract[], limit = 20) {
   const byStrike = new Map<number, { call_oi: number; put_oi: number }>();
   for (const c of contracts) {
@@ -3083,15 +3122,18 @@ export async function fetchPolygonOiByExpiry(
       const expiry = String(c.expiration_date ?? "").slice(0, 10);
       if (!expiry) continue;
       const oi = Number(c.open_interest ?? 0);
-      if (!oi) continue;
       const type = String(c.contract_type ?? "").toLowerCase();
       const row = byExpiry.get(expiry) ?? { call_oi: 0, put_oi: 0 };
+      // Count every contract — the reference endpoint sometimes omits open_interest
+      // entirely (returns null/undefined), which the old `if (!oi) continue` filter
+      // discarded, causing the entire function to return [] and breaking
+      // downstream expiry discovery.
       if (type === "call") row.call_oi += oi;
       else if (type === "put") row.put_oi += oi;
       byExpiry.set(expiry, row);
     }
     if (!page.next_url) break;
-    if (byExpiry.size > limit) break; // target range provably complete — stop before fetching another page
+    if (byExpiry.size > limit) break;
     page = await polygonRefFetch(page.next_url);
     guard += 1;
   }
