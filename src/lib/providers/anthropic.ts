@@ -24,7 +24,14 @@ import {
 } from "@/lib/ai-spend-ledger";
 import { getUwCacheRedis } from "@/lib/providers/uw-shared-cache";
 import { notifyOpsDiscord } from "@/features/spx/lib/spx-play-notify";
-import { claudeEnabled } from "@/lib/ai-env";
+import { claudeEnabled, largoClaudeEnabled } from "@/lib/ai-env";
+
+export type AnthropicAiGate = "global" | "largo";
+
+function anthropicGateOpen(gate: AnthropicAiGate | undefined): boolean {
+  if (gate === "largo") return largoClaudeEnabled();
+  return claudeEnabled();
+}
 
 // Per-process daily AI-spend tripwire. It survives Redis loss, so it is kept as the
 // FALLBACK alerter (used only when the cross-replica ledger below is unreachable). The
@@ -360,9 +367,11 @@ export async function anthropicText(
      * tiny cache-write loss); see SYSTEM_CACHE_AUTODETECT_MIN_CHARS.
      */
     cacheSystem?: boolean;
+    /** When "largo", uses largoClaudeEnabled() so staging Largo can call Claude without STAGING_CLAUDE=1. */
+    aiGate?: AnthropicAiGate;
   }
 ): Promise<string | null> {
-  if (!claudeEnabled()) return null;
+  if (!anthropicGateOpen(options?.aiGate)) return null;
   const client = getClient();
   if (!client) return null;
   if (await isAiSpendCeilingTripped()) {
@@ -443,8 +452,10 @@ export async function anthropicToolLoop(params: {
   cacheSystem?: boolean;
   runTool: (name: string, input: Record<string, unknown>) => Promise<unknown>;
   onEvent?: (event: AnthropicToolLoopEvent) => void;
+  /** When "largo", uses largoClaudeEnabled() so staging Largo can call Claude without STAGING_CLAUDE=1. */
+  aiGate?: AnthropicAiGate;
 }): Promise<string | null> {
-  if (!claudeEnabled()) return null;
+  if (!anthropicGateOpen(params.aiGate)) return null;
   const client = getClient();
   if (!client) return null;
   if (await isAiSpendCeilingTripped()) {

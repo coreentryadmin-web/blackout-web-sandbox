@@ -96,15 +96,29 @@ async function main() {
   }
 
   if (secret.STAGING_CLAUDE === "1") {
-    row("policy", "STAGING_CLAUDE", "WARN", "STAGING_CLAUDE=1 — Claude may be active; BIE-only not guaranteed");
+    row("policy", "STAGING_CLAUDE", "WARN", "STAGING_CLAUDE=1 — Claude may be active globally; BIE-only not guaranteed");
   } else {
-    row("policy", "STAGING_CLAUDE", "PASS", "unset — BIE-only policy expected");
+    row("policy", "STAGING_CLAUDE", "PASS", "unset — global Claude off (SPX commentary stays BIE)");
+  }
+
+  const largoClaude = secret.STAGING_LARGO_CLAUDE === "1";
+  if (largoClaude) {
+    row("policy", "STAGING_LARGO_CLAUDE", "PASS", "1 — Largo uses Claude tool-loop (BIE router skipped)");
+  } else {
+    row("policy", "STAGING_LARGO_CLAUDE", "PASS", "unset — Largo on deterministic BIE");
   }
 
   if (secret.ANTHROPIC_API_KEY) {
-    row("policy", "ANTHROPIC_API_KEY", "WARN", "key present but claudeEnabled() should still be false on staging");
+    row(
+      "policy",
+      "ANTHROPIC_API_KEY",
+      largoClaude ? "PASS" : "WARN",
+      largoClaude
+        ? "present — required for STAGING_LARGO_CLAUDE"
+        : "key present but claudeEnabled() should still be false on staging"
+    );
   } else {
-    row("policy", "ANTHROPIC_API_KEY", "PASS", "absent — zero Anthropic spend path");
+    row("policy", "ANTHROPIC_API_KEY", largoClaude ? "FAIL" : "PASS", largoClaude ? "missing — Largo Claude cannot run" : "absent — zero Anthropic spend path");
   }
 
   const session = await mintAppSession({ appUrl: BASE });
@@ -161,7 +175,7 @@ async function main() {
     gx.ms
   );
 
-  console.log("\n--- Largo (BIE router — must never hard-fail on staging) ---");
+  console.log(`\n--- Largo (${largoClaude ? "Claude tool-loop" : "BIE router"} — must never hard-fail on staging) ---`);
   for (const { q, expect } of LARGO_QUESTIONS) {
     const res = await postJson(
       "/api/market/largo/query",
@@ -171,11 +185,15 @@ async function main() {
     );
     const answer = res.body?.answer ?? res.body?.text ?? "";
     const source = res.body?.source ?? "";
+    const okSource = largoClaude
+      ? /^blackout-web/.test(source)
+      : source === "blackout-intelligence";
+    const okContent = largoClaude ? answer.length > 80 : expect.test(answer);
     const ok =
       res.status === 200 &&
       answer.length > 30 &&
-      expect.test(answer) &&
-      source === "blackout-intelligence";
+      okContent &&
+      okSource;
     row(
       "largo",
       `Q: ${q.slice(0, 40)}`,
@@ -192,7 +210,7 @@ async function main() {
   const report = {
     ts: new Date().toISOString(),
     base: BASE,
-    policy: "staging-bie-only",
+    policy: largoClaude ? "staging-largo-claude" : "staging-bie-only",
     results,
     summary: {
       pass: results.filter((r) => r.status === "PASS").length,
