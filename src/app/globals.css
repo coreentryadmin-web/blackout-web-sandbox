@@ -17218,6 +17218,14 @@ body::before {
     @apply font-mono text-[12px] font-bold uppercase tracking-[0.18em] text-sky-200/90 px-0.5;
   }
 
+  .helix-analytics-scope-label {
+    @apply block font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-sky-300/60 px-0.5 mt-0.5 truncate;
+  }
+
+  .helix-analytics-backfill-hint {
+    @apply font-mono text-[10px] font-semibold uppercase tracking-[0.12em] text-cyan-400/90 px-0.5 py-1 shrink-0;
+  }
+
   /* Analytics rail panels — stack cleanly; never shrink/overlap in the scroll column. */
   .helix-pro-rail-panel {
     flex: 0 0 auto;

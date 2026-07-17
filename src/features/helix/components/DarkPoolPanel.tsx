@@ -141,13 +141,14 @@ function PrintRow({ p, showDate = false }: { p: DarkPoolRow; showDate?: boolean 
 
 // ─── Root component — all data fetched here, filtered client-side ─────────────
 
-export function DarkPoolPanel() {
+export function DarkPoolPanel({ tapeTicker = "" }: { tapeTicker?: string }) {
   const [allPrints, setAllPrints]   = useState<DarkPoolRow[]>([]);
   const [loading, setLoading]       = useState(true);
   const [errored, setErrored]       = useState(false);
   const [history, setHistory]       = useState<{ t: number; net: number }[]>([]);
   const [search, setSearch]         = useState("");
   const [activeTicker, setActiveTicker] = useState("");
+  const deskTicker = tapeTicker.trim().toUpperCase();
 
   // Fetch a larger pool so client-side ticker filtering actually finds prints
   const load = useCallback(async () => {
@@ -169,16 +170,23 @@ export function DarkPoolPanel() {
     return () => clearInterval(id);
   }, [load]);
 
-  // Debounce ticker switch 400ms after user stops typing
+  // Debounce local search only when the desk command bar has no ticker filter.
   useEffect(() => {
+    if (deskTicker) return;
     const val = search.trim().toUpperCase();
     const id  = setTimeout(() => setActiveTicker(val), 400);
     return () => clearTimeout(id);
-  }, [search]);
+  }, [search, deskTicker]);
+
+  useEffect(() => {
+    if (deskTicker) setSearch("");
+  }, [deskTicker]);
+
+  const filterTicker = deskTicker || activeTicker;
 
   // Filtered view
-  const visible = activeTicker
-    ? allPrints.filter((p) => p.ticker === activeTicker)
+  const visible = filterTicker
+    ? allPrints.filter((p) => p.ticker === filterTicker)
     : allPrints.slice(0, 60);
 
   const bias       = biasFromSide(visible);
@@ -207,39 +215,44 @@ export function DarkPoolPanel() {
             <h3 className="font-mono text-[11px] uppercase tracking-[0.2em] text-white">Dark Pool</h3>
           </div>
 
-          {/* Ticker search */}
-          <div className="relative ml-auto">
-            <input
-              value={search}
-              onChange={(e) =>
-                setSearch(e.target.value.toUpperCase().replace(/[^A-Z]/g, "").slice(0, 6))
-              }
-              placeholder="NVDA, TSLA…"
-              aria-label="Filter dark pool blocks by ticker"
-              maxLength={6}
-              className="font-mono text-[11px] font-bold uppercase px-3 py-1 rounded-lg border bg-[rgba(8,9,14,0.85)] outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#bf5fff] w-28 tracking-widest transition-all"
-              style={{
-                borderColor: search ? "rgba(191,95,255,0.65)" : "rgba(191,95,255,0.22)",
-                color:       search ? "#d580ff" : "#7dd3fc",
-                boxShadow:   search ? "0 0 0 2px rgba(191,95,255,0.12)" : "none",
-              }}
-            />
-            <AnimatePresence>
-              {search && (
-                <motion.button
-                  initial={{ opacity: 0, scale: 0.8 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  exit={{ opacity: 0, scale: 0.8 }}
-                  type="button"
-                  onClick={() => setSearch("")}
-                  aria-label="Clear ticker filter"
-                  className="absolute right-2 top-1/2 -translate-y-1/2 text-cyan-400 hover:text-sky-200 font-mono text-sm font-bold"
-                >
-                  ×
-                </motion.button>
-              )}
-            </AnimatePresence>
-          </div>
+          {deskTicker ? (
+            <span className="font-mono text-[10px] font-bold uppercase tracking-widest text-purple-light ml-auto">
+              {deskTicker}
+            </span>
+          ) : (
+            <div className="relative ml-auto">
+              <input
+                value={search}
+                onChange={(e) =>
+                  setSearch(e.target.value.toUpperCase().replace(/[^A-Z]/g, "").slice(0, 6))
+                }
+                placeholder="NVDA, TSLA…"
+                aria-label="Filter dark pool blocks by ticker"
+                maxLength={6}
+                className="font-mono text-[11px] font-bold uppercase px-3 py-1 rounded-lg border bg-[rgba(8,9,14,0.85)] outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#bf5fff] w-28 tracking-widest transition-all"
+                style={{
+                  borderColor: search ? "rgba(191,95,255,0.65)" : "rgba(191,95,255,0.22)",
+                  color: search ? "#d580ff" : "#7dd3fc",
+                  boxShadow: search ? "0 0 0 2px rgba(191,95,255,0.12)" : "none",
+                }}
+              />
+              <AnimatePresence>
+                {search && (
+                  <motion.button
+                    initial={{ opacity: 0, scale: 0.8 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    exit={{ opacity: 0, scale: 0.8 }}
+                    type="button"
+                    onClick={() => setSearch("")}
+                    aria-label="Clear ticker filter"
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-cyan-400 hover:text-sky-200 font-mono text-sm font-bold"
+                  >
+                    ×
+                  </motion.button>
+                )}
+              </AnimatePresence>
+            </div>
+          )}
         </div>
       }
     >
@@ -247,19 +260,19 @@ export function DarkPoolPanel() {
       <div className="flow-panel-body">
         <AnimatePresence mode="wait">
           <motion.div
-            key={activeTicker || "__market__"}
+            key={filterTicker || "__market__"}
             initial={{ opacity: 0, y: 4 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -4 }}
             transition={{ duration: 0.18 }}
           >
             {/* ── Ticker header (when filtering) ── */}
-            {activeTicker && (
+            {filterTicker && (
               <div className="mb-3 rounded-xl border border-purple/30 bg-purple/[0.08] px-3 py-2.5">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <span className="font-anton text-[24px] text-purple-light leading-none">
-                      {activeTicker}
+                      {filterTicker}
                     </span>
                     {visible.length > 0 && (
                       <span className="font-mono text-[11px] text-cyan-400">
@@ -289,7 +302,7 @@ export function DarkPoolPanel() {
             )}
 
             {/* ── Market bias + sparkline (market view only) ── */}
-            {!activeTicker && !loading && allPrints.length > 0 && (
+            {!filterTicker && !loading && allPrints.length > 0 && (
               <div className="flex items-center gap-3 px-1 mb-2">
                 <span
                   className="font-mono text-[11px] font-bold px-2 py-0.5 rounded border"
@@ -339,9 +352,9 @@ export function DarkPoolPanel() {
                 <EmptyState
                   className="!py-8"
                   icon="⬡"
-                  title={activeTicker ? `No blocks for ${activeTicker}` : "No blocks yet"}
+                  title={filterTicker ? `No blocks for ${filterTicker}` : "No blocks yet"}
                   description={
-                    activeTicker
+                    filterTicker
                       ? "Nothing on the current tape — try a high-volume ticker like NVDA, TSLA, SPY"
                       : "No blocks on the tape yet"
                   }
@@ -353,7 +366,7 @@ export function DarkPoolPanel() {
                       <PrintRow
                         key={`${p.ticker}-${p.executed_at}-${i}`}
                         p={p}
-                        showDate={!!activeTicker}
+                        showDate={!!filterTicker}
                       />
                     ))}
                   </div>

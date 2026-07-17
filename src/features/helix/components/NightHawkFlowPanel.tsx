@@ -30,15 +30,38 @@ const CONVICTION_STYLE: Record<FlowConviction, { label: string; cls: string }> =
 export function NightHawkFlowPanel({
   plays,
   editionFor,
+  scopedTicker,
   onTickerClick,
 }: {
   plays: NightHawkPlayWithFlow[];
   editionFor?: string | null;
+  /** When set, panel stays visible even with zero matching plays (ticker-scoped desk). */
+  scopedTicker?: string;
   onTickerClick?: (ticker: string) => void;
 }) {
   // Hoisted above the early return (Rules of Hooks). Static for reduced-motion users.
   const pulse = usePulse({ opacity: [1, 0.4, 1] }, { repeat: Infinity, duration: 3, ease: "easeInOut" });
-  if (plays.length === 0) return null;
+  if (plays.length === 0) {
+    if (!scopedTicker) return null;
+    return (
+      <div className="flow-panel helix-pro-rail-panel">
+        <div className="flow-panel-header">
+          <span className="flow-panel-title">Hawk Conviction</span>
+          {editionFor && (
+            <span className="font-mono text-[10px] text-indigo-400">{editionFor}</span>
+          )}
+        </div>
+        <div className="flow-panel-body py-6 text-center">
+          <p className="font-mono text-[11px] text-indigo-300/80">
+            No Night Hawk play for {scopedTicker}
+          </p>
+          <p className="font-mono text-[10px] text-sky-300/55 mt-1">
+            Clear the ticker filter to see the full playbook.
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flow-panel">

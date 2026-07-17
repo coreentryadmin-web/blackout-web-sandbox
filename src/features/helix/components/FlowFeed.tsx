@@ -28,6 +28,11 @@ import {
   shouldAutoBackfillTape,
 } from "@/features/helix/lib/helix-flow-filter-backfill";
 import {
+  formatHelixAnalyticsScopeLabel,
+  isRestrictiveTapeFilter,
+  showMarketWideAnalyticsPanels,
+} from "@/features/helix/lib/helix-analytics-scope";
+import {
   HELIX_FLOW_DEFAULT_SINCE_HOURS,
   HELIX_FLOW_PAGE_SIZE,
 } from "@/features/helix/lib/helix-flow-limits";
@@ -155,7 +160,7 @@ export function FlowFeed() {
   // Data
   const [alerts, setAlerts]               = useState<FlowAlert[]>([]);
   const nativeShell = useIosNativeShell();
-  const [iosView, setIosView] = useState<"tape" | "analytics">("tape");
+  const [iosView, setIosView] = useState<"tape" | "analytics">("analytics");
   const [helixToolsOpen, setHelixToolsOpen] = useState(false);
   const [loading, setLoading]             = useState(true);
   const [loadingOlder, setLoadingOlder]   = useState(false);
@@ -170,7 +175,7 @@ export function FlowFeed() {
   const [dteFilter, setDteFilter]           = useState<HelixDteFilter>("all");
   const [indicesOnly, setIndicesOnly]       = useState(false);
   const density: HelixTableDensity = "full";
-  const [analyticsOpen, setAnalyticsOpen] = useState(false);
+  const [analyticsOpen, setAnalyticsOpen] = useState(true);
   const [tickerFilter, setTickerFilter]   = useState("");
   // UI
   const [selectedTicker, setSelectedTicker] = useState<string | null>(null);
@@ -763,6 +768,23 @@ export function FlowFeed() {
           ? `${Math.round(dataAgeMs / 60_000)}m ago`
           : `${Math.round(dataAgeMs / 3_600_000)}h ago`;
 
+  const analyticsScopeLabel = useMemo(
+    () => formatHelixAnalyticsScopeLabel(tapeFilterSnapshot),
+    [tapeFilterSnapshot]
+  );
+  const marketWidePanels = showMarketWideAnalyticsPanels(tickerFilter);
+  const scopedTicker = tickerFilter.trim().toUpperCase();
+
+  const nighthawkPlaysVisible = useMemo(() => {
+    if (!scopedTicker) return nighthawkPlaysWithFlow;
+    return nighthawkPlaysWithFlow.filter((p) => p.ticker === scopedTicker);
+  }, [nighthawkPlaysWithFlow, scopedTicker]);
+
+  const analyticsBackfillActive =
+    (autoBackfilling || loadingOlder) &&
+    isRestrictiveTapeFilter(tapeFilterSnapshot) &&
+    !replayMode;
+
   const flowTapeProps = {
     flows: displayAlerts,
     live,
@@ -788,28 +810,42 @@ export function FlowFeed() {
     onLoadOlder: loadOlderFlows,
   };
 
-  const analyticsRail = (
+  const analyticsRailHeader = (
     <>
       {nativeShell ? (
         <IosSectionHeader
-          label="Analytics"
+          label={`Analytics · ${analyticsScopeLabel}`}
           action={{
             label: showMorePanels ? "Fewer panels" : "More panels",
             onClick: () => setShowMorePanels((v) => !v),
           }}
         />
       ) : (
-        <div className="flex items-center justify-between gap-2">
-          <span className="helix-pro-rail-section-label">Analytics</span>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="min-w-0">
+            <span className="helix-pro-rail-section-label">Analytics</span>
+            <span className="helix-analytics-scope-label">{analyticsScopeLabel}</span>
+          </div>
           <button
             type="button"
             onClick={() => setShowMorePanels((v) => !v)}
-            className="helix-pro-tool-btn"
+            className="helix-pro-tool-btn shrink-0"
           >
             {showMorePanels ? "Fewer panels" : "More panels"}
           </button>
         </div>
       )}
+      {analyticsBackfillActive && (
+        <p className="helix-analytics-backfill-hint" role="status">
+          Loading matching history…
+        </p>
+      )}
+    </>
+  );
+
+  const analyticsRail = (
+    <>
+      {analyticsRailHeader}
       <HighScorePrints alerts={displayAlerts} loading={loading} onSelect={setSelectedContract} />
       <div className="helix-analytics-wide">
         <NetPremiumLeaderboard alerts={displayAlerts} loading={loading} />
@@ -818,18 +854,21 @@ export function FlowFeed() {
       <div className="helix-analytics-wide">
         <StrikeStackDetector alerts={displayAlerts} onSelectTicker={setSelectedTicker} />
       </div>
-      <DarkPoolPanel />
+      <DarkPoolPanel tapeTicker={tickerFilter} />
       {showMorePanels && (
         <>
-          <VelocityRadar entries={velocityEntries} onTickerClick={setSelectedTicker} />
+          {marketWidePanels && (
+            <VelocityRadar entries={velocityEntries} onTickerClick={setSelectedTicker} />
+          )}
           <NightHawkFlowPanel
-            plays={nighthawkPlaysWithFlow}
+            plays={nighthawkPlaysVisible}
             editionFor={nighthawkEdition?.edition_for}
+            scopedTicker={scopedTicker || undefined}
             onTickerClick={setSelectedTicker}
           />
           <SplitFlowRadar entries={splitFlowEntries} onTickerClick={setSelectedTicker} />
           <RouteBreakdown alerts={displayAlerts} loading={loading} />
-          <SectorFlowPanel entries={sectorFlowEntries} />
+          {marketWidePanels && <SectorFlowPanel entries={sectorFlowEntries} />}
           <div className="helix-analytics-wide">
             <FlowMomentumChart alerts={displayAlerts} />
           </div>
