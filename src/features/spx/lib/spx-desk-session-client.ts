@@ -1,6 +1,3 @@
-import { isEtCashRth } from "@/lib/et-market-hours";
-import { isPremarketPlanningWindow } from "@/features/spx/lib/spx-play-session-guards";
-
 type SessionPulse = {
   market_open?: boolean;
   market_label?: string;
@@ -8,9 +5,10 @@ type SessionPulse = {
   price?: number;
 };
 
-/** Client-side ET session gate — RTH + premarket planning (matches server pulse lanes). */
-export function isClientDeskSessionOpen(now = new Date()): boolean {
-  return isEtCashRth(now) || isPremarketPlanningWindow(now);
+/** Client-side session gate — always open so spot prices poll 24/7.
+ * Server pulse response drives UI labels (OPEN/CLOSED/PRE-MARKET). */
+export function isClientDeskSessionOpen(_now = new Date()): boolean {
+  return true;
 }
 
 export function isDeskSessionLiveFromPulse(pulse?: SessionPulse | null): boolean {
