@@ -236,6 +236,16 @@ before(async () => {
     },
   });
 
+  // largo-live-prefetch.ts has `import "server-only"` at the top — turn-pipeline.ts
+  // imports it, so loading the real module throws under plain `node --test` (no
+  // Next.js "react-server" condition). Stub the prefetch to a no-op.
+  mock.module("./bie/largo-live-prefetch", {
+    namedExports: {
+      prefetchLargoLiveFeed: async () => {},
+      LARGO_LIVE_PREFETCH_BLOCK_MS: 2500,
+    },
+  });
+
   // Imported dynamically, AFTER every mock above is registered — a static
   // top-level import would be hoisted ahead of this before() hook and load the
   // real modules first (same ordering requirement run-tool.test.ts documents).
