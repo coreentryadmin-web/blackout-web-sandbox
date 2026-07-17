@@ -275,11 +275,15 @@ export function groundPlay(
     };
   } else {
     const bestOi = Math.max(...matched.map((r) => sideOi(r, parsed.side)));
-    if (bestOi < GROUNDING_MIN_OI) {
+    // Use tiered OI floor matching the picker: $200+ → 500, $50-$199 → 200, <$50 → 100.
+    // The flat 500 floor was inconsistent with pickChainContract's tieredMinOi, causing
+    // contracts that passed the picker (OI 200 for a $100 stock) to get dropped here.
+    const oiFloor = spot > 0 ? tieredMinOi(spot) : GROUNDING_MIN_OI;
+    if (bestOi < oiFloor) {
       issues.push({
         check: "strike",
         severity: "drop",
-        detail: `${play.ticker} strike ${parsed.strike}${parsed.side ? ` ${parsed.side}` : ""}${parsed.expiryYmd ? ` ${parsed.expiryYmd}` : ""} present on-chain but OI ${bestOi} < ${GROUNDING_MIN_OI} (illiquid/off-chain).`,
+        detail: `${play.ticker} strike ${parsed.strike}${parsed.side ? ` ${parsed.side}` : ""}${parsed.expiryYmd ? ` ${parsed.expiryYmd}` : ""} present on-chain but OI ${bestOi} < ${oiFloor} (illiquid/off-chain).`,
       });
     } else {
       // Contract is real & liquid → the displayed premium MUST come from the live contract mark.

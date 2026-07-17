@@ -10,8 +10,13 @@ import { fetchUwOptionChains } from "@/lib/providers/unusual-whales";
 import { fetchOptionsUnifiedSnapshot, type OptionSnapshot } from "@/lib/providers/options-snapshot";
 import type { PlaybookPlay } from "./types";
 
-const ATM_BAND_PCT = 0.05;
-const FRONT_EXPIRIES = 3;
+// Widened from ±5% to ±12% — the ±5% band blocked OTM options that are cheaper (under
+// the $35/share premium cap) and common in real swing-trade options plays. For a $150 stock
+// this expands the window from $142.50-$157.50 to $132-$168, capturing many more liquid strikes.
+const ATM_BAND_PCT = 0.12;
+// Increased from 3 to 5 — weeklies 2-3 weeks out often have better OI/liquidity than the
+// nearest expiry, especially for smaller-cap names where front-week OI is thin.
+const FRONT_EXPIRIES = 5;
 
 export type ChainStrikeRow = {
   expiry: string;
@@ -138,8 +143,19 @@ function pivotPolygonContracts(
       } satisfies ChainStrikeRow);
 
     const quote = (c as { last_quote?: { bid?: number; ask?: number } }).last_quote;
-    const bid = num(quote?.bid) ?? null;
-    const ask = num(quote?.ask) ?? null;
+    let bid = num(quote?.bid);
+    let ask = num(quote?.ask);
+    // After-hours fallback: when bid/ask are 0 (market closed, no live quotes),
+    // use last_trade.price or day.close so the contract premium can still be estimated.
+    if (ask <= 0) {
+      const lastTrade = num((c as { last_trade?: { price?: number } }).last_trade?.price);
+      const dayClose = num((c as { day?: { close?: number } }).day?.close);
+      const fallback = lastTrade > 0 ? lastTrade : dayClose;
+      if (fallback > 0) {
+        ask = fallback;
+        if (bid <= 0) bid = fallback * 0.95;
+      }
+    }
     const delta = num((c as { greeks?: { delta?: number } }).greeks?.delta) ?? null;
     const oi = num(c.open_interest);
     const iv = num((c as { implied_volatility?: number }).implied_volatility) ?? null;
@@ -228,7 +244,7 @@ export function formatChainTableText(ticker: string, price: number, rows: ChainS
   // know how fresh its numbers were).
   const asOf = new Date().toISOString().slice(0, 16) + "Z";
   if (!rows.length) {
-    return `${ticker} chain (price $${price.toFixed(2)}, as of ${asOf}, after-hours last prints): no ATM ±5% contracts for front expiries.`;
+    return `${ticker} chain (price $${price.toFixed(2)}, as of ${asOf}, after-hours last prints): no ATM ±${Math.round(ATM_BAND_PCT * 100)}% contracts for front expiries.`;
   }
 
   const header =
