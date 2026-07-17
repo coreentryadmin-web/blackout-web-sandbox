@@ -11,7 +11,9 @@ import {
 } from "@/lib/live-api-integrations";
 import {
   UW_SOCKET_STALL_MS,
+  UW_SOCKET_FIRST_MSG_GRACE_MS,
   freshestMessageAt as freshestFromMap,
+  isUwSocketStalled,
   mergeFreshestTimestamps,
 } from "./uw-socket-stall";
 import { isUwErrorFrame } from "@/lib/ws/uw-frame";
@@ -253,6 +255,8 @@ class UwSocketManager {
   private authFailedLogged = false;
   private connectStarted = false;
   private shuttingDown = false;
+  /** Timestamp when the current socket's `onopen` fired — used for first-message grace timeout. */
+  private openedAt: number | null = null;
 
   private channelsWithHandlers(): UwWsChannel[] {
     return ALL_CHANNELS.filter((ch) => (this.handlers.get(ch)?.size ?? 0) > 0);
@@ -283,6 +287,7 @@ class UwSocketManager {
     const ws = this.ws;
     this.ws = null;
     this.connectStarted = false;
+    this.openedAt = null;
     if (ws) {
       // Detach handlers BEFORE closing: the ws close handshake can DEFER the 'close' event up to ~30s
       // on a half-open peer (exactly when reconnectIfStalled tears down), so a still-attached onclose
@@ -483,6 +488,7 @@ class UwSocketManager {
         if (this.ws !== ws) return; // superseded socket — ignore late open
         this.connectStarted = false;
         this.reconnectDelay = 1000;
+        this.openedAt = Date.now();
         console.log("[uw-socket] multiplex connected — joining channels");
         this.joinActiveChannels();
       };
@@ -502,6 +508,7 @@ class UwSocketManager {
         // path that bypasses it).
         if (this.ws !== ws) return;
         this.connectStarted = false;
+        this.openedAt = null;
         const reason = event.reason?.trim() || `code=${event.code}`;
         this.lastCloseReason = reason;
         this.ws = null;
@@ -572,20 +579,32 @@ class UwSocketManager {
   }
 
   /**
-   * Half-open watchdog: when the socket is OPEN but has stopped delivering
-   * (no message on any channel-with-handlers within the stall window despite
-   * prior delivery), tear it down and reconnect. A socket that has never
-   * delivered yet (freshest == null) is left alone so a freshly opened socket
-   * is not churned before first data arrives.
+   * Half-open watchdog. Two stall modes:
+   * 1. Had data before: stalled when freshest delivery > `stallMs` ago.
+   * 2. Never received ANY data: stalled when socket has been open >
+   *    `firstMsgGraceMs` — catches UW silently accepting a duplicate API-key
+   *    connection and never sending data (the connection looks healthy but is
+   *    dead). Without this, the socket sat OPEN+silent indefinitely after ECS
+   *    deploy races.
    */
-  reconnectIfStalled(freshestMessageAt: number | null, stallMs: number, now = Date.now()): boolean {
+  reconnectIfStalled(
+    freshestMessageAt: number | null,
+    stallMs: number,
+    now = Date.now(),
+    firstMsgGraceMs?: number
+  ): boolean {
     if (!this.isOpen()) return false;
     if (!inOptionsMarketHours(new Date(now)) && !uwOffHoursReconnectForced()) return false;
     if (this.channelsWithHandlers().length === 0) return false;
-    if (freshestMessageAt == null) return false;
-    if (now - freshestMessageAt <= stallMs) return false;
+    if (!isUwSocketStalled(freshestMessageAt, stallMs, now, this.openedAt, firstMsgGraceMs)) return false;
+    const silentConnect = freshestMessageAt == null;
+    const elapsed = silentConnect
+      ? Math.round((now - (this.openedAt ?? now)) / 1000)
+      : Math.round((now - freshestMessageAt) / 1000);
     console.warn(
-      `[uw-socket] stall watchdog — OPEN but no data for ${Math.round((now - freshestMessageAt) / 1000)}s, reconnecting`
+      silentConnect
+        ? `[uw-socket] stall watchdog — OPEN ${elapsed}s with ZERO messages, reconnecting (possible API-key contention)`
+        : `[uw-socket] stall watchdog — OPEN but no data for ${elapsed}s, reconnecting`
     );
     this.reconnectDelay = 1000;
     this.teardownSocket();
@@ -605,6 +624,7 @@ class UwSocketManager {
     const ws = this.ws;
     this.ws = null;
     this.connectStarted = false;
+    this.openedAt = null;
     if (ws) {
       // Detach handlers first so onclose can't schedule a reconnect.
       try {
@@ -1289,7 +1309,7 @@ async function runUwReconcileTick(): Promise<void> {
   }
   uwSocket.ensureConnected();
   uwSocket.heartbeat();
-  uwSocket.reconnectIfStalled(freshestUwMessageAt(), UW_SOCKET_STALL_MS);
+  uwSocket.reconnectIfStalled(freshestUwMessageAt(), UW_SOCKET_STALL_MS, Date.now(), UW_SOCKET_FIRST_MSG_GRACE_MS);
   pruneIdleDynamicGexTickers();
 }
 
