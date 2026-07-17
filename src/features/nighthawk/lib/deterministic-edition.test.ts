@@ -276,3 +276,31 @@ test("thesis is grounded in the score breakdown and cites the leading driver", (
   assert.match(key_signal, /score 66/);
   assert.match(key_signal, /flow/);
 });
+
+test("score floor: candidates below MIN_PUBLISH_SCORE are excluded (PR-N28)", () => {
+  const ranked = [
+    scored("STRONG", "long", 60),
+    scored("OKAY", "short", 42),
+    scored("WEAK", "long", 25),
+    scored("GARBAGE", "short", 10),
+  ];
+  const chains = {
+    STRONG: chainAround(100), OKAY: chainAround(80),
+    WEAK: chainAround(120), GARBAGE: chainAround(90),
+  };
+  const dossierMap = {
+    STRONG: dossier("STRONG", 100), OKAY: dossier("OKAY", 80),
+    WEAK: dossier("WEAK", 120), GARBAGE: dossier("GARBAGE", 90),
+  };
+  const { plays, funnel } = buildDeterministicEditionPlays({ ranked, dossierMap, chains });
+  assert.equal(plays.length, 2, "only STRONG and OKAY clear the floor");
+  assert.deepEqual(plays.map(p => p.ticker), ["STRONG", "OKAY"]);
+  assert.equal(funnel.score_below_floor, 2, "WEAK + GARBAGE counted");
+});
+
+test("thesis explains flow/tech divergence when direction opposes trend (PR-N28)", () => {
+  const s = scored("COIN", "long", 53);
+  const d = dossier("COIN", 160, { tech: { ...dossier("COIN", 160).tech!, trend: "bearish" } } as any);
+  const { thesis } = buildDeterministicThesis(s, d);
+  assert.match(thesis, /Flow conviction overrides bearish technicals/);
+});

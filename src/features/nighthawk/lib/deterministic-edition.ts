@@ -32,7 +32,7 @@ import { buildDirectionalStockLevels, computeRiskReward } from "./play-levels";
 import { applyPremiumCapToPlay, validatePlayGeometry, canonicalTicker } from "./play-constraints";
 import { groundPlays } from "./grounding";
 import { GROUNDING_MIN_OI, tieredMinOi } from "./grounding";
-import { MAX_OPTION_PREMIUM_PER_SHARE } from "./constants";
+import { MAX_OPTION_PREMIUM_PER_SHARE, MIN_PUBLISH_SCORE } from "./constants";
 import { todayEtYmd } from "@/lib/providers/spx-session";
 
 /** Default number of plays a full edition publishes. Mirrors the Claude path's top-5 shape. */
@@ -259,6 +259,7 @@ export function buildDeterministicThesis(
   const setupTags = tech?.setup_tags ?? [];
   const trend = tech?.trend ?? "";
 
+  const trendConflicts = trend && ((isLong && trend === "bearish") || (!isLong && trend === "bullish"));
   if (setupTags.length) {
     const tagText = setupTags.slice(0, 2).join(", ");
     parts.push(`${scored.ticker} showing ${tagText}${trend ? ` in ${trend} trend` : ""}.`);
@@ -266,6 +267,9 @@ export function buildDeterministicThesis(
     parts.push(`${scored.ticker} in ${trend} trend.`);
   } else {
     parts.push(`${scored.ticker} ${dirWord} setup.`);
+  }
+  if (trendConflicts) {
+    parts.push(`Flow conviction overrides ${trend} technicals — institutional money is ${dirWord}.`);
   }
 
   // --- Key S/R levels + R:R ---
@@ -383,7 +387,7 @@ export function buildDeterministicEditionPlays(params: {
   dossierMap: Record<string, TickerDossier>;
   chains: Record<string, EditionChainData>;
   target?: number;
-}): { plays: PlaybookPlay[]; funnel: { candidates: number; contract_ok: number; stock_only: number; no_chain: number; no_spot: number; premium_capped: number; geometry_fail: number; geometry_ok: number; premium_ok: number; grounded: number; dropped_ungrounded: number } } {
+}): { plays: PlaybookPlay[]; funnel: { candidates: number; score_below_floor: number; contract_ok: number; stock_only: number; no_chain: number; no_spot: number; premium_capped: number; geometry_fail: number; geometry_ok: number; premium_ok: number; grounded: number; dropped_ungrounded: number } } {
   const target = params.target ?? DETERMINISTIC_EDITION_TARGET;
   // PR-N18: increased buffer from target+12 to target+20 — with 60 candidates and wider
   // chain coverage, grounding/geometry drops are absorbed without emptying the book.
@@ -400,9 +404,11 @@ export function buildDeterministicEditionPlays(params: {
   const built: PlaybookPlay[] = [];
   const selectedFamilies = new Set<string>();
 
+  let scoreBelowFloorCount = 0;
   for (const scored of params.ranked) {
     if (built.length >= buffer) break;
     if (scored.trading_halt) continue;
+    if (scored.score < MIN_PUBLISH_SCORE) { scoreBelowFloorCount += 1; continue; }
     const ticker = scored.ticker.toUpperCase();
     const canon = canonicalTicker(ticker);
     if (selectedFamilies.has(canon)) continue;
@@ -444,7 +450,7 @@ export function buildDeterministicEditionPlays(params: {
     selectedFamilies.add(canon);
   }
 
-  console.info(`[nighthawk/det-edition] funnel: ${params.ranked.length} candidates → chains for ${Object.keys(params.chains).length} tickers → ${contractOk} with contract, ${stockOnly} stock-only, ${noChainCount} no chain, ${noSpotCount} no spot, ${premiumCapCount} premium-capped, ${geometryFailCount} geometry-fail → ${built.length} built`);
+  console.info(`[nighthawk/det-edition] funnel: ${params.ranked.length} candidates → ${scoreBelowFloorCount} below score floor (${MIN_PUBLISH_SCORE}) → chains for ${Object.keys(params.chains).length} tickers → ${contractOk} with contract, ${stockOnly} stock-only, ${noChainCount} no chain, ${noSpotCount} no spot, ${premiumCapCount} premium-capped, ${geometryFailCount} geometry-fail → ${built.length} built`);
 
   // Ground survivors that HAVE strict (non-caveated) chain contracts. Caveated-contract and
   // stock-only plays skip grounding — their levels come from real S/R data and the contract
@@ -476,6 +482,7 @@ export function buildDeterministicEditionPlays(params: {
       const oppositeDir = dominant === "LONG" ? "short" : "long";
       for (const scored of params.ranked) {
         if (scored.trading_halt) continue;
+        if (scored.score < MIN_PUBLISH_SCORE) continue;
         if (scored.direction !== oppositeDir) continue;
         const t = scored.ticker.toUpperCase();
         if (selectedFamilies.has(canonicalTicker(t))) continue;
@@ -500,6 +507,7 @@ export function buildDeterministicEditionPlays(params: {
     plays: finalPlays,
     funnel: {
       candidates: params.ranked.length,
+      score_below_floor: scoreBelowFloorCount,
       contract_ok: contractOk,
       stock_only: stockOnly,
       no_chain: noChainCount,
@@ -537,6 +545,7 @@ export function buildRescuePlays(params: {
   for (const scored of params.ranked) {
     if (plays.length >= target) break;
     if (scored.trading_halt) continue;
+    if (scored.score < MIN_PUBLISH_SCORE) continue;
     const ticker = scored.ticker.toUpperCase();
     const canon = canonicalTicker(ticker);
     if (selectedFamilies.has(canon)) continue;
