@@ -21,6 +21,7 @@ export function LargoNativeTerminal() {
     hydrated,
     followups,
     activeTools,
+    statusMessage,
     bottomRef,
     runQuery,
     cancel,
@@ -115,7 +116,7 @@ export function LargoNativeTerminal() {
 
         {loading && !streaming && (
           <div className="largo-native-bubble largo-native-bubble-assistant">
-            <LargoThinkingState tools={activeTools} />
+            <LargoThinkingState tools={activeTools} statusMessage={statusMessage} />
           </div>
         )}
 

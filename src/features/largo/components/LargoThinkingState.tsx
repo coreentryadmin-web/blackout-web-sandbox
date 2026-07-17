@@ -7,18 +7,16 @@ export const LARGO_THINKING_PHRASES = [
   "Pulling the live tape…",
   "Reading dealer gamma…",
   "Cross-referencing flow against GEX…",
-  "Pulling market feeds…",
-  "Scanning the 0DTE chain…",
+  "Cortex is lining up the evidence…",
+  "Talking to HELIX — largest prints this session…",
   "Syncing the SPX Slayer desk…",
   "Running confluence on your ask…",
-  "Tracking sweeps in the dark pool…",
-  "Computing max-pain geometry…",
   "Stress-testing your thesis…",
-  "Scoring the setup…",
-  "Reading institutional positioning…",
   "Mapping gamma walls in real time…",
-  "Parsing the order flow…",
-  "Building the read…",
+  "Redis warm · RDS online · feeds live…",
+  "Unusual Whales on speed-dial…",
+  "Polygon chain geometry loading…",
+  "Building the read — this one's worth the wait…",
 ] as const;
 
 const PIPELINE_NODES = [
@@ -32,9 +30,11 @@ type LargoThinkingStateProps = {
   active?: boolean;
   /** Live tool-trace — friendly labels of the data sources Largo is pulling this turn. */
   tools?: string[];
+  /** Server-pushed status (prefetch / enrich / Cortex copy) — takes headline priority. */
+  statusMessage?: string | null;
 };
 
-export function LargoThinkingState({ active = true, tools = [] }: LargoThinkingStateProps) {
+export function LargoThinkingState({ active = true, tools = [], statusMessage = null }: LargoThinkingStateProps) {
   const [phraseIdx, setPhraseIdx] = useState(0);
   const [tick, setTick] = useState(0);
 
@@ -60,9 +60,11 @@ export function LargoThinkingState({ active = true, tools = [] }: LargoThinkingS
   // window before the first tool fires.
   const STATUS_VERBS = ["Reading", "Pulling", "Fetching", "Scanning", "Cross-referencing"] as const;
   const latestTool = tools.length > 0 ? tools[tools.length - 1] : null;
-  const phrase = latestTool
-    ? `${STATUS_VERBS[(tools.length - 1) % STATUS_VERBS.length]} ${latestTool}…`
-    : LARGO_THINKING_PHRASES[phraseIdx];
+  const phrase = statusMessage?.trim()
+    ? statusMessage.trim()
+    : latestTool
+      ? `${STATUS_VERBS[(tools.length - 1) % STATUS_VERBS.length]} ${latestTool}…`
+      : LARGO_THINKING_PHRASES[phraseIdx];
   const activeNode = tick % PIPELINE_NODES.length;
 
   return (

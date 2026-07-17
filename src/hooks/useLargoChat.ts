@@ -122,6 +122,7 @@ export function useLargoChat() {
   const [hydrated, setHydrated] = useState(false);
   const [followups, setFollowups] = useState<string[]>([]);
   const [activeTools, setActiveTools] = useState<string[]>([]);
+  const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [conversations, setConversations] = useState<LargoConversation[]>([]);
   const [activeSessionId, setActiveSessionId] = useState("");
   const [canRegenerate, setCanRegenerate] = useState(false);
@@ -210,6 +211,7 @@ export function useLargoChat() {
       setInput("");
       setFollowups([]);
       setActiveTools([]);
+      setStatusMessage(null);
       setCanRegenerate(false);
       lastQueryRef.current = q;
 
@@ -263,7 +265,8 @@ export function useLargoChat() {
             const label = largoToolLabel(toolName);
             setActiveTools((prev) => (prev.includes(label) ? prev : [...prev, label]));
           },
-          controller.signal
+          controller.signal,
+          (message) => setStatusMessage(message)
         );
         setSession(res.session_id);
         setMessages((m) =>
@@ -309,6 +312,7 @@ export function useLargoChat() {
         setLoading(false);
         setStreaming(false);
         setActiveTools([]);
+        setStatusMessage(null);
       }
     },
     [loading, hydrated, setSession, recordConversation]
@@ -379,6 +383,7 @@ export function useLargoChat() {
     hydrated,
     followups,
     activeTools,
+    statusMessage,
     conversations,
     activeSessionId,
     canRegenerate,

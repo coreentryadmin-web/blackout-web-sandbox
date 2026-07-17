@@ -15,6 +15,85 @@ function tableFromMarkdown(headers: string[], rows: string[][]): BieTable {
   return { headers, rows };
 }
 
+function formatPlaySuggestTable(ctx: unknown): BieTable | null {
+  const c = ctx as {
+    confluence?: { grade?: string; bias?: string; direction?: string };
+    idea?: { direction?: string; strike?: number; option_type?: string; line?: string };
+    desk?: { price?: number; gamma_flip?: number };
+    openPlay?: { status?: string; direction?: string; entry_price?: number; grade?: string };
+    state?: { play?: { bias?: string; grade?: string; style?: string; conviction?: string } };
+  };
+  const rows: string[][] = [];
+  if (c.confluence) {
+    rows.push([
+      "Confluence",
+      c.confluence.grade ?? "—",
+      c.confluence.bias ?? "—",
+      c.confluence.direction ?? "—",
+    ]);
+  }
+  if (c.idea) {
+    rows.push([
+      "Ticket",
+      `${c.idea.direction?.toUpperCase() ?? "—"} ${fmt(c.idea.strike, 0)}${c.idea.option_type === "put" ? "P" : "C"}`,
+      (c.idea.line ?? "").slice(0, 56),
+      "—",
+    ]);
+  }
+  if (c.desk?.price) {
+    rows.push(["Spot / flip", fmt(c.desk.price, 0), fmt(c.desk.gamma_flip, 0), "—"]);
+  }
+  if (c.openPlay?.status === "open") {
+    rows.push([
+      "Engine",
+      "OPEN",
+      c.openPlay.direction?.toUpperCase() ?? "—",
+      `@ ${fmt(c.openPlay.entry_price, 0)} · ${c.openPlay.grade ?? "—"}`,
+    ]);
+  }
+  const vp = c.state?.play;
+  if (vp) {
+    rows.push(["Vector play", vp.bias?.toUpperCase() ?? "—", vp.style ?? "—", `${vp.grade ?? "—"} / ${vp.conviction ?? "—"}`]);
+  }
+  if (!rows.length) return null;
+  return tableFromMarkdown(["Layer", "Primary", "Detail", "Note"], rows);
+}
+
+function formatTechnicalsTable(ctx: unknown): BieTable | null {
+  const tech = (ctx as { tech?: Record<string, unknown> }).tech;
+  if (!tech || !tech.price) return null;
+  const emas = (tech.emas ?? {}) as { ema20?: number; ema50?: number; ema200?: number };
+  const rets = (tech.returns ?? {}) as { d5?: number; d10?: number; d20?: number };
+  return tableFromMarkdown(
+    ["Metric", "Value"],
+    [
+      ["Spot", `${fmt(tech.price, 2)} (${fmt(tech.change_pct, 2)}%)`],
+      ["Trend", String(tech.trend ?? "—")],
+      ["EMA 20 / 50 / 200", `${fmt(emas.ema20, 2)} / ${fmt(emas.ema50, 2)} / ${fmt(emas.ema200, 2)}`],
+      ["RSI(14)", fmt(tech.rsi14, 1)],
+      ["ATR(14)", fmt(tech.atr14, 2)],
+      ["5d / 10d / 20d", `${fmt(rets.d5, 2)}% / ${fmt(rets.d10, 2)}% / ${fmt(rets.d20, 2)}%`],
+    ]
+  );
+}
+
+function formatWallDynamicsTable(ctx: unknown): BieTable | null {
+  const c = ctx as {
+    ladder?: Array<{ kind?: string; strike?: number; net_gex?: number; distance_pts?: number }>;
+    desk?: { gex_walls?: Array<{ kind?: string; strike?: number; net_gex?: number; distance_pts?: number }>; price?: number };
+    spot?: number;
+  };
+  const walls = c.ladder ?? c.desk?.gex_walls ?? [];
+  if (!walls.length) return null;
+  const rows = walls.slice(0, 12).map((w) => [
+    w.kind ?? "wall",
+    fmt(w.strike, 0),
+    fmt(w.net_gex, 0),
+    fmt(w.distance_pts, 1),
+  ]);
+  return tableFromMarkdown(["Wall", "Strike", "Net GEX", "Pts from spot"], rows);
+}
+
 function formatHelixPrintTable(
   ctx: unknown,
   question?: string
@@ -195,6 +274,10 @@ function headlineForRoute(route: BieRoute): string {
     thermal_read: "Thermal",
     play_engine_read: "Play engines",
     grid_rejections_read: "Grid rejections",
+    wall_dynamics_read: "Wall dynamics",
+    technical_read: "Technicals",
+    play_suggest_read: "Play ticket",
+    vector_pulse_read: "Vector Pulse",
     ticker_compare: "Compare",
     clarify_read: "Rephrase",
   };
@@ -272,6 +355,9 @@ export function applyDynamicFormat(
       else if (route.intent === "grid_rejections_read") table = formatGridRejectionsTable(ctx);
       else if (route.intent === "play_engine_read") table = formatPlayEngineTable(ctx);
       else if (route.intent === "thermal_read") table = formatThermalMetricTable(ctx);
+      else if (route.intent === "technical_read") table = formatTechnicalsTable(ctx);
+      else if (route.intent === "wall_dynamics_read") table = formatWallDynamicsTable(ctx);
+      else if (route.intent === "play_suggest_read") table = formatPlaySuggestTable(ctx);
       if (table) body = markdownTable(table.headers, table.rows);
       break;
     case "levels":

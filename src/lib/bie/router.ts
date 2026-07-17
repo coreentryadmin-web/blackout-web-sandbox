@@ -63,7 +63,8 @@ export type BieIntent =
   | "clarify_read"
   | "technical_read"
   | "play_suggest_read"
-  | "wall_dynamics_read";
+  | "wall_dynamics_read"
+  | "vector_pulse_read";
 
 export type BieRoute = {
   intent: BieIntent;
@@ -123,6 +124,9 @@ const TECHNICALS_RE =
 
 const WALL_DYNAMICS_RE =
   /\b(walls? (are )?(building|fading|forming|dissolv|stacking|holding|breaking)|building (vs|or) fading|wall dynamics|wall integrity|beads forming|which walls|dealer walls?|gamma walls?|gex walls?|wall strength|wall ladder|restack)\b/i;
+
+const VECTOR_PULSE_RE =
+  /\b(vector pulse|pulse feed|pulse commentator|what just changed|recent signals?|live signals?|transitions? (on|for|with)|what happened (on|to|with)|bead rail|beads? (forming|moving|live)|wall events? (on|for|recent))\b|\bpulse\b.{0,40}\b(nvda|amd|tsla|spy|qqq|iwm|aapl|msft|meta|amzn|spx)\b|\b(nvda|amd|tsla|spy|qqq|iwm|aapl|msft|meta|amzn|spx)\b.{0,40}\bpulse\b/i;
 
 const PLAY_ENGINE_RE =
   /\b(play engine|slayer engine|spx engine|engine state|engine long|engine short|long or short right now|power hour)\b/i;
@@ -540,6 +544,13 @@ export function classifyBieIntent(question: string, ledgerTickers: Set<string>):
   }
   const narrowThermal = narrowThermalRoute(q);
   if (narrowThermal) return narrowThermal;
+  if (VECTOR_PULSE_RE.test(q)) {
+    return {
+      intent: "vector_pulse_read",
+      ticker: extractKnownTicker(q) ?? "SPX",
+      horizon: extractHorizon(q),
+    };
+  }
   if (wantsWallDynamics(q) || WALL_DYNAMICS_RE.test(q)) {
     return { intent: "wall_dynamics_read", ticker: extractKnownTicker(q) ?? "SPX" };
   }
@@ -777,6 +788,13 @@ export function classifyBieStagingFallback(question: string): BieRoute {
   }
   const narrowThermal = narrowThermalRoute(q);
   if (narrowThermal) return narrowThermal;
+  if (VECTOR_PULSE_RE.test(q)) {
+    return {
+      intent: "vector_pulse_read",
+      ticker: extractKnownTicker(q) ?? "SPX",
+      horizon: extractHorizon(q),
+    };
+  }
   if (wantsWallDynamics(q) || WALL_DYNAMICS_RE.test(q)) {
     return { intent: "wall_dynamics_read", ticker: extractKnownTicker(q) ?? "SPX" };
   }
@@ -963,7 +981,13 @@ export function bieFollowups(intent: BieIntent): string[] {
     case "clarify_read":
       return ["What's the SPX setup right now?", "Any unusual flow right now?", "Compare NVDA vs AMD"];
     case "wall_dynamics_read":
-      return ["What's the full SPX desk read?", "Which strike is king node?", "Compare GEX vs VEX"];
+      return ["What's the Vector Pulse on this name?", "Which strike is king node?", "Compare GEX vs VEX"];
+    case "vector_pulse_read":
+      return [
+        "Full Vector desk read",
+        "Which walls are building vs fading?",
+        "What's the play and where does it invalidate?",
+      ];
     case "technical_read":
       return ["What's the Vector setup?", "What's the SPX desk read?", "Show relative strength vs SPY"];
     case "play_suggest_read":

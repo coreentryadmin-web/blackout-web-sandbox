@@ -16,6 +16,7 @@ import { runLargoTool } from "@/lib/largo/run-tool";
 import { bieFollowups, bieIntentBucket, classifyBieIntent, classifyBieStagingFallback, isSpxDeskFallbackQuestion, type BieRoute } from "@/lib/bie/router";
 import { composeBieAnswer, composeCompound } from "@/lib/bie/composers";
 import { prefetchLargoLiveFeed } from "@/lib/bie/largo-live-prefetch";
+import { createLargoStatusTicker, largoRouteStatus } from "@/lib/bie/largo-status";
 import type { BieAnswerEnvelope } from "@/lib/bie/answer-envelope";
 import { isRichBieEnvelope } from "@/lib/bie/envelope-richness";
 import { isCompoundQuestion } from "@/lib/bie/decompose";
@@ -54,6 +55,7 @@ export function isSseClientDisconnect(err: unknown): boolean {
 
 export type LargoStreamEvent =
   | AnthropicToolLoopEvent
+  | { type: "status"; message: string }
   | {
       type: "done";
       answer: string;
@@ -273,7 +275,8 @@ function composerFailedMessage(route: BieRoute): string {
 }
 
 async function tryBieRoute(
-  question: string
+  question: string,
+  opts?: { onStatus?: (message: string) => void; userId?: string }
 ): Promise<{ route: BieRoute; answer: string; context: unknown; envelope: BieAnswerEnvelope | null } | null> {
   try {
     const ledger = await readZeroDteLedger().catch(() => []);
@@ -284,6 +287,7 @@ async function tryBieRoute(
     // tightly — isCompoundQuestion returns true ONLY for a confident multi-question message, so a
     // normal single question falls straight through to the unchanged path below (no regression).
     if (isCompoundQuestion(question)) {
+      opts?.onStatus?.("Decomposing compound question — parallel fan-out…");
       const composed = await composeCompound(question, ledgerTickers);
       if (composed) {
         return {
@@ -297,7 +301,12 @@ async function tryBieRoute(
 
     const route = classifyBieIntent(question, ledgerTickers);
     if (route) {
-      const composed = await composeBieAnswer(route, { question });
+      opts?.onStatus?.(largoRouteStatus(route));
+      const composed = await composeBieAnswer(route, {
+        question,
+        onStatus: opts?.onStatus,
+        userId: opts?.userId,
+      });
       if (composed) return { route, answer: composed.answer, context: composed.context, envelope: composed.envelope ?? null };
       // Router matched but composer returned null (threw internally). Return an honest
       // "can't read this right now" instead of falling through to the Claude tool-loop
@@ -313,7 +322,12 @@ async function tryBieRoute(
 
     // BIE-only staging: broad SPX asks that missed the router still get the Live Desk brief.
     if (!route && isSpxDeskFallbackQuestion(question)) {
-      const composed = await composeBieAnswer({ intent: "spx_desk_read", ticker: "SPX" }, { question });
+      opts?.onStatus?.("Broad SPX ask — routing to Live Desk brief…");
+      const composed = await composeBieAnswer({ intent: "spx_desk_read", ticker: "SPX" }, {
+        question,
+        onStatus: opts?.onStatus,
+        userId: opts?.userId,
+      });
       if (composed) {
         return {
           route: { intent: "spx_desk_read", ticker: "SPX" },
@@ -327,11 +341,20 @@ async function tryBieRoute(
     // BIE-only (staging default or LARGO_BIE_ONLY=1): never return null — compose deterministically.
     if (!route && largoBieOnly()) {
       const fallback = classifyBieStagingFallback(question);
-      const composed = await composeBieAnswer(fallback, { question });
+      opts?.onStatus?.(largoRouteStatus(fallback));
+      const composed = await composeBieAnswer(fallback, {
+        question,
+        onStatus: opts?.onStatus,
+        userId: opts?.userId,
+      });
       if (composed) {
         return { route: fallback, answer: composed.answer, context: composed.context, envelope: composed.envelope ?? null };
       }
-      const clarify = await composeBieAnswer({ intent: "clarify_read", ticker: null }, { question });
+      const clarify = await composeBieAnswer({ intent: "clarify_read", ticker: null }, {
+        question,
+        onStatus: opts?.onStatus,
+        userId: opts?.userId,
+      });
       if (clarify) {
         return {
           route: { intent: "clarify_read", ticker: null },
@@ -567,8 +590,23 @@ export async function runLargoQueryStream(
   onEvent: (event: LargoStreamEvent) => void
 ): Promise<void> {
   const startedAt = Date.now();
-  await prefetchLargoLiveFeed();
-  const routed = await tryBieRoute(question);
+  const emitStatus = (message: string) => {
+    try {
+      onEvent({ type: "status", message });
+    } catch (err) {
+      if (isSseClientDisconnect(err)) throw new SseClientDisconnected();
+    }
+  };
+
+  const routeTicker = createLargoStatusTicker({
+    phase: "route",
+    onStatus: emitStatus,
+    intervalMs: 1_100,
+  });
+  routeTicker.start();
+  await prefetchLargoLiveFeed({ onStatus: emitStatus });
+  const routed = await tryBieRoute(question, { onStatus: emitStatus, userId });
+  routeTicker.stop();
   if (routed) {
     const rsid = sessionId.trim() || `web-${userId}-${Date.now()}`;
     const ctxNumbers = collectContextNumbers(routed.context);

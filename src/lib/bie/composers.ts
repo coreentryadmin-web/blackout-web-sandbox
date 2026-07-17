@@ -42,7 +42,13 @@ import {
 } from "./decompose";
 
 /** Optional member question — premise correction + advice routing context. */
-export type ComposeBieOpts = { question?: string };
+export type ComposeBieOpts = {
+  question?: string;
+  /** Stream UI — status lines while composing / enriching. */
+  onStatus?: (message: string) => void;
+  /** Passed through to live enrichment tool calls (session attribution). */
+  userId?: string;
+};
 
 /** Deterministic answer plus the raw source payload for Layer 4 claim verification. */
 import { tierLine, type BieComposed } from "@/lib/bie/composers-shared";
@@ -337,7 +343,7 @@ async function composeVectorRead(
   }
 
   const brief = composeVectorDeskBrief(state, question);
-  const answer = stripGroundingTokens(
+  let answer = stripGroundingTokens(
     [
       `**Vector desk read — ${ticker.toUpperCase()} (${state.horizon.toUpperCase()})**`,
       "",
@@ -346,6 +352,14 @@ async function composeVectorRead(
       brief.body,
     ].join("\n")
   );
+
+  const { appendVectorPulseSection } = await import("@/lib/bie/vector-pulse-brief");
+  const { questionWantsVectorPulse } = await import("@/lib/bie/live-data-enrich-detect");
+  if (questionWantsVectorPulse(question)) {
+    const pulse = await appendVectorPulseSection(state);
+    if (pulse.markdown) answer += pulse.markdown;
+  }
+
   return { answer, context: { state, known: knownVectorNumbers(state) } };
 }
 
@@ -792,7 +806,7 @@ export async function composeCompound(
 /** Compose the deterministic answer for a route, or null → Claude fallback. */
 export async function composeBieAnswer(route: BieRoute, opts?: ComposeBieOpts): Promise<BieComposed | null> {
   const cacheKey = largoAnswerCacheKey(route.intent, route.ticker, route.ticker_b, opts?.question);
-  const composed = await withServerCache<BieComposed | null>(
+  let composed = await withServerCache<BieComposed | null>(
     cacheKey,
     BIE_LARGO_ANSWER_TTL_MS,
     () => composeBieAnswerUncached(route, opts),
@@ -801,6 +815,14 @@ export async function composeBieAnswer(route: BieRoute, opts?: ComposeBieOpts): 
   // Backward-compatible envelope guarantee: every answer carries a structured BieAnswerEnvelope for
   // the member UI. Legs that already build one (verdict, and future migrations) keep theirs; a
   // string-only leg is wrapped in a minimal single-section envelope (no fabricated structure).
+  if (composed) {
+    const { enrichComposedIfNeeded } = await import("@/lib/bie/live-data-enrich");
+    composed = await enrichComposedIfNeeded(route, composed, {
+      question: opts?.question,
+      onStatus: opts?.onStatus,
+      userId: opts?.userId,
+    });
+  }
   if (composed && !composed.envelope) {
     const { envelopeFromMarkdown } = await import("@/lib/bie/answer-envelope");
     composed.envelope = envelopeFromMarkdown(composed.answer, {
@@ -860,6 +882,7 @@ function headlineForRoute(route: BieRoute): string {
     wall_dynamics_read: "Wall dynamics",
     technical_read: "Technicals",
     play_suggest_read: "Play suggestion",
+    vector_pulse_read: "Vector Pulse",
   };
   return map[route.intent] ?? "BIE read";
 }
@@ -976,6 +999,18 @@ async function composeBieAnswerUncached(route: BieRoute, opts?: ComposeBieOpts):
       case "play_suggest_read": {
         const { composePlaySuggestRead } = await import("@/lib/bie/play-suggest-read");
         return await composePlaySuggestRead(route.ticker);
+      }
+      case "vector_pulse_read": {
+        const { composeVectorPulseRead } = await import("@/lib/bie/vector-pulse-brief");
+        const { normalizeDteHorizon } = await import("@/features/vector/lib/vector-dte-horizon");
+        return route.ticker
+          ? await composeVectorPulseRead(
+              route.ticker,
+              normalizeDteHorizon(route.horizon ?? "all"),
+              opts?.question,
+              timeframeMinFromQuestion(opts?.question)
+            )
+          : null;
       }
       default:
         return null;

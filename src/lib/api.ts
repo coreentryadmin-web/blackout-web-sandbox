@@ -486,7 +486,9 @@ export async function queryLargoStream(
    * distinguish it from the internal timeout so the UI can preserve the partial
    * streamed answer instead of showing a timeout error.
    */
-  externalSignal?: AbortSignal
+  externalSignal?: AbortSignal,
+  /** Fancy status lines while prefetch / BIE compose / live enrich runs. */
+  onStatus?: (message: string) => void
 ): Promise<{
   answer: string;
   session_id: string;
@@ -593,9 +595,9 @@ export async function queryLargoStream(
         };
 
         if (event.type === "ping") continue;
-        if (event.type === "ping") continue;
         if (event.type === "token" && event.text) onToken(event.text);
         if (event.type === "tool_start" && event.name) onTool?.(event.name);
+        if (event.type === "status" && event.message) onStatus?.(event.message);
         if (event.type === "done" && event.answer && event.session_id) {
           result = {
             answer: event.answer,

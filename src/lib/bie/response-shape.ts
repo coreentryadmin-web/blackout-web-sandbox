@@ -35,7 +35,12 @@ export function inferAnswerShape(route: BieRoute, question?: string): AnswerShap
     case "ticker_compare":
     case "grid_rejections_read":
     case "play_engine_read":
+    case "technical_read":
+    case "wall_dynamics_read":
+    case "play_suggest_read":
       return "table";
+    case "vector_pulse_read":
+      return "sections";
     case "clarify_read":
       return "bullets";
     case "platform_read":
