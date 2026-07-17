@@ -331,8 +331,8 @@ export function scoreFlowQuality(
   flows: Record<string, unknown>[],
   flowStreak?: FlowStreak,
   opts?: { streakWeight?: number; riskReversalSkew?: number | null }
-): { score: number; direction: "long" | "short"; directionFlippedBySkew: boolean } {
-  if (!flows.length) return { score: 0, direction: "long", directionFlippedBySkew: false };
+): { score: number; direction: "long" | "short"; directionFlippedBySkew: boolean; flowMargin: number } {
+  if (!flows.length) return { score: 0, direction: "long", directionFlippedBySkew: false, flowMargin: 1 };
 
   let totalPrem = 0;
   let sweepPrem = 0;
@@ -414,6 +414,9 @@ export function scoreFlowQuality(
     callWeightedPrem >= putWeightedPrem ? "long" : "short";
   let directionFlippedBySkew = false;
 
+  const weightedTotal = callWeightedPrem + putWeightedPrem;
+  const flowMargin = weightedTotal > 0 ? Math.abs(callWeightedPrem - putWeightedPrem) / weightedTotal : 1;
+
   const skew = opts?.riskReversalSkew;
   if (skew != null && Number.isFinite(skew) && skew !== 0) {
     // UW's `risk_reversal` field is (put IV − call IV), not (call IV − put IV) — verified
@@ -424,8 +427,6 @@ export function scoreFlowQuality(
     // skew as a bullish signal, which could flip a candidate's flow-implied direction to the
     // WRONG side when flow margin was thin and skew magnitude was large.
     const skewDir: "long" | "short" = skew > 0 ? "short" : "long";
-    const weightedTotal = callWeightedPrem + putWeightedPrem;
-    const flowMargin = weightedTotal > 0 ? Math.abs(callWeightedPrem - putWeightedPrem) / weightedTotal : 1;
 
     if (skewDir !== direction) {
       if (flowMargin < 0.12 && Math.abs(skew) >= 0.3) {
@@ -438,7 +439,7 @@ export function scoreFlowQuality(
     }
   }
 
-  return { score, direction, directionFlippedBySkew };
+  return { score, direction, directionFlippedBySkew, flowMargin };
 }
 
 export function scoreTechnicalSetup(tech: TechnicalCard | null, direction: "long" | "short"): number {
@@ -912,29 +913,43 @@ export function scoreCandidate(
     streakWeight: scoring?.streakWeight,
     riskReversalSkew: dossierExtras.risk_reversal_skew,
   });
-  const techScore = scoreTechnicalSetup(tech, flow.direction);
-  const posScore = scoreOptionsPositioning(dossierExtras, flow.direction);
-  const newsScore = scoreNewsCatalyst(dossierExtras, flow.direction);
-  const smartMoneyScore = scoreSmartMoney(dossierExtras, flow.direction);
+
+  // PR-N27: when flow is ambiguous (thin margin), let technicals disambiguate direction.
+  // A 55/45 call/put split is noise, not conviction — defer to the structural trend.
+  let direction = flow.direction;
+  let directionFlippedByTech = false;
+  if (!flow.directionFlippedBySkew && flow.flowMargin < 0.25 && tech?.trend) {
+    const techDir: "long" | "short" | null =
+      tech.trend === "bearish" ? "short" : tech.trend === "bullish" ? "long" : null;
+    if (techDir && techDir !== direction) {
+      direction = techDir;
+      directionFlippedByTech = true;
+    }
+  }
+
+  const techScore = scoreTechnicalSetup(tech, direction);
+  const posScore = scoreOptionsPositioning(dossierExtras, direction);
+  const newsScore = scoreNewsCatalyst(dossierExtras, direction);
+  const smartMoneyScore = scoreSmartMoney(dossierExtras, direction);
   const skewAdj = flow.directionFlippedBySkew
     ? 0
-    : scoreSkewConfirmation(dossierExtras.risk_reversal_skew, flow.direction);
+    : scoreSkewConfirmation(dossierExtras.risk_reversal_skew, direction);
   // Fundamental tailwind/headwind is a MODIFIER layered on the flow/technical base — never an override.
   const fundamentalScore = scoreFundamentalTailwind(
     dossierExtras.fundamental_ratios,
     dossierExtras.fundamental_signals,
-    flow.direction
+    direction
   );
   // Short-interest squeeze bonus (longs only, proxy via days_to_cover).
-  const shortInterestScore = scoreShortInterest(dossierExtras.short_days_to_cover, flow.direction);
+  const shortInterestScore = scoreShortInterest(dossierExtras.short_days_to_cover, direction);
 
   // Wall-proximity and VEX-direction scoring — Cortex signal brought into overnight scoring.
-  const wallProxScore = scoreWallProximity(dossierExtras.positioning, flow.direction);
-  const vexScore = scoreVexAlignment(dossierExtras.positioning, flow.direction);
+  const wallProxScore = scoreWallProximity(dossierExtras.positioning, direction);
+  const vexScore = scoreVexAlignment(dossierExtras.positioning, direction);
 
   // Catalyst awareness — a SMALL, conservative nudge (binary-event penalty + positive-catalyst note).
   // Like the fundamental modifier, it layers on the base and never overrides flow direction.
-  const catalyst = scoreCatalystAwareness(dossierExtras.catalysts, flow.direction);
+  const catalyst = scoreCatalystAwareness(dossierExtras.catalysts, direction);
 
   // Earnings proximity penalty: if earnings are today or tomorrow-premarket and the nearest
   // flow expiry is tomorrow, apply −6 to the catalyst score (floor behavior) and flag earnings_risk.
@@ -962,10 +977,10 @@ export function scoreCandidate(
     const ptAgeMs = Date.now() - new Date(ptData.published).getTime();
     const sevenDaysMs = 7 * 24 * 60 * 60 * 1000;
     if (ptAgeMs >= 0 && ptAgeMs <= sevenDaysMs) {
-      if (ptData.action === "raised" && flow.direction === "long") {
+      if (ptData.action === "raised" && direction === "long") {
         ptNudge = 2;
         catalyst.flags.push(`analyst PT raised within 7 days (${ptData.firm ?? "firm unknown"})`);
-      } else if (ptData.action === "lowered" && flow.direction === "long") {
+      } else if (ptData.action === "lowered" && direction === "long") {
         ptNudge = -2;
         catalyst.flags.push(`analyst PT cut within 7 days (${ptData.firm ?? "firm unknown"}) — headwind for long`);
       }
@@ -1046,7 +1061,7 @@ export function scoreCandidate(
   return {
     ticker,
     score: total,
-    direction: flow.direction,
+    direction,
     flow_score: flow.score,
     tech_score: techScore,
     pos_score: posScore,

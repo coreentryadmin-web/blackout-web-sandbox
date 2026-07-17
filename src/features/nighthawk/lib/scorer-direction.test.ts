@@ -258,6 +258,62 @@ test("scoreFlowQuality: strong negative (bullish) skew flips a put-leaning flow 
   assert.equal(result.directionFlippedBySkew, true);
 });
 
+// ── scoreCandidate: tech tiebreaker when flow is ambiguous (PR-N27) ──────────
+
+test("scoreCandidate: bearish tech flips ambiguous call-leaning flow to SHORT (PR-N27)", () => {
+  // 52/48 call/put split — margin ~0.077, well under 0.25 threshold
+  const flows = [
+    { type: "call", total_premium: 520_000 },
+    { type: "put", total_premium: 480_000 },
+  ];
+  const bearishTech = {
+    ticker: "TEST", price: 100, trend: "bearish" as const, setup_tags: [],
+    support_levels: [], resistance_levels: [], gap_zones: [], breakout_zones: [],
+    prior_day: { high: 105, low: 95, close: 100 },
+    weekly: { high: null, low: null },
+    rsi14: 60, rel_volume: 1.5, atr14: 3, vwap: 100, ema20: 100, ema50: 100, ema200: 100,
+    summary: "bearish",
+  };
+  const result = scoreCandidate("TEST", flows, bearishTech, {});
+  assert.equal(result.direction, "short", "bearish tech should flip ambiguous flow to short");
+});
+
+test("scoreCandidate: bearish tech does NOT flip strong call-dominant flow (PR-N27)", () => {
+  // 80/20 call/put split — margin ~0.6, well above 0.25 threshold
+  const flows = [
+    { type: "call", total_premium: 4_000_000 },
+    { type: "put", total_premium: 1_000_000 },
+  ];
+  const bearishTech = {
+    ticker: "TEST", price: 100, trend: "bearish" as const, setup_tags: [],
+    support_levels: [], resistance_levels: [], gap_zones: [], breakout_zones: [],
+    prior_day: { high: 105, low: 95, close: 100 },
+    weekly: { high: null, low: null },
+    rsi14: 60, rel_volume: 1.5, atr14: 3, vwap: 100, ema20: 100, ema50: 100, ema200: 100,
+    summary: "bearish",
+  };
+  const result = scoreCandidate("TEST", flows, bearishTech, {});
+  assert.equal(result.direction, "long", "strong flow conviction should override bearish tech");
+});
+
+test("scoreCandidate: bullish tech keeps ambiguous flow as LONG (PR-N27)", () => {
+  // 51/49 call/put split — margin ~0.02
+  const flows = [
+    { type: "call", total_premium: 510_000 },
+    { type: "put", total_premium: 490_000 },
+  ];
+  const bullishTech = {
+    ticker: "TEST", price: 100, trend: "bullish" as const, setup_tags: [],
+    support_levels: [], resistance_levels: [], gap_zones: [], breakout_zones: [],
+    prior_day: { high: 105, low: 95, close: 100 },
+    weekly: { high: null, low: null },
+    rsi14: 55, rel_volume: 1.5, atr14: 3, vwap: 100, ema20: 100, ema50: 100, ema200: 100,
+    summary: "bullish",
+  };
+  const result = scoreCandidate("TEST", flows, bullishTech, {});
+  assert.equal(result.direction, "long", "bullish tech confirms ambiguous long flow");
+});
+
 // ── scoreOptionsPositioning: dealer greek flow alignment ────────────────────
 
 test("positioning: bullish dealer greek flow adds +3 for LONG", () => {
