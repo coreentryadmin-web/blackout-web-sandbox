@@ -60,9 +60,10 @@ export const EDITION_MIN_PUBLISH_PLAYS = 3;
 /** Overshoot sent through synthesis + critic — critic cuts weak plays with no backfill. */
 export const EDITION_SYNTHESIS_OVERSHOOT = 9;
 /** Stock tickers to prefetch option chains for (buffer above 5 final plays).
- *  Raised from 18 to 28 — the narrower 18 meant candidates ranked 19-60 could never get
+ *  Raised from 28 to 40 — matches MAX_DOSSIER_STOCKS so every dossier'd candidate
+ *  gets a chain lookup. The narrower 28 meant candidates ranked 29-60 could never get
  *  a real contract, even when higher-ranked names failed premium/OI gates. */
-export const EDITION_CHAIN_PREFETCH = 28;
+export const EDITION_CHAIN_PREFETCH = 40;
 export const MIN_STOCK_FLOW_PREMIUM = 100_000;
 export const MIN_HOT_CHAIN_PREMIUM = 500_000;
 /** Market-wide flow tape — higher limit captures late-session event volume. */

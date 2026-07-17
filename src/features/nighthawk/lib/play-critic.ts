@@ -19,8 +19,13 @@ import type { ScoredCandidate } from "./scorer";
 import { assignNighthawkTier, nhTierInputFromScored, nhConvictionRank } from "./nighthawk-tiers";
 import type { PlaybookPlay } from "./types";
 
-/** Minimum composite score for a play to publish — below this it's cut. */
-const CRITIC_SCORE_FLOOR = 25;
+/** Minimum composite score for a play to publish — below this it's cut.
+ *  Lowered from 25 to 10: overnight editions score with thin after-hours data
+ *  (flow premium near zero, real-time signals stale), so the raw composite
+ *  score is structurally lower than a daytime build. The tier engine and
+ *  publish gates already filter quality; a 25 floor was killing every candidate
+ *  and forcing the rescue path to promote a single gate_promoted play. */
+const CRITIC_SCORE_FLOOR = 10;
 
 /** Minimum number of positive scoring dimensions (out of flow/tech/pos/news/smart_money)
  *  for a play to pass without a downgrade. */

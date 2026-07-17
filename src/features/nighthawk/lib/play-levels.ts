@@ -5,6 +5,12 @@
 // keep using literally the same parser.
 import type { PlaybookPlay } from "./types";
 
+/** Max stop distance from spot (fraction). Prevents dossier S/R from producing absurd
+ *  risk plans (e.g., support at -18% for a LONG = unactionable stop). */
+const MAX_STOP_DISTANCE_PCT = 0.08;
+/** Max target distance from spot (fraction). Keeps targets achievable for overnight plays. */
+const MAX_TARGET_DISTANCE_PCT = 0.12;
+
 export type ParsedPlayLevels = {
   entry_range_low: number | null;
   entry_range_high: number | null;
@@ -70,20 +76,31 @@ export function buildDirectionalStockLevels(params: {
   const spot = params.spot != null && Number.isFinite(params.spot) && params.spot > 0 ? params.spot : null;
 
   // Spot-anchored path: overnight plays where the member acts at the next open.
-  // Entry bands near spot, stop at real S/R, target at real S/R.
+  // Entry bands near spot, stop/target at real S/R but clamped so neither is absurdly
+  // far from entry (a dossier support at -18% produces unactionable risk/reward).
   if (spot != null && support != null && resistance != null && resistance > support) {
+    const maxStopDist = spot * MAX_STOP_DISTANCE_PCT;
+    const maxTargetDist = spot * MAX_TARGET_DISTANCE_PCT;
     if (params.direction === "long") {
+      const rawStop = support;
+      const clampedStop = spot - Math.min(spot - rawStop, maxStopDist);
+      const rawTarget = resistance;
+      const clampedTarget = spot + Math.min(rawTarget - spot, maxTargetDist);
       return {
         entry_range: `$${formatStockLevel(spot * 0.995)}-$${formatStockLevel(spot * 1.005)}`,
-        target: formatStockLevel(resistance),
-        stop: formatStockLevel(support),
+        target: formatStockLevel(Math.max(clampedTarget, spot * 1.01)),
+        stop: formatStockLevel(Math.min(clampedStop, spot * 0.99)),
       };
     }
     if (params.direction === "short") {
+      const rawStop = resistance;
+      const clampedStop = spot + Math.min(rawStop - spot, maxStopDist);
+      const rawTarget = support;
+      const clampedTarget = spot - Math.min(spot - rawTarget, maxTargetDist);
       return {
         entry_range: `$${formatStockLevel(spot * 0.995)}-$${formatStockLevel(spot * 1.005)}`,
-        target: formatStockLevel(support),
-        stop: formatStockLevel(resistance),
+        target: formatStockLevel(Math.min(clampedTarget, spot * 0.99)),
+        stop: formatStockLevel(Math.max(clampedStop, spot * 1.01)),
       };
     }
   }
