@@ -12,7 +12,7 @@ export type BieFullState = {
   asOf: string;
   /** getPlatformSnapshot() — SPX desk + flow tape + Night Hawk in one. */
   platform: unknown | null;
-  /** fetchPlatformIntelSnapshot() — market-regime backdrop. */
+  /** fetchPlatformIntelSnapshot() — market-regime backdrop (RDS). */
   intel: unknown | null;
   /** refreshVectorUniverseSnapshot() rows — Vector wall summary across the universe. */
   vectorUniverse: unknown | null;
@@ -20,6 +20,20 @@ export type BieFullState = {
   darkPool: unknown | null;
   /** fetchHotTickers() — hottest flow names. */
   hotTickers: unknown | null;
+  /** Thermal canonical positioning — same contract as Heat Maps / SPX rail. */
+  thermalSpx: unknown | null;
+  thermalSpy: unknown | null;
+  thermalQqq: unknown | null;
+  /** Compact SPX 0DTE matrix (GEX/VEX/DEX/CHARM scalars + near-spot ladder — not full cell grid). */
+  thermalMatrix: unknown | null;
+  /** Vector SPX 0DTE desk scalars + play. */
+  vectorSpx: unknown | null;
+  /** 0DTE Command board summary. */
+  zerodte: unknown | null;
+  /** HELIX regime detector snapshot. */
+  regime: unknown | null;
+  /** get_market_context tool payload — indices, tide, breadth. */
+  marketContext: unknown | null;
   /** Per-loader errors (name → message) for observability; empty when all succeeded. */
   errors: Record<string, string>;
 };

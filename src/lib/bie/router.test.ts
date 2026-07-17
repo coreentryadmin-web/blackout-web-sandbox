@@ -550,9 +550,18 @@ describe("router: nighthawk_edition intent (PR-N9 — BIE × Night Hawk edition 
     assert.equal(classifyBieIntent("show me the plays", NO_LEDGER)?.intent, "zerodte_plays");
   });
 
+  test("staging fallback routes platform-wide shapes", () => {
+    assert.equal(classifyBieStagingFallback("full platform snapshot").intent, "platform_read");
+    assert.equal(classifyBieStagingFallback("know everything on the site").intent, "platform_read");
+  });
+
+  test("primary router routes platform_read before reasoning fallback", () => {
+    assert.equal(classifyBieIntent("I need to know in and out about every product", new Set())?.intent, "platform_read");
+  });
+
   test("staging fallback routes track-record shapes", () => {
     assert.equal(classifyBieStagingFallback("what is the track record").intent, "record_read");
-    assert.equal(classifyBieStagingFallback("win rate on the plays").intent, "record_read");
+    assert.equal(classifyBieStagingFallback("historical performance win rate").intent, "record_read");
   });
 
   test("staging fallback routes the same edition shapes", () => {

@@ -75,6 +75,7 @@ Key files:
 | `concept_read` | What is GEX | Glossary |
 | `universal_lookup` | Pull `/api/market/...` | `call_internal_api` allowlist |
 | `system_diagnostic` | Why isn't X updating | Pipeline health readers |
+| `platform_read` | Full platform / every product / all data | `bie:full-state` Redis snapshot (Thermal matrix, Vector, HELIX, NH, 0DTE, regime) |
 | `compound_lookup` | Multi-part question | Parallel sub-composers |
 
 **Router returns `null` (→ Claude on prod):**
@@ -105,7 +106,26 @@ Scopes: **`desk`** (hot SPX path), **`market`**, **`full`**.
 
 Cached: `getCachedBiePlatformContext()` — 8s desk / 5s market SWR.
 
-**Does not include by default:** full Thermal cell matrix, per-print HELIX tape rows, raw Redis keys, member watchlists, admin/cron surfaces.
+**Does not include by default:** full Thermal cell matrix JSON on every intent (use `platform_read` or `thermalMatrix` in `bie:full-state`), raw Redis key dumps, member watchlists, admin/cron surfaces.
+
+### Full platform snapshot (`bie:full-state` → `platform_read`)
+
+Cron **`bie-full-state-snapshot`** writes Redis key **`bie:full-state`** every ~5 min RTH. Largo reads it via **`getBieFullStateForLargo()`** — live rebuild when cold/stale.
+
+| Field | Products / data |
+|-------|-----------------|
+| `platform` | SPX Slayer + HELIX tape + Night Hawk edition |
+| `intel` | RDS regime, anomalies, signal recommendation |
+| `thermalSpx/Spy/Qqq` | GEX/VEX/DEX/CHARM positioning (canonical Thermal contract) |
+| `thermalMatrix` | SPX 0DTE matrix scalars + near-spot γ ladder |
+| `vectorSpx` | Vector SPX 0DTE desk (walls, flip, play) |
+| `vectorUniverse` | Vector wall summary rows |
+| `zerodte` | 0DTE Command board |
+| `regime` | HELIX regime detector |
+| `marketContext` | Indices, tide, breadth |
+| `hotTickers` / `darkPool` | HELIX flow leaders + dark pool |
+
+Ask Largo: *"full platform snapshot"* or *"know in and out about every product"* → **`platform_read`** intent.
 
 ---
 

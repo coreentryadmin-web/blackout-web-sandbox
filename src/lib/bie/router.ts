@@ -31,7 +31,8 @@ export type BieIntent =
   | "record_read"
   | "cortex_read"
   | "nighthawk_edition"
-  | "scenario";
+  | "scenario"
+  | "platform_read";
 
 export type BieRoute = {
   intent: BieIntent;
@@ -335,6 +336,10 @@ function isSpxHorizonScopedStructureQuestion(q: string, horizon: string): boolea
 const RECORD_RE =
   /\b(honest record|track[- ]?record|performance|track (record |)?on (today'?s|the) plays?|win\s*rate|how (well|good).{0,30}(perform|do)|historical (plays|records?|performance|p&l)|past .{0,30}(record|performance)|p&l.{0,30}(yesterday|today|week))\b/i;
 
+// Cross-product / "know everything" asks — full bie:full-state snapshot (Thermal matrix, Vector, HELIX, etc.).
+const PLATFORM_READ_RE =
+  /\b(whole platform|full platform|all products|every product|every tool|platform snapshot|everything on (the )?(site|platform|desk)|all (the )?(data|numbers)|complete platform|blackout platform|in and out about|know(s)? (in and out|everything)|full system|entire platform)\b/i;
+
 // Out-of-scope queries that should never route through BIE — "write me a poem", "tell me a joke",
 // "explain quantum physics", etc. These return null to trigger the "out of scope" response rather
 // than falling through to Claude or returning a generic answer. Added guard BEFORE REASONING_RE so
@@ -419,6 +424,14 @@ export function classifyBieIntent(question: string, ledgerTickers: Set<string>):
   // Definitional/concept question → the glossary read. Placed FIRST (even before the explicit
   // "vector" branch) so "what is Vector" / "what is GEX" / "what does Night Hawk do" resolve to a
   // DEFINITION, while a live "vector setup on NVDA" (has a ticker) still routes to vector_read below.
+  // Track-record / platform-wide reads beat glossary "what is X" concept routing.
+  if (RECORD_RE.test(q)) {
+    return { intent: "record_read", ticker: extractKnownTicker(q) };
+  }
+  if (PLATFORM_READ_RE.test(q)) {
+    return { intent: "platform_read", ticker: null };
+  }
+
   if (isConceptQuestion(q)) return { intent: "concept_read", ticker: null };
 
   // "pull/look up X from <internal path | provider>" → the governed universal reader. Only fires
@@ -517,12 +530,7 @@ export function classifyBieIntent(question: string, ledgerTickers: Set<string>):
     }
   }
 
-  // Track-record / performance questions → the published record-read endpoint. Placed before
-  // REASONING_RE so these deterministic reads don't fall through to Claude.
-  if (RECORD_RE.test(q)) {
-    return { intent: "record_read", ticker: extractKnownTicker(q) };
-  }
-
+  // Track-record / performance questions → handled at top (before concept_read).
   if (REASONING_RE.test(q)) return null;
 
   if (ZERODTE_RE.test(q)) return { intent: "zerodte_plays", ticker: null };
@@ -565,6 +573,14 @@ export function isSpxDeskFallbackQuestion(question: string): boolean {
 
 export function classifyBieStagingFallback(question: string): BieRoute {
   const q = question.trim();
+  // Track-record / platform-wide reads beat glossary "what is X" concept routing.
+  if (RECORD_RE.test(q)) {
+    return { intent: "record_read", ticker: extractKnownTicker(q) };
+  }
+  if (PLATFORM_READ_RE.test(q)) {
+    return { intent: "platform_read", ticker: null };
+  }
+
   if (isConceptQuestion(q)) return { intent: "concept_read", ticker: null };
   if (isUniversalLookup(q)) return { intent: "universal_lookup", ticker: extractKnownTicker(q) };
   if (isDiagnosticQuestion(q)) return { intent: "system_diagnostic", ticker: extractKnownTicker(q) };
@@ -602,7 +618,6 @@ export function classifyBieStagingFallback(question: string): BieRoute {
     return { intent: "spx_desk_read", ticker: "SPX" };
   }
   if (FLOW_TAPE_RE.test(q)) return { intent: "flow_tape", ticker: extractKnownTicker(q) };
-  if (RECORD_RE.test(q)) return { intent: "record_read", ticker: extractKnownTicker(q) };
   {
     const vTicker = extractKnownTicker(q);
     if (VECTOR_STRUCTURE_RE.test(q) && vTicker && vTicker !== "SPX") {
@@ -681,7 +696,9 @@ export function bieFollowups(intent: BieIntent): string[] {
         "Which walls are building vs fading?",
       ];
     case "record_read":
-      return ["What was today's highest momentum trade?", "Show me the record context", "What was invalidated today?"];
+      return ["What is the SPX setup right now?", "Show unusual flow", "SPX vs Night Hawk record?"];
+    case "platform_read":
+      return ["What's the SPX desk read?", "Show the Thermal matrix flip", "Any 0DTE plays live?"];
     default:
       return [];
   }

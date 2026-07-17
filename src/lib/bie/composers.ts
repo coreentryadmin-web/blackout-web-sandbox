@@ -738,6 +738,7 @@ function headlineForRoute(route: BieRoute): string {
     nighthawk_edition: `${t}Night Hawk edition`,
     scenario: `${t}scenario`,
     record_read: "Track record",
+    platform_read: "Platform read",
   };
   return map[route.intent] ?? "BIE read";
 }
@@ -818,6 +819,10 @@ async function composeBieAnswerUncached(route: BieRoute, opts?: ComposeBieOpts):
       case "record_read": {
         const { composeRecordRead } = await import("@/lib/bie/record-read");
         return await composeRecordRead();
+      }
+      case "platform_read": {
+        const { composePlatformRead } = await import("@/lib/bie/platform-read");
+        return await composePlatformRead();
       }
       default:
         return null;
