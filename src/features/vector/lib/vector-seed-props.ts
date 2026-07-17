@@ -1,5 +1,4 @@
 import "server-only";
-import { isEtCashRth } from "@/lib/et-market-hours";
 import { todayEt } from "@/features/nighthawk/lib/session";
 import { ensureDataSockets } from "@/lib/ws/init-data-sockets";
 import type { VectorBar } from "@/features/vector/components/VectorChart";
@@ -62,7 +61,10 @@ export async function loadVectorSeedProps(ticker: string): Promise<VectorSeedPro
     () => [] as WallHistorySample[]
   );
   const today = todayEt();
-  const liveSession = sessionYmd === today && isEtCashRth();
+  // 24/7 spot: liveSession drives ALL client-side live-update plumbing (SSE, SWR polling,
+  // freshness clock). Gate on today's date only — the server-side UW WebSocket and SSE
+  // endpoint already serve data around the clock (PR #438).
+  const liveSession = sessionYmd === today;
 
   // Observed rail first — exactly what the live recorder captured point-in-time during RTH:
   // genuinely dynamic walls that shift/build/fade with the tape (in-memory + persisted Redis/PG
