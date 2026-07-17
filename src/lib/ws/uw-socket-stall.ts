@@ -4,8 +4,11 @@
  * in the live WebSocket manager.
  */
 
-/** Stall window: OPEN socket with no delivery for this long is half-open. */
+/** Stall window during RTH: OPEN socket with no delivery for this long is half-open. */
 export const UW_SOCKET_STALL_MS = 75_000;
+
+/** Off-hours stall window — price-only traffic is sparser AH, use a wider window. */
+export const UW_SOCKET_STALL_OFFHOURS_MS = 5 * 60_000;
 
 /**
  * Grace period for first message after connect. UW silently accepts duplicate

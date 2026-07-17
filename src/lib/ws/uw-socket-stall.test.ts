@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { freshestMessageAt, isUwSocketStalled, mergeFreshestTimestamps, UW_SOCKET_FIRST_MSG_GRACE_MS } from "./uw-socket-stall";
+import { freshestMessageAt, isUwSocketStalled, mergeFreshestTimestamps, UW_SOCKET_FIRST_MSG_GRACE_MS, UW_SOCKET_STALL_OFFHOURS_MS } from "./uw-socket-stall";
 
 const CHANNELS = ["flow_alerts", "market_tide", "gex"] as const;
 
@@ -61,6 +61,20 @@ test("isUwSocketStalled: has delivered + openedAt has no effect (uses stallMs)",
 
 test("UW_SOCKET_FIRST_MSG_GRACE_MS is 30_000", () => {
   assert.equal(UW_SOCKET_FIRST_MSG_GRACE_MS, 30_000);
+});
+
+test("UW_SOCKET_STALL_OFFHOURS_MS is 5 minutes", () => {
+  assert.equal(UW_SOCKET_STALL_OFFHOURS_MS, 5 * 60_000);
+});
+
+test("isUwSocketStalled: off-hours stall window (5min) within -> false", () => {
+  const now = 1_000_000;
+  assert.equal(isUwSocketStalled(now - 4 * 60_000, UW_SOCKET_STALL_OFFHOURS_MS, now), false);
+});
+
+test("isUwSocketStalled: off-hours stall window (5min) beyond -> true", () => {
+  const now = 1_000_000;
+  assert.equal(isUwSocketStalled(now - 6 * 60_000, UW_SOCKET_STALL_OFFHOURS_MS, now), true);
 });
 
 test("mergeFreshestTimestamps: null handling + max", () => {

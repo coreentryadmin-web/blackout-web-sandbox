@@ -11,6 +11,7 @@ import {
 } from "@/lib/live-api-integrations";
 import {
   UW_SOCKET_STALL_MS,
+  UW_SOCKET_STALL_OFFHOURS_MS,
   UW_SOCKET_FIRST_MSG_GRACE_MS,
   freshestMessageAt as freshestFromMap,
   isUwSocketStalled,
@@ -67,20 +68,15 @@ const CHANNEL_JOIN_NAME: Record<UwWsChannel, string> = Object.fromEntries(
 
 const AUTH_FAILED_BACKOFF_MS = 5 * 60_000;
 
-/** Escape hatch: keep UW socket alive off-hours when set (operator rollback). */
-function uwOffHoursReconnectForced(): boolean {
-  const f = (process.env.UW_WS_OFFHOURS_RECONNECT ?? "").trim().toLowerCase();
-  return f === "1" || f === "true" || f === "yes" || f === "on";
-}
-
-/** May the cluster leader hold / (re)open the UW multiplex socket right now? */
-export function uwSocketGateOpen(isLeader: boolean, forced: boolean, now: Date): boolean {
-  if (!isLeader) return false;
-  return forced || inOptionsMarketHours(now);
-}
-
-function shouldMaintainUwSocket(now = new Date()): boolean {
-  return uwSocketGateOpen(uwIsLeader, uwOffHoursReconnectForced(), now);
+/**
+ * May the cluster leader hold / (re)open the UW multiplex socket right now?
+ * Always true for the leader — the `price` channel delivers spot prices for
+ * SPY/equities after-hours and futures-correlated indices 24/7. Options-only
+ * channels (GEX, flow) go quiet off-hours but that's expected silence, not a
+ * reason to tear down the entire socket.
+ */
+export function uwSocketGateOpen(isLeader: boolean): boolean {
+  return isLeader;
 }
 
 const UW_API_KEY = (process.env.UW_API_KEY ?? "").trim();
@@ -313,7 +309,6 @@ class UwSocketManager {
 
   private scheduleReconnect() {
     if (this.shuttingDown) return; // shutting down — do not resurrect the socket
-    if (!shouldMaintainUwSocket()) return; // off-hours / non-leader — defer reconnect
     if (!uwIsLeader) return; // only the cluster leader holds the UW socket; standbys stay closed
     if (this.channelsWithHandlers().length === 0) return;
     this.clearReconnect();
@@ -594,7 +589,6 @@ class UwSocketManager {
     firstMsgGraceMs?: number
   ): boolean {
     if (!this.isOpen()) return false;
-    if (!inOptionsMarketHours(new Date(now)) && !uwOffHoursReconnectForced()) return false;
     if (this.channelsWithHandlers().length === 0) return false;
     if (!isUwSocketStalled(freshestMessageAt, stallMs, now, this.openedAt, firstMsgGraceMs)) return false;
     const silentConnect = freshestMessageAt == null;
@@ -1303,13 +1297,12 @@ async function runUwReconcileTick(): Promise<void> {
     uwSocket.standDown();
     return;
   }
-  if (!shouldMaintainUwSocket()) {
-    uwSocket.standDown();
-    return;
-  }
   uwSocket.ensureConnected();
   uwSocket.heartbeat();
-  uwSocket.reconnectIfStalled(freshestUwMessageAt(), UW_SOCKET_STALL_MS, Date.now(), UW_SOCKET_FIRST_MSG_GRACE_MS);
+  // Off-hours: price channel still delivers but options channels go quiet —
+  // use a wider stall window so expected AH silence doesn't trigger reconnects.
+  const stallMs = inOptionsMarketHours() ? UW_SOCKET_STALL_MS : UW_SOCKET_STALL_OFFHOURS_MS;
+  uwSocket.reconnectIfStalled(freshestUwMessageAt(), stallMs, Date.now(), UW_SOCKET_FIRST_MSG_GRACE_MS);
   pruneIdleDynamicGexTickers();
 }
 
