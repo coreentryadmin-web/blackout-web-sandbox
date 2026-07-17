@@ -79,9 +79,9 @@ describe("play-critic: deterministic rule-based critic", () => {
     assert.equal(result.plays[0].conviction, "A");
   });
 
-  test("CUT: score below floor (25)", async () => {
+  test("CUT: score below floor (10)", async () => {
     const play = fakePlay();
-    const scored = fakeScored({ score: 20, conviction: "C" });
+    const scored = fakeScored({ score: 8, conviction: "C" });
     const result = await critiquePlays({
       plays: [play],
       dossiers: {},
@@ -89,7 +89,7 @@ describe("play-critic: deterministic rule-based critic", () => {
       ctx: fakeCtx(),
     });
     assert.equal(result.plays.length, 0);
-    assert.ok(result.notes.some((n) => n.includes("CUT") && n.includes("score 20")));
+    assert.ok(result.notes.some((n) => n.includes("CUT") && n.includes("score 8")));
   });
 
   test("CUT: direction inconsistency (play LONG, scored short)", async () => {
@@ -190,7 +190,7 @@ describe("play-critic: deterministic rule-based critic", () => {
     ];
     const ranked = [
       fakeScored({ ticker: "AAA", score: 60 }),
-      fakeScored({ ticker: "BBB", score: 10, conviction: "C" }),
+      fakeScored({ ticker: "BBB", score: 8, conviction: "C" }),
       fakeScored({ ticker: "CCC", score: 50 }),
     ];
     const result = await critiquePlays({

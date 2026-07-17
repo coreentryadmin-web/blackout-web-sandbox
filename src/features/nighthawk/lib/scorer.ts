@@ -406,6 +406,7 @@ export function scoreFlowQuality(
     const streakWeight = opts?.streakWeight ?? 1;
     if (flowStreak.streak_days >= 5) score += Math.round(12 * streakWeight);
     else if (flowStreak.streak_days >= 3) score += Math.round(8 * streakWeight);
+    else if (flowStreak.streak_days >= 2) score += Math.round(4 * streakWeight);
   }
 
   score = Math.min(38, score);
