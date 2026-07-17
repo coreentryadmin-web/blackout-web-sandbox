@@ -116,7 +116,15 @@ function renderCell(
     case "time":
       // Full absolute ET stamp "MM/DD/YYYY - HH:MM" (was a relative age via timeAgo). fmtFullTimestamp
       // returns "—" for empty/invalid, so no separate guard is needed. tabular-nums keeps it aligned.
-      return <span className="helix-tape-time tabular-nums">{fmtFullTimestamp(flow.alerted_at)}</span>;
+      return <span
+        className={clsx(
+          "helix-tape-time tabular-nums",
+          flow.tape_time_estimated && "helix-tape-time--estimated"
+        )}
+        title={flow.tape_time_estimated ? "Ingest time — UW print time unknown" : undefined}
+      >
+        {fmtFullTimestamp(flow.alerted_at)}
+      </span>;
     case "ticker":
       return (
         <div className="helix-tape-symbol">

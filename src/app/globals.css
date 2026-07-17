@@ -17971,6 +17971,10 @@ body::before {
     @apply text-[12px] font-medium text-sky-300/85;
   }
 
+  .helix-tape-time--estimated {
+    @apply text-sky-300/50 italic;
+  }
+
   .helix-tape-symbol {
     @apply flex items-center gap-1 min-w-0;
   }

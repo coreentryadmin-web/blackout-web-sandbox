@@ -17,7 +17,7 @@ import {
   type HelixDteFilter,
   type HelixTableDensity,
 } from "@/features/helix/lib/helix-table-columns";
-import { daysToExpiry } from "@/features/helix/lib/helix-flow-format";
+import { daysToExpiry, flowTimeMs } from "@/features/helix/lib/helix-flow-format";
 import { findMatchingFlow, mergeFlowAlerts } from "@/features/helix/lib/helix-flow-merge";
 import {
   appendFlowTapePage,
@@ -57,6 +57,7 @@ import { WatchlistBar } from "@/features/helix/components/WatchlistBar";
 import { useWatchlist } from "@/hooks/useWatchlist";
 import { Skeleton } from "@/components/ui";
 import type { NightHawkEdition } from "@/features/nighthawk/lib/types";
+import { flowEventTimeMs } from "@/lib/flow-timestamp";
 import { useIosNativeShell } from "@/hooks/useIosNativeShell";
 import { IosNativeSegment } from "@/components/ios/IosNativeSegment";
 import { IosSectionHeader } from "@/components/ios/IosSectionHeader";
@@ -73,14 +74,13 @@ type TypeFilter = "ALL" | "CALL" | "PUT";
 const FLOW_POLL_MS   = 30_000;
 const REPLAY_TICK_MS = 450;
 
-// Audit gap #6: a usable alerted_at timestamp. parseUwFlowAlert now emits "" (and the
-// persist layer null) when UW gave no real time — those must be EXCLUDED from the LIVE
-// badge + sorted last, never coerced to now() (which faked a fresh tape). Returns the
-// epoch ms, or null when the row has no trustworthy time.
-function alertedAtMs(a: { alerted_at?: string | null }): number | null {
-  if (!a.alerted_at) return null;
-  const ms = new Date(a.alerted_at).getTime();
-  return Number.isFinite(ms) ? ms : null;
+// Audit gap #6: LIVE/freshness uses real UW print time only — not ingest fallback.
+function flowFreshnessAtMs(a: {
+  event_at?: string | null;
+  alerted_at?: string | null;
+  tape_time_estimated?: boolean;
+}): number | null {
+  return flowEventTimeMs(a);
 }
 
 // Audit gap #13: dedup on the canonical alert_id the persist layer used for the
@@ -327,7 +327,7 @@ export function FlowFeed() {
       // Gap #6: a row with no trustworthy alerted_at must be EXCLUDED from the 30-min
       // split window — not silently kept (NaN compare fell through the old guard) where
       // it could fabricate an opposing-flow signal out of an undated print.
-      const ms = alertedAtMs(alert);
+      const ms = flowFreshnessAtMs(alert);
       if (ms == null || now - ms > WINDOW_MS) continue;
       const cur = byTicker.get(alert.ticker) ?? { callPrem: 0, putPrem: 0 };
       if (alert.option_type === "CALL") cur.callPrem += alert.premium;
@@ -419,9 +419,9 @@ export function FlowFeed() {
 
     for (const alert of filteredTapeBuffer) {
       // Gap #6: raw new Date(alerted_at) was NaN for undated rows, so abs(NaN) > WINDOW
-      // is always false and COORD never fired. Use alertedAtMs (the file's helper) and
+      // is always false and COORD never fired. Use flowFreshnessAtMs (the file's helper) and
       // skip rows with no trustworthy time — they can't be time-correlated to a block.
-      const alertTime = alertedAtMs(alert);
+      const alertTime = flowFreshnessAtMs(alert);
       if (alertTime == null) continue;
       const hasBlock = darkPoolPrints.some(
         (dp) =>
@@ -713,8 +713,8 @@ export function FlowFeed() {
 
   const displayAlerts = useMemo(() => {
     return [...filteredTapeBuffer].sort((a, b) => {
-      const am = alertedAtMs(a);
-      const bm = alertedAtMs(b);
+      const am = flowTimeMs(a);
+      const bm = flowTimeMs(b);
       if (am == null && bm == null) return 0;
       if (am == null) return 1;
       if (bm == null) return -1;
@@ -731,7 +731,7 @@ export function FlowFeed() {
   const newestAt = useMemo(() => {
     let max = 0;
     for (const a of displayAlerts) {
-      const ms = alertedAtMs(a);
+      const ms = flowFreshnessAtMs(a);
       if (ms != null && ms > max) max = ms;
     }
     return max;
