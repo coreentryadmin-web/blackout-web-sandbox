@@ -53,14 +53,14 @@ export const GATE_BAND_MAX_DISTANCE_PCT = 3.5;
  * K × ATR14. Measured from the FILL EDGE, not spot, because that is the entry the play
  * grades from (and G-N1 already pins the edge near spot for anything that publishes).
  *
- * WHY 2.0 (Phase 3 tuning): overnight plays are published the evening before for
- * next-session action. The deterministic path builds targets from real support/resistance
- * levels which can legitimately sit 1.5-2× ATR from entry on a momentum name with a
- * near-term catalyst. K=1.5 was blocking too many valid plays built from real levels;
- * K=2.0 allows strong-expansion targets while still catching the catastrophic class
+ * WHY 2.5 (Phase 4 / PR-N21): overnight plays target next-session action where a
+ * catalyst or momentum name can move 2–2.5× ATR in a single session. K=2.0 was blocking
+ * legitimate targets built from real S/R levels — especially when ATR14 is estimated from
+ * prior-day range (which can be narrower than the true 14-day average on a low-vol day).
+ * K=2.5 allows strong-expansion targets while still catching the catastrophic class
  * (+8.6%..+106.6% targets ≈ 3×–20×+ ATR). The failing class remains blocked by 5×+.
  */
-export const GATE_TARGET_MAX_ATR_MULTIPLE = 2.0;
+export const GATE_TARGET_MAX_ATR_MULTIPLE = 2.5;
 
 export type NighthawkGateCode =
   | "band_detached" // G-N1

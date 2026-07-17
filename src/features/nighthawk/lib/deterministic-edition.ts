@@ -139,6 +139,21 @@ function resolveLevels(
     resistance = px + half;
   }
 
+  // PR-N21: when the target-side S/R is too close to spot, the target becomes trivially
+  // small (~1%) while the stop stretches to 8%, producing terrible R:R. Push the target-side
+  // level out to at least 1× ATR from spot so overnight plays have meaningful reward.
+  if (px != null && support != null && resistance != null && resistance > support) {
+    const atr = tech?.atr14;
+    const minTargetDist = atr != null && Number.isFinite(atr) && atr > 0
+      ? atr * 1.0
+      : px * 0.02;
+    if (direction === "long" && (resistance - px) < minTargetDist) {
+      resistance = px + minTargetDist;
+    } else if (direction === "short" && (px - support) < minTargetDist) {
+      support = px - minTargetDist;
+    }
+  }
+
   return buildDirectionalStockLevels({ direction, support, resistance, spot: px });
 }
 

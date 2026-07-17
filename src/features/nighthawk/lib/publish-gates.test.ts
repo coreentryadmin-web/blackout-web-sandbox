@@ -186,35 +186,35 @@ test("G-N1 SHORT mirror: fill edge is the band LOW; 3.5% above spot passes, 3.6%
 // ── G-N2 achievable target boundary, both directions ───────────────────────────────────
 
 test("G-N2 boundary: target exactly K×ATR14 from the fill edge passes; beyond blocks", () => {
-  // fill edge 100, ATR14 4 → allowance 2.0 × 4 = 8.00. Target 108.00 → exactly 2.0×.
+  // fill edge 100, ATR14 4 → allowance 2.5 × 4 = 10.00. Target 110.00 → exactly 2.5×.
   const at = evaluate(
-    play({ entry_range: "$99.50-$100.00", target: "$108.00", stop: "$97.00" }),
+    play({ entry_range: "$99.50-$100.00", target: "$110.00", stop: "$97.00" }),
     dossier({ price: 100, atr14: 4 })
   );
   assert.equal(at.verdict, "PUBLISH");
 
-  // Target 108.10 → 2.025× → target_unreachable.
+  // Target 110.10 → 2.525× → target_unreachable.
   const beyond = evaluate(
-    play({ entry_range: "$99.50-$100.00", target: "$108.10", stop: "$97.00" }),
+    play({ entry_range: "$99.50-$100.00", target: "$110.10", stop: "$97.00" }),
     dossier({ price: 100, atr14: 4 })
   );
   assert.equal(beyond.verdict, "BLOCK");
   assert.deepEqual(beyond.blocks.map((b) => b.code), ["target_unreachable"]);
-  assert.equal(beyond.blocks[0]!.value, 2.025);
+  assert.equal(beyond.blocks[0]!.value, 2.525);
   assert.equal(beyond.blocks[0]!.threshold, GATE_TARGET_MAX_ATR_MULTIPLE);
 });
 
 test("G-N2 SHORT mirror: distance is absolute, so a downside target measures the same", () => {
-  // fill edge 100.00, ATR14 4 → allowance 2.0 × 4 = 8.00. Target 92.00 → exactly 2.0×.
+  // fill edge 100.00, ATR14 4 → allowance 2.5 × 4 = 10.00. Target 90.00 → exactly 2.5×.
   const at = evaluate(
-    play({ direction: "SHORT", entry_range: "$100.00-$100.50", target: "$92.00", stop: "$103.00" }),
+    play({ direction: "SHORT", entry_range: "$100.00-$100.50", target: "$90.00", stop: "$103.00" }),
     dossier({ price: 100, atr14: 4 })
   );
   assert.equal(at.verdict, "PUBLISH");
 
-  // Target 91.90 → 2.025× → target_unreachable.
+  // Target 89.90 → 2.525× → target_unreachable.
   const beyond = evaluate(
-    play({ direction: "SHORT", entry_range: "$100.00-$100.50", target: "$91.90", stop: "$103.00" }),
+    play({ direction: "SHORT", entry_range: "$100.00-$100.50", target: "$89.90", stop: "$103.00" }),
     dossier({ price: 100, atr14: 4 })
   );
   assert.equal(beyond.verdict, "BLOCK");
@@ -256,11 +256,22 @@ test("fail-closed: no dossier/tech card ⇒ geometry_unknown BLOCK — a pick we
   }
 });
 
-test("fail-closed: missing ATR14 or unparseable band each yield geometry_unknown, naming the gap", () => {
-  const noAtr = evaluate(play(), dossier({ atr14: null }));
-  assert.equal(noAtr.verdict, "BLOCK");
-  assert.equal(noAtr.blocks[0]!.code, "geometry_unknown");
-  assert.match(String(noAtr.blocks[0]!.value), /atr14/);
+test("fail-closed: missing ATR14 (no fallback) or unparseable band each yield geometry_unknown, naming the gap", () => {
+  // PR-N21: when atr14 is null but prior_day is present, estimateAtr fills in from H/L
+  // range — that's the intended fallback. The play publishes.
+  const atrEstimated = evaluate(play(), dossier({ atr14: null }));
+  assert.equal(atrEstimated.verdict, "PUBLISH");
+
+  // When BOTH atr14 AND prior_day AND spot are missing, ATR truly can't be estimated.
+  const noAtrNoFallback = evaluate(play(), { ticker: "AMD", scored: null, tech: {
+    ticker: "AMD", price: null, price_session: SESSION, trend: "up",
+    setup_tags: [], support_levels: [], resistance_levels: [], gap_zones: [],
+    breakout_zones: [], prior_day: null, weekly: { high: null, low: null },
+    rsi14: null, rel_volume: null, atr14: null, vwap: null,
+    ema20: null, ema50: null, ema200: null,
+  } } as unknown as TickerDossier);
+  assert.equal(noAtrNoFallback.verdict, "BLOCK");
+  assert.equal(noAtrNoFallback.blocks[0]!.code, "geometry_unknown");
 
   const noBand = evaluate(play({ entry_range: "See technical levels" }), dossier());
   assert.equal(noBand.verdict, "BLOCK");
@@ -281,7 +292,7 @@ test("DELL 2026-07-08 fixture (band $226.82–227.27, stock $417, target $469.47
   assert.deepEqual(res.blocks.map((b) => b.code), ["band_detached", "target_unreachable"]);
   // (227.27 − 417) / 417 = −45.4988% — the doc's −45.5% worst case, reproduced exactly.
   assert.equal(res.blocks[0]!.value, -45.4988);
-  // (469.47 − 227.27) / 12.5 = 19.376× ATR14 — an order of magnitude past K=2.0.
+  // (469.47 − 227.27) / 12.5 = 19.376× ATR14 — an order of magnitude past K=2.5.
   assert.equal(res.blocks[1]!.value, 19.376);
 });
 

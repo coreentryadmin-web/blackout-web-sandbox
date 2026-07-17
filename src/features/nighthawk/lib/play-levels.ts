@@ -10,6 +10,9 @@ import type { PlaybookPlay } from "./types";
 const MAX_STOP_DISTANCE_PCT = 0.08;
 /** Max target distance from spot (fraction). Keeps targets achievable for overnight plays. */
 const MAX_TARGET_DISTANCE_PCT = 0.12;
+/** Minimum R:R ratio (target_dist / stop_dist). When the ratio falls below this, the stop
+ *  is tightened to maintain at least this R:R. Prevents 1% target / 8% stop plays. */
+const MIN_RR_RATIO = 0.5;
 
 export type ParsedPlayLevels = {
   entry_range_low: number | null;
@@ -83,24 +86,32 @@ export function buildDirectionalStockLevels(params: {
     const maxTargetDist = spot * MAX_TARGET_DISTANCE_PCT;
     if (params.direction === "long") {
       const rawStop = support;
-      const clampedStop = spot - Math.min(spot - rawStop, maxStopDist);
+      let stopDist = Math.min(spot - rawStop, maxStopDist);
       const rawTarget = resistance;
-      const clampedTarget = spot + Math.min(rawTarget - spot, maxTargetDist);
+      const targetDist = Math.min(rawTarget - spot, maxTargetDist);
+      const finalTargetDist = Math.max(targetDist, spot * 0.01);
+      if (finalTargetDist < stopDist * MIN_RR_RATIO) {
+        stopDist = finalTargetDist / MIN_RR_RATIO;
+      }
       return {
         entry_range: `$${formatStockLevel(spot * 0.995)}-$${formatStockLevel(spot * 1.005)}`,
-        target: formatStockLevel(Math.max(clampedTarget, spot * 1.01)),
-        stop: formatStockLevel(Math.min(clampedStop, spot * 0.99)),
+        target: formatStockLevel(spot + finalTargetDist),
+        stop: formatStockLevel(Math.min(spot - stopDist, spot * 0.99)),
       };
     }
     if (params.direction === "short") {
       const rawStop = resistance;
-      const clampedStop = spot + Math.min(rawStop - spot, maxStopDist);
+      let stopDist = Math.min(rawStop - spot, maxStopDist);
       const rawTarget = support;
-      const clampedTarget = spot - Math.min(spot - rawTarget, maxTargetDist);
+      const targetDist = Math.min(spot - rawTarget, maxTargetDist);
+      const finalTargetDist = Math.max(targetDist, spot * 0.01);
+      if (finalTargetDist < stopDist * MIN_RR_RATIO) {
+        stopDist = finalTargetDist / MIN_RR_RATIO;
+      }
       return {
         entry_range: `$${formatStockLevel(spot * 0.995)}-$${formatStockLevel(spot * 1.005)}`,
-        target: formatStockLevel(Math.min(clampedTarget, spot * 0.99)),
-        stop: formatStockLevel(Math.max(clampedStop, spot * 1.01)),
+        target: formatStockLevel(spot - finalTargetDist),
+        stop: formatStockLevel(Math.max(spot + stopDist, spot * 1.01)),
       };
     }
   }
