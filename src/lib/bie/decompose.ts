@@ -57,8 +57,17 @@ function splitRunOn(q: string): string[] {
   return parts.length >= 3 ? parts : [];
 }
 
+/** "… and also … and also …" multi-part asks (common Largo shape). */
+function splitAndAlso(q: string): string[] {
+  if (!/\band also\b/i.test(q)) return [];
+  const parts = q
+    .split(/\band also\b/i)
+    .map((s) => clean(s))
+    .filter((s) => s.length >= 8);
+  return parts.length >= 2 ? parts : [];
+}
+
 /**
- * Split a member message into sub-questions. Returns ≥2 ONLY when confidently compound; otherwise
  * `[message]` (a single question — the caller then falls through to the normal single-intent path
  * with zero behavior change). Capped at MAX_SUB_QUESTIONS.
  */
@@ -71,6 +80,9 @@ export function splitCompoundQuestion(question: string): string[] {
 
   const byQ = splitByQuestionMarks(q);
   if (byQ.length >= 2) return byQ.slice(0, MAX_SUB_QUESTIONS);
+
+  const andAlso = splitAndAlso(q);
+  if (andAlso.length >= 2) return andAlso.slice(0, MAX_SUB_QUESTIONS);
 
   const runOn = splitRunOn(q);
   if (runOn.length >= 3) return runOn.slice(0, MAX_SUB_QUESTIONS);

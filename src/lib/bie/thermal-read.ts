@@ -5,6 +5,13 @@ import {
   type ThermalMatrixSummary,
   type ThermalPositioningSummary,
 } from "@/lib/bie/thermal-matrix-summary";
+import {
+  wantsCharmLens,
+  wantsGexVexCompare,
+  wantsMatrixDelta,
+  wantsThermalDeskCompare,
+} from "@/lib/bie/question-focus";
+import { getCachedBiePlatformContext } from "@/lib/bie/platform-cache";
 
 const fmt = (n: unknown, d = 0): string =>
   typeof n === "number" && Number.isFinite(n)
@@ -50,7 +57,7 @@ function formatRegimeEvents(raw: unknown): string[] {
 }
 
 /** BlackOut Thermal read — canonical GEX/VEX/DEX/CHARM + matrix ladder (same caches as /heatmap). */
-export async function composeThermalRead(ticker = "SPX"): Promise<BieComposed> {
+export async function composeThermalRead(ticker = "SPX", question?: string): Promise<BieComposed> {
   const sym = ticker.trim().toUpperCase() || "SPX";
   const { getGexPositioning } = await import("@/lib/providers/gex-positioning");
   const { fetchGexHeatmap } = await import("@/lib/providers/polygon-options-gex");
@@ -64,6 +71,70 @@ export async function composeThermalRead(ticker = "SPX"): Promise<BieComposed> {
 
   const positioning = compactThermalPositioning(positioningRaw);
   const matrix = compactThermalMatrixSummary(heatmapRaw);
+
+  if (question && wantsCharmLens(question) && positioning) {
+    return {
+      answer: [
+        `**SPX 0DTE CHARM (Thermal)**`,
+        `- Net charm **${fmt(positioning.net_charm, 0)}**`,
+        `- ${positioning.charm_regime_read}`,
+        `- Spot **${fmt(positioning.spot, 0)}** · γ-flip **${fmt(positioning.flip, 0)}**`,
+      ].join("\n"),
+      context: { positioning, narrow: "charm" },
+    };
+  }
+
+  if (question && wantsGexVexCompare(question) && positioning && matrix) {
+    const strikeMatch = question.match(/\b(7\d{3}|6\d{3})\b/);
+    const at = strikeMatch ? Number(strikeMatch[1]) : positioning.spot;
+    return {
+      answer: [
+        `**GEX vs VEX @ ~${fmt(at, 0)} (${sym})**`,
+        `- Net GEX **${fmt(positioning.net_gex, 0)}** · regime: ${positioning.gamma_regime_read}`,
+        `- Net VEX **${fmt(positioning.net_vex, 0)}** · ${positioning.vanna_regime_read}`,
+        `- Matrix GEX flip **${fmt(matrix.gex_flip, 0)}** · VEX flip **${fmt(matrix.vex_flip, 0)}**`,
+        "",
+        "_Per-strike cell GEX/VEX lives on /heatmap — ask for Thermal king node or γ-flip for desk levels._",
+      ].join("\n"),
+      context: { positioning, matrix, at },
+    };
+  }
+
+  if (question && wantsThermalDeskCompare(question)) {
+    const platform = await getCachedBiePlatformContext({ scope: "desk" });
+    const desk = platform.desk;
+    const deskFlip = desk?.gamma_flip;
+    const thermalFlip = positioning?.flip;
+    const agree =
+      deskFlip != null && thermalFlip != null && Math.abs(deskFlip - thermalFlip) <= 2;
+    return {
+      answer: [
+        `**Thermal vs SPX desk — ${sym}**`,
+        `- Desk γ-flip **${fmt(deskFlip, 0)}** · Thermal γ-flip **${fmt(thermalFlip, 0)}**`,
+        `- ${agree ? "**Aligned** (within 2 pts) — same canonical positioning readers." : "**Diverge** — check matrix refresh / 0DTE roll; compare on /heatmap."}`,
+        desk?.gamma_regime ? `- Desk γ-regime: **${desk.gamma_regime}**` : "",
+      ]
+        .filter(Boolean)
+        .join("\n"),
+      context: { desk, positioning },
+    };
+  }
+
+  if (question && wantsMatrixDelta(question)) {
+    const events = formatRegimeEvents(regimeEvents);
+    return {
+      answer: [
+        `**Matrix / regime shifts (${sym})**`,
+        ...events,
+        matrix
+          ? `- Current matrix **${matrix.strike_count}×${matrix.expiry_count}** · GEX flip **${fmt(matrix.gex_flip, 0)}**`
+          : "- Matrix cold — no live heatmap slice.",
+        "",
+        "_Strike-level Δ requires the UI matrix diff; here are logged GEX regime transitions._",
+      ].join("\n"),
+      context: { matrix, regimeEvents },
+    };
+  }
 
   const lines = [`**BlackOut Thermal — ${sym}**`, ""];
 

@@ -354,22 +354,13 @@ async function tryBieRoute(
       if (composed) {
         return { route: fallback, answer: composed.answer, context: composed.context, envelope: composed.envelope ?? null };
       }
-      const lastResort = await composeBieAnswer({ intent: "platform_read", ticker: null });
-      if (lastResort) {
+      const clarify = await composeBieAnswer({ intent: "clarify_read", ticker: null }, { question });
+      if (clarify) {
         return {
-          route: { intent: "platform_read", ticker: null },
-          answer: lastResort.answer,
-          context: lastResort.context,
-          envelope: lastResort.envelope ?? null,
-        };
-      }
-      const marketFallback = await composeBieAnswer({ intent: "market_context", ticker: null });
-      if (marketFallback) {
-        return {
-          route: { intent: "market_context", ticker: null },
-          answer: marketFallback.answer,
-          context: marketFallback.context,
-          envelope: marketFallback.envelope ?? null,
+          route: { intent: "clarify_read", ticker: null },
+          answer: clarify.answer,
+          context: clarify.context,
+          envelope: clarify.envelope ?? null,
         };
       }
     }

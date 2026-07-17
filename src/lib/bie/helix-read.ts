@@ -13,7 +13,7 @@ type NearMissRow = {
 };
 
 /** HELIX analytics read — tape, anomalies, near-misses, dark pool (scoped or market-wide). */
-export async function composeHelixRead(ticker: string | null): Promise<BieComposed> {
+export async function composeHelixRead(ticker: string | null, question?: string): Promise<BieComposed> {
   const scoped = ticker?.trim().toUpperCase() || null;
   const { runLargoTool } = await import("@/lib/largo/run-tool");
   const { fetchUwDarkPoolMarketWide } = await import("@/lib/providers/unusual-whales");
@@ -35,6 +35,25 @@ export async function composeHelixRead(ticker: string | null): Promise<BieCompos
     ? (tape.recent ?? []).filter((r) => r.ticker?.toUpperCase() === scoped)
     : (tape.recent ?? []);
   const stacks = computeFlowStrikeStacks(rows);
+
+  const topNMatch = question?.match(/\btop\s+(\d+)\b/i);
+  const listOnly = question && /\b(list only|prints? by premium|biggest prints?)\b/i.test(question);
+  if (listOnly || topNMatch) {
+    const n = topNMatch ? Math.min(10, Math.max(1, Number(topNMatch[1]))) : 3;
+    const sorted = [...rows].sort((a, b) => (b.premium ?? 0) - (a.premium ?? 0));
+    const lines = [`**Top ${n} HELIX prints by premium**${scoped ? ` — ${scoped}` : ""}`, ""];
+    if (sorted.length === 0) {
+      lines.push("_No prints in the current tape window._");
+    } else {
+      for (const p of sorted.slice(0, n)) {
+        lines.push(
+          `- **${p.ticker}** ${p.strike ?? "—"}${p.option_type === "put" ? "p" : "c"} · $${fmt(p.premium, 0)} · ${p.direction ?? "—"}`
+        );
+      }
+    }
+    lines.push("", `_Window: ${tape.count} prints · $${fmt(tape.total_premium, 0)} total premium._`);
+    return { answer: lines.join("\n"), context: { ticker: scoped, tape, top: sorted.slice(0, n) } };
+  }
 
   const lines = [
     scoped ? `**HELIX analytics — ${scoped}**` : "**HELIX analytics — market-wide**",

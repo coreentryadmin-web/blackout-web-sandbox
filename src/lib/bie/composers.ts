@@ -25,6 +25,15 @@ import {
 } from "@/lib/bie/platform-cache";
 import { withServerCache } from "@/lib/server-cache";
 import { stripGroundingTokens } from "@/lib/bie/grounding-markers";
+import {
+  wantsBrevity,
+  wantsCallWallOnly,
+  wantsContradictionExplain,
+  wantsGammaFlipOnly,
+  wantsKingNodeOnly,
+  wantsPutWallOnly,
+  wantsVixOnly,
+} from "@/lib/bie/question-focus";
 import { classifyBieIntent, type BieRoute } from "./router";
 import {
   splitCompoundQuestion,
@@ -165,6 +174,40 @@ async function composeSpxDeskRead(question?: string): Promise<BieComposed | null
   if (!desk) return null;
   const confluence = computeSpxConfluence(desk);
   if (!confluence) return null;
+
+  if (question && wantsBrevity(question)) {
+    const bias = confluence.bias;
+    const dir =
+      bias === "bullish" ? "bullish" : bias === "bearish" ? "bearish" : "mixed/neutral";
+    const price = desk.price != null ? fmt(desk.price, 0) : "—";
+    return {
+      answer: `SPX **${dir}** at **${price}** (${fmt(desk.spx_change_pct, 2)}%) — grade **${confluence.grade}**, γ-flip **${fmt(desk.gamma_flip, 0)}**.`,
+      context: { desk, confluence, brief: true },
+    };
+  }
+
+  if (question && wantsContradictionExplain(question)) {
+    const synthesis = synthesizeSpxDeskIntel(desk, confluence, spxSessionPhase(desk.as_of), {
+      openPlay: platform.cross.openPlay ?? undefined,
+      lotto: platform.cross.lotto ?? undefined,
+      intel: platform.intel ?? undefined,
+    });
+    return {
+      answer: [
+        "**Why bullish and bearish show up together**",
+        "",
+        "- **Signal stack** (EMAs, VWAP reclaim, short-γ fuel) can read *tactical bullish* while…",
+        `- **Confluence thesis** stays **${confluence.bias}** with grade **${confluence.grade}** — low edge / friction from GEX, flow, or gates.`,
+        "",
+        synthesis.friction ? `**Friction now:** ${synthesis.friction}` : "",
+        "",
+        "_Different layers: signals = tape posture; thesis = whether we'd size a 0DTE play._",
+      ]
+        .filter(Boolean)
+        .join("\n"),
+      context: { desk, confluence, synthesis },
+    };
+  }
 
   const { openPlay, lotto, powerHour, outcomes } = platform.cross;
 
@@ -423,12 +466,39 @@ async function composeSpxInvalidation(): Promise<BieComposed | null> {
   return { answer: stripGroundingTokens(lines.join("\n")), context: { desk, confluence, cross } };
 }
 
-async function composeSpxStructure(): Promise<BieComposed | null> {
+async function composeSpxStructure(question?: string): Promise<BieComposed | null> {
   const [platform, raw] = await Promise.all([
     getCachedBiePlatformContext({ scope: "desk" }),
     runLargoTool("get_spx_structure", {}) as Promise<Record<string, unknown> | null>,
   ]);
   if (!raw || typeof raw !== "object" || (raw as { error?: unknown }).error) return null;
+
+  const r = raw as Record<string, unknown>;
+  if (question && wantsPutWallOnly(question)) {
+    return {
+      answer: `**SPX put wall:** **${fmt(r.put_wall, 0)}** · spot **${fmt(r.price, 0)}** · γ-flip **${fmt(r.gamma_flip, 0)}**`,
+      context: { raw, narrow: "put_wall" },
+    };
+  }
+  if (question && wantsCallWallOnly(question)) {
+    return {
+      answer: `**SPX call wall:** **${fmt(r.call_wall, 0)}** · spot **${fmt(r.price, 0)}** · γ-flip **${fmt(r.gamma_flip, 0)}**`,
+      context: { raw, narrow: "call_wall" },
+    };
+  }
+  if (question && wantsKingNodeOnly(question)) {
+    return {
+      answer: `**SPX king node (GEX king):** **${fmt(r.gex_king_strike, 0)}** · spot **${fmt(r.price, 0)}** · net GEX **${fmt(r.net_gex, 0)}**`,
+      context: { raw, narrow: "king_node" },
+    };
+  }
+  if (question && wantsGammaFlipOnly(question)) {
+    return {
+      answer: `**SPX gamma flip:** **${fmt(r.gamma_flip, 0)}** · spot **${fmt(r.price, 0)}** · regime **${String(r.regime ?? "—")}**`,
+      context: { raw, narrow: "gamma_flip" },
+    };
+  }
+
   const section = scalarSection("SPX structure (live desk)", raw, [
     "price",
     "change_pct",
@@ -468,12 +538,39 @@ async function composeSpxStructure(): Promise<BieComposed | null> {
   return { answer: stripGroundingTokens(parts.join("\n")), context: { raw, desk: platform.desk } };
 }
 
-async function composeMarketContext(): Promise<BieComposed | null> {
+async function composeMarketContext(question?: string): Promise<BieComposed | null> {
   const [platform, raw] = await Promise.all([
     getCachedBiePlatformContext({ scope: "market", flowLimit: 24 }),
     runLargoTool("get_market_context", {}) as Promise<Record<string, unknown> | null>,
   ]);
   if (!raw || typeof raw !== "object" || (raw as { error?: unknown }).error) return null;
+
+  if (question && wantsVixOnly(question)) {
+    const vix = (raw as Record<string, unknown>).vix;
+    const desk = platform.desk;
+    const parts = ["**VIX (live)**"];
+    if (vix && typeof vix === "object") {
+      const sec = scalarSection("", vix as Record<string, unknown>, ["value", "change_pct", "label", "regime"]);
+      if (sec) parts.push(sec.replace(/^\*\*:\*\*\n/, ""));
+    } else if (typeof vix === "number") {
+      parts.push(`- **${fmt(vix, 2)}**`);
+    }
+    if (desk?.vix != null) {
+      parts.push(
+        `- Desk VIX **${fmt(desk.vix, 2)}** — ${desk.vix > 20 ? "elevated vol" : "subdued vol"} for 0DTE sizing`
+      );
+    }
+    if (question && /\b(spx|s&p|slayer|0dte)\b/i.test(question) && desk) {
+      const confluence = computeSpxConfluence(desk);
+      parts.push(
+        "",
+        `**SPX read impact:** grade **${confluence?.grade ?? "—"}** · ${confluence?.bias ?? "—"} thesis — ${desk.vix != null && desk.vix > 22 ? "high vol → widen stops / favor defined risk" : "vol OK for desk-sized 0DTE if gates pass"}.`
+      );
+    }
+    parts.push("", "_For full cross-asset context ask **What's the market doing?**_");
+    return { answer: parts.join("\n"), context: { vix, desk: platform.desk } };
+  }
+
   const parts: string[] = [];
   const top = scalarSection("Market context (live)", raw, [
     "spx",
@@ -742,6 +839,8 @@ function headlineForRoute(route: BieRoute): string {
     thermal_read: "Thermal read",
     helix_read: "HELIX analytics",
     grid_rejections_read: "0DTE rejections",
+    play_engine_read: "Play engine",
+    clarify_read: "Clarify",
   };
   return map[route.intent] ?? "BIE read";
 }
@@ -754,13 +853,13 @@ async function composeBieAnswerUncached(route: BieRoute, opts?: ComposeBieOpts):
       case "ticker_play_state":
         return route.ticker ? await composeTickerPlayState(route.ticker) : null;
       case "spx_structure":
-        return await composeSpxStructure();
+        return await composeSpxStructure(opts?.question);
       case "spx_desk_read":
         return await composeSpxDeskRead(opts?.question);
       case "spx_invalidation":
         return await composeSpxInvalidation();
       case "market_context":
-        return await composeMarketContext();
+        return await composeMarketContext(opts?.question);
       case "flow_tape":
         return await composeFlowTape(route.ticker);
       case "ticker_ecosystem":
@@ -829,15 +928,23 @@ async function composeBieAnswerUncached(route: BieRoute, opts?: ComposeBieOpts):
       }
       case "thermal_read": {
         const { composeThermalRead } = await import("@/lib/bie/thermal-read");
-        return await composeThermalRead(route.ticker ?? "SPX");
+        return await composeThermalRead(route.ticker ?? "SPX", opts?.question);
       }
       case "helix_read": {
         const { composeHelixRead } = await import("@/lib/bie/helix-read");
-        return await composeHelixRead(route.ticker);
+        return await composeHelixRead(route.ticker, opts?.question);
       }
       case "grid_rejections_read": {
         const { composeGridRejectionsRead } = await import("@/lib/bie/grid-rejections-read");
         return await composeGridRejectionsRead(route.ticker);
+      }
+      case "play_engine_read": {
+        const { composePlayEngineRead } = await import("@/lib/bie/play-engine-read");
+        return await composePlayEngineRead();
+      }
+      case "clarify_read": {
+        const { composeClarifyRead } = await import("@/lib/bie/clarify-read");
+        return composeClarifyRead(opts?.question ?? "");
       }
       default:
         return null;

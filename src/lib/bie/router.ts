@@ -10,6 +10,7 @@ import { KNOWN_TICKERS } from "@/lib/largo/question-intent";
 import { lookupGlossary } from "./glossary";
 import { namesUnsupportedHorizon } from "./vector-read-fallback";
 import { parseShift } from "./scenario-read";
+import { isNonsenseQuestion, wantsContradictionExplain, wantsEngineState, wantsLottoState, wantsMatrixDelta, wantsPowerHour, shouldAvoidSpxDeskDump } from "./question-focus";
 
 export type BieIntent =
   | "zerodte_plays"
@@ -35,7 +36,9 @@ export type BieIntent =
   | "platform_read"
   | "thermal_read"
   | "helix_read"
-  | "grid_rejections_read";
+  | "grid_rejections_read"
+  | "play_engine_read"
+  | "clarify_read";
 
 export type BieRoute = {
   intent: BieIntent;
@@ -50,7 +53,7 @@ const ZERODTE_RE =
   /\b(0\s*dte|zero\s*dte|zerodte)\b.*\b(plays?|board|scanner|finds?)\b|\b(today'?s|the)\s+plays\b|command board|how (are|did) (the|our|today'?s) plays/i;
 
 const SPX_STRUCTURE_RE =
-  /\b(spx|es|s&p)\b[^?]*\b(levels?|structure|walls?|gamma( flip)?|flip|max pain|king node|support|resistance)\b|\b(levels?|structure|walls?|gamma flip|max pain)\b[^?]*\bspx\b/i;
+  /\b(spx|es|s&p)\b[^?]*\b(levels?|structure|walls?|gamma( flip)?|flip|max pain|king node|support|resistance)\b|\b(levels?|structure|walls?|gamma flip|max pain|king node)\b[^?]*\b(spx|es|s&p)\b/i;
 
 const SPX_DESK_READ_RE =
   /\b(spx|s&p|es)\b.*\b(read|setup|bias|trade|desk|update|doing|look(ing)?|now|slayer|channel|commentary|brief)\b|\bwhat'?s? (the )?(spx|s&p) (setup|read|trade|bias|desk|doing)\b|\blive desk\b.*\bspx\b|\bspx channel\b|\bcommentary on spx\b/i;
@@ -79,13 +82,27 @@ const FLOW_TAPE_RE =
   /\b(unusual flow|whale print|flow tape|any flow|big flow|hedging flows?|massive flow|lit flow)\b/i;
 
 const HELIX_READ_RE =
-  /\b(helix|flow analytics|strike stack|anomaly near.?miss|dark pool panel|helix rail|helix tape)\b/i;
+  /\b(helix|flow analytics|strike stack|anomaly near.?miss|dark pool (activity|prints?|flow)|helix rail|helix tape|top \d+.*prints?|prints? by premium|list only.*prints?|whale prints?|biggest flow|unusual options)\b|\bdark pool\b.*\b(activity|flow|prints?)\b/i;
 
 const THERMAL_READ_RE =
-  /\b(thermal|heatmap|heat map|blackout thermal|gex matrix|matrix data|dealer gamma|gamma matrix|gex positioning|vex lens|dex lens|charm lens|gex on|vex on|dex on|charm on)\b/i;
+  /\b(thermal|heatmap|heat map|blackout thermal|gex matrix|matrix data|dealer gamma|gamma matrix|gex positioning|vex lens|dex lens|charm lens|skew lens|gex on|vex on|dex on|charm on|matrix.{0,60}(changed|shift|last \d+ min)|(changed|shift).{0,40}matrix|gex vs vex|vex vs gex|thermal.{0,20}(agree|align).{0,20}desk|\bskew\b.{0,20}(spx|0dte|0 dte))\b/i;
 
 const GRID_REJECTIONS_RE =
-  /\b(grid rejection|0dte rejection|scanner rejection|why didn'?t .{0,30}(make|hit) the (grid|board|scanner)|near.?miss.{0,20}(grid|0dte|scanner)|gate reject.{0,20}(grid|0dte|scanner))\b/i;
+  /\b(grid rejection|grid scanner|0dte rejection|scanner rejection|rejections?.{0,20}(grid|scanner)|why didn'?t .{0,30}(make|hit) the (grid|board|scanner)|near.?miss.{0,20}(grid|0dte|scanner)|gate reject.{0,20}(grid|0dte|scanner))\b/i;
+
+const PLAY_ENGINE_RE =
+  /\b(play engine|slayer engine|spx engine|engine state|engine long|engine short|long or short right now|power hour)\b/i;
+
+const SECTOR_FLOW_RE = /\b(sector flow|semiconductor|semi flow|safe haven flow)\b/i;
+
+const BREADTH_RE = /\b(mag7|mag 7|market breadth|breadth today)\b/i;
+
+const PIN_RISK_RE = /\b(pin risk|pinning|pin at|pin into)\b/i;
+
+const LOTTO_ENGINE_RE = /\blotto\b.*\b(engine|state|phase)\b|\blotto engine\b/i;
+
+const CONTRADICTION_EXPLAIN_RE =
+  /\b(why did you say|you said).{0,40}\b(bearish|bullish)\b.{0,40}\b(bearish|bullish)\b|\b(bearish|bullish)\b.{0,20}\b(and|but)\b.{0,20}\b(bearish|bullish)\b/i;
 
 const ADVICE_RE =
   /\b(should i|would you|can i|worth (buying|selling)|buy|sell|hold|trim|into earnings|before earnings|after earnings)\b/i;
@@ -346,7 +363,11 @@ function isSpxHorizonScopedStructureQuestion(q: string, horizon: string): boolea
 // published track-record endpoint (/api/track-record/publish). Placed before REASONING_RE so these
 // deterministic reads don't fall through to Claude.
 const RECORD_RE =
-  /\b(honest record|track[- ]?record|performance|track (record |)?on (today'?s|the) plays?|win\s*rate|how (well|good).{0,30}(perform|do)|historical (plays|records?|performance|p&l)|past .{0,30}(record|performance)|p&l.{0,30}(yesterday|today|week))\b/i;
+  /\b(honest record|track[- ]?record|performance|track (record |)?on (today'?s|the) plays?|win\s*rate|how (well|good|have).{0,40}(perform(?:ed|s|ance)?|done|doing)|historical (plays|records?|performance|p&l)|past .{0,30}(record|performance)|p&l.{0,30}(yesterday|today|week))\b/i;
+
+const PREMIUM_SELL_RE = /\b(good day|bad day|right day).{0,20}(sell|short) premium\b|\bsell premium\b/i;
+
+const OPTIONS_STRATEGY_RE = /\b(calendar spread|iron condor|credit spread|debit spread|covered call|straddle|strangle)\b/i;
 
 // Cross-product / "know everything" asks — full bie:full-state snapshot (Thermal matrix, Vector, HELIX, etc.).
 const PLATFORM_READ_RE =
@@ -431,7 +452,31 @@ export function extractCompareTickers(question: string): [string, string] | null
 
 export function classifyBieIntent(question: string, ledgerTickers: Set<string>): BieRoute | null {
   const q = question.trim();
+  if (isNonsenseQuestion(q)) return { intent: "clarify_read", ticker: null };
   if (q.length > 160 || q.split(/[.?!]/).filter((s) => s.trim()).length > 2) return null;
+
+  if (CONTRADICTION_EXPLAIN_RE.test(q) || wantsContradictionExplain(q)) {
+    return { intent: "spx_desk_read", ticker: "SPX" };
+  }
+  if (PLAY_ENGINE_RE.test(q) || wantsEngineState(q) || wantsPowerHour(q)) {
+    return { intent: "play_engine_read", ticker: "SPX" };
+  }
+  if (LOTTO_ENGINE_RE.test(q) || wantsLottoState(q)) {
+    return { intent: "play_engine_read", ticker: "SPX" };
+  }
+  if (wantsMatrixDelta(q)) {
+    return { intent: "thermal_read", ticker: extractKnownTicker(q) ?? "SPX" };
+  }
+  if (BREADTH_RE.test(q) && !extractKnownTicker(q)) {
+    return { intent: "market_context", ticker: null };
+  }
+  if (SECTOR_FLOW_RE.test(q) || PIN_RISK_RE.test(q)) {
+    const ticker = extractKnownTicker(q);
+    if (PIN_RISK_RE.test(q) && /\b(spx|s&p|7500|7600|7[0-9]{3})\b/i.test(q)) {
+      return { intent: "spx_structure", ticker: "SPX" };
+    }
+    if (SECTOR_FLOW_RE.test(q)) return { intent: "helix_read", ticker: ticker };
+  }
 
   // Definitional/concept question → the glossary read. Placed FIRST (even before the explicit
   // "vector" branch) so "what is Vector" / "what is GEX" / "what does Night Hawk do" resolve to a
@@ -449,6 +494,9 @@ export function classifyBieIntent(question: string, ledgerTickers: Set<string>):
   }
 
   if (isConceptQuestion(q)) return { intent: "concept_read", ticker: null };
+  if (OPTIONS_STRATEGY_RE.test(q) && !CONCEPT_LIVE_HINT_RE.test(q)) {
+    return { intent: "concept_read", ticker: null };
+  }
 
   // "pull/look up X from <internal path | provider>" → the governed universal reader. Only fires
   // when a path or provider is explicitly named, so a plain "show me the SPX setup" isn't stolen.
@@ -492,6 +540,9 @@ export function classifyBieIntent(question: string, ledgerTickers: Set<string>):
     const scenario = scenarioRoute(q);
     if (scenario) return scenario;
   }
+  if (/\bdealer hedging\b/i.test(q) && /\bif i buy\b/i.test(q)) {
+    return { intent: "concept_read", ticker: null };
+  }
 
   // An explicitly UNSUPPORTED horizon (LEAP / multi-year / quarterly) can't be scoped by any desk.
   // Route to the Vector composer, which returns an HONEST "unsupported horizon" message rather than
@@ -509,6 +560,9 @@ export function classifyBieIntent(question: string, ledgerTickers: Set<string>):
   if (SPX_WHY_RE.test(q)) return { intent: "spx_desk_read", ticker: "SPX" };
   if (SPX_EXPLAIN_RE.test(q)) return { intent: "spx_desk_read", ticker: "SPX" };
   if (SPX_INVALIDATION_RE.test(q)) return { intent: "spx_invalidation", ticker: "SPX" };
+
+  // Premium-selling posture — before verdict (avoids stealing "good day to sell premium").
+  if (PREMIUM_SELL_RE.test(q)) return { intent: "spx_desk_read", ticker: "SPX" };
 
   // Cross-tool verdict synthesis — placed before COMPARE/ADVICE so an explicit "grade this /
   // is X good / hold X into earnings" gets the deep multi-engine envelope, while "should I …"
@@ -540,7 +594,7 @@ export function classifyBieIntent(question: string, ledgerTickers: Set<string>):
     return { intent: "helix_read", ticker: extractKnownTicker(q) };
   }
 
-  if (THERMAL_READ_RE.test(q)) {
+  if (THERMAL_READ_RE.test(q) || (/\bcharm\b/i.test(q) && /\b(spx|0dte|0 dte)\b/i.test(q))) {
     return { intent: "thermal_read", ticker: extractKnownTicker(q) ?? "SPX" };
   }
 
@@ -575,6 +629,7 @@ export function classifyBieIntent(question: string, ledgerTickers: Set<string>):
   }
 
   if (SPX_STRUCTURE_RE.test(q)) return { intent: "spx_structure", ticker: "SPX" };
+  if (/\bvix\b/i.test(q)) return { intent: "market_context", ticker: null };
   if (SPX_DESK_READ_RE.test(q)) return { intent: "spx_desk_read", ticker: "SPX" };
   if (MARKET_CONTEXT_RE.test(q) || MARKET_CONTEXT_LOOSE_RE.test(q)) {
     return { intent: "market_context", ticker: null };
@@ -590,13 +645,27 @@ export function classifyBieIntent(question: string, ledgerTickers: Set<string>):
 
 export function isSpxDeskFallbackQuestion(question: string): boolean {
   const q = question.trim();
+  if (shouldAvoidSpxDeskDump(q)) return false;
   if (q.length > 200 || q.split(/[.?!]/).filter((s) => s.trim()).length > 2) return false;
   if (REASONING_RE.test(q) && !/\b(spx|s&p|gamma|gex|dealer)\b/i.test(q)) return false;
+  if (HELIX_READ_RE.test(q) || THERMAL_READ_RE.test(q) || GRID_REJECTIONS_RE.test(q)) return false;
+  if (PLAY_ENGINE_RE.test(q) || LOTTO_ENGINE_RE.test(q)) return false;
   return /\b(spx|s&p|es|slayer|sniper|0dte|gamma|gex|dealer)\b/i.test(q);
 }
 
 export function classifyBieStagingFallback(question: string): BieRoute {
   const q = question.trim();
+  if (isNonsenseQuestion(q)) return { intent: "clarify_read", ticker: null };
+  if (CONTRADICTION_EXPLAIN_RE.test(q) || wantsContradictionExplain(q)) {
+    return { intent: "spx_desk_read", ticker: "SPX" };
+  }
+  if (PLAY_ENGINE_RE.test(q) || wantsEngineState(q) || wantsPowerHour(q) || LOTTO_ENGINE_RE.test(q) || wantsLottoState(q)) {
+    return { intent: "play_engine_read", ticker: "SPX" };
+  }
+  if (wantsMatrixDelta(q)) return { intent: "thermal_read", ticker: extractKnownTicker(q) ?? "SPX" };
+  if (BREADTH_RE.test(q) && !extractKnownTicker(q)) return { intent: "market_context", ticker: null };
+  if (SECTOR_FLOW_RE.test(q)) return { intent: "helix_read", ticker: extractKnownTicker(q) };
+  if (PIN_RISK_RE.test(q) && /\b(spx|s&p|7[0-9]{3})\b/i.test(q)) return { intent: "spx_structure", ticker: "SPX" };
   // Track-record / platform-wide reads beat glossary "what is X" concept routing.
   if (RECORD_RE.test(q)) {
     return { intent: "record_read", ticker: extractKnownTicker(q) };
@@ -647,7 +716,10 @@ export function classifyBieStagingFallback(question: string): BieRoute {
   }
   if (FLOW_TAPE_RE.test(q)) return { intent: "flow_tape", ticker: extractKnownTicker(q) };
   if (HELIX_READ_RE.test(q)) return { intent: "helix_read", ticker: extractKnownTicker(q) };
-  if (THERMAL_READ_RE.test(q)) return { intent: "thermal_read", ticker: extractKnownTicker(q) ?? "SPX" };
+  if (PREMIUM_SELL_RE.test(q)) return { intent: "spx_desk_read", ticker: "SPX" };
+  if (THERMAL_READ_RE.test(q) || (/\bcharm\b/i.test(q) && /\b(spx|0dte)\b/i.test(q))) {
+    return { intent: "thermal_read", ticker: extractKnownTicker(q) ?? "SPX" };
+  }
   if (GRID_REJECTIONS_RE.test(q)) return { intent: "grid_rejections_read", ticker: extractKnownTicker(q) };
   {
     const vTicker = extractKnownTicker(q);
@@ -664,14 +736,26 @@ export function classifyBieStagingFallback(question: string): BieRoute {
   if (ticker && ADVICE_RE.test(q)) return { intent: "ticker_advice", ticker };
   if (ticker && PLAY_STATE_RE.test(q)) return { intent: "ticker_ecosystem", ticker };
   if (TICKER_ECOSYSTEM_RE.test(q) && ticker) return { intent: "ticker_ecosystem", ticker };
-  if (/\b(spx|s&p|gamma|gex|vwap|slayer|0dte|dealer|flip)\b/i.test(q)) {
+  if (/\b(mag7|mag 7|breadth)\b/i.test(q) && !extractKnownTicker(q)) {
+    return { intent: "market_context", ticker: null };
+  }
+  if (/\b(spx|s&p|gamma|gex|vwap|slayer|0dte|dealer|flip|tick index|pre.?market|lunch chop|opening range)\b/i.test(q)) {
     return { intent: "spx_desk_read", ticker: "SPX" };
   }
-  if (/\b(market|vix|spy|qqq|breadth|regime|tape|anomal)/i.test(q)) {
+  {
+    const t = extractKnownTicker(q);
+    if (t && /\b(weak|strong|unusual|flow|safe haven|blow.?off)\b/i.test(q)) {
+      return { intent: /\bflow\b/i.test(q) ? "helix_read" : "ticker_ecosystem", ticker: t };
+    }
+  }
+  if (/\bvix\b/i.test(q)) {
+    return { intent: "market_context", ticker: null };
+  }
+  if (/\b(market|spy|qqq|breadth|regime|tape|anomal)/i.test(q)) {
     return { intent: "market_context", ticker: null };
   }
   if (ticker) return { intent: "ticker_advice", ticker };
-  return { intent: "market_context", ticker: null };
+  return { intent: "clarify_read", ticker: null };
 }
 
 export function bieIntentBucket(intent: BieIntent | null): string {
@@ -736,6 +820,10 @@ export function bieFollowups(intent: BieIntent): string[] {
       return ["Any whale prints?", "What's going on with the top ticker?", "What's the SPX setup?"];
     case "grid_rejections_read":
       return ["Show today's 0DTE plays", "Cortex verdict on NVDA", "Why was the top play picked?"];
+    case "play_engine_read":
+      return ["What's the SPX setup right now?", "What would flip this read?", "How are today's plays doing?"];
+    case "clarify_read":
+      return ["What's the SPX setup right now?", "Any unusual flow right now?", "Compare NVDA vs AMD"];
     default:
       return [];
   }

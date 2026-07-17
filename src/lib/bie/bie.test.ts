@@ -63,7 +63,7 @@ test("router: loose market context phrases route without exact match", () => {
 
 test("router: classifyBieStagingFallback never leaves Largo without a route", () => {
   assert.equal(classifyBieStagingFallback("random question about hedging flows").intent, "flow_tape");
-  assert.equal(classifyBieStagingFallback("tell me something").intent, "market_context");
+  assert.equal(classifyBieStagingFallback("tell me something").intent, "clarify_read");
   assert.equal(classifyBieStagingFallback("SPX gamma").intent, "spx_desk_read");
   assert.equal(classifyBieStagingFallback("what's going on with NVDA").intent, "ticker_ecosystem");
   assert.equal(classifyBieStagingFallback("what's going on with NVDA").ticker, "NVDA");
