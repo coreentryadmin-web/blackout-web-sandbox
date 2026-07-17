@@ -550,6 +550,27 @@ describe("router: nighthawk_edition intent (PR-N9 — BIE × Night Hawk edition 
     assert.equal(classifyBieIntent("show me the plays", NO_LEDGER)?.intent, "zerodte_plays");
   });
 
+  test("staging fallback routes platform-wide shapes", () => {
+    assert.equal(classifyBieStagingFallback("full platform snapshot").intent, "platform_read");
+    assert.equal(classifyBieStagingFallback("know everything on the site").intent, "platform_read");
+  });
+
+  test("primary router routes platform_read before reasoning fallback", () => {
+    assert.equal(classifyBieIntent("I need to know in and out about every product", new Set())?.intent, "platform_read");
+  });
+
+  test("primary router routes product gap intents", () => {
+    assert.equal(classifyBieIntent("show the heatmap on SPX", new Set())?.intent, "thermal_read");
+    assert.equal(classifyBieIntent("helix analytics for NVDA", new Set())?.intent, "helix_read");
+    assert.equal(classifyBieIntent("why didn't TSLA make the grid board", new Set())?.intent, "grid_rejections_read");
+    assert.equal(classifyBieIntent("GEX on SPY", new Set())?.intent, "thermal_read");
+  });
+
+  test("staging fallback routes track-record shapes", () => {
+    assert.equal(classifyBieStagingFallback("what is the track record").intent, "record_read");
+    assert.equal(classifyBieStagingFallback("historical performance win rate").intent, "record_read");
+  });
+
   test("staging fallback routes the same edition shapes", () => {
     assert.equal(classifyBieStagingFallback("tonight's playbook").intent, "nighthawk_edition");
     assert.equal(classifyBieStagingFallback("why was CSX picked tonight?").intent, "nighthawk_edition");

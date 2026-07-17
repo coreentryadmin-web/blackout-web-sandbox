@@ -100,6 +100,14 @@ describe("synthesizeCompoundAnswer — labeled, honest, never dropped", () => {
     assert.match(out, /Answering 2 parts \(2 with live data\):/);
     assert.ok(!out.includes("unavailable"));
   });
+
+  test("and also run-on splits into compound parts", () => {
+    const parts = splitCompoundQuestion(
+      "What's SPX gamma flip and also AMD max pain and also any whale flow"
+    );
+    assert.equal(parts.length, 3);
+    assert.ok(isCompoundQuestion("GEX? VEX? max pain? king node?"));
+  });
 });
 
 describe("labelForSubQuestion", () => {

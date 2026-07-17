@@ -71,6 +71,19 @@ export async function getPlatformSnapshot(opts?: {
     );
   }
 
+  if (include.has("largo")) {
+    jobs.push(
+      import("@/lib/bie/full-platform-loader")
+        .then((m) => m.getBieFullStateForLargo())
+        .then((v) => {
+          snapshot.largo = v;
+        })
+        .catch(() => {
+          snapshot.largo = null;
+        })
+    );
+  }
+
   await Promise.all(jobs);
   return snapshot;
 }

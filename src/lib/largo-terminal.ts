@@ -8,7 +8,7 @@ import {
   type AnthropicSystemBlock,
   type AnthropicToolLoopEvent,
 } from "@/lib/providers/anthropic";
-import { claudeEnabled, isStagingBieMode, largoAvailable } from "@/lib/ai-env";
+import { claudeEnabled, isStagingBieMode, largoAvailable, largoBieOnly } from "@/lib/ai-env";
 import { dbConfigured, insertBieInteraction } from "@/lib/db";
 import { LARGO_SYSTEM_PROMPT } from "@/lib/largo/system-prompt";
 import { LARGO_TOOL_DEFS, getToolsForIntent } from "@/lib/largo/tool-defs";
@@ -16,6 +16,7 @@ import { runLargoTool } from "@/lib/largo/run-tool";
 import { bieFollowups, bieIntentBucket, classifyBieIntent, classifyBieStagingFallback, isSpxDeskFallbackQuestion, type BieRoute } from "@/lib/bie/router";
 import { composeBieAnswer, composeCompound } from "@/lib/bie/composers";
 import type { BieAnswerEnvelope } from "@/lib/bie/answer-envelope";
+import { isRichBieEnvelope } from "@/lib/bie/envelope-richness";
 import { isCompoundQuestion } from "@/lib/bie/decompose";
 import { collectContextNumbers, verifyClaims, type ClaimVerification } from "@/lib/bie/verifier";
 import { resetLargoSpxDeskCache } from "@/lib/largo/spx-desk-cache";
@@ -73,34 +74,9 @@ export type LargoStreamEvent =
   | { type: "error"; message: string };
 
 /**
- * Is this a RICH structured envelope worth surfacing as member-facing cards — as opposed to the
- * transition shim composeBieAnswer wraps a plain-string leg in (one "Read" section, no
- * evidence/levels/scenarios/provenance)? Only rich envelopes are attached to the query response as
- * `envelope`; a trivial string answer omits it so the client renders its `answer` markdown honestly
- * (its own shim), never a hollow single-section card that adds nothing over the text.
- *
- * There is no marker field on the (stable) envelope contract, so this is a STRUCTURAL test: the shim
- * is exactly one bare section and nothing else, so any of multi-section / top-level evidence /
- * scenarios / levels / unavailableSources / a section carrying its own evidence·levels·provenance·
- * bias·confidence means the synthesis layer actually populated it.
+ * Re-exported from `@/lib/bie/envelope-richness` — structural test for rich synthesis envelopes.
  */
-export function isRichBieEnvelope(env: BieAnswerEnvelope | null | undefined): boolean {
-  if (!env) return false;
-  const sections = env.sections ?? [];
-  if (sections.length > 1) return true;
-  if ((env.evidence?.length ?? 0) > 0) return true;
-  if ((env.scenarios?.length ?? 0) > 0) return true;
-  if ((env.levels?.length ?? 0) > 0) return true;
-  if ((env.unavailableSources?.length ?? 0) > 0) return true;
-  return sections.some(
-    (s) =>
-      (s.evidence?.length ?? 0) > 0 ||
-      (s.levels?.length ?? 0) > 0 ||
-      s.provenance != null ||
-      s.bias != null ||
-      s.confidence != null
-  );
-}
+export { isRichBieEnvelope } from "@/lib/bie/envelope-richness";
 
 /**
  * Dynamic follow-up prompts — 3 short questions that continue THIS exact exchange
@@ -347,20 +323,20 @@ async function tryBieRoute(
       }
     }
 
-    // Staging BIE-only: never return null — always compose a deterministic answer.
-    if (!route && isStagingBieMode()) {
+    // BIE-only (staging default or LARGO_BIE_ONLY=1): never return null — compose deterministically.
+    if (!route && largoBieOnly()) {
       const fallback = classifyBieStagingFallback(question);
       const composed = await composeBieAnswer(fallback, { question });
       if (composed) {
         return { route: fallback, answer: composed.answer, context: composed.context, envelope: composed.envelope ?? null };
       }
-      const lastResort = await composeBieAnswer({ intent: "market_context", ticker: null });
-      if (lastResort) {
+      const clarify = await composeBieAnswer({ intent: "clarify_read", ticker: null }, { question });
+      if (clarify) {
         return {
-          route: { intent: "market_context", ticker: null },
-          answer: lastResort.answer,
-          context: lastResort.context,
-          envelope: lastResort.envelope ?? null,
+          route: { intent: "clarify_read", ticker: null },
+          answer: clarify.answer,
+          context: clarify.context,
+          envelope: clarify.envelope ?? null,
         };
       }
     }
@@ -466,8 +442,14 @@ export async function runLargoQuery(
     };
   }
 
+  if (largoBieOnly()) {
+    throw new Error(
+      "Largo couldn't map that question to a platform read. Try SPX desk, market context, flow tape, track record, or a named ticker."
+    );
+  }
+
   if (!claudeEnabled()) {
-    throw new Error("Largo BIE-only mode — ask about SPX setup, market context, or today's 0DTE plays");
+    throw new Error("Largo requires Anthropic — not configured in this environment.");
   }
 
   const { sid, history, system, filteredTools, toolsUsed, tickerHint } = await prepareLargoTurn(
@@ -625,11 +607,19 @@ export async function runLargoQueryStream(
     return;
   }
 
-  if (!claudeEnabled()) {
+  if (largoBieOnly()) {
     onEvent({
       type: "error",
       message:
-        "Largo BIE-only mode on staging — try: What's the SPX setup? · How are today's plays? · What is the market doing?",
+        "Largo couldn't map that question to a platform read. Try SPX desk, market context, flow tape, track record, or a named ticker.",
+    });
+    return;
+  }
+
+  if (!claudeEnabled()) {
+    onEvent({
+      type: "error",
+      message: "Largo requires Anthropic — not configured in this environment.",
     });
     return;
   }

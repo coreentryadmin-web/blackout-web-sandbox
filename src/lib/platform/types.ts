@@ -81,6 +81,8 @@ export type PlatformSnapshot = {
   nighthawk?: NightHawkEditionSummary | null;
   /** Full edition when explicitly requested. */
   nighthawk_edition?: NightHawkEdition | null;
+  /** BIE full-platform snapshot when `include` contains `largo`. */
+  largo?: unknown | null;
 };
 
 export type { SpxDeskPayload, NightHawkEdition, FlowRow, FlowStrikeStack };
