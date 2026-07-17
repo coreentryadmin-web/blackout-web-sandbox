@@ -19,35 +19,31 @@ export function HelixPageShell() {
         "ios-native-page ios-native-page-helix helix-page-shell helix-pro-shell",
         nativeShell && "helix-page-shell-native"
       )}
-      contentClassName={clsx(nativeShell ? "helix-page-content-native !py-0" : undefined)}
+      contentClassName={clsx(
+        "helix-page-content max-w-none",
+        nativeShell ? "helix-page-content-native !py-0" : "!py-0 md:!py-1"
+      )}
     >
       {!nativeShell && (
-        // Header shares the SAME full-bleed rail (content-rail max-w-none) as the
-        // tape below it, so the "HELIX" title's left edge aligns with the table's
-        // left edge. Previously the header was a plain .content-rail (capped at
-        // --content-max / 80rem, centered) while the tape was max-w-none full-bleed —
-        // on wide screens the title floated ~320px inset from the full-width content,
-        // reading as an un-framed, misaligned page.
-        <div className="content-rail max-w-none helix-pro-header">
-          <div className="helix-pro-header-copy">
-            <p className="helix-pro-kicker">Institutional flow intelligence</p>
-            <div className="helix-pro-title-row">
-              <ProductMark product="helix" size={44} animated={false} />
-              <h1 className="helix-pro-title">HELIX</h1>
-            </div>
-            {/* subtitle removed — the kicker + title already establish context */}
+        // Slim sticky brand row sits flush under the fixed nav — tide inline so the
+        // command bar + tape grid can consume the rest of the viewport.
+        <div className="content-rail max-w-none helix-pro-header helix-pro-header--compact">
+          <div className="helix-pro-header-brand">
+            <ProductMark product="helix" size={28} animated={false} />
+            <h1 className="helix-pro-title helix-pro-title--compact">HELIX</h1>
+            <span className="sr-only">Institutional flow intelligence</span>
           </div>
-          <HelixTideBar className="helix-pro-tide lg:mb-1" />
+          <HelixTideBar className="helix-pro-tide helix-pro-tide--compact" />
         </div>
       )}
       <div
         className={clsx(
           "content-rail max-w-none ios-native-content-rail",
-          nativeShell ? "helix-page-inner-native" : "mt-5 helix-page-inner"
+          nativeShell ? "helix-page-inner-native" : "helix-page-inner"
         )}
       >
         {nativeShell && (
-          <div className="helix-native-tide mb-2">
+          <div className="helix-native-tide">
             <HelixTideBar />
           </div>
         )}
