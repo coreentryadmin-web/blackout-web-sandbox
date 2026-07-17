@@ -31,7 +31,7 @@ import { fetchMarketWideContext, type MarketWideContext } from "./market-wide";
 import { critiquePlays } from "./play-critic";
 import { rankCandidates, regimeContextFromMarket, type ScoredCandidate } from "./scorer";
 import { rescoreDossier } from "./hunt-builder";
-import { DOSSIER_BATCH_SIZE, EDITION_SYNTHESIS_POOL, EDITION_TARGET_PLAYS, MAX_CANDIDATES, MAX_DOSSIER_STOCKS } from "./constants";
+import { DOSSIER_BATCH_SIZE, EDITION_MIN_PUBLISH_PLAYS, EDITION_SYNTHESIS_POOL, EDITION_TARGET_PLAYS, MAX_CANDIDATES, MAX_DOSSIER_STOCKS } from "./constants";
 import { backfillThinEditionPlays } from "./play-backfill";
 import { buildNighthawkPublishContexts } from "./publish-context";
 import {
@@ -881,6 +881,25 @@ export async function buildEveningEdition(opts?: {
         );
         finalPlays = passing;
         funnel.critic_passed = finalPlays.length;
+      }
+      if (finalPlays.length < EDITION_MIN_PUBLISH_PLAYS && blocked.length) {
+        // PR-N16: promote top-scoring blocked plays to reach the minimum play count.
+        // Previously only fired at ZERO plays — a single passing play left the edition
+        // thin with no rescue. Now promotes enough blocked plays to reach MIN_PUBLISH_PLAYS.
+        const need = EDITION_MIN_PUBLISH_PLAYS - finalPlays.length;
+        const promoted = promoteTopBlocked(blocked, need);
+        if (promoted.length) {
+          const startRank = finalPlays.length + 1;
+          finalPlays = [
+            ...finalPlays,
+            ...promoted.map((p, i) => ({ ...p, rank: startRank + i })),
+          ];
+          funnel.critic_passed = finalPlays.length;
+          console.info(
+            `[nighthawk/edition] publish gates left ${finalPlays.length - promoted.length} play(s) — promoted ${promoted.length} best-available to reach min ${EDITION_MIN_PUBLISH_PLAYS} ` +
+            `(${blocked.length} total blocked: ${blocked.map((b) => `${b.ticker}:${b.result.blocks.map((x) => x.code).join(",")}`).join("; ")})`
+          );
+        }
       }
       if (!finalPlays.length) {
         // PR-N13: the gates zeroed all plays, but the pipeline MUST always surface picks.
