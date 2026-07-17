@@ -28,7 +28,7 @@ import type { TickerDossier } from "./dossier";
 import type { ScoredCandidate } from "./scorer";
 import { assignNighthawkTier, nhTierInputFromScored } from "./nighthawk-tiers";
 import type { PlaybookPlay } from "./types";
-import { buildDirectionalStockLevels, formatStockLevel } from "./play-levels";
+import { buildDirectionalStockLevels, computeRiskReward } from "./play-levels";
 import { applyPremiumCapToPlay, validatePlayGeometry, canonicalTicker } from "./play-constraints";
 import { groundPlays } from "./grounding";
 import { GROUNDING_MIN_OI, tieredMinOi } from "./grounding";
@@ -42,8 +42,10 @@ type PickedContract = {
   strike: number;
   side: "call" | "put";
   expiry: string;
-  /** Per-share premium (mid when both sides quote, else the ask). Always ≤ the premium cap. */
+  /** Per-share premium (mid when both sides quote, else the ask). */
   premium: number;
+  /** When set, the contract didn't clear the strict gates — members see a caveat. */
+  caveat?: "premium_high" | "low_liquidity" | "premium_high_low_liquidity";
 };
 
 function firstFinite(nums: Array<number | null | undefined> | undefined): number | null {
@@ -70,16 +72,46 @@ function contractOi(row: ChainStrikeRow, side: "call" | "put"): number {
 }
 
 /** Format a strike for the option-card string so parseOptionsContract can re-read it. Integers stay
- *  integers ("$120"); fractional strikes keep up to two decimals with no trailing zeros ("$122.5"). */
+ *  integers ("120"); fractional strikes keep up to two decimals with no trailing zeros ("122.5"). */
 function formatStrike(strike: number): string {
   return Number.isInteger(strike) ? String(strike) : String(Number(strike.toFixed(2)));
 }
 
+const MONTH_NAMES = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"] as const;
+
+/** Format ISO date "2026-07-18" → "Jul 18" for compact, parseable display. */
+function shortExpiry(iso: string): string {
+  const parts = iso.split("-");
+  if (parts.length < 3) return iso;
+  const monthIdx = parseInt(parts[1]!, 10) - 1;
+  const day = parseInt(parts[2]!, 10);
+  if (monthIdx < 0 || monthIdx > 11 || !Number.isFinite(day)) return iso;
+  return `${MONTH_NAMES[monthIdx]} ${day}`;
+}
+
+/** Build the member-facing options_play string.
+ *  With contract: "AAPL $120 CALL @ $4.00 — Jul 18"
+ *  With caveat:   "AAPL $120 CALL @ $4.00 — Jul 18 (premium above cap, verify size)"
+ *  No contract:   "AAPL — no options data available" */
+function formatOptionsPlay(ticker: string, contract: PickedContract | null): string {
+  if (!contract) return `${ticker} — no options data available`;
+  const sideWord = contract.side.toUpperCase();
+  const base = `${ticker} $${formatStrike(contract.strike)} ${sideWord} @ $${contract.premium.toFixed(2)} — ${shortExpiry(contract.expiry)}`;
+  if (!contract.caveat) return base;
+  const tag =
+    contract.caveat === "premium_high" ? "(premium above $35 cap, verify size)" :
+    contract.caveat === "low_liquidity" ? "(thin liquidity, use limit order)" :
+    "(premium high + thin liquidity, verify)";
+  return `${base} ${tag}`;
+}
+
 /**
- * Pick the most at-the-money strike on the chosen side that is BOTH liquid (OI ≥ the grounding floor)
- * AND affordable (premium ≤ the per-share cap). Long ⇒ calls, short ⇒ puts. Deterministic tie-break:
- * closest strike to spot first, then nearest expiry, then lower strike — so identical inputs always
- * yield the identical contract. Returns null when no strike clears both gates (⇒ skip the candidate).
+ * Pick the most at-the-money strike on the chosen side. Tries strict gates first (OI ≥ floor AND
+ * premium ≤ cap). When nothing clears both, relaxes progressively: premium-only, OI-only, then
+ * any quoted strike — always returning a concrete contract so members never see "check option chain".
+ * Relaxed picks carry a `caveat` so the UI can flag them.
+ *
+ * Deterministic tie-break: closest strike to spot, then nearest expiry, then lower strike.
  */
 export function pickChainContract(
   chain: EditionChainData,
@@ -88,26 +120,43 @@ export function pickChainContract(
   const side: "call" | "put" = direction === "long" ? "call" : "put";
   const spot = chain.spot;
   const minOi = spot > 0 ? tieredMinOi(spot) : GROUNDING_MIN_OI;
-  const eligible: Array<PickedContract & { dist: number }> = [];
+
+  type Candidate = PickedContract & { dist: number };
+  const strict: Candidate[] = [];
+  const relaxedPremium: Candidate[] = [];
+  const relaxedOi: Candidate[] = [];
+  const anyQuoted: Candidate[] = [];
+
   for (const row of chain.rows) {
-    const oi = contractOi(row, side);
-    if (oi < minOi) continue;
     const premium = contractPremium(row, side);
-    if (premium == null || premium > MAX_OPTION_PREMIUM_PER_SHARE) continue;
-    eligible.push({
+    if (premium == null) continue;
+    const oi = contractOi(row, side);
+    const entry: Candidate = {
       strike: row.strike,
       side,
       expiry: row.expiry,
       premium: Number(premium.toFixed(2)),
       dist: spot > 0 ? Math.abs(row.strike - spot) : row.strike,
-    });
+    };
+    const oiOk = oi >= minOi;
+    const premOk = premium <= MAX_OPTION_PREMIUM_PER_SHARE;
+    if (oiOk && premOk) strict.push(entry);
+    else if (oiOk && !premOk) relaxedPremium.push({ ...entry, caveat: "premium_high" });
+    else if (!oiOk && premOk) relaxedOi.push({ ...entry, caveat: "low_liquidity" });
+    else anyQuoted.push({ ...entry, caveat: "premium_high_low_liquidity" });
   }
-  if (!eligible.length) return null;
-  eligible.sort(
-    (a, b) => a.dist - b.dist || a.expiry.localeCompare(b.expiry) || a.strike - b.strike
-  );
-  const best = eligible[0]!;
-  return { strike: best.strike, side: best.side, expiry: best.expiry, premium: best.premium };
+
+  const sortFn = (a: Candidate, b: Candidate) =>
+    a.dist - b.dist || a.expiry.localeCompare(b.expiry) || a.strike - b.strike;
+
+  for (const pool of [strict, relaxedPremium, relaxedOi, anyQuoted]) {
+    if (pool.length) {
+      pool.sort(sortFn);
+      const best = pool[0]!;
+      return { strike: best.strike, side: best.side, expiry: best.expiry, premium: best.premium, caveat: best.caveat };
+    }
+  }
+  return null;
 }
 
 /**
@@ -139,14 +188,13 @@ function resolveLevels(
     resistance = px + half;
   }
 
-  // PR-N21: when the target-side S/R is too close to spot, the target becomes trivially
-  // small (~1%) while the stop stretches to 8%, producing terrible R:R. Push the target-side
-  // level out to at least 1× ATR from spot so overnight plays have meaningful reward.
+  // PR-N21/N22: push the target-side S/R out so overnight plays have meaningful reward.
+  // 1.5× ATR ensures a full average day's range of upside minimum.
   if (px != null && support != null && resistance != null && resistance > support) {
     const atr = tech?.atr14;
     const minTargetDist = atr != null && Number.isFinite(atr) && atr > 0
-      ? atr * 1.0
-      : px * 0.02;
+      ? atr * 1.5
+      : px * 0.025;
     if (direction === "long" && (resistance - px) < minTargetDist) {
       resistance = px + minTargetDist;
     } else if (direction === "short" && (px - support) < minTargetDist) {
@@ -158,60 +206,102 @@ function resolveLevels(
 }
 
 /**
- * Build a concise, GROUNDED thesis from the deterministic score breakdown + dossier technicals. Leads
- * with the dominant scoring drivers (flow / technical / positioning / smart-money / news) so members
- * see WHY the play ranked, then appends the technicals one-liner and any risk flags. No prose the
- * numbers can't back — this is the same data the score itself is computed from.
+ * Build an actionable thesis from the scoring breakdown + dossier data. Leads with the specific
+ * technical setup and flow signal (WHY this play, not just what scored), includes key levels and
+ * risk/reward context, and flags catalysts. Members should read this and immediately understand
+ * the trade idea — not decode a score breakdown.
  */
 export function buildDeterministicThesis(
   scored: ScoredCandidate,
-  dossier: TickerDossier | undefined
+  dossier: TickerDossier | undefined,
+  levels?: { entry_range: string; target: string; stop: string }
 ): { thesis: string; key_signal: string } {
-  const dirWord = scored.direction === "short" ? "bearish" : "bullish";
-  const drivers: Array<{ label: string; value: number }> = [
-    { label: "options flow", value: scored.flow_score },
-    { label: "technical setup", value: scored.tech_score },
-    { label: "dealer/OI positioning", value: scored.pos_score },
+  const tech = dossier?.tech ?? null;
+  const isLong = scored.direction !== "short";
+  const dirWord = isLong ? "bullish" : "bearish";
+
+  // --- Key signal (compact one-liner for cards/badges) ---
+  const topDrivers = [
+    { label: "flow", value: scored.flow_score },
+    { label: "technicals", value: scored.tech_score },
+    { label: "positioning", value: scored.pos_score },
     { label: "smart-money", value: scored.smart_money_score },
-    { label: "news/catalyst", value: scored.news_score },
-  ];
-  // Include fundamental and short-interest if they're material.
-  if (scored.fundamental_score != null && Math.abs(scored.fundamental_score) >= 2) {
-    drivers.push({ label: "fundamentals", value: scored.fundamental_score });
-  }
-  if (scored.short_interest_score != null && scored.short_interest_score >= 3) {
-    drivers.push({ label: "short squeeze", value: scored.short_interest_score });
-  }
-
-  const top = drivers
-    .filter((d) => Number.isFinite(d.value) && Math.abs(d.value) >= 1)
+    { label: "news", value: scored.news_score },
+  ]
+    .filter((d) => Number.isFinite(d.value) && Math.abs(d.value) >= 3)
     .sort((a, b) => Math.abs(b.value) - Math.abs(a.value))
-    .slice(0, 3);
-  const driverText = top.length
-    ? top.map((d) => `${d.label} (${d.value > 0 ? "+" : ""}${Math.round(d.value)})`).join(", ")
-    : "composite confluence";
+    .slice(0, 2);
+  const driverTags = topDrivers.map((d) => d.label).join(" + ") || "confluence";
+  const key_signal = `${dirWord.toUpperCase()} — ${driverTags} · score ${scored.score} (${scored.conviction})`;
 
-  const key_signal = `${dirWord.toUpperCase()} — score ${scored.score} (${scored.conviction}); ${driverText}.`;
+  // --- Technical opener ---
+  const parts: string[] = [];
+  const setupTags = tech?.setup_tags ?? [];
+  const trend = tech?.trend ?? "";
 
-  const parts: string[] = [
-    `${dirWord.charAt(0).toUpperCase() + dirWord.slice(1)} ${scored.ticker}: score ${scored.score} (${scored.conviction}), driven by ${driverText}.`,
-  ];
-  if (dossier?.tech?.summary) parts.push(dossier.tech.summary);
-  if (dossier?.flow_streak?.streak_days && dossier.flow_streak.streak_days >= 2) {
-    parts.push(`${dossier.flow_streak.streak_days}-day flow streak.`);
+  if (setupTags.length) {
+    const tagText = setupTags.slice(0, 2).join(", ");
+    parts.push(`${scored.ticker} showing ${tagText}${trend ? ` in ${trend} trend` : ""}.`);
+  } else if (trend) {
+    parts.push(`${scored.ticker} in ${trend} trend.`);
+  } else {
+    parts.push(`${scored.ticker} ${dirWord} setup.`);
   }
-  if (dossier?.iv_rank != null && dossier.iv_rank > 0) {
-    const ivLabel = dossier.iv_rank > 70 ? "elevated" : dossier.iv_rank > 40 ? "moderate" : "low";
-    parts.push(`IV rank ${Math.round(dossier.iv_rank)} (${ivLabel}).`);
+
+  // --- Key S/R levels + R:R ---
+  if (levels) {
+    const rr = computeRiskReward({ direction: isLong ? "LONG" : "SHORT", ...levels });
+    if (rr != null) {
+      const rrLabel = rr >= 2 ? "strong" : rr >= 1 ? "favorable" : rr >= 0.5 ? "acceptable" : "tight";
+      parts.push(`R:R ${rr.toFixed(1)}:1 (${rrLabel}).`);
+    }
   }
-  if (dossier?.greek_flow) {
+
+  // --- Flow conviction ---
+  if (scored.flow_score >= 20) {
+    const flowParts: string[] = [];
+    if (dossier?.flow_streak?.streak_days && dossier.flow_streak.streak_days >= 2) {
+      flowParts.push(`${dossier.flow_streak.streak_days}-day ${dirWord} flow streak`);
+    }
+    if (scored.flow_score >= 30) {
+      flowParts.push("aggressive options activity");
+    } else {
+      flowParts.push(`${dirWord} flow conviction`);
+    }
+    parts.push(flowParts.join(" with ") + ".");
+  } else if (dossier?.flow_streak?.streak_days && dossier.flow_streak.streak_days >= 3) {
+    parts.push(`${dossier.flow_streak.streak_days}-day flow streak building.`);
+  }
+
+  // --- Positioning context ---
+  if (scored.pos_score >= 8 && dossier?.greek_flow) {
     const gf = dossier.greek_flow;
-    parts.push(`Dealer flow ${gf.bias} (net Δ ${gf.net_delta > 0 ? "+" : ""}${Math.round(gf.net_delta).toLocaleString()}).`);
+    parts.push(`Dealer positioning ${gf.bias}.`);
   }
+  if (scored.wall_proximity_score != null && scored.wall_proximity_score >= 4) {
+    parts.push(`GEX wall alignment supports ${isLong ? "upside" : "downside"}.`);
+  }
+
+  // --- Technicals one-liner from dossier (concise) ---
+  if (tech?.rsi14 != null && Number.isFinite(tech.rsi14)) {
+    if (tech.rsi14 < 30) parts.push("RSI oversold.");
+    else if (tech.rsi14 > 70) parts.push("RSI overbought.");
+  }
+  if (tech?.rel_volume != null && tech.rel_volume > 1.5) {
+    parts.push(`${tech.rel_volume.toFixed(1)}× relative volume.`);
+  }
+
+  // --- IV context ---
+  if (dossier?.iv_rank != null && dossier.iv_rank > 0) {
+    if (dossier.iv_rank > 70) parts.push(`IV rank elevated (${Math.round(dossier.iv_rank)}).`);
+  }
+
+  // --- Risk flags ---
   const flags = [
     ...(scored.catalyst_flags ?? []),
     ...(scored.fundamental_block ? scored.fundamental_flags ?? [] : []),
   ];
+  if (scored.earnings_risk) flags.push("earnings proximity");
   if (flags.length) parts.push(`Watch: ${flags.join("; ")}.`);
 
   return { thesis: parts.join(" "), key_signal };
@@ -227,14 +317,14 @@ function buildPlay(
   levels: { entry_range: string; target: string; stop: string },
   rank: number
 ): PlaybookPlay {
-  const { thesis, key_signal } = buildDeterministicThesis(scored, dossier);
-  const options_play = contract
-    ? `${scored.ticker} ${contract.expiry} $${formatStrike(contract.strike)} ${contract.side.toUpperCase()} — entry prem ~$${contract.premium.toFixed(2)}`
-    : `${scored.ticker} — check option chain for suitable contract`;
+  const { thesis, key_signal } = buildDeterministicThesis(scored, dossier, levels);
+  const options_play = formatOptionsPlay(scored.ticker, contract);
+  const dir = scored.direction === "short" ? "SHORT" : "LONG";
+  const rr = computeRiskReward({ direction: dir, entry_range: levels.entry_range, target: levels.target, stop: levels.stop });
   const base: PlaybookPlay = {
     rank,
     ticker: scored.ticker,
-    direction: scored.direction === "short" ? "SHORT" : "LONG",
+    direction: dir,
     conviction: assignNighthawkTier(nhTierInputFromScored(scored)).tier,
     play_type: "stock",
     thesis,
@@ -246,9 +336,15 @@ function buildPlay(
     score: scored.score,
     flow_streak_days: dossier?.flow_streak?.streak_days ?? undefined,
     iv_rank: dossier?.iv_rank ?? undefined,
+    rr_ratio: rr ?? undefined,
   };
-  if (contract) {
+  if (contract && !contract.caveat) {
     return applyPremiumCapToPlay(base, { entry_premium: contract.premium, options_play });
+  }
+  if (contract && contract.caveat) {
+    base.entry_premium = contract.premium;
+    base.entry_cost_per_contract = contract.premium * 100;
+    base.premium_cap_ok = !contract.caveat.includes("premium_high");
   }
   return base;
 }
@@ -293,8 +389,11 @@ export function buildDeterministicEditionPlays(params: {
     const spot = chain?.spot ?? dossier?.tech?.price ?? null;
 
     const contract = chain ? pickChainContract(chain, scored.direction) : null;
-    if (contract) {
+    if (contract && !contract.caveat) {
       contractOk += 1;
+    } else if (contract && contract.caveat) {
+      contractOk += 1;
+      stockOnly += 1;
     } else {
       if (!chain) noChainCount += 1;
       if (spot == null || !Number.isFinite(spot) || spot <= 0) {
@@ -307,7 +406,7 @@ export function buildDeterministicEditionPlays(params: {
     const levels = resolveLevels(dossier, scored.direction, spot);
     const play = buildPlay(scored, dossier, contract, levels, built.length + 1);
 
-    if (contract && play.premium_cap_ok === false) {
+    if (contract && !contract.caveat && play.premium_cap_ok === false) {
       premiumCapCount += 1;
       continue;
     }
@@ -325,14 +424,22 @@ export function buildDeterministicEditionPlays(params: {
 
   console.info(`[nighthawk/det-edition] funnel: ${params.ranked.length} candidates → chains for ${Object.keys(params.chains).length} tickers → ${contractOk} with contract, ${stockOnly} stock-only, ${noChainCount} no chain, ${noSpotCount} no spot, ${premiumCapCount} premium-capped, ${geometryFailCount} geometry-fail → ${built.length} built`);
 
-  // Ground survivors that HAVE chain contracts (stock-only plays skip grounding since
-  // there's no contract to reconcile — their levels are already from real S/R data).
-  const withContract = built.filter((p) => p.entry_premium != null);
-  const stockOnlyPlays = built.filter((p) => p.entry_premium == null);
+  // Ground survivors that HAVE strict (non-caveated) chain contracts. Caveated-contract and
+  // stock-only plays skip grounding — their levels come from real S/R data and the contract
+  // is a best-effort suggestion, not the basis for the play.
+  const strictContractTickers = new Set<string>();
+  for (const scored of params.ranked) {
+    const chain = params.chains[scored.ticker.toUpperCase()];
+    if (!chain) continue;
+    const c = pickChainContract(chain, scored.direction);
+    if (c && !c.caveat) strictContractTickers.add(scored.ticker.toUpperCase());
+  }
+  const withContract = built.filter((p) => p.entry_premium != null && strictContractTickers.has(p.ticker.toUpperCase()));
+  const skipGrounding = built.filter((p) => p.entry_premium == null || !strictContractTickers.has(p.ticker.toUpperCase()));
   const { plays: grounded, summary } = groundPlays(withContract, params.chains, params.dossierMap);
 
-  // Merge grounded option plays + stock-only plays, sorted by score descending
-  const merged = [...grounded, ...stockOnlyPlays].sort(
+  // Merge grounded option plays + caveated/stock-only plays, sorted by score descending
+  const merged = [...grounded, ...skipGrounding].sort(
     (a, b) => (b.score ?? 0) - (a.score ?? 0)
   );
 
