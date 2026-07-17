@@ -253,12 +253,10 @@ export function HelixFlowTable({
   hawkTickers,
   watchlistTickers,
   onToggleStar,
-  filteredCount,
   hasMorePages = false,
   loadingOlder = false,
   autoBackfilling = false,
   onLoadOlder,
-  totalLoaded,
 }: {
   flows: FlowAlert[];
   live?: boolean;
@@ -278,16 +276,12 @@ export function HelixFlowTable({
   hawkTickers?: Set<string>;
   watchlistTickers?: Set<string>;
   onToggleStar?: (ticker: string) => void;
-  /** Total matching rows before render cap — shown in tape chrome */
-  filteredCount?: number;
   /** Server cursor pagination — more history exists in Postgres */
   hasMorePages?: boolean;
   loadingOlder?: boolean;
   /** True while auto-backfill is fetching older pages for an active filter. */
   autoBackfilling?: boolean;
   onLoadOlder?: () => void;
-  /** Total rows loaded in memory (may exceed filtered count) */
-  totalLoaded?: number;
 }) {
   const cols = useMemo(() => columnsForDensity(density), [density]);
   const groupSpans = useMemo(() => groupHeaderSpans(cols), [cols]);
@@ -330,8 +324,6 @@ export function HelixFlowTable({
   });
 
   const virtualRows = virtualizer.getVirtualItems();
-  const total = filteredCount ?? filtered.length;
-  const loaded = totalLoaded ?? flows.length;
   const feedDown = !loading && !replayMode && !live;
 
   const toggleSort = (key: HelixFlowSortKey) => {
@@ -345,25 +337,6 @@ export function HelixFlowTable({
 
   return (
     <div className="helix-tape desk-panel flex flex-1 flex-col min-h-0">
-      {/* The big "LIVE INSTITUTIONAL TAPE / FLOW PRINTS" title block was removed: it duplicated the
-          page-level HELIX brand + "Institutional flow intelligence" header (HelixPageShell). Only the
-          one-line usage hint and the live status chip (print count / render cap / density) remain, so
-          the live signal is preserved without the redundant heading. */}
-      <div className="helix-tape-chrome">
-        {/* hint removed — the table interaction is self-evident */}
-        {!loading && (
-          <div className="helix-tape-chrome-meta tabular-nums">
-            <span className="helix-tape-meta-count">{total.toLocaleString()} prints</span>
-            {loaded > total && (
-              <span className="helix-tape-meta-sub">{loaded.toLocaleString()} loaded</span>
-            )}
-            {hasMorePages && (
-              <span className="helix-tape-meta-sub">more in history</span>
-            )}
-          </div>
-        )}
-      </div>
-
       {feedDown && (
         <div className="helix-tape-alert" role="alert">
           Feed unavailable — retrying in background
