@@ -38,8 +38,11 @@ describe("router: vector_read intent", () => {
     assert.equal(r?.horizon, "0dte");
   });
 
-  test("bead/VEX/dark-pool concepts on a non-SPX ticker route to vector_read", () => {
-    assert.equal(classifyBieIntent("which walls are building or fading on ASTS", NO_LEDGER)?.intent, "vector_read");
+  test("bead/VEX/dark-pool concepts on a non-SPX ticker route correctly", () => {
+    assert.equal(
+      classifyBieIntent("which walls are building or fading on ASTS", NO_LEDGER)?.intent,
+      "wall_dynamics_read"
+    );
     assert.equal(classifyBieIntent("where's the VEX flip on SPY", NO_LEDGER)?.intent, "vector_read");
     assert.equal(classifyBieIntent("dark pool levels for NVDA", NO_LEDGER)?.intent, "vector_read");
   });
@@ -266,7 +269,7 @@ describe("router: system_diagnostic intent", () => {
   });
 
   test("a normal Vector question is NOT stolen by the diagnostic", () => {
-    assert.equal(classifyBieIntent("which walls are building on ASTS", NO_LEDGER)?.intent, "vector_read");
+    assert.equal(classifyBieIntent("which walls are building on ASTS", NO_LEDGER)?.intent, "wall_dynamics_read");
   });
 
   test("bieFollowups has a system_diagnostic branch", () => {

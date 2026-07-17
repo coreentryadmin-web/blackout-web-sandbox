@@ -135,6 +135,15 @@ export const STRESS_BANK = [
   { q: "UNH recovery trade", intent: /ticker_advice|ticker_ecosystem/ },
   { q: "meme basket GME AMC", intent: /ticker_compare|helix_read/ },
 
+  // —— Vector Pulse / walls / technicals ——
+  { q: "What just changed on NVDA?", intent: "vector_pulse_read", avoidDump: /SPX Live Desk read/i },
+  { q: "Vector Pulse on SPY", intent: "vector_pulse_read" },
+  { q: "recent wall events on QQQ", intent: "vector_pulse_read" },
+  { q: "which walls are building on SPX", intent: "wall_dynamics_read", avoidDump: /SPX Live Desk read/i },
+  { q: "RSI on NVDA", intent: "technical_read" },
+  { q: "QQQ 15m technicals", intent: "vector_read" },
+  { q: "what should I trade on SPX today", intent: "play_suggest_read" },
+
   // —— Diagnostic ——
   { q: "why isn't SPX GEX updating", intent: "system_diagnostic" },
   { q: "is the flow pipeline healthy", intent: "system_diagnostic" },

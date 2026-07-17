@@ -44,6 +44,7 @@ export function LargoTerminal({
     followups,
     activeTools,
     statusMessage,
+    awaitingFirstToken,
     conversations,
     activeSessionId,
     canRegenerate,
@@ -228,9 +229,13 @@ export function LargoTerminal({
           )}
 
           <AnimatePresence mode="wait">
-            {loading && !streaming && (
+            {loading && (awaitingFirstToken || !streaming) && (
               <div className="largo-msg-bubble largo-thinking-wrap">
-                <LargoThinkingState key="largo-thinking" tools={activeTools} statusMessage={statusMessage} />
+                <LargoThinkingState
+                  key="largo-thinking"
+                  tools={activeTools}
+                  statusMessage={statusMessage}
+                />
               </div>
             )}
           </AnimatePresence>
