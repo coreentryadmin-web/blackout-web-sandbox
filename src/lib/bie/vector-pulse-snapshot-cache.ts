@@ -5,13 +5,17 @@
 import { sharedCacheGet, sharedCacheSet } from "@/lib/shared-cache";
 import { normalizeVectorTicker } from "@/features/vector/lib/vector-ticker";
 import type { VectorDteHorizon } from "@/features/vector/lib/vector-dte-horizon";
-import type { PulseSnapshot } from "@/features/vector/lib/vector-pulse";
+import type { PulseSnapshot, PlayStateSnapshot } from "@/features/vector/lib/vector-pulse";
 
 export type VectorPulseCacheEntry = {
   snapshot: PulseSnapshot;
   seenAtByKey: Record<string, number>;
   /** Wall events already surfaced in the pulse feed (slice index into wallEvents). */
   processedWallEventCount: number;
+  /** SPX play-engine phase snapshot for transition detection (SPX only). */
+  playState?: PlayStateSnapshot | null;
+  /** Flow alert ids already emitted this session. */
+  seenFlowIds?: string[];
   updatedAt: string;
 };
 

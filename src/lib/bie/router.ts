@@ -522,6 +522,13 @@ function narrowThermalRoute(q: string): BieRoute | null {
   return null;
 }
 
+/** Intraday TF + "technicals" on a ticker → Vector chart read, not Polygon daily technicals. */
+function isVectorChartTechnicals(q: string): boolean {
+  if (!/\btechnicals?\b/i.test(q)) return false;
+  if (!/\b(1|3|5|15|30)\s?m\b|\b(1|2|4)\s?h\b/i.test(q)) return false;
+  return extractKnownTicker(q) != null;
+}
+
 export function classifyBieIntent(question: string, ledgerTickers: Set<string>): BieRoute | null {
   const q = question.trim();
   if (isNonsenseQuestion(q)) return { intent: "clarify_read", ticker: null };
@@ -556,6 +563,10 @@ export function classifyBieIntent(question: string, ledgerTickers: Set<string>):
   }
   if (wantsPlaySuggest(q) || PLAY_SUGGEST_RE.test(q)) {
     return { intent: "play_suggest_read", ticker: extractKnownTicker(q) ?? "SPX" };
+  }
+  if (isVectorChartTechnicals(q)) {
+    const t = extractKnownTicker(q)!;
+    return { intent: "vector_read", ticker: t, horizon: extractHorizon(q) };
   }
   if ((COMPARE_RE.test(q) || COMPARATIVE_CUE_RE.test(q)) && extractCompareTickers(q)) {
     const pair = extractCompareTickers(q);
@@ -800,6 +811,10 @@ export function classifyBieStagingFallback(question: string): BieRoute {
   }
   if (wantsPlaySuggest(q) || PLAY_SUGGEST_RE.test(q)) {
     return { intent: "play_suggest_read", ticker: extractKnownTicker(q) ?? "SPX" };
+  }
+  if (isVectorChartTechnicals(q)) {
+    const t = extractKnownTicker(q)!;
+    return { intent: "vector_read", ticker: t, horizon: extractHorizon(q) };
   }
   if ((COMPARE_RE.test(q) || COMPARATIVE_CUE_RE.test(q)) && extractCompareTickers(q)) {
     const pair = extractCompareTickers(q);

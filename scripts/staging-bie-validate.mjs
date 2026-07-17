@@ -78,6 +78,10 @@ const LARGO_QUESTIONS = [
   { q: "compare NVDA vs AMD", expect: /vs|Night Hawk|HELIX/i },
   { q: "what would flip the SPX read", expect: /flip|invalidation|thesis dead/i },
   { q: "any unusual flow right now", expect: /HELIX|flow|tape/i },
+  { q: "What just changed on NVDA?", expect: /Vector Pulse|SIGNALS|REGIME/i },
+  { q: "RSI and EMA stack on SPY", expect: /RSI|EMA|Spot|Technicals/i },
+  { q: "which walls are building on SPX", expect: /wall|GEX|building|fading/i },
+  { q: "Vector setup on QQQ", expect: /Vector desk|QQQ|REGIME|PLAY/i },
 ];
 
 async function main() {

@@ -75,9 +75,9 @@ export const LARGO_WELCOME: LargoMessage = {
 
 export const LARGO_SUGGESTIONS = [
   "What's the SPX setup right now?",
-  "Is this flow real or noise?",
-  "Where are dealers trapped on the gamma map?",
-  "Give me today's market structure in 3 lines",
+  "Vector Pulse on SPX — what just changed?",
+  "Which walls are building vs fading on NVDA?",
+  "QQQ 15m technicals",
 ] as const;
 
 /**
@@ -88,9 +88,9 @@ export const LARGO_SUGGESTIONS = [
  */
 export const LARGO_EXAMPLE_PROMPTS: { label: string; hint: string }[] = [
   { label: "SPX trend?", hint: "Fast directional read + key levels + invalidation" },
+  { label: "Vector Pulse on SPX", hint: "Live transitions — regime, walls, flow, play engine" },
   { label: "Is 7500 0DTE good today?", hint: "Cross-tool setup verdict, graded" },
-  { label: "Why isn't MSFT forming?", hint: "Self-diagnosis from real ops signals" },
-  { label: "Where are dealers trapped on the gamma map?", hint: "GEX + dealer positioning" },
+  { label: "NVDA wall dynamics", hint: "Building vs fading walls + bead rail" },
 ];
 
 function upsertAssistantMessage(
@@ -123,6 +123,7 @@ export function useLargoChat() {
   const [followups, setFollowups] = useState<string[]>([]);
   const [activeTools, setActiveTools] = useState<string[]>([]);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
+  const [awaitingFirstToken, setAwaitingFirstToken] = useState(false);
   const [conversations, setConversations] = useState<LargoConversation[]>([]);
   const [activeSessionId, setActiveSessionId] = useState("");
   const [canRegenerate, setCanRegenerate] = useState(false);
@@ -212,6 +213,7 @@ export function useLargoChat() {
       setFollowups([]);
       setActiveTools([]);
       setStatusMessage(null);
+      setAwaitingFirstToken(true);
       setCanRegenerate(false);
       lastQueryRef.current = q;
 
@@ -252,6 +254,7 @@ export function useLargoChat() {
           sessionId.current,
           (token) => {
             streamBufRef.current += token;
+            setAwaitingFirstToken(false);
             setStreaming(true);
             if (!streamFlushRef.current) {
               streamFlushRef.current = setTimeout(() => {
@@ -313,6 +316,7 @@ export function useLargoChat() {
         setStreaming(false);
         setActiveTools([]);
         setStatusMessage(null);
+        setAwaitingFirstToken(false);
       }
     },
     [loading, hydrated, setSession, recordConversation]
@@ -384,6 +388,7 @@ export function useLargoChat() {
     followups,
     activeTools,
     statusMessage,
+    awaitingFirstToken,
     conversations,
     activeSessionId,
     canRegenerate,
