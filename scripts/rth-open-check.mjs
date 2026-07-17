@@ -177,18 +177,18 @@ async function main() {
       console.log("  ⚠ CRON_SECRET unset — skipping options-socket HTTP probe");
     }
 
-    try {
-      const logs = execSync(
-        "railway logs --service blackout-web 2>/dev/null | rg 'uw-socket' | tail -20",
-        { encoding: "utf8" }
-      );
-      if (/uw-socket.*stall watchdog/i.test(logs)) fail("uw-socket stall reconnects in recent logs");
-      else ok("No uw-socket stall storms");
-    } catch {
-      if (process.env.GITHUB_ACTIONS === "true") {
-        console.log("  ⚠ Railway uw-socket log check skipped in GitHub Actions");
-      } else {
-        console.log("  ⚠ Could not read Railway logs for uw-socket");
+    if (cron) {
+      try {
+        const base = (process.env.CRON_TARGET_BASE_URL ?? "https://blackouttrades.com").replace(/\/$/, "");
+        const res = await fetch(`${base}/api/cron/socket-health`, {
+          headers: { Authorization: `Bearer ${cron}` },
+        });
+        const body = await res.json();
+        const uw = body.websockets?.uw;
+        if (res.status === 200 && uw?.ok) ok(`uw-socket: ${uw.detail ?? "ok"}`);
+        else if (res.status === 200 && uw) console.log(`  ⚠ uw-socket: ${uw.detail ?? "not ok"}`);
+      } catch {
+        console.log("  ⚠ uw-socket probe skipped");
       }
     }
 

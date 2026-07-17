@@ -35,7 +35,7 @@ function log(entry) {
 function run(name, cmd, cmdArgs) {
   const r = spawnSync(cmd, cmdArgs, {
     encoding: "utf8",
-    env: { ...process.env, SKIP_RAILWAY: "1" },
+    env: { ...process.env, SKIP_ECS: "1" },
     timeout: 20 * 60_000,
   });
   return { name, ok: r.status === 0, code: r.status, tail: (r.stderr || r.stdout || "").slice(-400) };

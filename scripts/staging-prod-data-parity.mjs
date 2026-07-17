@@ -7,7 +7,7 @@ import { execSync, spawnSync } from "node:child_process";
 import { writeFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { createHash } from "node:crypto";
-import { fetchRetry } from "./audit/lib/fetch-retry.mjs";
+import { loadProdAppSecret, loadStagingAppSecret } from "./aws-app-secret.mjs";
 
 const OUT = join(process.cwd(), "audit-output");
 mkdirSync(OUT, { recursive: true });
@@ -41,53 +41,17 @@ const API_CHECKS = [
   { name: "spx_play", path: "/api/market/spx/play", pick: (b) => ({ available: b.available, phase: b.phase, action: b.action }) },
 ];
 
-function railwayProdUrl() {
-  const res = spawnSync(
-    "railway",
-    [
-      "variables",
-      "--service",
-      "Postgres",
-      "--environment",
-      "production",
-      "--project",
-      process.env.RAILWAY_PROJECT_ID ?? "9282f541-a288-4c8b-a174-ee22016f4b1a",
-      "--json",
-    ],
-    { encoding: "utf8", env: process.env }
-  );
-  return JSON.parse(res.stdout).DATABASE_PUBLIC_URL;
+function prodDbUrl() {
+  return loadProdAppSecret().DATABASE_URL ?? loadProdAppSecret().DATABASE_PUBLIC_URL;
 }
 
 function stagingDbUrl() {
-  const raw = execSync(
-    'aws secretsmanager get-secret-value --secret-id blackout-staging/app/env --query SecretString --output text',
-    { encoding: "utf8" }
-  );
-  return JSON.parse(raw).DATABASE_URL;
+  return loadStagingAppSecret().DATABASE_URL;
 }
 
 function loadCrons() {
-  const prodRes = spawnSync(
-    "railway",
-    [
-      "variables",
-      "--service",
-      "blackout-web",
-      "--environment",
-      "production",
-      "--project",
-      process.env.RAILWAY_PROJECT_ID ?? "9282f541-a288-4c8b-a174-ee22016f4b1a",
-      "--json",
-    ],
-    { encoding: "utf8", env: process.env }
-  );
-  const prod = prodRes.status === 0 ? JSON.parse(prodRes.stdout).CRON_SECRET?.trim() : process.env.CRON_SECRET?.trim();
-  const stagingRaw = execSync(
-    'aws secretsmanager get-secret-value --secret-id blackout-staging/app/env --query SecretString --output text',
-    { encoding: "utf8" }
-  );
-  const staging = JSON.parse(stagingRaw).CRON_SECRET?.trim();
+  const prod = loadProdAppSecret().CRON_SECRET?.trim() ?? process.env.CRON_SECRET?.trim();
+  const staging = loadStagingAppSecret().CRON_SECRET?.trim();
   return { prod, staging };
 }
 
@@ -155,7 +119,7 @@ function hashObj(o) {
 async function main() {
   console.log("\n=== Staging vs Prod data parity ===\n");
   const { prod: prodCron, staging: stagingCron } = loadCrons();
-  const prodUrl = railwayProdUrl();
+  const prodUrl = prodDbUrl();
   let stagingUrl;
   try {
     stagingUrl = stagingDbUrl();

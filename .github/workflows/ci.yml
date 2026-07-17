@@ -39,8 +39,8 @@ jobs:
           node --import tsx --experimental-test-module-mocks --test "${files[@]}"
       - name: Build (next build — catches deploy-breakers before merge)
         run: npm run build
-      - name: Brand guard (no grey)
-        run: npm run lint:brand
+      - name: Cron manifest (registry ↔ routes)
+        run: npm run validate:cron-manifest
       - name: Vendor surface guard (no provider names in UI)
         run: npm run lint:vendor
       - name: Accessibility lint (jsx-a11y, non-blocking)

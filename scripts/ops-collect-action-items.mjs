@@ -13,7 +13,7 @@
  *   node scripts/ops-collect-action-items.mjs --pretty
  */
 import { createHash } from "node:crypto";
-import { ALL_CRON_KEYS } from "./railway-cron-services.mjs";
+import { ALL_CRON_KEYS } from "./cron-jobs.mjs";
 import { createAuditClient, resolveAuditDbUrl } from "./pg-audit.mjs";
 
 const pretty = process.argv.includes("--pretty");

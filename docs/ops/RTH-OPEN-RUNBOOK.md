@@ -23,20 +23,20 @@ node scripts/rth-open-check.mjs --force
 
 ## What it checks
 
-1. **`validate:deploy`** — Railway SUCCESS, live HTTP, Postgres, Sentry, sockets, crons
+1. **`validate:deploy`** — ECS rollout, live HTTP, Postgres, Sentry, sockets, crons
 2. **RTH session checks** (weekdays; agent may run from 09:00 ET pre-open through ~16:15 ET post-close grace for crons — **US equity RTH is 9:30 AM–4:00 PM ET**):
    - `spx-evaluate` ok run in last 20m
    - `market_regime` writes in last 20m
    - `data-correctness` latest run ok
-   - `provider-health-reconcile` latest run ok (when Railway service provisioned)
+   - `provider-health-reconcile` latest run ok (when EventBridge rule is enabled)
    - options-socket **authenticated** (after 09:30 ET)
-   - no uw-socket stall storms
+   - uw-socket healthy via `GET /api/cron/socket-health`
 
 ## Fix loop (until GREEN)
 
-1. Diagnose failing check (Postgres `cron_job_runs`, Railway logs, Sentry)
+1. Diagnose failing check (Postgres `cron_job_runs`, CloudWatch logs, Sentry)
 2. Fix in code if needed → branch → PR → merge
-3. Poll Railway until deploy SUCCESS
+3. Poll ECS until rollout COMPLETE (`aws ecs describe-services …`)
 4. Re-run `npm run validate:rth-open`
 5. Confirm first SPX play / lotto ticket shows **real premium** (not "—") after chain fixes (#36, #39)
 
@@ -51,23 +51,18 @@ node scripts/rth-open-check.mjs --force
 | **`rth-deep-audit.yml`** | **10:00, 14:00, 16:30** | `CRON_SECRET` (required), `POLYGON_API_KEY`, `DATABASE_PUBLIC_URL`, `SENTRY_AUTH_TOKEN` optional |
 | **`rth-post-close-smoke.yml`** | **17:15** | `CRON_SECRET`, `SENTRY_AUTH_TOKEN` optional |
 | **`off-hours-health.yml`** | **every 6h** | none (public `/api/ready`) |
-| **`railway-audit-apply.yml`** | **Sun 06:00 UTC** + on `railway.*.toml` push | `RAILWAY_TOKEN`; optional `DISCORD_*` |
-| **`railway-cron-config-check.yml`** | **on PR/push** (cron TOML/registry) | none |
+| **`ci.yml`** | **on PR/push** | `validate:cron-manifest` (registry ↔ routes) |
 | **`cron-audit-query.yml`** | **hourly RTH** + **every 6h** off-hours | `DATABASE_PUBLIC_URL` |
 | **`ops-auto-fix.yml`** | **every 20 min** | `CURSOR_API_KEY`, `DATABASE_PUBLIC_URL`, `CRON_SECRET`, `GITHUB_TOKEN` (repo) |
 | **`spx-rth-all-day-agent.yml`** | **09:28–15:55 ET verify + 16:05 ET fix** | `CURSOR_API_KEY`, `CRON_SECRET` |
 
-### Railway env (blackout-web service)
+### ECS env (app task / Secrets Manager)
 
 | Variable | Value | Purpose |
 |---|---|---|
 | `CRON_WATCHDOG_SELF_HEAL` | `1` | Auto re-warm stale RTH crons when watchdog fires (safe writers only) |
 
-Provision new cron trigger services with:
-
-```bash
-node scripts/railway-apply-cron-config.mjs provider-health-reconcile
-```
+Cron schedules live in **`blackout-infra/terraform/modules/crons/cron-jobs.json`** (EventBridge → Lambda → `/api/cron/*`).
 
 All scheduled workflows also support **Run workflow** (manual) from GitHub → Actions.
 
@@ -77,12 +72,11 @@ Repo → **Settings → Secrets and variables → Actions**:
 
 | Secret | Required for | Source |
 |---|---|---|
-| `CRON_SECRET` | deep audit + smoke desk probe | Railway `blackout-web` |
-| `POLYGON_API_KEY` | SPX oracle in deep audit | Railway `blackout-web` |
-| `DATABASE_PUBLIC_URL` | Postgres writer/cron freshness | Railway **Postgres** service |
+| `CRON_SECRET` | deep audit + smoke desk probe | Secrets Manager `blackout-production/app/env` |
+| `POLYGON_API_KEY` | SPX oracle in deep audit | same |
+| `DATABASE_PUBLIC_URL` | Postgres writer/cron freshness | RDS (via Secrets Manager) |
 | `CURSOR_API_KEY` | Cloud Agent auto-launch | Cursor → Integrations → API key |
 | `SENTRY_AUTH_TOKEN` | Sentry token smoke (deep audit + post-close) | Sentry → Settings → Auth Tokens |
-| `RAILWAY_TOKEN` | Railway audit apply (cron sync) | Railway → Account → Tokens (project scope) |
 
 ### One-time: enable API-triggered agents
 

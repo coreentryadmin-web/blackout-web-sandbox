@@ -1,6 +1,4 @@
-// Cron trigger for Railway cron services.
-// Calls a /api/cron/* endpoint on the deployed web app with the Bearer secret,
-// then exits — exactly the run-to-completion behavior a cron service needs.
+// Manual cron trigger — GET /api/cron/* with Bearer CRON_SECRET (same contract as AWS Lambda hit-cron).
 //
 // Usage:  node scripts/hit-cron.mjs /api/cron/db-cleanup
 // Env:    CRON_SECRET            (required) — same value as on blackout-web

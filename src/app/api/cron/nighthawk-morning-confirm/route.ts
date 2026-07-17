@@ -1,6 +1,6 @@
 // Cron: NIGHT HAWK MORNING CONFIRMATION — validates overnight plays before market open.
 //
-// FIRES: 13:15 + 14:15 UTC Mon-Fri (railway.nighthawk-morning-confirm.toml) — dual
+// FIRES: 13:15 + 14:15 UTC Mon-Fri (EventBridge rule (blackout-infra/cron-jobs.json)) — dual
 // band so one firing always lands in the 9:10-9:45 ET window across both DST regimes.
 //
 // WHAT IT DOES:
@@ -219,7 +219,7 @@ export async function GET(req: NextRequest) {
   }
 
   const today = todayEt();
-  // Holiday guard: the Railway schedule is weekday-based and inEtWindow only knows
+  // Holiday guard: the EventBridge schedule is weekday-based and inEtWindow only knows
   // Sat/Sun, so without this the cron fires on NYSE holidays (e.g. Fri 2026-07-03),
   // falls back to the NEXT session's edition (Monday's, published the prior evening),
   // computes an "overnight gap" from a closed market, and can spuriously INVALIDATE
@@ -493,7 +493,7 @@ export async function GET(req: NextRequest) {
       const mdPath = path.join(docsDir, `morning-confirm-${editionFor}.md`);
       await fs.writeFile(mdPath, renderMarkdown(result), "utf-8");
     } catch {
-      // Ephemeral FS on Railway — skip silently.
+      // Ephemeral FS on ECS — skip silently.
     }
 
     // ── Phase 6: Discord ops alert on invalidations ─────────────────────────

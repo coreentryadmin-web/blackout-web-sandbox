@@ -52,7 +52,7 @@
 Only after 1 week green on ECS:
 
 - Scale Railway `blackout-web` to 0 or remove
-- Migrate 23 cron trigger services to EventBridge (manifest: `npm run validate:railway-crons`)
+- Migrate cron triggers to EventBridge (manifest: `npm run validate:cron-manifest`; infra: `blackout-infra/.../cron-jobs.json`)
 - Archive Railway Postgres after final PITR export if RDS is authoritative
 
 ---

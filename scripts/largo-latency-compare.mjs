@@ -8,6 +8,7 @@ import { writeFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { fetchRetry } from "./audit/lib/fetch-retry.mjs";
 import { mintClerkPremiumSession } from "./audit/lib/prod-clerk-session.mjs";
+import { loadProdAppSecret, loadStagingAppSecret } from "./aws-app-secret.mjs";
 
 const ROUNDS = Number(process.argv.find((a) => a.startsWith("--rounds="))?.split("=")[1] ?? 3);
 const OUT = join(process.cwd(), "audit-output");
@@ -15,7 +16,7 @@ mkdirSync(OUT, { recursive: true });
 
 const ENVS = [
   { label: "staging", base: "https://staging.blackouttrades.com", secretSource: "staging" },
-  { label: "prod", base: "https://blackouttrades.com", secretSource: "railway" },
+  { label: "prod", base: "https://blackouttrades.com", secretSource: "prod" },
 ];
 
 const SESSION_ID = "latency-audit";
@@ -23,30 +24,11 @@ const SIMPLE_Q = "What is SPX spot right now?";
 const TOOL_Q = "Summarize SPX gamma flip and key GEX levels in one short paragraph with dollar amounts.";
 
 function loadStagingSecret() {
-  const raw = execSync(
-    'aws secretsmanager get-secret-value --secret-id blackout-staging/app/env --query SecretString --output text',
-    { encoding: "utf8" }
-  );
-  return JSON.parse(raw);
+  return loadStagingAppSecret();
 }
 
-function loadRailwayWebSecret() {
-  const res = spawnSync(
-    "railway",
-    [
-      "variables",
-      "--service",
-      "blackout-web",
-      "--environment",
-      "production",
-      "--project",
-      process.env.RAILWAY_PROJECT_ID ?? "9282f541-a288-4c8b-a174-ee22016f4b1a",
-      "--json",
-    ],
-    { encoding: "utf8", env: process.env }
-  );
-  if (res.status !== 0) throw new Error(res.stderr || "railway variables failed");
-  return JSON.parse(res.stdout);
+function loadProdSecret() {
+  return loadProdAppSecret();
 }
 
 function percentile(sorted, p) {
@@ -213,7 +195,7 @@ async function runEnv(env, secret) {
 async function main() {
   console.log(`\n=== Largo latency compare (${ROUNDS} rounds) ===\n`);
   const stagingSecret = loadStagingSecret();
-  const prodSecret = loadRailwayWebSecret();
+  const prodSecret = loadProdSecret();
   const results = [];
 
   for (const env of ENVS) {

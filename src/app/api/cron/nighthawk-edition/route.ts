@@ -12,7 +12,7 @@ const CRON_KEY = "nighthawk-playbook";
 export const dynamic = "force-dynamic";
 // Raised to the platform max so a single invocation gets as much wall-clock as the host allows for
 // the Claude synthesis stage (live finding #77: the build exceeded the old 300s and was hard-killed,
-// so no edition published and the failure never reached /api/admin/errors). On the Railway worker
+// so no edition published and the failure never reached /api/admin/errors). On the ECS task
 // (`npm run nighthawk:run`) this is advisory — the worker is not function-timeout-bound — but on any
 // serverless/edge surface this lifts the ceiling. The internal BUILD_TIME_BUDGET_MS guard below
 // ALWAYS checkpoints + returns a resume status BEFORE the host can kill us, so partial progress is
@@ -66,7 +66,7 @@ export async function GET(req: NextRequest) {
       current_stage: job?.current_stage ?? null,
       error: job?.error ?? null,
       staged_candidates: job?.candidates_json?.length ?? 0,
-      note: "Long runs execute via `npm run nighthawk:run` (Railway cron worker). This route nudges/resumes within 300s.",
+      note: "Long runs execute via `npm run nighthawk:run` (EventBridge cron worker). This route nudges/resumes within 300s.",
     });
   }
 
@@ -91,7 +91,7 @@ export async function GET(req: NextRequest) {
   // raced it against an internal budget, so the cron HTTP handshake routinely outlived hit-cron's
   // 60s timeout — every nightly run logged as FAILED even when the edition published fine (the
   // "every nightly run logs as failed" lie). Now we dispatch the build in the background via
-  // next/server `after()` (runs after the response is flushed, on the long-lived Railway worker) and
+  // next/server `after()` (runs after the response is flushed, on the long-lived ECS task) and
   // return 202 in well under 60s. The builder checkpoints + publishes on its own; its background
   // `.catch` serializes + ops-alerts so an unhandled rejection can NEVER crash the replica. A re-fire
   // (cron schedule or ?force=1) resumes from the last checkpoint exactly as before.

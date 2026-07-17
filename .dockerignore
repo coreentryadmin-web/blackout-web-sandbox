@@ -31,7 +31,5 @@ blackout-infra
 blackout-ios
 
 # Railway cron TOMLs — not needed in the web image
-railway.*.toml
-
 # Docs archive (not runtime)
 docs/archive

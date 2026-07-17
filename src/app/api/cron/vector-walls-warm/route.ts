@@ -1,6 +1,6 @@
 // Cron: pre-warm Vector GEX/VEX walls cache for the universe.
 // Schedule: ~every 15-30s during market hours (registered in cron-registry.ts as
-// "vector-walls-warm"; Railway wires the actual fire via railway.vector-walls-warm.toml).
+// "vector-walls-warm"; EventBridge fires the actual fire via EventBridge rule (blackout-infra/cron-jobs.json)).
 //
 // THE POINT: The Vector SSE stream /api/market/vector/stream ticks at 1 Hz and calls
 // buildVectorStreamPayload which re-computes walls from scratch if the cache (WALLS_CACHE_MS=900ms)

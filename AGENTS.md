@@ -6,20 +6,14 @@
 
 ### Branch policy (standing — user 2026-07-10)
 
-**Never touch `main`.** Do not push, merge, open PRs to, checkout for commits, or deploy from
-`main` in this repo or `coreentryadmin-web/blackout-web`. All agent work lands on
-**`blackout-web-sandbox`** only → ECS staging. Prod/Railway `main` changes require an explicit
-user request in that session.
-
-Do not merge staging experiments to `coreentryadmin-web/blackout-web` `main` (Railway prod) unless
-explicitly requested. Staging deploys via `.github/workflows/ecr-push-staging.yml` → ECR `:staging` →
+**Never touch prod `main`.** Staging deploys via `.github/workflows/ecr-push-staging.yml` → ECR `:staging` →
 ECS `blackout-staging-web` at `https://staging.blackouttrades.com`.
 
-BLACKOUT (`blackout-web`) is a single **Next.js 15 (App Router) / TypeScript** app with an iOS
-Capacitor shell at **`apps/blackout-ios/`** (one repo — no separate `blackout-ios` GitHub repo).
-The ~20 `railway.*.toml` files at the repo root are production cron *trigger* services that just call
-`/api/cron/*`; they are not separate apps and are not needed locally. Commands live in `package.json`
-(`dev`, `build`, `start`, `test`, `lint`, `lint:brand`, `lint:css`) and CI is `.github/workflows/ci.yml`.
+BLACKOUT is a single **Next.js 15 (App Router) / TypeScript** app with an iOS Capacitor shell at
+**`apps/blackout-ios/`**. **Crons:** AWS EventBridge → Lambda → `GET /api/cron/*` (schedules in
+`blackout-infra/terraform/modules/crons/cron-jobs.json`; app registry in `src/lib/cron-registry.ts`).
+Commands live in `package.json` (`dev`, `build`, `start`, `test`, `lint`, `lint:brand`, `lint:css`);
+CI is `.github/workflows/ci.yml` (+ `validate:cron-manifest`).
 
 ### BIE Live Desk AI (replaces Claude on `/api/market/spx/commentary`)
 
@@ -97,37 +91,31 @@ The ~20 `railway.*.toml` files at the repo root are production cron *trigger* se
   `https://staging.blackouttrades.com/__clerk` (no separate `clerk.staging` CNAME required).
 - Staging build bakes `NEXT_PUBLIC_CLERK_IS_SATELLITE=true`, `NEXT_PUBLIC_CLERK_PROXY_URL`, and absolute
   primary sign-in/sign-up URLs (`https://blackouttrades.com/sign-in`). Middleware enables `frontendApiProxy`.
-- **Primary prod app** (`blackout-web` on Railway) must set `allowedRedirectOrigins` including staging so
+- **Primary prod app** (ECS `blackout-production-web`) must set `allowedRedirectOrigins` including staging so
   post-auth redirect back to staging works (`clerkAllowedRedirectOrigins()` in prod `layout.tsx`).
 - OAuth / new sign-ups complete on **primary** (`blackouttrades.com`) then sync back to staging; embedded
   `/sign-in` on staging still renders for identifier entry but satellite handshake uses the proxy path.
 
 ### Premium tool launch gate (LAUNCHED_TOOLS)
 - Non-admin premium users only see tools where `isToolLaunched()` is true (SPX Slayer + HELIX by default;
-  others need `LAUNCHED_TOOLS=heatmap,nighthawk,largo,grid` on Railway `blackout-web`).
-- **Check without Railway:** `/admin` → **Tool launch status** panel, or `GET /api/admin/launch-status`
+  others need `LAUNCHED_TOOLS=heatmap,nighthawk,largo,grid` on the ECS app secret.
+- **Check:** `/admin` → **Tool launch status** panel, or `GET /api/admin/launch-status`
   (admin-gated). Same snapshot is on `GET /api/admin/health` as `launch_status`.
 - **Ops guardrails (no secret values):** `/admin` → Operations → **System Vitals** shows
   `ops_config` from `GET /api/admin/health`: AI kill-switch armed?, Discord webhooks set?,
-  PgBouncer/pooler hint from `DATABASE_URL` host. Arming `DAILY_AI_SPEND_KILL_USD` and enabling
-  PgBouncer remain manual Railway steps — the dashboard only reports posture.
+  pooler hint from `DATABASE_URL` host. Arming `DAILY_AI_SPEND_KILL_USD` and RDS Proxy config
+  remain manual env/infra steps — the dashboard only reports posture.
 
-### Railway (Cursor Cloud agents)
-- **Tokens:** Account-wide token → `RAILWAY_API_TOKEN` (buckets, `environment edit`, multi-region).
-  Project token → `RAILWAY_TOKEN` + `RAILWAY_PROJECT_ID` for variables/redeploy/logs.
-  If both are set and `RAILWAY_API_TOKEN` is invalid, the CLI fails — **`unset RAILWAY_API_TOKEN`**
-  before project-scoped ops, or fix the account token in Cursor secrets.
-- **One-shot audit setup:** `npm run railway:audit-apply` (`scripts/railway-audit-apply.mjs`) — regions,
-  all cron TOMLs, internal `CRON_TARGET_BASE_URL`, `CRON_WATCHDOG_SELF_HEAL`, CRON_SECRET sync.
-- **Manifest check:** `npm run validate:railway-crons` — registry ↔ TOML ↔ Railway service map (23 jobs).
-- **GHA:** `railway-audit-apply.yml` (Sun 06:00 UTC + TOML push), `cron-audit-query.yml` (hourly RTH).
-- Production: `blackout-web` **iad=3, us-west2=2**; **PgBouncer iad=2, us-west2=1** (colocated with Postgres/web);
-  healthcheck **`/api/ready`** (90s); crons → `CRON_TARGET_BASE_URL=http://blackout-web.railway.internal:8080`.
-- **Postgres PITR:** bucket `Postgres-PITR`; restore drill runbook `docs/ops/PITR-RESTORE-DRILL.md`.
-- **23 crons** incl. `Socket-Health-Cron` → `/api/cron/socket-health` (`railway.socket-health.toml`) and `Market-Regime-Detector` → `/api/cron/market-regime-detector` (`railway.market-regime-detector.toml`). If the regime detector service is missing in Railway, run `node scripts/railway-ops-provision.mjs` (also bootstraps `provider-health-reconcile`).
-- PgBouncer: **session mode** (not transaction) — see `docs/PGBOUNCER-SETUP.md`.
-- **Still manual:** set `DISCORD_OPS_WEBHOOK_URL` / `DISCORD_PLAY_WEBHOOK_URL` on `blackout-web` for ops alerts.
-- `railway scale` may return Unauthorized on project tokens — patch via `environment edit` `deploy.multiRegionConfig`.
+### Infra / deploy (AWS — prod + staging)
+Both prod and staging run on **AWS ECS Fargate** (ALB, RDS + RDS Proxy, ElastiCache Redis,
+Secrets Manager, EventBridge crons). Terraform + runbooks: **`blackout-infra`**, `docs/ops/AWS-MIGRATION-PLAN.md`,
+`docs/ops/STAGING-CONNECT.md`.
+- **Crons:** EventBridge → Lambda → `/api/cron/*` with `CRON_SECRET`. Schedule catalog:
+  `docs/ops/CRON-SCHEDULES.md` + `blackout-infra/terraform/modules/crons/cron-jobs.json`.
+- **Manifest check:** `npm run validate:cron-manifest` (registry ↔ route handlers; CI blocking).
+- **Healthcheck:** ALB → **`/api/ready`** (90s start); liveness `/api/health`.
+- **Secrets:** `blackout-production/app/env`, `blackout-staging/app/env` (see `docs/ops/AWS-SECRETS-MANIFEST.md`).
+- **Postgres PITR / restore drill:** `docs/ops/PITR-RESTORE-DRILL.md`.
 
 ### UW WebSocket → cache / HELIX (2 RPS budget)
 - Multiplex channels in `src/lib/live-api-integrations.ts` (`UW_WS_CHANNELS`). Ticker-scoped joins:
@@ -139,7 +127,7 @@ The ~20 `railway.*.toml` files at the repo root are production cron *trigger* se
   matching channel is fresh (`market_tide`, `net_flow`, `option_trades`).
 
 ### Massive LULD halt feed (second source vs UW `trading_halts`)
-- Opt-in: set `STOCKS_WS_ENABLED=1` (or `LULD_WS_ENABLED=1`) on Railway. Uses the same
+- Opt-in: set `STOCKS_WS_ENABLED=1` (or `LULD_WS_ENABLED=1`) on the ECS task env / Secrets Manager.
   `POLYGON_API_KEY` / `MASSIVE_API_KEY` as indices/options.
 - Subscribes to `LULD.SPY` by default (`LULD_WS_TICKERS` override). SPY LULD halts proxy to SPX/SPXW
   play gates via `LULD_INDEX_PROXIES` in `live-api-integrations.ts`.
@@ -158,7 +146,7 @@ The ~20 `railway.*.toml` files at the repo root are production cron *trigger* se
   Header, or the Rulesets API) — keep the code's `baseCsp` in sync as the source of truth for the value.
 
 ### Postgres (staging RDS — prod snapshot + live ingest)
-- Staging RDS holds a **point-in-time Postgres copy** from Railway prod (see `blackout-infra/scripts/migrate-railway-postgres-to-staging-rds.mjs`). Re-sync weekly or before big tests.
+- Staging RDS holds a **point-in-time Postgres copy** seeded from prod (migration tooling in `blackout-infra`).
 - **New live data** (UW flows, SPX plays, etc.) lands on staging independently via the same WS + crons — not streamed from prod. Staging uses **`UW_MAX_RPS=1`** and narrowed `UW_WS_*_TICKERS` so prod keeps the UW budget.
 - `PG_STATEMENT_TIMEOUT_MS=0` required for RDS Proxy (`apply-staging-env-overrides.mjs` in blackout-infra).
 
@@ -216,7 +204,7 @@ On **every weekday** Cloud Agent session when **America/New_York ≥ 09:00**:
 2. Run `npm run validate:rth-open` (wraps `validate:deploy` + RTH session checks).
 3. If anything fails → fix → branch → PR → **auto-merge to `blackout-web-sandbox` once CI is green**
    → poll ECS staging deploy → re-run until GREEN. **Do not merge or push to `main`.**
-4. After **09:35 ET**, confirm `spx-evaluate` cron + options-socket `authenticated` in Railway logs.
+4. After **09:35 ET**, confirm `spx-evaluate` cron + options-socket `authenticated` via `GET /api/cron/socket-health`.
 
 **Cursor scheduled task (recommended):** Mon–Fri **09:32 AM ET** — prompt: *Run RTH-OPEN-RUNBOOK autonomously; npm run validate:rth-open; fix failures; do not ask me.*
 
