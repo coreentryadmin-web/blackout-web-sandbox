@@ -3,6 +3,7 @@
 import { useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { fmtPremium, type FlowAlert } from "@/lib/api";
+import { executionRouteKey } from "@/features/helix/lib/helix-flow-format";
 import { Panel } from "@/components/ui";
 
 const ROUTE_META: Record<string, { color: string; icon: string }> = {
@@ -29,8 +30,7 @@ export function RouteBreakdown({ alerts, loading }: { alerts: FlowAlert[]; loadi
     const map = new Map<string, { premium: number; count: number }>();
 
     for (const a of alerts) {
-      const route = (a.route || a.alert_rule || "OTHER").toUpperCase();
-      const key = Object.keys(ROUTE_META).find((r) => route.includes(r)) ?? "OTHER";
+      const key = executionRouteKey(a);
       const cur = map.get(key) ?? { premium: 0, count: 0 };
       cur.premium += a.premium;
       cur.count++;

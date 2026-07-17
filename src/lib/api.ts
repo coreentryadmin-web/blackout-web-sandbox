@@ -724,10 +724,15 @@ export function createFlowEventSource(
           data.option_type &&
           data.premium != null &&
           data.strike != null &&
-          data.expiry &&
-          data.alerted_at
+          data.expiry
         ) {
-          onMessage(data as FlowAlert);
+          const alert = data as FlowAlert;
+          // Timestampless prints are valid — FlowFeed sorts them last via alertedAtMs.
+          // Prefer event_at when alerted_at is empty so the tape can still show a time.
+          if (!alert.alerted_at && alert.event_at) {
+            alert.alerted_at = alert.event_at;
+          }
+          onMessage(alert);
         }
       } catch {
         /* ignore */

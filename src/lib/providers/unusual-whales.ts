@@ -1234,6 +1234,9 @@ export function optionTradePrintToFlowRaw(print: UwOptionTradePrint): Record<str
     created_at: print.executed_at,
     executed_at: print.executed_at,
     tags: print.tags,
+    // Per-contract fill — without this, WS option_trades rows show blank Fill until REST poll.
+    ...(Number.isFinite(print.price) && print.price > 0 ? { price: print.price } : {}),
+    ...(Number.isFinite(print.size) && print.size > 0 ? { size: print.size } : {}),
     // Forward IV when present so fetchRecentFlows can extract it via raw_payload->'iv'.
     ...(print.iv != null ? { iv: print.iv } : {}),
   };

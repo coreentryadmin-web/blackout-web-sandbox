@@ -94,6 +94,16 @@ export function ruleLabel(rule: string): string {
   return rule.toUpperCase().slice(0, 8);
 }
 
+/** UW execution route (SWEEP/BLOCK/…) from alert_rule — NOT internal route (whale/0dte/stock). */
+export function executionRouteKey(alert: Pick<FlowAlert, "alert_rule">): string {
+  const rule = (alert.alert_rule || "").toUpperCase();
+  const keys = ["SWEEP", "BLOCK", "SPLIT", "CROSS", "FLOOR", "MULTI"] as const;
+  for (const k of keys) {
+    if (rule.includes(k)) return k;
+  }
+  return "OTHER";
+}
+
 export function fmtSpot(n: number | null | undefined): string {
   if (n == null || !Number.isFinite(n) || n <= 0) return "—";
   return n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -191,6 +201,8 @@ export function flowSignals(flow: FlowAlert, ctx: {
   if (flow.gex_proximity === "at_gamma_flip") out.push({ id: "flip", label: "FLIP", tone: "purple" });
   if (flow.gex_proximity === "at_call_wall") out.push({ id: "cwall", label: "C WALL", tone: "bull" });
   if (flow.gex_proximity === "at_put_wall") out.push({ id: "pwall", label: "P WALL", tone: "bear" });
+  if (flow.gex_proximity === "near_call_wall") out.push({ id: "ncwall", label: "≈C WALL", tone: "bull" });
+  if (flow.gex_proximity === "near_put_wall") out.push({ id: "npwall", label: "≈P WALL", tone: "bear" });
   if (ctx.earnIn != null && ctx.earnIn <= 5) {
     out.push({ id: "earn", label: ctx.earnIn === 0 ? "EARN" : `E${ctx.earnIn}D`, tone: "bear" });
   }
