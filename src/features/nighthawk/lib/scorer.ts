@@ -377,6 +377,7 @@ export function scoreFlowQuality(
   else if (totalPrem >= 1_000_000) score += 9;
   else if (totalPrem >= 500_000) score += 6;
   else if (totalPrem >= 250_000) score += 3;
+  else if (totalPrem >= 100_000) score += 1;
 
   const sweepPct = totalPrem > 0 ? sweepPrem / totalPrem : 0;
   if (sweepPct >= 0.8) score += 10;
@@ -451,7 +452,7 @@ export function scoreTechnicalSetup(tech: TechnicalCard | null, direction: "long
     if (tech.trend === "bullish") score += 8;
     if (tags.includes("breakout") || tags.includes("hod")) score += 6;
     if (tags.includes("bullish ma")) score += 4;
-    if (tech.rsi14 != null && tech.rsi14 >= 45 && tech.rsi14 <= 65) score += 3;
+    if (tech.rsi14 != null && tech.rsi14 >= 35 && tech.rsi14 <= 70) score += 3;
     if (tags.includes("bearish") || tags.includes("overbought")) score -= 6;
   } else {
     if (tech.trend === "bearish") score += 8;
@@ -463,7 +464,7 @@ export function scoreTechnicalSetup(tech: TechnicalCard | null, direction: "long
     // Mirror of the long branch's MA-stack reward — shorts previously had no
     // structure reward at all beyond the trend read.
     if (tags.includes("bearish ma")) score += 4;
-    if (tech.rsi14 != null && tech.rsi14 >= 55) score += 3;
+    if (tech.rsi14 != null && tech.rsi14 >= 50) score += 3;
     // Mirror of the long branch's breakout reward: a name printing fresh highs
     // (20d breakout / HOD break) is structurally AGAINST a short — penalize it
     // the same way bullish structure was never penalized before.
@@ -472,7 +473,16 @@ export function scoreTechnicalSetup(tech: TechnicalCard | null, direction: "long
   }
 
   if ((tech.rel_volume ?? 0) >= 1.5) score += 4;
-  return Math.max(-10, Math.min(28, score));
+
+  // PR-N30: structural price alignment (independent of setup_tags strings).
+  // Price above both VWAP and EMA20 for longs (below for shorts) is a clear
+  // structure signal that many real candidates have but get no credit for.
+  if (tech.price != null && tech.vwap != null && tech.ema20 != null) {
+    if (direction === "long" && tech.price > tech.vwap && tech.price > tech.ema20) score += 2;
+    else if (direction === "short" && tech.price < tech.vwap && tech.price < tech.ema20) score += 2;
+  }
+
+  return Math.max(-10, Math.min(30, score));
 }
 
 function darkPoolBiasMatchesDirection(
@@ -1013,6 +1023,16 @@ export function scoreCandidate(
   }
 
   const regimeMultiplier = computeRegimeMultiplier(regime);
+  // PR-N30: dampen regime effect — the raw 0.6-1.3 range compresses marginal
+  // candidates below the publish floor in even mildly bearish regimes. A dampening
+  // factor of 0.5 halves the distance from 1.0: 0.85→0.925, 0.7→0.85, 1.2→1.1.
+  // Preserves the regime's directional signal without making it the sole reason a
+  // borderline candidate fails.
+  const dampenedRegime = 1 + (regimeMultiplier - 1) * 0.5;
+  // PR-N30: flow conviction bonus — when directional flow is very strong (≥25/38),
+  // the composite gets +4 outside the flow component. Lifts high-flow names that
+  // might be borderline on tech/positioning into the publish band.
+  const flowConvictionBonus = flow.score >= 25 ? 4 : 0;
   const total = Math.min(
     100,
     Math.max(
@@ -1029,8 +1049,9 @@ export function scoreCandidate(
           wallProxScore +
           vexScore +
           totalCatalystScore +
-          anomalyPenalty) *
-          regimeMultiplier
+          anomalyPenalty +
+          flowConvictionBonus) *
+          dampenedRegime
       )
     )
   );
