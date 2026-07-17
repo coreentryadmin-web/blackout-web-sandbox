@@ -1,7 +1,7 @@
 import { mapClaudePlayToEdition } from "./claude-edition";
 import { EDITION_MIN_PUBLISH_PLAYS, MAX_OPTION_PREMIUM_PER_SHARE } from "./constants";
 import type { TickerDossier } from "./dossier";
-import { GROUNDING_MIN_OI } from "./grounding";
+import { tieredMinOi } from "./grounding";
 import { validatePlayGeometry } from "./play-constraints";
 import { buildDirectionalStockLevels } from "./play-levels";
 import {
@@ -22,11 +22,12 @@ export function pickAffordableChainContract(
   const side = direction === "short" ? "put" : "call";
   const spot = chain.spot > 0 ? chain.spot : 0;
 
+  const minOi = spot > 0 ? tieredMinOi(spot) : 500;
   const affordable = (row: ChainStrikeRow): number | null => {
     const ask = side === "put" ? row.put_ask : row.call_ask;
     const oi = side === "put" ? row.put_oi : row.call_oi;
     if (ask == null || !Number.isFinite(ask) || ask <= 0 || ask > MAX_OPTION_PREMIUM_PER_SHARE) return null;
-    if (oi < GROUNDING_MIN_OI) return null;
+    if (oi < minOi) return null;
     return Number(ask.toFixed(2));
   };
 
@@ -89,10 +90,12 @@ export async function backfillThinEditionPlays(params: {
     const contract = pickAffordableChainContract(ticker, scored.direction, chains[ticker]);
     const support = dossier.tech?.support_levels?.[0];
     const resistance = dossier.tech?.resistance_levels?.[0];
+    const spot = dossier.tech?.price ?? chains[ticker]?.spot;
     const levels = buildDirectionalStockLevels({
       direction: scored.direction,
       support,
       resistance,
+      spot,
     });
     const play = mapClaudePlayToEdition(
       {
