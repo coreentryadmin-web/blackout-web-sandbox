@@ -114,6 +114,15 @@ function formatOptionsPlay(ticker: string, contract: PickedContract | null): str
  *
  * Deterministic tie-break: closest strike to spot, then nearest expiry, then lower strike.
  */
+/** Overnight swing plays need time value — prefer contracts with at least this many calendar days. */
+const MIN_DTE_CALENDAR_DAYS = 5;
+
+function minExpiryDate(today: string): string {
+  const d = new Date(today + "T12:00:00Z");
+  d.setUTCDate(d.getUTCDate() + MIN_DTE_CALENDAR_DAYS);
+  return d.toISOString().slice(0, 10);
+}
+
 export function pickChainContract(
   chain: EditionChainData,
   direction: "long" | "short"
@@ -121,14 +130,16 @@ export function pickChainContract(
   const side: "call" | "put" = direction === "long" ? "call" : "put";
   const spot = chain.spot;
   const minOi = spot > 0 ? tieredMinOi(spot) : GROUNDING_MIN_OI;
-  // Overnight plays: members act the next morning, so exclude contracts expiring today
   const today = todayEtYmd();
+  const minExpiry = minExpiryDate(today);
 
   type Candidate = PickedContract & { dist: number };
   const strict: Candidate[] = [];
   const relaxedPremium: Candidate[] = [];
   const relaxedOi: Candidate[] = [];
   const anyQuoted: Candidate[] = [];
+  // Short-dated fallback: contracts between today and minExpiry (DTE too low for swing)
+  const shortDated: Candidate[] = [];
 
   for (const row of chain.rows) {
     if (row.expiry <= today) continue;
@@ -144,6 +155,11 @@ export function pickChainContract(
     };
     const oiOk = oi >= minOi;
     const premOk = premium <= MAX_OPTION_PREMIUM_PER_SHARE;
+    if (row.expiry < minExpiry) {
+      // Too short-dated for overnight swing — last-resort pool
+      if (premOk) shortDated.push(entry);
+      continue;
+    }
     if (oiOk && premOk) strict.push(entry);
     else if (oiOk && !premOk) relaxedPremium.push({ ...entry, caveat: "premium_high" });
     else if (!oiOk && premOk) relaxedOi.push({ ...entry, caveat: "low_liquidity" });
@@ -153,7 +169,7 @@ export function pickChainContract(
   const sortFn = (a: Candidate, b: Candidate) =>
     a.dist - b.dist || a.expiry.localeCompare(b.expiry) || a.strike - b.strike;
 
-  for (const pool of [strict, relaxedPremium, relaxedOi, anyQuoted]) {
+  for (const pool of [strict, relaxedPremium, relaxedOi, anyQuoted, shortDated]) {
     if (pool.length) {
       pool.sort(sortFn);
       const best = pool[0]!;

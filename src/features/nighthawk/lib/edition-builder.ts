@@ -900,6 +900,7 @@ export async function buildEveningEdition(opts?: {
       if (!finalPlays.length) {
         // PR-N13: the gates zeroed all plays, but the pipeline MUST always surface picks.
         // Promote the top-scoring blocked plays with warnings instead of publishing zero.
+        // Promote the top-scoring blocked plays with warnings instead of publishing zero.
         const promoted = promoteTopBlocked(blocked, EDITION_TARGET_PLAYS);
         if (promoted.length) {
           finalPlays = promoted;
@@ -928,6 +929,13 @@ export async function buildEveningEdition(opts?: {
           };
         }
       }
+    }
+
+    // PR-N26: re-rank by score descending so the highest-conviction play is always #1,
+    // regardless of whether it passed gates organically or was promoted.
+    if (finalPlays.length > 1) {
+      finalPlays.sort((a, b) => (b.score ?? 0) - (a.score ?? 0));
+      finalPlays.forEach((p, i) => { p.rank = i + 1; });
     }
 
     // WRITE-SIDE INVARIANT (#77): never persist a "normal" edition with zero plays. The five funnel
