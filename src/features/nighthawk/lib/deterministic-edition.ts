@@ -33,6 +33,7 @@ import { applyPremiumCapToPlay, validatePlayGeometry, canonicalTicker } from "./
 import { groundPlays } from "./grounding";
 import { GROUNDING_MIN_OI, tieredMinOi } from "./grounding";
 import { MAX_OPTION_PREMIUM_PER_SHARE } from "./constants";
+import { todayEtYmd } from "@/lib/providers/spx-session";
 
 /** Default number of plays a full edition publishes. Mirrors the Claude path's top-5 shape. */
 export const DETERMINISTIC_EDITION_TARGET = 5;
@@ -120,6 +121,8 @@ export function pickChainContract(
   const side: "call" | "put" = direction === "long" ? "call" : "put";
   const spot = chain.spot;
   const minOi = spot > 0 ? tieredMinOi(spot) : GROUNDING_MIN_OI;
+  // Overnight plays: members act the next morning, so exclude contracts expiring today
+  const today = todayEtYmd();
 
   type Candidate = PickedContract & { dist: number };
   const strict: Candidate[] = [];
@@ -128,6 +131,7 @@ export function pickChainContract(
   const anyQuoted: Candidate[] = [];
 
   for (const row of chain.rows) {
+    if (row.expiry <= today) continue;
     const premium = contractPremium(row, side);
     if (premium == null) continue;
     const oi = contractOi(row, side);

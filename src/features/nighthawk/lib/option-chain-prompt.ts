@@ -2,6 +2,7 @@ import type { TickerDossier } from "./dossier";
 import { polygonConfigured, uwConfigured } from "@/lib/providers/config";
 import {
   fetchPolygonAtmOptionsChain,
+  fetchPolygonAtmChainAllExpiries,
   fetchPolygonOiByExpiry,
 } from "@/lib/providers/polygon-options-gex";
 import { fetchStockSnapshot } from "@/lib/providers/polygon";
@@ -301,21 +302,47 @@ async function resolveTickerChainRows(
   const spot = await resolveSpot(sym, dossier);
   if (spot <= 0) return null;
 
-  const expiries = await frontExpiries(sym);
-  if (!expiries.length) return null;
-
   let rows: ChainStrikeRow[] = [];
 
+  // Primary path: single Polygon snapshot call with NO expiry filter. This returns
+  // contracts across all non-expired expiries in the ATM strike band — discovering
+  // expiries AND chain data in one round-trip. The old two-step path (reference API
+  // for expiries → per-expiry snapshot) was broken because the reference endpoint
+  // doesn't include open_interest, so the OI filter emptied every result.
   if (polygonConfigured()) {
-    const contractBatches = await Promise.all(
-      expiries.map((exp) => fetchPolygonAtmOptionsChain(sym, spot, exp, ATM_BAND_PCT).catch(() => []))
-    );
-    rows = pivotPolygonContracts(contractBatches.flat(), spot).filter((r) => expiries.includes(r.expiry));
+    const allContracts = await fetchPolygonAtmChainAllExpiries(sym, spot, ATM_BAND_PCT).catch(() => []);
+    const pivoted = pivotPolygonContracts(allContracts, spot);
+    // Take only the front N expiries (overnight plays don't need 6-month chains)
+    const expiriesInData = Array.from(new Set(pivoted.map((r) => r.expiry))).sort();
+    const frontExps = new Set(expiriesInData.slice(0, FRONT_EXPIRIES));
+    rows = pivoted.filter((r) => frontExps.has(r.expiry));
+  }
+
+  // Fallback: per-expiry Polygon fetch (for cases where the all-expiries call
+  // returned nothing but individual expiry queries might work)
+  if (!rows.length && polygonConfigured()) {
+    const expiries = await frontExpiries(sym);
+    if (expiries.length) {
+      const contractBatches = await Promise.all(
+        expiries.map((exp) => fetchPolygonAtmOptionsChain(sym, spot, exp, ATM_BAND_PCT).catch(() => []))
+      );
+      rows = pivotPolygonContracts(contractBatches.flat(), spot).filter((r) => expiries.includes(r.expiry));
+    }
   }
 
   if (!rows.length && uwConfigured()) {
     const uwRows = await fetchUwOptionChains(sym, 500).catch(() => []);
-    rows = pivotUwRows(uwRows as Record<string, unknown>[], spot, expiries);
+    // Discover expiries from UW data itself when Polygon expiry discovery failed
+    const uwExpiries = Array.from(
+      new Set(
+        (uwRows as Record<string, unknown>[])
+          .map((r) => String(r.expiry ?? r.expiration ?? r.expiration_date ?? "").slice(0, 10))
+          .filter(Boolean)
+      )
+    ).sort().slice(0, FRONT_EXPIRIES);
+    if (uwExpiries.length) {
+      rows = pivotUwRows(uwRows as Record<string, unknown>[], spot, uwExpiries);
+    }
   }
 
   if (!rows.length) return null;
