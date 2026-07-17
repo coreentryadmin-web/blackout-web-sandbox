@@ -878,11 +878,11 @@ export async function buildEveningEdition(opts?: {
         finalPlays = passing;
         funnel.critic_passed = finalPlays.length;
       }
-      if (finalPlays.length < EDITION_MIN_PUBLISH_PLAYS && blocked.length) {
-        // PR-N16: promote top-scoring blocked plays to reach the minimum play count.
-        // Previously only fired at ZERO plays — a single passing play left the edition
-        // thin with no rescue. Now promotes enough blocked plays to reach MIN_PUBLISH_PLAYS.
-        const need = EDITION_MIN_PUBLISH_PLAYS - finalPlays.length;
+      if (finalPlays.length < EDITION_TARGET_PLAYS && blocked.length) {
+        // PR-N25: promote top-scoring blocked plays to reach the TARGET play count (5),
+        // not just the minimum (3). Previously 3 passing + 2 blocked = 3 published;
+        // now promotes the 2 best-available blocked plays to fill to 5.
+        const need = EDITION_TARGET_PLAYS - finalPlays.length;
         const promoted = promoteTopBlocked(blocked, need);
         if (promoted.length) {
           const startRank = finalPlays.length + 1;
@@ -892,7 +892,7 @@ export async function buildEveningEdition(opts?: {
           ];
           funnel.critic_passed = finalPlays.length;
           console.info(
-            `[nighthawk/edition] publish gates left ${finalPlays.length - promoted.length} play(s) — promoted ${promoted.length} best-available to reach min ${EDITION_MIN_PUBLISH_PLAYS} ` +
+            `[nighthawk/edition] publish gates left ${finalPlays.length - promoted.length} play(s) — promoted ${promoted.length} best-available to reach target ${EDITION_TARGET_PLAYS} ` +
             `(${blocked.length} total blocked: ${blocked.map((b) => `${b.ticker}:${b.result.blocks.map((x) => x.code).join(",")}`).join("; ")})`
           );
         }
