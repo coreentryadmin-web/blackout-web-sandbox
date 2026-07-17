@@ -126,7 +126,8 @@ export function deriveCatalystNewsEvidence(input: CortexInputs): EvidenceItem[] 
     if (
       cluster &&
       cluster.totalPremium >= ALIGNED_CLUSTER_MIN_PREMIUM &&
-      cluster.prints >= ALIGNED_CLUSTER_MIN_PRINTS
+      cluster.prints >= ALIGNED_CLUSTER_MIN_PRINTS &&
+      cluster.sweeps > 0 // same urgency bar as flow-quality's own support gate
     ) {
       items.push({
         source: "catalyst-news",

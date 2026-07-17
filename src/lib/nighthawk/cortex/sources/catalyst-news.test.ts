@@ -96,6 +96,25 @@ describe("catalyst-news: catalyst-confirmed flow (the upgrade signal)", () => {
     assert.equal(deriveCatalystNewsEvidence(noCatalyst).some((i) => i.stance === "supports"), false);
   });
 
+  test("a pure block stack (no sweeps) with a catalyst does NOT earn a support — same urgency bar as flow-quality", () => {
+    const blocksOnly: CortexFlowPrint[] = [1, 2, 3].map((i) => ({
+      premium: 300_000,
+      direction: "bullish" as const,
+      kind: "block" as const,
+      at: new Date(NOW_MS - i * 3 * 60_000).toISOString(),
+    }));
+    const input = baseInputs({
+      direction: "long",
+      news: { asOf: TEST_NOW, items: [newsItem({ channels: ["fda"] })], earningsToday: null },
+      flow: { asOf: TEST_NOW, prints: blocksOnly },
+    });
+    assert.equal(
+      deriveCatalystNewsEvidence(input).some((i) => i.stance === "supports"),
+      false,
+      "pure block stack should not earn catalyst-confirmed support without at least one sweep"
+    );
+  });
+
   test("the support decays from the catalyst's PUBLISH time, not fetch time", () => {
     const publishedAt = new Date(NOW_MS - 2 * 3600_000).toISOString();
     const input = baseInputs({
