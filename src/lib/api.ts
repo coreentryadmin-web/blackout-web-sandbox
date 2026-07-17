@@ -193,6 +193,8 @@ export interface FlowAlert {
   /** Real UW alert time (created_at); null when UW gave no timestamp. Used for
    *  velocity/freshness so a just-ingested stale print can't masquerade as "now". */
   event_at?: string | null;
+  /** When true, alerted_at is ingest time — show on tape but exclude from LIVE/freshness. */
+  tape_time_estimated?: boolean;
   /** Canonical UW alert id (same id used for the Postgres ON-CONFLICT) — rides the SSE row so the
    *  client dedups on it instead of a reconstructed composite (gap #13). Optional: DB-served REST
    *  rows may omit it, and the client falls back to the seconds-precision composite key. */
@@ -253,6 +255,8 @@ export async function fetchFlows(params?: {
   ticker?: string;
   min_premium?: number;
   since_hours?: number;
+  /** Scope to expiries within N ET calendar days (0 = 0DTE only). */
+  max_dte?: number;
   /** ISO cursor — fetch prints strictly older than this timestamp. */
   before?: string;
 }): Promise<FlowsResponse> {
@@ -261,6 +265,7 @@ export async function fetchFlows(params?: {
   if (params?.ticker) qs.set("ticker", params.ticker);
   if (params?.min_premium) qs.set("min_premium", String(params.min_premium));
   if (params?.since_hours) qs.set("since_hours", String(params.since_hours));
+  if (params?.max_dte != null && params.max_dte >= 0) qs.set("max_dte", String(params.max_dte));
   if (params?.before) qs.set("before", params.before);
   const query = qs.toString();
 

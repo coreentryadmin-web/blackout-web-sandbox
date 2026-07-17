@@ -116,7 +116,15 @@ function renderCell(
     case "time":
       // Full absolute ET stamp "MM/DD/YYYY - HH:MM" (was a relative age via timeAgo). fmtFullTimestamp
       // returns "—" for empty/invalid, so no separate guard is needed. tabular-nums keeps it aligned.
-      return <span className="helix-tape-time tabular-nums">{fmtFullTimestamp(flow.alerted_at)}</span>;
+      return <span
+        className={clsx(
+          "helix-tape-time tabular-nums",
+          flow.tape_time_estimated && "helix-tape-time--estimated"
+        )}
+        title={flow.tape_time_estimated ? "Ingest time — UW print time unknown" : undefined}
+      >
+        {fmtFullTimestamp(flow.alerted_at)}
+      </span>;
     case "ticker":
       return (
         <div className="helix-tape-symbol">
@@ -248,6 +256,7 @@ export function HelixFlowTable({
   filteredCount,
   hasMorePages = false,
   loadingOlder = false,
+  autoBackfilling = false,
   onLoadOlder,
   totalLoaded,
 }: {
@@ -274,6 +283,8 @@ export function HelixFlowTable({
   /** Server cursor pagination — more history exists in Postgres */
   hasMorePages?: boolean;
   loadingOlder?: boolean;
+  /** True while auto-backfill is fetching older pages for an active filter. */
+  autoBackfilling?: boolean;
   onLoadOlder?: () => void;
   /** Total rows loaded in memory (may exceed filtered count) */
   totalLoaded?: number;
@@ -542,7 +553,13 @@ export function HelixFlowTable({
             disabled={loadingOlder}
             onClick={onLoadOlder}
           >
-            {loadingOlder ? "Loading older prints…" : "Load older prints from history"}
+            {loadingOlder
+              ? autoBackfilling
+                ? "Loading matching prints…"
+                : "Loading older prints…"
+              : autoBackfilling
+                ? "Loading matching prints…"
+                : "Load older prints from history"}
           </button>
         )}
       </div>

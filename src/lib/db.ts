@@ -1,5 +1,6 @@
 import { Pool, type PoolClient, type QueryResultRow } from "pg";
 import { isTransientPgError } from "@/lib/db-transient";
+import { resolveFlowTimes } from "@/lib/flow-timestamp";
 // PR-N2: grading-methodology version tags (dependency-free leaf — safe to import here).
 // db.ts stamps every grade write with the CURRENT tag and boot-backfills unstamped
 // resolved rows with the LEGACY tag; analytics/display segment on the same constants.
@@ -1881,8 +1882,10 @@ export type FlowRow = {
    *  string makes the client's alertedAtMs exclude it from the LIVE badge + newest-first sort,
    *  matching the SSE path + the parser's '' sentinel (gap #6). */
   alerted_at: string;
-  /** Real created_at from UW; null when unknown (do NOT fall back to inserted_at). */
+  /** Real UW print time; null when unknown (ingest fallback is not counted here). */
   event_at?: string | null;
+  /** True when alerted_at is ingest time because UW gave no print timestamp. */
+  tape_time_estimated?: boolean;
   dte?: number;
   /** Per-contract fill price from the UW alert payload (what the print paid). */
   fill_price?: number;
@@ -1983,8 +1986,9 @@ export async function fetchRecentFlows(params: {
              WHEN expiry = (NOW() AT TIME ZONE 'America/New_York')::date THEN '0dte'
              ELSE 'stock'
            END AS route,
-           created_at AS alerted_at,
-           created_at AS event_at,
+           created_at,
+           inserted_at,
+           raw_payload,
            -- DTE against the ET calendar date (not UTC CURRENT_DATE) so labels match the rest of
            -- the app and don't go off-by-one/negative in the 8pm–midnight ET window.
            (expiry - (NOW() AT TIME ZONE 'America/New_York')::date) AS dte,
@@ -2039,7 +2043,17 @@ export async function fetchRecentFlows(params: {
     values
   );
 
-  return res.rows.map((row) => ({
+  return res.rows.map((row) => {
+    const rawPayload =
+      row.raw_payload && typeof row.raw_payload === "object"
+        ? (row.raw_payload as Record<string, unknown>)
+        : null;
+    const { event_at, display_at, tape_time_estimated } = resolveFlowTimes({
+      created_at: row.created_at as string | Date | null | undefined,
+      inserted_at: row.inserted_at as string | Date | null | undefined,
+      raw_payload: rawPayload,
+    });
+    return {
     ticker: String(row.ticker ?? ""),
     premium: Number(row.premium ?? 0),
     option_type: String(row.option_type ?? "").toUpperCase(),
@@ -2048,11 +2062,9 @@ export async function fetchRecentFlows(params: {
     direction: String(row.direction ?? "bullish"),
     score: Number(row.score ?? 0),
     route: String(row.route ?? "stock"),
-    // Gap #6: when created_at is null UW gave no real alert time — return '' (the parser/SSE
-    // sentinel), never now()/inserted_at. FlowFeed's alertedAtMs then excludes the row from the
-    // LIVE badge + newest-first sort instead of faking a fresh, top-of-tape print.
-    alerted_at: row.alerted_at ? new Date(String(row.alerted_at)).toISOString() : "",
-    event_at: row.event_at ? new Date(String(row.event_at)).toISOString() : null,
+    alerted_at: display_at ?? "",
+    event_at,
+    tape_time_estimated,
     dte: row.dte != null ? Number(row.dte) : undefined,
     alert_rule: row.alert_rule ? String(row.alert_rule) : undefined,
     ask_pct: row.ask_pct != null ? Number(row.ask_pct) : undefined,
@@ -2076,7 +2088,8 @@ export async function fetchRecentFlows(params: {
       }
       return undefined;
     })(),
-  }));
+  };
+  });
 }
 
 function parseDate(value: string | null | undefined): string | null {
