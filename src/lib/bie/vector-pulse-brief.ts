@@ -56,14 +56,21 @@ function confluenceCallouts(state: VectorFullState): string[] {
   });
 }
 
-function formatSignalsTable(signals: PulseSignal[]): string {
+function formatSignalsTable(signals: PulseSignal[], nowMs: number): string {
   if (!signals.length) return "";
+  const age = (at: number) => {
+    const sec = Math.max(0, Math.round((nowMs - at) / 1000));
+    if (sec < 60) return `${sec}s ago`;
+    const min = Math.round(sec / 60);
+    return min < 60 ? `${min}m ago` : `${Math.round(min / 60)}h ago`;
+  };
   const rows = signals.slice(0, 12).map((sig) => [
     sig.tone.toUpperCase(),
     sig.kind.replace(/-/g, " "),
     sig.line.replace(/\*\*/g, "").trim(),
+    age(sig.at),
   ]);
-  return markdownTable(["Tone", "Type", "Signal"], rows);
+  return markdownTable(["Tone", "Type", "Signal", "When"], rows);
 }
 
 function stripGrounding(s: string): string {
@@ -237,7 +244,8 @@ export async function buildPulseSignalsForState(
 export function formatVectorPulseMarkdown(
   state: VectorFullState,
   fresh: PulseSignal[],
-  hadPrev: boolean
+  hadPrev: boolean,
+  nowMs = Date.parse(state.asOf) || Date.now()
 ): string {
   const sym = state.ticker.toUpperCase();
   const lines: string[] = [
@@ -257,7 +265,7 @@ export function formatVectorPulseMarkdown(
         : "_First pulse on this ticker — session wall events and live intel above. Ask again after the next refresh to see transitions._"
     );
   } else {
-    lines.push(formatSignalsTable(fresh));
+    lines.push(formatSignalsTable(fresh, nowMs));
   }
 
   if (state.wallEvents.length > 0) {
@@ -299,7 +307,7 @@ export async function composeVectorPulseRead(
   const { fresh, cacheEntry, current } = await buildPulseSignalsForState(state, cached, nowMs);
   await writeVectorPulseCache(ticker, horizon, cacheEntry);
 
-  const answer = formatVectorPulseMarkdown(state, fresh, Boolean(cached?.snapshot));
+  const answer = formatVectorPulseMarkdown(state, fresh, Boolean(cached?.snapshot), nowMs);
 
   return {
     answer: toProfessionalMarkdown(answer),
