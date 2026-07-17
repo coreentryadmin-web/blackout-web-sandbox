@@ -45,7 +45,7 @@ export function StrikeStackDetector({
       }
     >
       <div className="flow-panel-body">
-        <AnimatePresence mode="popLayout">
+        <AnimatePresence mode="sync">
           {stacks.length === 0 ? (
             <motion.div
               key="empty"
@@ -66,7 +66,6 @@ export function StrikeStackDetector({
                 return (
                   <motion.button
                     key={`${stack.ticker}-${stack.strike}-${stack.option_type}-${stack.expiry}`}
-                    layout
                     initial={{ opacity: 0, y: -6 }}
                     animate={{ opacity: 1, y: 0 }}
                     exit={{ opacity: 0, y: 6, transition: { duration: 0.15 } }}

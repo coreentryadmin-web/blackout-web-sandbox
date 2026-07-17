@@ -17171,6 +17171,25 @@ body::before {
     @apply font-mono text-[12px] font-bold uppercase tracking-[0.18em] text-sky-200/90 px-0.5;
   }
 
+  /* Analytics rail panels — stack cleanly; never shrink/overlap in the scroll column. */
+  .helix-pro-rail-panel {
+    flex: 0 0 auto;
+    align-self: stretch;
+    min-height: min-content;
+    width: 100%;
+  }
+
+  .helix-pro-rail-panel .flow-panel-body {
+    max-height: none;
+    overflow: visible;
+  }
+
+  /* Strike stack cards read huge in the side rail — compact typography. */
+  .helix-pro-rail-panel .font-anton {
+    font-size: 1.125rem !important;
+    line-height: 1.1;
+  }
+
   .helix-pro-disclaimer {
     @apply font-mono text-[9px] text-sky-300/45 text-center pt-1;
   }
@@ -17218,9 +17237,10 @@ body::before {
       max-height: min(42vh, 420px);
       overflow-x: hidden;
       overflow-y: auto;
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      display: flex;
+      flex-direction: column;
       gap: 0.75rem;
+      align-items: stretch;
       -webkit-overflow-scrolling: touch;
     }
   }
@@ -17253,20 +17273,16 @@ body::before {
       flex: 1 1 50%;
       min-width: 0;
       overflow-y: auto;
+      overflow-x: hidden;
       max-height: min(78vh, calc(100dvh - var(--nav-offset) - 11rem));
-      display: grid;
-      grid-template-columns: repeat(2, 1fr);
+      display: flex;
+      flex-direction: column;
       gap: 0.75rem;
-      align-content: start;
-    }
-
-    .helix-desk-analytics-rail > .helix-pro-rail-section-header,
-    .helix-desk-analytics-rail > div:first-child {
-      grid-column: 1 / -1;
+      align-items: stretch;
     }
 
     .helix-analytics-wide {
-      grid-column: 1 / -1;
+      width: 100%;
     }
   }
 
