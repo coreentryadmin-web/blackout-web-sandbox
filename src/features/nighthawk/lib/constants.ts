@@ -57,6 +57,11 @@ export const EDITION_SYNTHESIS_POOL = 18;
 export const EDITION_TARGET_PLAYS = 5;
 /** Minimum plays before ops pages on a thin edition — backfill from ranked pool when below. */
 export const EDITION_MIN_PUBLISH_PLAYS = 3;
+/** PR-N28: minimum composite score to publish a play. The measured overnight track record
+ *  shows below-40 plays (C conviction) underperform — the prime band is 40-55. A floor of
+ *  35 catches clearly weak candidates while keeping near-prime plays that add directional
+ *  diversity. Better to publish 3 strong plays than 5 where half are garbage. */
+export const MIN_PUBLISH_SCORE = 35;
 /** Overshoot sent through synthesis + critic — critic cuts weak plays with no backfill. */
 export const EDITION_SYNTHESIS_OVERSHOOT = 9;
 /** Stock tickers to prefetch option chains for (buffer above 5 final plays).
