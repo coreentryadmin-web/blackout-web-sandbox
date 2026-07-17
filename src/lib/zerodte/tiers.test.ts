@@ -13,6 +13,7 @@ import {
   TIER_A_MIN_POINTS,
   TIER_B_MIN_POINTS,
   TIER_APLUS_UNLOCK,
+  CORTEX_THIN_EVIDENCE_MAX_ABSENT,
   W_SCORE_MID,
   W_SCORE_TOP,
   W_SCORE_PRIME,
@@ -30,6 +31,7 @@ function boundaryA(overrides: Partial<ZeroDteTierInput> = {}): ZeroDteTierInput 
     cortexScore: 0,
     cortexVetoCount: 0,
     cortexSupportCount: 0,
+    cortexAbsentCount: 0,
     vixOpen: 16,
     committedEtMinutes: 12 * 60, // 12:00 ET — outside the F-4 early window
     ...overrides,
@@ -128,6 +130,7 @@ test("missing evidence degrades, never upgrades: each null caps the tier", () =>
     cortexScore: null,
     cortexVetoCount: null,
     cortexSupportCount: null,
+    cortexAbsentCount: null,
     vixOpen: null,
     committedEtMinutes: null,
   });
@@ -176,6 +179,31 @@ test("factors are human-readable chips: every factor carries label/direction/det
     assert.ok(f.direction === "up" || f.direction === "down");
     assert.ok(f.detail.length > 10); // a sentence, not a code
   }
+});
+
+test("thin Cortex evidence caps tier at B: 6+ absent sources blocks A even with positive score", () => {
+  assert.equal(CORTEX_THIN_EVIDENCE_MAX_ABSENT, 6);
+  // A-grade evidence (prime score + calm VIX + clean Cortex) but 6 of 8 sources absent.
+  const thin = assignZeroDteTier(
+    boundaryA({ cortexScore: 2.5, cortexSupportCount: 2, cortexAbsentCount: 6 })
+  );
+  assert.equal(thin.tier, "B");
+  assert.ok(thin.factors.some((f) => f.label === "Cortex thin evidence" && f.direction === "down"));
+  // 5 absent (3 answered) does NOT trigger the cap.
+  const adequate = assignZeroDteTier(
+    boundaryA({ cortexScore: 2.5, cortexSupportCount: 2, cortexAbsentCount: 5 })
+  );
+  assert.equal(adequate.tier, "A");
+  assert.ok(!adequate.factors.some((f) => f.label === "Cortex thin evidence"));
+});
+
+test("thin Cortex evidence cap does not fire when cortexScore is null (already capped by missing-evidence)", () => {
+  // When cortexScore is null, the "Cortex evidence missing" cap at B already fires.
+  // The thin-evidence cap should NOT additionally fire (it needs a non-null score).
+  const absent = assignZeroDteTier(boundaryA({ cortexScore: null, cortexAbsentCount: 7 }));
+  assert.equal(absent.tier, "B");
+  assert.ok(absent.factors.some((f) => f.label === "Cortex evidence missing"));
+  assert.ok(!absent.factors.some((f) => f.label === "Cortex thin evidence"));
 });
 
 test("determinism: same input, same assignment", () => {

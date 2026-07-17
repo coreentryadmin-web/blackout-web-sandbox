@@ -9,7 +9,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { composeCortexEvidence, type CortexInputs } from "@/lib/nighthawk/cortex";
+import { composeCortexEvidence, type CortexConviction, type CortexInputs, type CortexVerdict } from "@/lib/nighthawk/cortex";
 import { QQQ_SHORT_2026_07_13, SPY_LONG_2026_07_13 } from "@/lib/nighthawk/cortex/fixtures-2026-07-13";
 import { baseInputs } from "@/lib/nighthawk/cortex/test-helpers";
 import {
@@ -18,6 +18,8 @@ import {
   cortexGateBlocks,
   cortexSummaryFor,
   evaluateCortexForCommit,
+  THIN_EVIDENCE_MIN_SOURCES,
+  THIN_EVIDENCE_SCORE_FLOOR,
 } from "./cortex-gate";
 
 // ── Fixture variants ────────────────────────────────────────────────────────────
@@ -147,8 +149,10 @@ test("net-zero is a wash, not net-negative: evidence that exactly cancels never 
   );
   assert.equal(opposed.score, -0.5);
   // Flip the verdict's sign by hand-checking the boundary: a verdict at exactly 0
-  // must PASS (score < 0 is the block condition, not score <= 0).
-  const washed = { ...opposed, score: 0 };
+  // must PASS (score < 0 is the block condition, not score <= 0). Also clear the
+  // absent list so the thin-evidence gate doesn't fire (this test is about the
+  // score boundary, not evidence breadth — that's tested separately above).
+  const washed = { ...opposed, score: 0, absent: [] };
   assert.equal(assessCortexVerdict(washed).decision, "PASS");
 });
 
@@ -161,6 +165,59 @@ test("ABSTAIN: an all-absent composition (total outage) passes through with zero
     assert.match(a.reason, /commit proceeds on the hard gates alone/);
   }
   assert.deepEqual(cortexGateBlocks(a), []);
+});
+
+// ── Thin-evidence gate ──────────────────────────────────────────────────────────
+
+test("thin evidence: a bare +0.1 from <3 sources is blocked as NET_NEGATIVE — THIN_EVIDENCE_SCORE_FLOOR enforced", () => {
+  assert.equal(THIN_EVIDENCE_MIN_SOURCES, 3);
+  assert.equal(THIN_EVIDENCE_SCORE_FLOOR, 0.5);
+  // Build a verdict with 6 absent sources (only 2 answered) and a thin positive score.
+  const thinVerdict: CortexVerdict = {
+    score: 0.1,
+    conviction: "C" as CortexConviction,
+    direction: "short",
+    asOf: "2026-07-17T15:00:00.000Z",
+    vetoes: [],
+    supports: [{ source: "vex-charm", detail: "thin positive", weight: 0.1, asOf: "2026-07-17T15:00:00.000Z", halfLifeMs: 300_000 }],
+    opposes: [],
+    absent: ["gex-walls", "wall-trend", "flow-quality", "sector-heat", "darkpool-confluence", "opening-harvest"],
+    narrative: ["thin"],
+  };
+  const a = assessCortexVerdict(thinVerdict);
+  assert.equal(a.decision, "NET_NEGATIVE");
+  assert.deepEqual(cortexGateBlocks(a).map(b => b.code), ["cortex_net_negative"]);
+});
+
+test("thin evidence: score at or above THIN_EVIDENCE_SCORE_FLOOR passes even with <3 sources", () => {
+  const aboveFloor: CortexVerdict = {
+    score: 0.5,
+    conviction: "C" as CortexConviction,
+    direction: "long",
+    asOf: "2026-07-17T15:00:00.000Z",
+    vetoes: [],
+    supports: [{ source: "gex-walls", detail: "strong support", weight: 0.5, asOf: "2026-07-17T15:00:00.000Z", halfLifeMs: 300_000 }],
+    opposes: [],
+    absent: ["wall-trend", "flow-quality", "sector-heat", "darkpool-confluence", "vex-charm", "opening-harvest"],
+    narrative: ["one strong source"],
+  };
+  assert.equal(assessCortexVerdict(aboveFloor).decision, "PASS");
+});
+
+test("thin evidence: >=3 sources answering allows any non-negative score through (no floor)", () => {
+  const adequate: CortexVerdict = {
+    score: 0.1,
+    conviction: "C" as CortexConviction,
+    direction: "short",
+    asOf: "2026-07-17T15:00:00.000Z",
+    vetoes: [],
+    supports: [{ source: "gex-walls", detail: "weak positive", weight: 0.1, asOf: "2026-07-17T15:00:00.000Z", halfLifeMs: 300_000 }],
+    opposes: [],
+    absent: ["sector-heat", "darkpool-confluence", "opening-harvest", "catalyst-news", "wall-trend"],
+    narrative: ["adequate breadth"],
+  };
+  // 8 total - 5 absent = 3 answering: at the threshold, so the floor does NOT apply.
+  assert.equal(assessCortexVerdict(adequate).decision, "PASS");
 });
 
 // ── evaluateCortexForCommit (the IO seam) ───────────────────────────────────────
