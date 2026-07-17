@@ -44,7 +44,7 @@ function chainAround(spot: number, opts: { oi?: number; expiry?: string } = {}):
       row(s, {
         oi: opts.oi,
         expiry: opts.expiry,
-        // Cheap, well within the $20/share cap; mid ≈ 4.
+        // Cheap, well within the $35/share cap; mid ≈ 4.
         callAsk: 4.2,
         callBid: 3.8,
         putAsk: 4.2,
@@ -140,20 +140,25 @@ test("SHORT play has target below entry and stop above (correct short geometry)"
   assert.ok(stop! > mid, "short stop above entry");
 });
 
-test("premium cap: a candidate whose only liquid strike exceeds the cap is skipped honestly", () => {
+test("premium cap: a candidate whose only liquid strike exceeds the cap publishes as stock-only (PR-N15)", () => {
   const expensive: EditionChainData = {
     spot: 500,
-    rows: [row(500, { oi: 5_000, callAsk: 60, callBid: 58 })], // mid 59 > $20 cap
+    rows: [row(500, { oi: 5_000, callAsk: 60, callBid: 58 })], // mid 59 > $35 cap
   };
   const ranked = [scored("EXP", "long", 65), scored("OK", "long", 60)];
   const chains = { EXP: expensive, OK: chainAround(120) };
   const dossierMap = { EXP: dossier("EXP", 500), OK: dossier("OK", 120) };
   const { plays } = buildDeterministicEditionPlays({ ranked, dossierMap, chains });
-  assert.equal(plays.length, 1);
-  assert.equal(plays[0]!.ticker, "OK");
+  assert.equal(plays.length, 2);
+  const exp = plays.find((p) => p.ticker === "EXP")!;
+  assert.ok(exp, "EXP should be included as stock-only");
+  assert.equal(exp.entry_premium, undefined, "stock-only play has no entry_premium");
+  assert.match(exp.options_play, /check option chain/);
+  const ok = plays.find((p) => p.ticker === "OK")!;
+  assert.ok(ok.entry_premium != null && ok.entry_premium <= MAX_OPTION_PREMIUM_PER_SHARE);
 });
 
-test("OI floor: a candidate whose strikes are all below the liquidity floor is skipped", () => {
+test("OI floor: a candidate below the liquidity floor publishes as stock-only (PR-N15)", () => {
   const illiquid: EditionChainData = {
     spot: 120,
     rows: [row(120, { oi: 100, callAsk: 4, callBid: 3.6 })], // OI 100 < 500 floor
@@ -162,17 +167,25 @@ test("OI floor: a candidate whose strikes are all below the liquidity floor is s
   const chains = { ILQ: illiquid, LIQ: chainAround(90) };
   const dossierMap = { ILQ: dossier("ILQ", 120), LIQ: dossier("LIQ", 90) };
   const { plays } = buildDeterministicEditionPlays({ ranked, dossierMap, chains });
-  assert.equal(plays.length, 1);
-  assert.equal(plays[0]!.ticker, "LIQ");
+  assert.equal(plays.length, 2);
+  const ilq = plays.find((p) => p.ticker === "ILQ")!;
+  assert.ok(ilq, "ILQ should be included as stock-only");
+  assert.equal(ilq.entry_premium, undefined, "stock-only play has no entry_premium");
+  assert.match(ilq.options_play, /check option chain/);
 });
 
-test("no chain for a candidate ⇒ skipped (never publishes an ungroundable play)", () => {
+test("no chain for a candidate builds stock-only play (PR-N15: decoupled options)", () => {
   const ranked = [scored("NOCH", "long", 70), scored("HAS", "long", 50)];
   const chains = { HAS: chainAround(150) };
   const dossierMap = { NOCH: dossier("NOCH", 150), HAS: dossier("HAS", 150) };
   const { plays } = buildDeterministicEditionPlays({ ranked, dossierMap, chains });
-  assert.equal(plays.length, 1);
-  assert.equal(plays[0]!.ticker, "HAS");
+  assert.equal(plays.length, 2);
+  const noch = plays.find((p) => p.ticker === "NOCH")!;
+  assert.ok(noch, "NOCH should be included as stock-only");
+  assert.equal(noch.entry_premium, undefined, "stock-only play has no entry_premium");
+  assert.match(noch.options_play, /check option chain/);
+  const has = plays.find((p) => p.ticker === "HAS")!;
+  assert.ok(has.entry_premium != null, "HAS should have a contract");
 });
 
 test("respects the target count and re-ranks 1..N", () => {

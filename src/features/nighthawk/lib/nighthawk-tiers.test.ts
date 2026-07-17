@@ -42,14 +42,14 @@ describe("assignNighthawkTier", () => {
     assert.equal(result.tier, "A");
   });
 
-  test("top-band score (≥70) is capped at B despite strong signals", () => {
+  test("top-band score (≥70) with strong signals → A (PR-N15: cap removed)", () => {
     const result = assignNighthawkTier({
       score: 80,
       confirmingSignals: 5,
       earningsRisk: false,
     });
-    assert.equal(result.tier, "B");
-    assert.ok(result.factors.some((f) => f.label === "Score 70+ tier cap"));
+    assert.equal(result.tier, "A");
+    assert.ok(result.factors.some((f) => f.label === "High score band"));
   });
 
   test("mid-band score + thin signals → B (capped)", () => {
@@ -131,13 +131,13 @@ describe("assignNighthawkTier", () => {
     assert.ok(result.factors.some((f) => f.label === "Mid score band"));
   });
 
-  test("boundary: score exactly at top min (70) → top band, capped B", () => {
+  test("boundary: score exactly at top min (70) → top band, A with strong signals (PR-N15)", () => {
     const result = assignNighthawkTier({
       score: NH_SCORE_TOP_MIN,
       confirmingSignals: 5,
       earningsRisk: false,
     });
-    assert.equal(result.tier, "B");
+    assert.equal(result.tier, "A");
   });
 
   test("factors are populated for every input", () => {
@@ -214,15 +214,24 @@ describe("nhDisplayTierFor", () => {
 // ── measured inversion guard (the WHY of this engine) ───────────────────────────
 
 describe("overnight inversion guard", () => {
-  test("old A+ range (score 70+) can never get A — inversion is built in", () => {
+  test("PR-N15: top-band (70+) with strong signals CAN earn A — cap removed", () => {
     for (const score of [70, 75, 80, 85, 90, 95, 100]) {
       const result = assignNighthawkTier({
         score,
         confirmingSignals: 5,
         earningsRisk: false,
       });
-      assert.notEqual(result.tier, "A", `score ${score} must not earn A`);
+      assert.equal(result.tier, "A", `score ${score} should earn A with 5 confirming signals`);
     }
+  });
+
+  test("top-band (70+) with thin signals stays B — lower weight still disciplines", () => {
+    const result = assignNighthawkTier({
+      score: 80,
+      confirmingSignals: 1,
+      earningsRisk: false,
+    });
+    assert.equal(result.tier, "B");
   });
 
   test("old B range (score 40-54) CAN earn A with strong signals", () => {

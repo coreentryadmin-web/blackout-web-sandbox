@@ -202,23 +202,24 @@ export function buildDeterministicThesis(
   return { thesis: parts.join(" "), key_signal };
 }
 
-/** Build one PlaybookPlay from a scored candidate + its chain contract + resolved levels. */
+/** Build one PlaybookPlay from a scored candidate + resolved levels + optional chain contract.
+ *  PR-N15: contract is now optional — a strong stock setup publishes even when no affordable
+ *  option exists, instead of silently dropping the candidate. */
 function buildPlay(
   scored: ScoredCandidate,
   dossier: TickerDossier | undefined,
-  contract: PickedContract,
+  contract: PickedContract | null,
   levels: { entry_range: string; target: string; stop: string },
   rank: number
 ): PlaybookPlay {
   const { thesis, key_signal } = buildDeterministicThesis(scored, dossier);
-  const options_play = `${scored.ticker} ${contract.expiry} $${formatStrike(contract.strike)} ${contract.side.toUpperCase()} — entry prem ~$${contract.premium.toFixed(2)}`;
+  const options_play = contract
+    ? `${scored.ticker} ${contract.expiry} $${formatStrike(contract.strike)} ${contract.side.toUpperCase()} — entry prem ~$${contract.premium.toFixed(2)}`
+    : `${scored.ticker} — check option chain for suitable contract`;
   const base: PlaybookPlay = {
     rank,
     ticker: scored.ticker,
     direction: scored.direction === "short" ? "SHORT" : "LONG",
-    // PR-N7: conviction is now the tier-engine assignment, not the old mechanical score→letter
-    // mapping. The tier engine scores on band placement + signal breadth + earnings risk,
-    // with the measured overnight inversion (A+≥70 went 0/1) priced into the bands.
     conviction: assignNighthawkTier(nhTierInputFromScored(scored)).tier,
     play_type: "stock",
     thesis,
@@ -231,10 +232,10 @@ function buildPlay(
     flow_streak_days: dossier?.flow_streak?.streak_days ?? undefined,
     iv_rank: dossier?.iv_rank ?? undefined,
   };
-  // Reuse the Claude path's premium-cap stamping so entry_premium / entry_cost_per_contract /
-  // premium_cap_ok are populated identically. The contract was already screened ≤ cap by
-  // pickChainContract, so premium_cap_ok will be true — this just fills the display fields.
-  return applyPremiumCapToPlay(base, { entry_premium: contract.premium, options_play });
+  if (contract) {
+    return applyPremiumCapToPlay(base, { entry_premium: contract.premium, options_play });
+  }
+  return base;
 }
 
 /**
@@ -249,12 +250,14 @@ export function buildDeterministicEditionPlays(params: {
   dossierMap: Record<string, TickerDossier>;
   chains: Record<string, EditionChainData>;
   target?: number;
-}): { plays: PlaybookPlay[]; funnel: { candidates: number; contract_ok: number; geometry_ok: number; premium_ok: number; grounded: number; dropped_ungrounded: number } } {
+}): { plays: PlaybookPlay[]; funnel: { candidates: number; contract_ok: number; stock_only: number; geometry_ok: number; premium_ok: number; grounded: number; dropped_ungrounded: number } } {
   const target = params.target ?? DETERMINISTIC_EDITION_TARGET;
-  // Buffer past the target so grounding drops + sector-concentration + publish gates leave room.
-  const buffer = target + 6;
+  // PR-N15: increased buffer from target+6 to target+12 — with more candidates trying,
+  // grounding/sector-cap/publish-gate drops are absorbed without emptying the book.
+  const buffer = target + 12;
 
   let contractOk = 0;
+  let stockOnly = 0;
   let geometryOk = 0;
   let premiumOk = 0;
   const built: PlaybookPlay[] = [];
@@ -262,40 +265,85 @@ export function buildDeterministicEditionPlays(params: {
 
   for (const scored of params.ranked) {
     if (built.length >= buffer) break;
-    if (scored.trading_halt) continue; // never trade a halted name (mirrors rankCandidates' hard cut)
+    if (scored.trading_halt) continue;
     const ticker = scored.ticker.toUpperCase();
     const canon = canonicalTicker(ticker);
     if (selectedFamilies.has(canon)) continue;
     const chain = params.chains[ticker];
-    if (!chain) continue; // no chain ⇒ cannot ground an option ⇒ substitute the next-ranked candidate
     const dossier = params.dossierMap[ticker] ?? params.dossierMap[scored.ticker];
-    const contract = pickChainContract(chain, scored.direction);
-    if (!contract) continue; // no affordable liquid strike under the cap ⇒ skip honestly
-    contractOk += 1;
-    const levels = resolveLevels(dossier, scored.direction, chain.spot);
+    const spot = chain?.spot ?? dossier?.tech?.price ?? null;
+
+    // PR-N15: option contract is now OPTIONAL — a strong stock setup publishes even when
+    // no affordable option exists. The geometry gate is the only hard requirement.
+    const contract = chain ? pickChainContract(chain, scored.direction) : null;
+    if (contract) {
+      contractOk += 1;
+    } else {
+      // No chain or no affordable contract — still build as stock-only play
+      if (spot == null || !Number.isFinite(spot) || spot <= 0) continue;
+      stockOnly += 1;
+    }
+
+    const levels = resolveLevels(dossier, scored.direction, spot);
     const play = buildPlay(scored, dossier, contract, levels, built.length + 1);
-    // Premium cap: pickChainContract already enforced ≤ cap, but re-assert defensively.
-    if (play.premium_cap_ok === false) continue;
+
+    if (contract && play.premium_cap_ok === false) continue;
     premiumOk += 1;
-    // Publish-time geometry gate — the SAME gate the Claude path runs.
+
     if (!validatePlayGeometry(play).ok) continue;
     geometryOk += 1;
     built.push(play);
     selectedFamilies.add(canon);
   }
 
-  // Ground the survivors against the SAME chains + dossiers (reconciles premium to the live mark,
-  // re-checks the OI floor, traces levels to real structure). Drops any it cannot ground; keeps the
-  // rest re-ranked 1..N. By construction these are already grounded, so this is a belt-and-suspenders
-  // honesty check that also swaps in the live contract mark.
-  const { plays: grounded, summary } = groundPlays(built, params.chains, params.dossierMap);
-  const finalPlays = grounded.slice(0, target).map((p, i) => ({ ...p, rank: i + 1 }));
+  // Ground survivors that HAVE chain contracts (stock-only plays skip grounding since
+  // there's no contract to reconcile — their levels are already from real S/R data).
+  const withContract = built.filter((p) => p.entry_premium != null);
+  const stockOnlyPlays = built.filter((p) => p.entry_premium == null);
+  const { plays: grounded, summary } = groundPlays(withContract, params.chains, params.dossierMap);
+
+  // Merge grounded option plays + stock-only plays, sorted by score descending
+  const merged = [...grounded, ...stockOnlyPlays].sort(
+    (a, b) => (b.score ?? 0) - (a.score ?? 0)
+  );
+
+  // PR-N15: directional diversity — if all plays are the same direction and we have room,
+  // ensure at least one contrarian play for hedge/balance. A 5-play all-LONG book in a
+  // bullish market leaves members with zero downside protection.
+  let finalPlays = merged.slice(0, target);
+  if (finalPlays.length >= 4) {
+    const dirs = new Set(finalPlays.map((p) => p.direction));
+    if (dirs.size === 1) {
+      const dominant = finalPlays[0]!.direction;
+      const oppositeDir = dominant === "LONG" ? "short" : "long";
+      for (const scored of params.ranked) {
+        if (scored.trading_halt) continue;
+        if (scored.direction !== oppositeDir) continue;
+        const t = scored.ticker.toUpperCase();
+        if (selectedFamilies.has(canonicalTicker(t))) continue;
+        const ch = params.chains[t];
+        const dos = params.dossierMap[t] ?? params.dossierMap[scored.ticker];
+        const sp = ch?.spot ?? dos?.tech?.price ?? null;
+        if (sp == null || !Number.isFinite(sp) || sp <= 0) continue;
+        const ctr = ch ? pickChainContract(ch, scored.direction) : null;
+        const lvl = resolveLevels(dos, scored.direction, sp);
+        const p = buildPlay(scored, dos, ctr, lvl, target);
+        if (!validatePlayGeometry(p).ok) continue;
+        // Replace the weakest same-direction play with this contrarian play
+        finalPlays[finalPlays.length - 1] = p;
+        break;
+      }
+    }
+  }
+
+  finalPlays = finalPlays.map((p, i) => ({ ...p, rank: i + 1 }));
 
   return {
     plays: finalPlays,
     funnel: {
       candidates: params.ranked.length,
       contract_ok: contractOk,
+      stock_only: stockOnly,
       geometry_ok: geometryOk,
       premium_ok: premiumOk,
       grounded: summary.grounded,
@@ -347,7 +395,7 @@ export function buildRescuePlays(params: {
       }
     } else {
       options_play = `${ticker} — check option chain for suitable contract`;
-      warnings.push("No affordable liquid option contract found under the $20/share cap — check the chain manually");
+      warnings.push(`No affordable liquid option contract found under the $${MAX_OPTION_PREMIUM_PER_SHARE}/share cap — check the chain manually`);
     }
 
     plays.push({

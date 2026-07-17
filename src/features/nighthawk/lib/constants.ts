@@ -71,8 +71,10 @@ export const DOSSIER_BATCH_SIZE = Math.max(
 export const DOSSIER_FETCH_TIMEOUT_MS = 8000;
 export const DOSSIER_INTER_BATCH_MS = 800;
 
-/** Max option entry premium per share — 1 standard contract (100 shares) ≤ $2,000. */
-export const MAX_OPTION_PREMIUM_PER_SHARE = 20;
+/** Max option entry premium per share — 1 standard contract (100 shares) ≤ $3,500.
+ *  Raised from $20 to $35 (PR-N15): the $20 cap blocked every ATM option on stocks above
+ *  ~$250, silently eliminating the strongest institutional-flow names from the playbook. */
+export const MAX_OPTION_PREMIUM_PER_SHARE = 35;
 export const MAX_OPTION_COST_PER_CONTRACT = MAX_OPTION_PREMIUM_PER_SHARE * 100;
 
 export const PLAYBOOK_PREMIUM_CAP_LINE = `Entry option premium MUST be ≤ $${MAX_OPTION_PREMIUM_PER_SHARE}/share (≤ $${MAX_OPTION_COST_PER_CONTRACT.toLocaleString()} per 1-lot contract). If no suitable contract exists under this cap, skip the ticker and substitute the next-ranked candidate.`;

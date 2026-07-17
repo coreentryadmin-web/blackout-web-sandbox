@@ -134,20 +134,18 @@ export function assignNighthawkTier(input: NighthawkTierInput): NighthawkTierAss
       detail: `Score ${Math.round(input.score)} is under ${NH_SCORE_PRIME_MIN} — below the measured viability threshold.`,
     });
   } else if (input.score >= NH_SCORE_TOP_MIN) {
+    // PR-N15: removed the B ceiling. The inversion data (0/1 on A+, −0.55% on A) came from
+    // a tiny sample — too small to justify permanently capping high-conviction plays. The
+    // lower point weight (W_NH_SCORE_TOP = 1 vs W_NH_SCORE_PRIME = 2) still discounts the
+    // band relative to the sweet spot, so the tier engine naturally prefers 40-55 without
+    // a hard ceiling that confuses members seeing "score 77, conviction B".
     points += W_NH_SCORE_TOP;
-    ceiling = nhCapTier(ceiling, "B");
     factors.push({
-      label: "Score 70+ (discounted)",
+      label: "High score band",
       direction: "up",
       detail:
-        `Score ${Math.round(input.score)} counts as mid-band positive — the measured overnight top-band ` +
-        "inversion (A+ ≥70 went 0/1, A 55-69 avg −0.55%) means raw-score maximalism is not earned credit.",
-    });
-    factors.push({
-      label: "Score 70+ tier cap",
-      direction: "down",
-      detail:
-        "Score ≥70 caps the tier at B — A-tier must come through the 40-55 prime band where the measured edge lives.",
+        `Score ${Math.round(input.score)} — strong confluence. Weighted below the 40-55 prime band ` +
+        "but not capped; tier depends on signal breadth.",
     });
   } else if (input.score >= NH_SCORE_PRIME_MIN && input.score < NH_SCORE_PRIME_MAX) {
     points += W_NH_SCORE_PRIME;
