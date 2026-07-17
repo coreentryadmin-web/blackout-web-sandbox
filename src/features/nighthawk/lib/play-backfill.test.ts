@@ -55,7 +55,7 @@ test("pickAffordableChainContract: short picks put side", () => {
 test("pickAffordableChainContract: returns null when no affordable liquid contracts", () => {
   const expensive: EditionChainData = {
     spot: 205,
-    rows: rows.map((r) => ({ ...r, call_ask: 25, put_ask: 25 })),
+    rows: rows.map((r) => ({ ...r, call_ask: 40, put_ask: 40 })),
   };
   assert.equal(pickAffordableChainContract("NET", "long", expensive), null);
 });

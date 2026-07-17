@@ -178,7 +178,7 @@ export async function generateEditionPlays(params: {
     stageRejected: stageRejected.length ? stageRejected : undefined,
     funnel: {
       parsed: detFunnel.candidates,
-      stock: detFunnel.contract_ok,
+      stock: detFunnel.contract_ok + detFunnel.stock_only,
       geometry_ok: detFunnel.geometry_ok,
       premium_ok: detFunnel.premium_ok,
       strike_ok: detFunnel.contract_ok,
