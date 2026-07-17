@@ -15,6 +15,7 @@ import { LARGO_TOOL_DEFS, getToolsForIntent } from "@/lib/largo/tool-defs";
 import { runLargoTool } from "@/lib/largo/run-tool";
 import { bieFollowups, bieIntentBucket, classifyBieIntent, classifyBieStagingFallback, isSpxDeskFallbackQuestion, type BieRoute } from "@/lib/bie/router";
 import { composeBieAnswer, composeCompound } from "@/lib/bie/composers";
+import { prefetchLargoLiveFeed } from "@/lib/bie/largo-live-prefetch";
 import type { BieAnswerEnvelope } from "@/lib/bie/answer-envelope";
 import { isRichBieEnvelope } from "@/lib/bie/envelope-richness";
 import { isCompoundQuestion } from "@/lib/bie/decompose";
@@ -393,6 +394,7 @@ export async function runLargoQuery(
   envelope?: BieAnswerEnvelope;
 }> {
   const startedAt = Date.now();
+  await prefetchLargoLiveFeed();
   // Layer 3 first: deterministic BLACKOUT Intelligence answer when the question
   // maps onto platform truth — instant, free, traceable by construction.
   const routed = await tryBieRoute(question);
@@ -565,6 +567,7 @@ export async function runLargoQueryStream(
   onEvent: (event: LargoStreamEvent) => void
 ): Promise<void> {
   const startedAt = Date.now();
+  await prefetchLargoLiveFeed();
   const routed = await tryBieRoute(question);
   if (routed) {
     const rsid = sessionId.trim() || `web-${userId}-${Date.now()}`;
