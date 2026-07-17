@@ -18,6 +18,7 @@ import {
   type HelixTableDensity,
 } from "@/features/helix/lib/helix-table-columns";
 import { daysToExpiry } from "@/features/helix/lib/helix-flow-format";
+import { findMatchingFlow, mergeFlowAlerts } from "@/features/helix/lib/helix-flow-merge";
 import { FlowBrief } from "@/features/helix/components/FlowBrief";
 import { NetPremiumLeaderboard } from "@/features/helix/components/NetPremiumLeaderboard";
 import { StrikeStackDetector } from "@/features/helix/components/StrikeStackDetector";
@@ -459,7 +460,11 @@ export function FlowFeed() {
   const loadFlows = useCallback(async () => {
     const generation = ++loadGenerationRef.current;
     try {
-      const d = await fetchFlows({ min_premium: Math.max(FLOOR_PREMIUM, minPremium), ticker: tickerFilter || undefined });
+      const d = await fetchFlows({
+        limit: 1000,
+        min_premium: Math.max(FLOOR_PREMIUM, minPremium),
+        ticker: tickerFilter || undefined,
+      });
       if (generation !== loadGenerationRef.current) return;
       // Bug 1 + gap #13: rebuild seenRef from REST so SSE can't re-add duplicates after a
       // reconnect. Seed BOTH the canonical alert_id (when the row carries one) and the
@@ -503,7 +508,15 @@ export function FlowFeed() {
           const entries = Array.from(seenRef.current);
           seenRef.current = new Set(entries.slice(-1000));
         }
-        setAlerts((prev) => [alert, ...prev]);
+        setAlerts((prev) => {
+          const idx = findMatchingFlow(prev, alert);
+          if (idx >= 0) {
+            const merged = mergeFlowAlerts(alert, prev[idx]);
+            const rest = prev.filter((_, i) => i !== idx);
+            return [merged, ...rest];
+          }
+          return [alert, ...prev];
+        });
         setLive(true);
         // Bug 14: play beep for whale prints when audio is enabled
         if (audioEnabledRef.current && alert.premium >= 1_000_000) playWhaleBeep();
@@ -653,13 +666,13 @@ export function FlowFeed() {
           </button>
         </div>
       )}
-      <HighScorePrints alerts={alerts} loading={loading} onSelect={setSelectedContract} />
+      <HighScorePrints alerts={displayAlerts} loading={loading} onSelect={setSelectedContract} />
       <div className="helix-analytics-wide">
-        <NetPremiumLeaderboard alerts={alerts} loading={loading} />
+        <NetPremiumLeaderboard alerts={displayAlerts} loading={loading} />
       </div>
-      <ExpiryConcentration alerts={alerts} loading={loading} />
+      <ExpiryConcentration alerts={displayAlerts} loading={loading} />
       <div className="helix-analytics-wide">
-        <StrikeStackDetector alerts={alerts} onSelectTicker={setSelectedTicker} />
+        <StrikeStackDetector alerts={displayAlerts} onSelectTicker={setSelectedTicker} />
       </div>
       <DarkPoolPanel />
       {showMorePanels && (
@@ -671,10 +684,10 @@ export function FlowFeed() {
             onTickerClick={setSelectedTicker}
           />
           <SplitFlowRadar entries={splitFlowEntries} onTickerClick={setSelectedTicker} />
-          <RouteBreakdown alerts={alerts} loading={loading} />
+          <RouteBreakdown alerts={displayAlerts} loading={loading} />
           <SectorFlowPanel entries={sectorFlowEntries} />
           <div className="helix-analytics-wide">
-            <FlowMomentumChart alerts={alerts} />
+            <FlowMomentumChart alerts={displayAlerts} />
           </div>
         </>
       )}

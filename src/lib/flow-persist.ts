@@ -5,6 +5,7 @@ import type { MarketFlowAlert } from "@/lib/providers/unusual-whales";
 import { shouldFanOut } from "@/lib/flow-fanout";
 import { flowFallbackAlertId } from "@/lib/flow-alert-id";
 import { markFlowFrameDelivered } from "@/lib/flow-liveness";
+import { extractChainFieldsFromRaw } from "@/lib/flow-raw-fields";
 
 /**
  * SSE row shape published to the live tape. Extends FlowRow with the canonical
@@ -132,7 +133,11 @@ export async function persistAndPublishFlowAlert(
     return null;
   })();
 
-  const event: PublishedFlowRow = { ...toFlowRow(flow), alert_id: id };
+  const event: PublishedFlowRow = {
+    ...toFlowRow(flow),
+    alert_id: id,
+    ...extractChainFieldsFromRaw(raw, flow),
+  };
   event.event_at = realCreatedAt;
   // alerted_at drives the live tape's sort + LIVE badge. Use the REAL UW time
   // (realCreatedAt) when known; otherwise leave it null so the UI excludes the row

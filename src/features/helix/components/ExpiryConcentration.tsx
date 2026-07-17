@@ -3,6 +3,7 @@
 import { useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { fmtPremium, type FlowAlert } from "@/lib/api";
+import { daysToExpiry } from "@/features/helix/lib/helix-flow-format";
 import { Panel } from "@/components/ui";
 
 type Bucket = { label: string; callPremium: number; putPremium: number; total: number; callPct: number; count: number };
@@ -17,13 +18,10 @@ function bucketLabel(dte: number): string {
 export function ExpiryConcentration({ alerts, loading }: { alerts: FlowAlert[]; loading: boolean }) {
   const buckets = useMemo(() => {
     if (!alerts.length) return [];
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
     const map = new Map<string, { callPremium: number; putPremium: number; count: number }>();
 
     for (const a of alerts) {
-      const expDate = new Date(a.expiry + "T00:00:00");
-      const dte = a.dte ?? Math.max(0, Math.floor((expDate.getTime() - today.getTime()) / 86_400_000));
+      const dte = a.dte ?? daysToExpiry(a.expiry);
       const label = bucketLabel(dte);
       const cur = map.get(label) ?? { callPremium: 0, putPremium: 0, count: 0 };
       if (a.option_type === "CALL") cur.callPremium += a.premium;

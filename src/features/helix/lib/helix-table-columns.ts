@@ -39,7 +39,7 @@ export const HELIX_TABLE_COLUMNS: HelixColumnDef[] = [
   {
     id: "time",
     label: "Time",
-    hint: "Seconds since the print hit the tape",
+    hint: "Print time in US Eastern (MM/DD/YYYY - HH:MM)",
     group: "print",
     sortKey: "time",
     density: "essential",
