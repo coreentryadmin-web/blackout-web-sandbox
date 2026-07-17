@@ -917,13 +917,11 @@ export function scoreCandidate(
   // PR-N27: when flow is ambiguous (thin margin), let technicals disambiguate direction.
   // A 55/45 call/put split is noise, not conviction — defer to the structural trend.
   let direction = flow.direction;
-  let directionFlippedByTech = false;
   if (!flow.directionFlippedBySkew && flow.flowMargin < 0.25 && tech?.trend) {
     const techDir: "long" | "short" | null =
       tech.trend === "bearish" ? "short" : tech.trend === "bullish" ? "long" : null;
     if (techDir && techDir !== direction) {
       direction = techDir;
-      directionFlippedByTech = true;
     }
   }
 
