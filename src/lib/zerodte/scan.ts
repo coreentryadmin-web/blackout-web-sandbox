@@ -330,6 +330,20 @@ async function attachGateVerdicts(
       : new Map<string, { direction: string; edition_for: string }>(),
   ]);
 
+  // Pre-warm the vector-full-state cache for fresh (non-committed) tickers so the
+  // sequential Cortex evaluation below hits warm reads (~200ms) instead of cold
+  // computes (4-6s). Without this, fetchVectorFullState inside fetchCortexInputs
+  // routinely exceeds the per-source timeout, killing 3/8 Cortex sources (gex-walls,
+  // wall-trend, darkpool-confluence) and producing near-empty evidence composites.
+  if (freshTickers.length > 0) {
+    try {
+      const { fetchVectorFullState } = await import("@/lib/bie/vector-full-state");
+      await Promise.allSettled(freshTickers.map((t) => fetchVectorFullState(t, "0dte")));
+    } catch {
+      // Pre-warm is best-effort — Cortex still runs with cold reads and the timeout
+    }
+  }
+
   // Setups arrive score-ranked, so the concurrency budget goes to the best finds:
   // committedThisCycle carries earlier accepted fresh commits within this same pass
   // (both for the cap and the correlated-conflict check).
