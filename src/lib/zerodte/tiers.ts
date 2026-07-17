@@ -74,6 +74,9 @@ export type ZeroDteTierInput = {
   cortexScore: number | null;
   cortexVetoCount: number | null;
   cortexSupportCount: number | null;
+  /** How many Cortex sources reported absent (timed out / unavailable).
+   *  Null = unknown (pre-C-2 rows). Used for the thin-evidence cap. */
+  cortexAbsentCount: number | null;
   /** Day-open I:VIX (entry_context.vix_open). */
   vixOpen: number | null;
   /** ET minutes since midnight at commit (from committed_at_et). */
@@ -149,6 +152,12 @@ export const W_CORTEX_POSITIVE = 1;
  *  on retro rows it is a measured strike against the play. */
 export const W_CORTEX_NEGATIVE = -2;
 export const CORTEX_CLEAN_MIN_SUPPORTS = 2;
+
+/** When this many or more Cortex sources were absent (timed out / unavailable),
+ *  the evidence layer is too thin for A-tier — cap at B regardless of score.
+ *  8 total sources; 6+ absent means ≤2 answered, which is below the threshold
+ *  where multi-source corroboration is meaningful. */
+export const CORTEX_THIN_EVIDENCE_MAX_ABSENT = 6;
 
 /** Committed before 11:00 ET: F-4 — the first ~hour is the weakest window on every
  *  surface with data (0DTE 9:50-11:00 → 36.8% WR n=19; hour-9 signals 36.1% n=147
@@ -271,9 +280,6 @@ export function assignZeroDteTier(input: ZeroDteTierInput): ZeroDteTierAssignmen
   // ── Cortex evidence (what lets a mid-band score outrank a raw 85+) ────────────
   const vetoes = input.cortexVetoCount ?? 0;
   if (vetoes > 0) {
-    // A vetoed setup should never have committed post-#318 — but retro rows and
-    // future policy drift both exist, and a standing veto is disqualifying for
-    // any advertised quality above C regardless of what else looked good.
     ceiling = capTier(ceiling, "C");
     factors.push({
       label: "Cortex veto",
@@ -308,6 +314,20 @@ export function assignZeroDteTier(input: ZeroDteTierInput): ZeroDteTierAssignmen
     });
   }
   // cortexScore === 0: sources answered and exactly cancelled — a wash, zero points.
+
+  // Thin-evidence cap: when most Cortex sources were absent, the composite is
+  // too sparse for A-tier confidence even if the few answering sources are positive.
+  const absent = input.cortexAbsentCount ?? 0;
+  if (absent >= CORTEX_THIN_EVIDENCE_MAX_ABSENT && input.cortexScore != null) {
+    ceiling = capTier(ceiling, "B");
+    factors.push({
+      label: "Cortex thin evidence",
+      direction: "down",
+      detail:
+        `${absent} of 8 Cortex sources were absent — too few answered for A-tier confidence ` +
+        "(multi-source corroboration requires breadth, not just a thin positive).",
+    });
+  }
 
   // ── Entry window (F-4) ─────────────────────────────────────────────────────────
   if (input.committedEtMinutes == null) {
@@ -397,12 +417,14 @@ export function tierFromEntryContext(
   let cortexScore: number | null = null;
   let cortexVetoCount: number | null = null;
   let cortexSupportCount: number | null = null;
+  let cortexAbsentCount: number | null = null;
   const cortex = ctx.cortex;
   if (cortex != null && typeof cortex === "object" && (cortex as Record<string, unknown>).abstained === false) {
     const c = cortex as Record<string, unknown>;
     cortexScore = num(c.score);
     cortexVetoCount = Array.isArray(c.vetoes) ? c.vetoes.length : null;
     cortexSupportCount = Array.isArray(c.supports) ? c.supports.length : null;
+    cortexAbsentCount = Array.isArray(c.absent) ? c.absent.length : null;
   }
 
   // committed_at_et is "YYYY-MM-DD HH:mm ET" (entry-context.ts formatEtStamp) —
@@ -419,6 +441,7 @@ export function tierFromEntryContext(
     cortexScore,
     cortexVetoCount,
     cortexSupportCount,
+    cortexAbsentCount,
     vixOpen: num(ctx.vix_open),
     committedEtMinutes,
   });

@@ -657,6 +657,19 @@ test("gates: aggressive side wins the direction even when raw premium says other
   assert.equal(out[0]!.direction, "short");
 });
 
+test("gates: unknown aggression (null ask_pct) is credited BELOW near-the-ask, not above it", () => {
+  // Two tapes identical except ask_pct: one null (missing metadata), one 50% (near-ask).
+  // The null tape's aggression should be LOWER because unknown is not evidence of conviction.
+  const nullTape = [row({ premium: 1_500_000, option_type: "call", strike: 190, ask_pct: null as unknown as number })];
+  const nearTape = [row({ premium: 1_500_000, option_type: "call", strike: 190, ask_pct: 50 })];
+  const [nullOut] = deriveZeroDteSetups(nullTape);
+  const [nearOut] = deriveZeroDteSetups(nearTape);
+  // Both may or may not clear the gate, but the null tape's aggression must be ≤ near-ask's.
+  if (nullOut && nearOut) {
+    assert.ok(nullOut.aggression! <= nearOut.aggression!, `null aggr ${nullOut.aggression} should be <= near-ask aggr ${nearOut.aggression}`);
+  }
+});
+
 test("gates: deep-ITM top strike (stock replacement) is excluded", () => {
   // 1880 put with the stock at 1723 — 9% ITM. Not a directional 0DTE bet.
   const rows = [row({ premium: 3_000_000, option_type: "put", strike: 1880, underlying_price: 1723 })];

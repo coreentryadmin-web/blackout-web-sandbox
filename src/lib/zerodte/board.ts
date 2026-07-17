@@ -223,7 +223,7 @@ export const SETUP_MAX_ITM_PCT = 2;
  *  At/near the ask = conviction buying; bid-side = sold premium (opposite intent);
  *  unknown = partial credit so thin metadata doesn't zero the board. */
 function aggressionWeight(askPct: number | null | undefined): number {
-  if (askPct == null || !Number.isFinite(askPct)) return 0.7;
+  if (askPct == null || !Number.isFinite(askPct)) return 0.5;
   if (askPct >= 60) return 1;
   if (askPct >= 45) return 0.6;
   return 0.15;

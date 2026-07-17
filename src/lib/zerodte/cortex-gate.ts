@@ -34,6 +34,7 @@
 import {
   composeCortexEvidence,
   fetchCortexInputs,
+  CORTEX_SOURCES,
   type CortexConviction,
   type CortexDirection,
   type CortexInputs,
@@ -41,6 +42,15 @@ import {
   type EvidenceItem,
 } from "@/lib/nighthawk/cortex";
 import type { ZeroDteGateBlock } from "./gates";
+
+/** When most sources are absent (fewer than this many answered), require a
+ *  higher net score to PASS. A thin +0.1 from 2 sources is not the same
+ *  confidence as +0.1 from 6 — without this floor a near-empty composite
+ *  slides through identically to a well-corroborated one. */
+export const THIN_EVIDENCE_MIN_SOURCES = 3;
+/** The score floor applied when evidence is thin (< THIN_EVIDENCE_MIN_SOURCES
+ *  answered). Must be strictly positive — a thin wash (0) should not pass. */
+export const THIN_EVIDENCE_SCORE_FLOOR = 0.5;
 
 /** What the Cortex layer decided about a gate-surviving find. */
 export type ZeroDteCortexDecision = "PASS" | "VETO" | "NET_NEGATIVE" | "ABSTAIN";
@@ -80,6 +90,12 @@ function topEvidenceLines(items: EvidenceItem[], n: number): string[] {
  * table in the module doc). ABSTAIN is detected from the verdict itself: zero
  * vetoes/supports/opposes means NO source answered (every one reported absent),
  * which is "the Cortex cannot see", not "the Cortex sees nothing wrong".
+ *
+ * THIN-EVIDENCE GATE (added 2026-07-17): when fewer than THIN_EVIDENCE_MIN_SOURCES
+ * answered, the score must clear THIN_EVIDENCE_SCORE_FLOOR to PASS. Live RTH
+ * data showed 5/7 sources regularly timing out, yielding composites like +0.1
+ * from 2 sources that passed identically to +2.5 from 6 — a false confidence
+ * the system cannot afford on 0DTE entries.
  */
 export function assessCortexVerdict(verdict: CortexVerdict): ZeroDteCortexAssessment {
   if (verdict.vetoes.length === 0 && verdict.supports.length === 0 && verdict.opposes.length === 0) {
@@ -92,11 +108,16 @@ export function assessCortexVerdict(verdict: CortexVerdict): ZeroDteCortexAssess
     };
   }
   if (verdict.vetoes.length > 0) return { decision: "VETO", abstained: false, verdict };
-  // Net-negative evidence blocks even with gates green (design §2): score is the
-  // bounded modifier on the commit decision, never a mutation of the setup's own
-  // displayed score. Net-zero is NOT net-negative — evidence that exactly cancels
-  // is a wash, and a wash never overrules gates that already said yes.
   if (verdict.score < 0) return { decision: "NET_NEGATIVE", abstained: false, verdict };
+
+  // Thin-evidence gate: few sources answered → require a meaningful positive
+  // score, not just a bare non-negative. The number of answering sources is
+  // total minus absent (each absent source is listed by ID in verdict.absent).
+  const answering = CORTEX_SOURCES.length - verdict.absent.length;
+  if (answering < THIN_EVIDENCE_MIN_SOURCES && verdict.score < THIN_EVIDENCE_SCORE_FLOOR) {
+    return { decision: "NET_NEGATIVE", abstained: false, verdict };
+  }
+
   return { decision: "PASS", abstained: false, verdict };
 }
 

@@ -66,10 +66,13 @@ import type {
   CortexWallTrendSlice,
 } from "./types";
 
-/** Per-read timeout. 2.5s: the Cortex runs on scan-tick survivors — a single slow
- *  provider must degrade that source to absent, never stall the scanner. Every
- *  reader here is Redis-cache-first, so 2.5s is generous for the healthy path. */
-export const CORTEX_SOURCE_TIMEOUT_MS = 2_500;
+/** Per-read timeout. 5s: live measurement (2026-07-17 RTH) showed 5/7 sources
+ *  timing out at 2.5s — fetchVectorFullState alone feeds 3 sources (gex-walls,
+ *  wall-trend, darkpool-confluence) and routinely needs 3-4s on a cold read.
+ *  All 10 reads fan out via Promise.allSettled, so wall-clock is the max single
+ *  read, not cumulative. 5s keeps the scanner responsive while letting real
+ *  data land instead of producing near-empty composites. */
+export const CORTEX_SOURCE_TIMEOUT_MS = 5_000;
 
 /** How many recent HELIX prints to pull — matches ecosystem-context's own
  *  FLOW_FULL_STATE_LIMIT (one ticker's recent tape, not the whole platform). */
