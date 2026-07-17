@@ -8,7 +8,7 @@ import {
   type AnthropicSystemBlock,
   type AnthropicToolLoopEvent,
 } from "@/lib/providers/anthropic";
-import { claudeEnabled, isStagingBieMode, largoAvailable, largoBieOnly } from "@/lib/ai-env";
+import { claudeEnabled, isStagingBieMode, largoAvailable, largoBieOnly, largoClaudeEnabled, largoSkipBieRouter } from "@/lib/ai-env";
 import { dbConfigured, insertBieInteraction } from "@/lib/db";
 import { LARGO_SYSTEM_PROMPT } from "@/lib/largo/system-prompt";
 import { LARGO_TOOL_DEFS, getToolsForIntent } from "@/lib/largo/tool-defs";
@@ -93,7 +93,7 @@ export async function generateLargoFollowups(
   answer: string,
   tickerHint?: string | null
 ): Promise<string[]> {
-  if (!claudeEnabled() || !answer.trim()) return [];
+  if (!largoClaudeEnabled() || !answer.trim()) return [];
   const focus = tickerHint ? ` The current focus is ${tickerHint}.` : "";
   const prompt = `You generate follow-up questions for Largo, an institutional options/markets AI desk.${focus}
 
@@ -111,6 +111,7 @@ Write exactly 3 follow-up questions the member would most naturally ask NEXT —
       temperature: 0.7,
       timeoutMs: 12_000,
       maxRetries: 1,
+      aiGate: "largo",
     });
     if (!out) return [];
     return out
@@ -169,7 +170,7 @@ export function largoDataSources(): {
     uw: uwConfigured(),
     postgres: dbConfigured(),
     web_search: webSearchConfigured(),
-    anthropic: claudeEnabled(),
+    anthropic: largoClaudeEnabled(),
   };
 }
 
@@ -418,9 +419,8 @@ export async function runLargoQuery(
 }> {
   const startedAt = Date.now();
   await prefetchLargoLiveFeed();
-  // Layer 3 first: deterministic BLACKOUT Intelligence answer when the question
-  // maps onto platform truth — instant, free, traceable by construction.
-  const routed = await tryBieRoute(question);
+  // Layer 3: deterministic BIE when router matches — skipped when staging runs Claude-only Largo.
+  const routed = largoSkipBieRouter() ? null : await tryBieRoute(question);
   if (routed) {
     const sid = sessionId.trim() || `web-${userId}-${Date.now()}`;
     const ctxNumbers = collectContextNumbers(routed.context);
@@ -473,7 +473,7 @@ export async function runLargoQuery(
     );
   }
 
-  if (!claudeEnabled()) {
+  if (!largoClaudeEnabled()) {
     throw new Error("Largo requires Anthropic — not configured in this environment.");
   }
 
@@ -500,6 +500,7 @@ export async function runLargoQuery(
       maxRetries: 1,
       // Cache the stable Largo system prompt — saves ~50% on system-token cost for repeat calls.
       cacheSystem: true,
+      aiGate: "largo",
       runTool: async (name, input) => {
         toolsUsed.push(name);
         const result = await runLargoTool(name, input, userId);
@@ -605,7 +606,9 @@ export async function runLargoQueryStream(
   });
   routeTicker.start();
   await prefetchLargoLiveFeed({ onStatus: emitStatus });
-  const routed = await tryBieRoute(question, { onStatus: emitStatus, userId });
+  const routed = largoSkipBieRouter()
+    ? null
+    : await tryBieRoute(question, { onStatus: emitStatus, userId });
   routeTicker.stop();
   if (routed) {
     const rsid = sessionId.trim() || `web-${userId}-${Date.now()}`;
@@ -657,7 +660,7 @@ export async function runLargoQueryStream(
     return;
   }
 
-  if (!claudeEnabled()) {
+  if (!largoClaudeEnabled()) {
     onEvent({
       type: "error",
       message: "Largo requires Anthropic — not configured in this environment.",
@@ -694,7 +697,8 @@ export async function runLargoQueryStream(
       maxRetries: 1,
       // Cache the stable Largo system prompt — saves ~50% on system-token cost for repeat calls.
       cacheSystem: true,
-      // Forward tool_start live (deterministic tool names, safe to show as soon as Largo starts
+      aiGate: "largo",
+      // Forward tool_start live
       // pulling data — feeds the "thinking" tool-trace UI). Deliberately DROP raw "token" text
       // deltas here: audit finding — streaming the model's free text live meant a fabricated
       // strike/premium could be read and acted on before the Layer-4 verifier below ever ran.
