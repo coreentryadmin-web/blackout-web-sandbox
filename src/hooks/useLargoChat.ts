@@ -29,6 +29,7 @@ export type LargoMessage = {
 };
 
 const TOOL_LABEL: Record<string, string> = {
+  blackout_intelligence: "BLACKOUT Intelligence",
   live_feed_capture: "live desk feed",
   get_spx_structure: "SPX desk",
   get_spx_confluence: "confluence engine",

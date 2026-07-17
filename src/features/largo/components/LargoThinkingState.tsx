@@ -2,23 +2,9 @@
 
 import { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import { LARGO_CLIENT_FALLBACK_PHRASES } from "@/lib/bie/largo-status";
 
-export const LARGO_THINKING_PHRASES = [
-  "Pulling the live tape…",
-  "Reading dealer gamma…",
-  "Cross-referencing flow against GEX…",
-  "Cortex is lining up the evidence…",
-  "Talking to HELIX — largest prints this session…",
-  "Vector Pulse — diffing wall transitions…",
-  "Syncing the SPX Slayer desk…",
-  "Running confluence on your ask…",
-  "Stress-testing your thesis…",
-  "Mapping gamma walls in real time…",
-  "Redis warm · RDS online · feeds live…",
-  "Unusual Whales on speed-dial…",
-  "Polygon chain geometry loading…",
-  "Building the read — this one's worth the wait…",
-] as const;
+export const LARGO_THINKING_PHRASES = LARGO_CLIENT_FALLBACK_PHRASES;
 
 const PIPELINE_NODES = [
   { label: "TAPE", color: "cyan" },

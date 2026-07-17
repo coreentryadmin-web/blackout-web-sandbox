@@ -1,5 +1,4 @@
 import {
-  anthropicConfigured,
   anthropicText,
   anthropicToolLoop,
   COMMENTARY_MODEL,
@@ -8,18 +7,19 @@ import {
   type AnthropicSystemBlock,
   type AnthropicToolLoopEvent,
 } from "@/lib/providers/anthropic";
-import { claudeEnabled, isStagingBieMode, largoAvailable, largoBieOnly, largoClaudeEnabled, largoSkipBieRouter } from "@/lib/ai-env";
-import { dbConfigured, insertBieInteraction } from "@/lib/db";
+import { largoAvailable, largoBieOnly, largoClaudeEnabled } from "@/lib/ai-env";
+import { dbConfigured } from "@/lib/db";
 import { LARGO_SYSTEM_PROMPT } from "@/lib/largo/system-prompt";
 import { LARGO_TOOL_DEFS, getToolsForIntent } from "@/lib/largo/tool-defs";
 import { runLargoTool } from "@/lib/largo/run-tool";
-import { bieFollowups, bieIntentBucket, classifyBieIntent, classifyBieStagingFallback, isSpxDeskFallbackQuestion, type BieRoute } from "@/lib/bie/router";
-import { composeBieAnswer, composeCompound } from "@/lib/bie/composers";
-import { prefetchLargoLiveFeed } from "@/lib/bie/largo-live-prefetch";
-import { createLargoStatusTicker, largoRouteStatus } from "@/lib/bie/largo-status";
+import { resolveLargoBieRoute } from "@/lib/largo/turn-pipeline";
+import {
+  applyVerificationCaveat,
+  finalizeBieRoutedTurn,
+  logClaudeTurn,
+  persistClaudeTurn,
+} from "@/lib/largo/turn-outcome";
 import type { BieAnswerEnvelope } from "@/lib/bie/answer-envelope";
-import { isRichBieEnvelope } from "@/lib/bie/envelope-richness";
-import { isCompoundQuestion } from "@/lib/bie/decompose";
 import { collectContextNumbers, verifyClaims, type ClaimVerification } from "@/lib/bie/verifier";
 import { resetLargoSpxDeskCache } from "@/lib/largo/spx-desk-cache";
 import {
@@ -35,7 +35,6 @@ import { polygonConfigured, uwConfigured } from "@/lib/providers/config";
 import { webSearchConfigured } from "@/lib/providers/web-search";
 import { todayEtYmd } from "@/lib/providers/spx-session";
 import { searchKnowledge } from "@/lib/bie/knowledge";
-import { readZeroDteLedger } from "@/lib/zerodte/scan";
 
 const MAX_HISTORY = 28;
 
@@ -250,157 +249,6 @@ async function prepareLargoTurn(
   return { sid, history, system, filteredTools, toolsUsed, tickerHint: intent.tickerHint ?? null };
 }
 
-/** BLACKOUT Intelligence router — answers deterministically when the question maps
- *  onto platform truth (0DTE plays, SPX structure, market context). Returns null on
- *  no-match or ANY error: the Claude fallback is never blocked by the router.
- *  readZeroDteLedger is a static import (was a dynamic import("@/lib/zerodte/scan"))
- *  — a real, pre-existing bug found while fixing task #103's own tests: that dynamic
- *  alias import silently threw under Node 20 + node:test's module mocking (never
- *  reaching mock.module("./zerodte/scan", ...) in largo-terminal.test.ts), was caught
- *  by this function's own broad catch, and made tryBieRoute return null unconditionally
- *  — i.e. the deterministic router path was untestable, not "broken in production."
- *  Node/webpack-bundled production code has no such ambiguity (the "@/" alias is
- *  resolved at BUILD time, not by Node's runtime ESM loader), so this was invisible
- *  until largo-terminal.test.ts (this file's first-ever test) exercised it under CI's
- *  Node 20. See logBie's doc comment below for the identical root cause on the DB write. */
-
-function composerFailedMessage(route: BieRoute): string {
-  const t = route.ticker?.toUpperCase() || "that ticker";
-  const intent = route.intent.replace(/_/g, " ");
-  return (
-    `I matched your question to a **${intent}** read` +
-    (route.ticker ? ` for **${t}**` : "") +
-    `, but I couldn't compose the answer right now — the data may be temporarily unavailable. ` +
-    `Try again in a moment, or rephrase your question.`
-  );
-}
-
-async function tryBieRoute(
-  question: string,
-  opts?: { onStatus?: (message: string) => void; userId?: string }
-): Promise<{ route: BieRoute; answer: string; context: unknown; envelope: BieAnswerEnvelope | null } | null> {
-  try {
-    const ledger = await readZeroDteLedger().catch(() => []);
-    const ledgerTickers = new Set(ledger.map((r) => r.ticker));
-
-    // COMPOUND (task #57): a message that decomposes into ≥2 sub-questions is answered by fanning
-    // the EXISTING single-intent friends out in parallel and synthesizing one labeled answer. Gated
-    // tightly — isCompoundQuestion returns true ONLY for a confident multi-question message, so a
-    // normal single question falls straight through to the unchanged path below (no regression).
-    if (isCompoundQuestion(question)) {
-      opts?.onStatus?.("Decomposing compound question — parallel fan-out…");
-      const composed = await composeCompound(question, ledgerTickers);
-      if (composed) {
-        return {
-          route: { intent: "compound_lookup", ticker: null },
-          answer: composed.answer,
-          context: composed.context,
-          envelope: composed.envelope ?? null,
-        };
-      }
-    }
-
-    const route = classifyBieIntent(question, ledgerTickers);
-    if (route) {
-      opts?.onStatus?.(largoRouteStatus(route));
-      const composed = await composeBieAnswer(route, {
-        question,
-        onStatus: opts?.onStatus,
-        userId: opts?.userId,
-      });
-      if (composed) return { route, answer: composed.answer, context: composed.context, envelope: composed.envelope ?? null };
-      // Router matched but composer returned null (threw internally). Return an honest
-      // "can't read this right now" instead of falling through to the Claude tool-loop
-      // which only has SPX context — that path would silently answer a SPY/QQQ/NVDA
-      // question with SPX data (RTH 2026-07-16 Largo hardcore regression).
-      return {
-        route,
-        answer: composerFailedMessage(route),
-        context: { reason: "composer_returned_null", route },
-        envelope: null,
-      };
-    }
-
-    // BIE-only staging: broad SPX asks that missed the router still get the Live Desk brief.
-    if (!route && isSpxDeskFallbackQuestion(question)) {
-      opts?.onStatus?.("Broad SPX ask — routing to Live Desk brief…");
-      const composed = await composeBieAnswer({ intent: "spx_desk_read", ticker: "SPX" }, {
-        question,
-        onStatus: opts?.onStatus,
-        userId: opts?.userId,
-      });
-      if (composed) {
-        return {
-          route: { intent: "spx_desk_read", ticker: "SPX" },
-          answer: composed.answer,
-          context: composed.context,
-          envelope: composed.envelope ?? null,
-        };
-      }
-    }
-
-    // BIE-only (staging default or LARGO_BIE_ONLY=1): never return null — compose deterministically.
-    if (!route && largoBieOnly()) {
-      const fallback = classifyBieStagingFallback(question);
-      opts?.onStatus?.(largoRouteStatus(fallback));
-      const composed = await composeBieAnswer(fallback, {
-        question,
-        onStatus: opts?.onStatus,
-        userId: opts?.userId,
-      });
-      if (composed) {
-        return { route: fallback, answer: composed.answer, context: composed.context, envelope: composed.envelope ?? null };
-      }
-      const clarify = await composeBieAnswer({ intent: "clarify_read", ticker: null }, {
-        question,
-        onStatus: opts?.onStatus,
-        userId: opts?.userId,
-      });
-      if (clarify) {
-        return {
-          route: { intent: "clarify_read", ticker: null },
-          answer: clarify.answer,
-          context: clarify.context,
-          envelope: clarify.envelope ?? null,
-        };
-      }
-    }
-
-    return null;
-  } catch {
-    return null;
-  }
-}
-
-function logBie(row: {
-  user_id: string | null;
-  question: string;
-  intent: string | null;
-  answer_source: string;
-  claims_total: number | null;
-  claims_verified: number | null;
-  latency_ms: number | null;
-  // Task #103 — groundwork for #112's self-eval loop, which needs to know what
-  // ACTUALLY happened on a turn: the real tool names invoked (empty for the
-  // deterministic router path, which never calls a tool) and the router's
-  // decided bucket (see bieIntentBucket() — the intent name, or
-  // "claude_fallback"). Every call site below passes both; this function is a
-  // pure pass-through so the mapping logic lives in one tested place.
-  tools_used: string[];
-  intent_bucket: string;
-}): void {
-  if (!dbConfigured()) return;
-  // Static import (not a dynamic import("@/lib/db")): under Node 20 + node:test's
-  // --experimental-test-module-mocks, a dynamic alias import from inside a mocked module
-  // graph fails to resolve to mock.module("./db", ...) — it silently misses the mock
-  // (previously swallowed by a .catch here) and this write never lands, timing out any
-  // caller awaiting it. Node 22 doesn't have this issue, which is why it was invisible
-  // until largo-terminal.test.ts (this file's first-ever test coverage) exercised it
-  // under CI's Node 20. Same fix already applied to spx-play-outcomes.ts's write-path
-  // functions earlier in this sweep — a static top-of-file import instead.
-  void insertBieInteraction(row).catch(() => {});
-}
-
 export async function runLargoQuery(
   question: string,
   sessionId: string,
@@ -418,52 +266,23 @@ export async function runLargoQuery(
   envelope?: BieAnswerEnvelope;
 }> {
   const startedAt = Date.now();
-  await prefetchLargoLiveFeed();
-  // Layer 3: deterministic BIE when router matches — skipped when staging runs Claude-only Largo.
-  const routed = largoSkipBieRouter() ? null : await tryBieRoute(question);
+  const routed = await resolveLargoBieRoute({ question, userId });
   if (routed) {
-    const sid = sessionId.trim() || `web-${userId}-${Date.now()}`;
-    const ctxNumbers = collectContextNumbers(routed.context);
-    const verification = verifyClaims(routed.answer, ctxNumbers);
-    await appendLargoMessage(sid, userId, "user", question);
-    // Persist the composer's own source payload (routed.context) as this turn's
-    // tool_results — the router never calls a Largo *tool*, but composeBieAnswer()
-    // (bie/composers.ts) still reads real platform state (SPX desk, market context,
-    // 0DTE board) to build the answer, and that payload is exactly the ground truth
-    // largo-verifier.ts's nightly grounding audit needs. Wrapped in a single-element
-    // array to match the tool_results column's shape (an array of per-call results) —
-    // collectContextNumbers() recurses through objects/arrays identically either way,
-    // so this doesn't change what numbers are considered "grounded" for THIS turn's
-    // in-line verification above; it only makes the same payload durable for later
-    // audit (task #166 — previously omitted here by explicit prior design, which left
-    // the entire router/composer path with zero nightly-audit coverage; see
-    // largo-store.ts's fetchRecentLargoAnswersWithResults doc comment).
-    await appendLargoMessage(sid, userId, "assistant", routed.answer, ["blackout_intelligence"], [
-      routed.context,
-    ]);
-    logBie({
-      user_id: userId,
+    const result = await finalizeBieRoutedTurn({
+      sessionId,
+      userId,
       question,
-      intent: routed.route.intent,
-      answer_source: "bie-router",
-      claims_total: verification.total,
-      claims_verified: verification.verified,
-      latency_ms: Date.now() - startedAt,
-      // The router path never invokes a Largo tool — it composes straight from
-      // platform truth, so the only "tool" is the router itself.
-      tools_used: ["blackout_intelligence"],
-      intent_bucket: bieIntentBucket(routed.route.intent),
+      routed,
+      startedAt,
     });
     return {
-      answer: routed.answer,
-      session_id: sid,
-      source: "blackout-intelligence",
-      tools_used: ["blackout_intelligence"],
-      followups: bieFollowups(routed.route.intent),
-      verification,
-      // Attach the structured envelope ONLY when it's genuinely rich — a trivial string leg's shim
-      // envelope is dropped here so the client renders `answer` markdown, never a hollow card.
-      envelope: isRichBieEnvelope(routed.envelope) ? routed.envelope ?? undefined : undefined,
+      answer: result.answer,
+      session_id: result.session_id,
+      source: result.source,
+      tools_used: result.tools_used,
+      followups: result.followups,
+      verification: result.verification,
+      envelope: result.envelope,
     };
   }
 
@@ -483,8 +302,6 @@ export async function runLargoQuery(
     userId
   );
 
-  // Layer 4: capture every tool result Claude sees so the answer's numeric claims
-  // can be verified against the turn's actual source data.
   const capturedResults: unknown[] = [];
 
   try {
@@ -495,10 +312,8 @@ export async function runLargoQuery(
       model: LARGO_MODEL,
       maxTokens: 4096,
       maxRounds: 12,
-      // Per-round timeout so a single slow round falls back to partial text instead of 500ing (#77 E).
       timeoutMs: 60_000,
       maxRetries: 1,
-      // Cache the stable Largo system prompt — saves ~50% on system-token cost for repeat calls.
       cacheSystem: true,
       aiGate: "largo",
       runTool: async (name, input) => {
@@ -513,36 +328,12 @@ export async function runLargoQuery(
       answer?.trim() ||
       "I couldn't pull enough live data to answer that — try naming a ticker or asking about SPX structure.";
 
-    // Layer 4 verification: every numeric claim vs the turn's source data (tool
-    // results + the history the model was shown). Heavily-unverified answers get
-    // an explicit caution — uncertainty stated, never fake precision.
     const ctxNumbers = collectContextNumbers([capturedResults, history.map((h) => h.content)]);
     const verification = verifyClaims(text, ctxNumbers);
-    if (verification.total >= 4 && verification.coverage < 0.5) {
-      text += `\n\n_BIE verification: ${verification.total - verification.verified} of ${verification.total} figures in this answer could not be traced to data pulled this turn — treat those specific numbers with caution._`;
-    }
-    logBie({
-      user_id: userId,
-      question,
-      intent: null,
-      answer_source: "claude",
-      claims_total: verification.total,
-      claims_verified: verification.verified,
-      latency_ms: Date.now() - startedAt,
-      // Real tool names dispatched this turn (deduped — same set persisted a few
-      // lines below via appendLargoMessage) — never null/claude_fallback's raw
-      // "no tools" here, since the Claude path can (and usually does) call tools.
-      tools_used: Array.from(new Set(toolsUsed)),
-      intent_bucket: bieIntentBucket(null),
-    });
+    text = applyVerificationCaveat(text, verification);
 
-    // Persist the completed turn now that the model produced an answer: user
-    // first, then assistant, so role alternation is always intact (LARGO-3).
-    // capturedResults is the ground truth largo-verifier.ts's grounding engine needed but
-    // never had — persisted alongside the answer so a later audit can trace this turn's
-    // numeric claims back to real tool-call data instead of only a fixture self-test.
-    await appendLargoMessage(sid, userId, "user", question);
-    await appendLargoMessage(sid, userId, "assistant", text, Array.from(new Set(toolsUsed)), capturedResults);
+    logClaudeTurn({ userId, question, toolsUsed, verification, startedAt });
+    await persistClaudeTurn({ sessionId: sid, userId, question, answer: text, toolsUsed, capturedResults });
 
     const followups = await generateLargoFollowups(question, text, tickerHint);
 
@@ -555,28 +346,13 @@ export async function runLargoQuery(
       verification,
     };
   } catch (error) {
-    // Task #165 — this try block previously had ONLY a finally, no catch: any throw out of
-    // anthropicToolLoop (a tool-loop timeout, an Anthropic API error, a runTool throw, etc.)
-    // propagated straight past logBie() to the caller (route.ts's POST handler, which just
-    // 502s), so a failed turn left NO row in bie_interactions at all. Every calibration cohort
-    // in bie/calibration.ts computes grounding_pass_rate_pct/router_match_rate_pct only over
-    // rows that exist, so a spike in tool-loop failures — exactly when trust in the platform is
-    // most at risk — was completely invisible to every report. Log a minimal failure row here:
-    // claims are explicitly null (not 0) because a turn that never produced an answer has no
-    // claims to have verified — 0 would falsely read as "verified none of the claims," a
-    // different and wrong statement. Then RETHROW the original error unchanged so the caller's
-    // existing error handling (the 502 response) is completely untouched — this is a pure
-    // additive logging side effect, never a swallow.
-    logBie({
-      user_id: userId,
+    logClaudeTurn({
+      userId,
       question,
-      intent: null,
-      answer_source: "error",
-      claims_total: null,
-      claims_verified: null,
-      latency_ms: Date.now() - startedAt,
-      tools_used: Array.from(new Set(toolsUsed)),
-      intent_bucket: bieIntentBucket(null),
+      toolsUsed,
+      verification: { total: 0, verified: 0, coverage: 1, unverified: [] },
+      startedAt,
+      answerSource: "error",
     });
     throw error;
   } finally {
@@ -599,51 +375,26 @@ export async function runLargoQueryStream(
     }
   };
 
-  const routeTicker = createLargoStatusTicker({
-    phase: "route",
-    onStatus: emitStatus,
-    intervalMs: 1_100,
-  });
-  routeTicker.start();
-  await prefetchLargoLiveFeed({ onStatus: emitStatus });
-  const routed = largoSkipBieRouter()
-    ? null
-    : await tryBieRoute(question, { onStatus: emitStatus, userId });
-  routeTicker.stop();
+  const routed = await resolveLargoBieRoute({ question, userId, onStatus: emitStatus });
   if (routed) {
-    const rsid = sessionId.trim() || `web-${userId}-${Date.now()}`;
-    const ctxNumbers = collectContextNumbers(routed.context);
-    const verification = verifyClaims(routed.answer, ctxNumbers);
-    await appendLargoMessage(rsid, userId, "user", question);
-    // Same tool_results persistence as the non-streaming router branch above (task
-    // #166) — see that branch's comment for the full rationale.
-    await appendLargoMessage(rsid, userId, "assistant", routed.answer, ["blackout_intelligence"], [
-      routed.context,
-    ]);
-    logBie({
-      user_id: userId,
+    const result = await finalizeBieRoutedTurn({
+      sessionId,
+      userId,
       question,
-      intent: routed.route.intent,
-      answer_source: "bie-router",
-      claims_total: verification.total,
-      claims_verified: verification.verified,
-      latency_ms: Date.now() - startedAt,
-      // Same reasoning as the non-streaming runLargoQuery router branch above.
-      tools_used: ["blackout_intelligence"],
-      intent_bucket: bieIntentBucket(routed.route.intent),
+      routed,
+      startedAt,
     });
     try {
-      onEvent({ type: "token", text: routed.answer } as LargoStreamEvent);
+      onEvent({ type: "token", text: result.answer } as LargoStreamEvent);
       onEvent({
         type: "done",
-        answer: routed.answer,
-        session_id: rsid,
-        source: "blackout-intelligence",
-        tools_used: ["blackout_intelligence"],
-        followups: bieFollowups(routed.route.intent),
-        verification,
-        // Same rich-only gate as the non-streaming path — the client consumer branches on this.
-        envelope: isRichBieEnvelope(routed.envelope) ? routed.envelope ?? undefined : undefined,
+        answer: result.answer,
+        session_id: result.session_id,
+        source: result.source,
+        tools_used: result.tools_used,
+        followups: result.followups,
+        verification: result.verification,
+        envelope: result.envelope,
       } as LargoStreamEvent);
     } catch {
       // client disconnected — turn already persisted
@@ -698,12 +449,7 @@ export async function runLargoQueryStream(
       // Cache the stable Largo system prompt — saves ~50% on system-token cost for repeat calls.
       cacheSystem: true,
       aiGate: "largo",
-      // Forward tool_start live
-      // pulling data — feeds the "thinking" tool-trace UI). Deliberately DROP raw "token" text
-      // deltas here: audit finding — streaming the model's free text live meant a fabricated
-      // strike/premium could be read and acted on before the Layer-4 verifier below ever ran.
-      // anthropicToolLoop's own resolved return value still carries the full text regardless of
-      // which events are forwarded, so nothing here affects what `answer` receives below.
+      // Forward tool_start only — verified full text emitted once below.
       onEvent: (event) => {
         if (event.type === "tool_start") emit(event);
       },
@@ -724,38 +470,13 @@ export async function runLargoQueryStream(
     // an explicit caution — uncertainty stated, never fake precision.
     const ctxNumbers = collectContextNumbers([capturedResults, history.map((h) => h.content)]);
     const verification = verifyClaims(text, ctxNumbers);
-    if (verification.total >= 4 && verification.coverage < 0.5) {
-      text += `\n\n_BIE verification: ${verification.total - verification.verified} of ${verification.total} figures in this answer could not be traced to data pulled this turn — treat those specific numbers with caution._`;
-    }
-    logBie({
-      user_id: userId,
-      question,
-      intent: null,
-      answer_source: "claude",
-      claims_total: verification.total,
-      claims_verified: verification.verified,
-      latency_ms: Date.now() - startedAt,
-      // Same reasoning as the non-streaming runLargoQuery Claude branch above.
-      tools_used: Array.from(new Set(toolsUsed)),
-      intent_bucket: bieIntentBucket(null),
-    });
+    text = applyVerificationCaveat(text, verification);
 
-    // Persist the completed turn now that the model produced an answer: user
-    // first, then assistant, so role alternation is always intact (LARGO-3).
-    // capturedResults is the ground truth largo-verifier.ts's grounding engine needed but
-    // never had — persisted alongside the answer so a later audit can trace this turn's
-    // numeric claims back to real tool-call data instead of only a fixture self-test.
-    await appendLargoMessage(sid, userId, "user", question);
-    await appendLargoMessage(sid, userId, "assistant", text, Array.from(new Set(toolsUsed)), capturedResults);
+    logClaudeTurn({ userId, question, toolsUsed, verification, startedAt });
+    await persistClaudeTurn({ sessionId: sid, userId, question, answer: text, toolsUsed, capturedResults });
 
-    // Dynamic, conversation-aware follow-up prompts (fail-open → []). Generated after the
-    // answer is persisted so a follow-up hiccup can never lose the turn.
     const followups = await generateLargoFollowups(question, text, tickerHint);
 
-    // Deliver the fully-verified text in one shot — mirrors the BIE-router fast path a few
-    // lines up (which also emits one token event with its whole answer before "done"), rather
-    // than the raw incremental stream this branch used to forward live. Verification has
-    // already run against the complete answer by this point (audit fix, see onEvent above).
     emit({ type: "token", text } as LargoStreamEvent);
     emit({
       type: "done",
@@ -776,16 +497,13 @@ export async function runLargoQueryStream(
     // emitting the error event, so the write is attempted even if the client has already gone
     // away by the time emit() throws. Purely additive: the error event still fires exactly as
     // before, nothing here changes what the client sees.
-    logBie({
-      user_id: userId,
+    logClaudeTurn({
+      userId,
       question,
-      intent: null,
-      answer_source: "error",
-      claims_total: null,
-      claims_verified: null,
-      latency_ms: Date.now() - startedAt,
-      tools_used: Array.from(new Set(toolsUsed)),
-      intent_bucket: bieIntentBucket(null),
+      toolsUsed,
+      verification: { total: 0, verified: 0, coverage: 1, unverified: [] },
+      startedAt,
+      answerSource: "error",
     });
     try {
       onEvent({ type: "error", message });

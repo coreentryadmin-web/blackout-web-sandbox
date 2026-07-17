@@ -76,6 +76,15 @@ const INTENT_LINES: Partial<Record<string, string[]>> = {
   platform_read: ["Platform vitals — sockets · crons · health…"],
 };
 
+/** Client-side fallback when no server status or tool trace yet. */
+export const LARGO_CLIENT_FALLBACK_PHRASES = [
+  "Spinning up the intelligence stack…",
+  "Syncing Polygon tape with the desk…",
+  "Pulling Unusual Whales flow into cache…",
+  "HELIX tape indexing in the background…",
+  "Building the read — this one's worth the wait…",
+] as const;
+
 /** One status line for the current phase (optionally intent-scoped). */
 export function pickLargoStatusLine(opts: {
   phase: LargoStatusPhase;
@@ -86,21 +95,6 @@ export function pickLargoStatusLine(opts: {
   const pool = intentPool?.length ? intentPool : GLOBAL_LINES[opts.phase];
   const idx = (opts.index ?? 0) % pool.length;
   return pool[idx] ?? GLOBAL_LINES.prefetch[0]!;
-}
-
-/** Friendly label for SSE tool-trace chips (BIE path). */
-export function largoStatusSourceLabel(source: string): string {
-  const map: Record<string, string> = {
-    polygon: "Polygon",
-    unusual_whales: "Unusual Whales",
-    redis: "Redis cache",
-    rds: "RDS",
-    cortex: "Cortex",
-    helix: "HELIX",
-    thermal: "Thermal",
-    internal_api: "platform API",
-  };
-  return map[source] ?? source.replace(/_/g, " ");
 }
 
 /** Rotate status messages on an interval until `stop()` — for long prefetch/enrich waits. */
