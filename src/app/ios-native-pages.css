@@ -186,29 +186,34 @@ html.ios-app.ios-native-shell[data-ios-route="flows"] .helix-page-shell-native.p
 }
 
 html.ios-app.ios-native-shell[data-ios-route="flows"] .helix-page-content-native {
-  padding-bottom: calc(var(--ios-tab-offset, 0px) + 0.35rem) !important;
+  padding-bottom: calc(var(--ios-tab-offset, 0px) + 0.25rem) !important;
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
 }
 
 html.ios-app.ios-native-shell[data-ios-route="flows"] .helix-page-inner-native {
-  padding: calc(var(--ios-header-offset) + 0.35rem) 0.65rem 0;
+  padding: calc(var(--ios-header-offset) + 0.15rem) 0.65rem 0;
 }
 
 html.ios-app.ios-native-shell[data-ios-route="flows"] .helix-native-tide {
+  margin-bottom: 0.25rem;
+  padding: 0.25rem 0.45rem;
   border-radius: var(--ios-panel-radius);
-  padding: 0.35rem 0.5rem;
   background: var(--ios-surface-2);
   border: 1px solid rgba(255, 255, 255, 0.06);
 }
 
 html.ios-app.ios-native-shell[data-ios-route="flows"] .helix-desk {
-  gap: var(--ios-content-gap);
+  gap: 0.45rem;
 }
 
 html.ios-app.ios-native-shell[data-ios-route="flows"] .helix-ios-toolbar {
   position: static;
   top: auto;
-  margin: 0.35rem 0;
-  padding: 0.5rem;
+  margin: 0.2rem 0;
+  padding: 0.4rem;
   border-radius: var(--ios-panel-radius);
 }
 
@@ -223,7 +228,7 @@ html.ios-app.ios-native-shell[data-ios-route="flows"] .helix-ios-toolbar > butto
 }
 
 html.ios-app.ios-native-shell[data-ios-route="flows"] .flow-scroll-max {
-  max-height: calc(100dvh - var(--ios-header-offset) - var(--ios-tab-offset) - 11rem);
+  max-height: calc(100dvh - var(--ios-header-offset) - var(--ios-tab-offset) - 8.5rem);
 }
 
 html.ios-app.ios-native-shell[data-ios-route="flows"] .flow-panel {

@@ -16952,10 +16952,57 @@ body::before {
 
   /* ── HELIX Pro — professional desk chrome ─────────────────────────────── */
 
-  /* Framed page header — a clear bottom rule + breathing room separates the
-     title block from the toolbar/tape beneath it (was floating, unframed). */
+  /* Page shell — flex-fill so the tape grid eats all remaining viewport height. */
+  .helix-pro-shell.page-shell {
+    display: flex;
+    flex-direction: column;
+    min-height: 100dvh;
+  }
+
+  .helix-pro-shell .helix-page-content {
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+    min-height: 0;
+    width: 100%;
+  }
+
+  /* Framed page header — compact row pinned under the fixed nav on scroll. */
   .helix-pro-header {
     @apply flex flex-col gap-4 pb-4 border-b border-white/[0.06] lg:flex-row lg:items-end lg:justify-between;
+  }
+
+  .helix-pro-header--compact {
+    position: sticky;
+    top: var(--nav-offset);
+    z-index: 30;
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    padding: 0.35rem 0 0.45rem;
+    margin-bottom: 0.15rem;
+    background: rgba(4, 4, 7, 0.94);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+  }
+
+  .helix-pro-header-brand {
+    @apply flex items-center gap-2 min-w-0 shrink-0;
+  }
+
+  .helix-pro-title--compact {
+    @apply text-lg md:text-xl;
+    line-height: 1;
+    text-shadow: 0 0 18px rgba(191, 95, 255, 0.18);
+  }
+
+  .helix-pro-tide--compact {
+    @apply py-1.5 px-2.5 rounded-lg gap-2;
+    flex: 1 1 auto;
+    min-width: 0;
+    max-width: min(100%, 42rem);
+    justify-content: flex-end;
   }
 
   .helix-pro-header-copy {
@@ -17191,23 +17238,25 @@ body::before {
   }
 
   .helix-pro-disclaimer {
-    @apply font-mono text-[9px] text-sky-300/45 text-center pt-1;
+    @apply font-mono text-[9px] text-sky-300/45 text-center pt-0.5 shrink-0;
   }
 
   /* ── HELIX terminal table (dense institutional tape) ───────────────────── */
 
   .helix-page-shell .helix-page-inner {
     display: flex;
+    flex: 1 1 auto;
     flex-direction: column;
-    min-height: calc(100dvh - var(--nav-offset) - 10rem);
+    min-height: 0;
+    margin-top: 0;
   }
 
   .helix-pro-desk {
-    @apply flex flex-col gap-3 flex-1 min-h-0;
+    @apply flex flex-col gap-2 flex-1 min-h-0;
   }
 
   .helix-desk-terminal {
-    @apply flex flex-1 flex-col min-h-0 gap-3;
+    @apply flex flex-1 flex-col min-h-0 gap-2;
   }
 
   .helix-desk-terminal-grid {
@@ -17219,7 +17268,7 @@ body::before {
     overflow: hidden;
   }
 
-  /* Laptop: stack tape above analytics — side-by-side was crushing tape to ~280px */
+  /* Laptop: stack tape above analytics — flex split gives tape the majority of height */
   @media (max-width: 1279px) {
     .helix-desk-terminal-grid {
       flex-direction: column;
@@ -17228,13 +17277,15 @@ body::before {
 
     .helix-desk-tape-col {
       flex: 1 1 auto;
-      min-height: min(58vh, 540px);
-      max-height: min(62vh, 580px);
+      min-height: 0;
+      max-height: none;
     }
 
     .helix-desk-analytics-rail {
       width: 100%;
-      max-height: min(42vh, 420px);
+      flex: 0 1 min(36vh, 380px);
+      min-height: 12rem;
+      max-height: min(40vh, 400px);
       overflow-x: hidden;
       overflow-y: auto;
       display: flex;
@@ -17248,8 +17299,9 @@ body::before {
   @media (min-width: 1280px) {
     .helix-desk-terminal-grid {
       flex-direction: row;
-      min-height: min(78vh, calc(100dvh - var(--nav-offset) - 11rem));
-      max-height: min(78vh, calc(100dvh - var(--nav-offset) - 11rem));
+      flex: 1 1 auto;
+      min-height: 0;
+      max-height: none;
     }
   }
 
@@ -17272,9 +17324,10 @@ body::before {
     .helix-desk-analytics-rail {
       flex: 1 1 50%;
       min-width: 0;
+      min-height: 0;
       overflow-y: auto;
       overflow-x: hidden;
-      max-height: min(78vh, calc(100dvh - var(--nav-offset) - 11rem));
+      max-height: none;
       display: flex;
       flex-direction: column;
       gap: 0.75rem;
@@ -17488,8 +17541,9 @@ body::before {
 
   @media (min-width: 1280px) {
     .helix-desk-terminal-grid--tape-max {
-      min-height: min(82vh, calc(100dvh - var(--nav-offset) - 10rem));
-      max-height: min(82vh, calc(100dvh - var(--nav-offset) - 10rem));
+      flex: 1 1 auto;
+      min-height: 0;
+      max-height: none;
     }
   }
 
@@ -18095,7 +18149,12 @@ body::before {
   .helix-page-shell.ios-native-page-helix {
     display: flex;
     flex-direction: column;
-    min-height: calc(100dvh - var(--nav-offset));
+    min-height: 100dvh;
+  }
+
+  .helix-page-shell-native.helix-pro-shell .helix-page-content-native {
+    flex: 1 1 auto;
+    min-height: 0;
   }
 
   .ios-desk-shell.ios-native-page-helix .helix-desk-terminal,
