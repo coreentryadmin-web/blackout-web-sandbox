@@ -9,8 +9,8 @@ goes here — not scattered `.md` files at the repo root, not a second `audits/`
 > back app routes (e.g. `src/lib/api-provider-catalog.ts`) are **code**, not docs — they should be
 > regenerated from `BLACKOUT_API_REFERENCE.md`, not hand-edited.
 
-History: consolidated 2026-06-24. Older scattered audit piles were removed or moved to
-[`archive/2026-06/`](archive/2026-06/) (recoverable from git history if ever needed).
+History: consolidated 2026-06-24. The June 2026 audit pile was removed from the tree in 2026-07
+(see [`archive/README.md`](archive/README.md) — recover from git history if needed).
 
 ---
 
@@ -46,7 +46,7 @@ History: consolidated 2026-06-24. Older scattered audit piles were removed or mo
 ### Archive (historical only)
 | File | What it is |
 |---|---|
-| [`archive/2026-06/`](archive/2026-06/) | Pre-launch master audits, CEO/CTO reports, June deep-dives — **not maintained**. |
+| [`archive/README.md`](archive/README.md) | Pointer — June 2026 audits removed from tree; use git history |
 
 ---
 
