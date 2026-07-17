@@ -4,6 +4,7 @@ import {
   buildDeterministicEditionPlays,
   pickChainContract,
   buildDeterministicThesis,
+  scoreContrarianHedge,
 } from "./deterministic-edition";
 import { validatePlayGeometry } from "./play-constraints";
 import { parsePlayLevels } from "./play-levels";
@@ -409,4 +410,129 @@ test("PR-N31: diversity swap does NOT fire when contrarian candidate is below DI
   assert.equal(plays.length, 5);
   const shorts = plays.filter((p) => p.direction === "SHORT");
   assert.equal(shorts.length, 0, "no SHORT should appear — score 15 is below hedge floor 20");
+});
+
+// ── PR-N32: Forced contrarian re-score ──────────────────────────────────────────────────────────
+
+test("PR-N32: scoreContrarianHedge re-scores a LONG candidate as SHORT with discounted flow", () => {
+  const original = scored("AAPL", "long", 72);
+  original.flow_score = 30;
+  original.regime_multiplier = 1.1;
+  const dos = dossier("AAPL", 150, {
+    tech: {
+      ticker: "AAPL",
+      price: 150,
+      trend: "bearish",
+      setup_tags: ["gap down"],
+      support_levels: [145],
+      resistance_levels: [155],
+      gap_zones: [],
+      breakout_zones: [],
+      prior_day: { high: 155, low: 145, close: 150 },
+      weekly: { high: null, low: null },
+      rsi14: 72,
+      rel_volume: 2.0,
+      atr14: 3,
+      vwap: 151,
+      ema20: 151,
+      ema50: 151,
+      ema200: 151,
+      summary: "test",
+    },
+  });
+  const contrarian = scoreContrarianHedge(original, dos, "short");
+  assert.equal(contrarian.direction, "short");
+  assert.equal(contrarian.flow_score, Math.round(30 * 0.3), "flow discounted by 0.3");
+  assert.ok(contrarian.score >= 0 && contrarian.score <= 100);
+  assert.ok(contrarian.tech_score > 0, "bearish tech should score positively for a short");
+});
+
+test("PR-N32: forced contrarian swap fires when ALL candidates are LONG and dossier supports a short", () => {
+  // 6 candidates ALL direction="long" — simulates a bull market where call flow dominates everything.
+  // Give one candidate (FF) bearish technicals so it re-scores well as a forced short.
+  const ranked = [
+    scored("AA", "long", 72),
+    scored("BB", "long", 68),
+    scored("CC", "long", 63),
+    scored("DD", "long", 58),
+    scored("EE", "long", 52),
+    scored("FF", "long", 48),
+  ];
+  // Give FF bearish technicals so forced-short re-score is viable
+  for (const r of ranked) r.flow_score = 20;
+
+  const chains: Record<string, any> = {};
+  const dossierMap: Record<string, any> = {};
+  for (const r of ranked) {
+    const spot = 100;
+    chains[r.ticker] = chainAround(spot);
+    dossierMap[r.ticker] = dossier(r.ticker, spot);
+  }
+  // Make FF have bearish technicals + overbought RSI for a plausible short re-score
+  dossierMap["FF"] = dossier("FF", 100, {
+    tech: {
+      ticker: "FF",
+      price: 100,
+      trend: "bearish",
+      setup_tags: ["gap down"],
+      support_levels: [95],
+      resistance_levels: [105],
+      gap_zones: [],
+      breakout_zones: [],
+      prior_day: { high: 105, low: 95, close: 100 },
+      weekly: { high: null, low: null },
+      rsi14: 72,
+      rel_volume: 2.0,
+      atr14: 3,
+      vwap: 101,
+      ema20: 101,
+      ema50: 101,
+      ema200: 101,
+      summary: "test",
+    },
+  });
+
+  const { plays } = buildDeterministicEditionPlays({ ranked, dossierMap, chains, target: 5 });
+  assert.equal(plays.length, 5);
+  const shorts = plays.filter((p) => p.direction === "SHORT");
+  assert.ok(shorts.length >= 1, `expected forced contrarian SHORT, got ${shorts.length} shorts`);
+  assert.ok(
+    shorts[0]!.gate_warnings?.some((w) => w.includes("Forced contrarian")),
+    "forced contrarian should have a gate_warning"
+  );
+  // The short should be in position 5 (last slot)
+  assert.equal(plays[4]!.direction, "SHORT", "contrarian hedge should be in the last slot");
+});
+
+test("PR-N32: forced contrarian does NOT fire when natural opposite-direction candidate exists", () => {
+  // FF is a natural short — Phase 1 should handle it, Phase 2 should never run
+  const ranked = [
+    scored("AA", "long", 72),
+    scored("BB", "long", 68),
+    scored("CC", "long", 63),
+    scored("DD", "long", 58),
+    scored("EE", "long", 52),
+    scored("FF", "short", 25),
+  ];
+  const chains: Record<string, any> = {};
+  const dossierMap: Record<string, any> = {};
+  for (const r of ranked) {
+    const spot = 100;
+    chains[r.ticker] = chainAround(spot);
+    dossierMap[r.ticker] = dossier(r.ticker, spot);
+  }
+
+  const { plays } = buildDeterministicEditionPlays({ ranked, dossierMap, chains, target: 5 });
+  assert.equal(plays.length, 5);
+  const shorts = plays.filter((p) => p.direction === "SHORT");
+  assert.ok(shorts.length >= 1);
+  assert.equal(shorts[0]!.ticker, "FF", "natural short FF should be used, not a forced contrarian");
+  assert.ok(
+    shorts[0]!.gate_warnings?.some((w) => w.includes("Hedge/contrarian")),
+    "should use Phase 1 hedge warning, not Phase 2 forced contrarian"
+  );
+  assert.ok(
+    !shorts[0]!.gate_warnings?.some((w) => w.includes("Forced contrarian")),
+    "should NOT have forced contrarian warning when natural opposite exists"
+  );
 });

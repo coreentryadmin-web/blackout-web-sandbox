@@ -26,6 +26,19 @@
 import type { EditionChainData, ChainStrikeRow } from "./option-chain-prompt";
 import type { TickerDossier } from "./dossier";
 import type { ScoredCandidate } from "./scorer";
+import {
+  scoreTechnicalSetup,
+  scoreOptionsPositioning,
+  scoreNewsCatalyst,
+  scoreSmartMoney,
+  scoreFundamentalTailwind,
+  scoreShortInterest,
+  scoreWallProximity,
+  scoreVexAlignment,
+  scoreCatalystAwareness,
+  scoreSkewConfirmation,
+  convictionFromScore,
+} from "./scorer";
 import { assignNighthawkTier, nhTierInputFromScored } from "./nighthawk-tiers";
 import type { PlaybookPlay } from "./types";
 import { buildDirectionalStockLevels, computeRiskReward } from "./play-levels";
@@ -37,6 +50,64 @@ import { todayEtYmd } from "@/lib/providers/spx-session";
 
 /** Default number of plays a full edition publishes. Mirrors the Claude path's top-5 shape. */
 export const DETERMINISTIC_EDITION_TARGET = 5;
+
+/** PR-N32: how many ranked candidates to consider for forced contrarian re-scoring. */
+const CONTRARIAN_POOL_SIZE = 10;
+/** PR-N32: flow score discount when direction is forced opposite to the flow. The flow
+ *  activity is real (liquidity/interest), but it's working AGAINST the contrarian thesis. */
+const CONTRARIAN_FLOW_DISCOUNT = 0.3;
+
+/**
+ * PR-N32: re-score a candidate in the opposite direction for the diversity hedge slot.
+ * Uses the individual scorer functions with the forced direction, discounting the flow
+ * component since the flow is against the contrarian thesis. Returns null if the dossier
+ * lacks the data needed to score (no tech, no chain, etc.).
+ */
+export function scoreContrarianHedge(
+  original: ScoredCandidate,
+  dossier: TickerDossier,
+  forcedDirection: "long" | "short",
+): ScoredCandidate {
+  const tech = dossier.tech ?? null;
+  const discountedFlow = Math.round(original.flow_score * CONTRARIAN_FLOW_DISCOUNT);
+  const techScore = scoreTechnicalSetup(tech, forcedDirection);
+  const posScore = scoreOptionsPositioning(dossier, forcedDirection);
+  const newsScore = scoreNewsCatalyst(dossier, forcedDirection);
+  const smartScore = scoreSmartMoney(dossier, forcedDirection);
+  const fundScore = scoreFundamentalTailwind(
+    dossier.fundamental_ratios, dossier.fundamental_signals, forcedDirection
+  );
+  const siScore = scoreShortInterest(dossier.short_days_to_cover, forcedDirection);
+  const wallScore = scoreWallProximity(dossier.positioning, forcedDirection);
+  const vexScore = scoreVexAlignment(dossier.positioning, forcedDirection);
+  const catalystResult = scoreCatalystAwareness(dossier.catalysts, forcedDirection);
+  const skewScore = scoreSkewConfirmation(dossier.risk_reversal_skew, forcedDirection);
+
+  const rawTotal = discountedFlow + techScore + posScore + newsScore + smartScore +
+    fundScore + siScore + wallScore + vexScore + catalystResult.score + skewScore;
+
+  const rm = original.regime_multiplier ?? 1;
+  const dampened = 1 + (rm - 1) * 0.5;
+  const score = Math.max(0, Math.min(100, Math.round(rawTotal * dampened)));
+
+  return {
+    ...original,
+    direction: forcedDirection,
+    score,
+    flow_score: discountedFlow,
+    tech_score: techScore,
+    pos_score: posScore,
+    news_score: newsScore,
+    smart_money_score: smartScore,
+    fundamental_score: fundScore,
+    short_interest_score: siScore,
+    wall_proximity_score: wallScore,
+    vex_alignment_score: vexScore,
+    catalyst_score: catalystResult.score,
+    catalyst_flags: catalystResult.flags,
+    conviction: convictionFromScore(score),
+  };
+}
 
 /** A contract chosen off the chain for a play, with the premium that will be shown to members. */
 type PickedContract = {
@@ -488,18 +559,24 @@ export function buildDeterministicEditionPlays(params: {
     (a, b) => (b.score ?? 0) - (a.score ?? 0)
   );
 
-  // PR-N15 + PR-N31: directional diversity — if all plays are the same direction and we have
-  // room, ensure at least one contrarian play for hedge/balance. A 5-play all-LONG book in a
-  // bullish market leaves members with zero downside protection. PR-N31: use DIVERSITY_HEDGE_FLOOR
-  // (20) instead of MIN_PUBLISH_SCORE (35) — in a one-directional market the normal floor blocks
-  // every contrarian candidate. The hedge slot also gets a gate_warning so members know it's a
-  // minority-view hedge, not a primary conviction play.
+  // PR-N15 + PR-N31 + PR-N32: directional diversity — if all plays are the same direction and
+  // we have room, ensure at least one contrarian play for hedge/balance.
+  //
+  // Phase 1 (N31): look for a natural opposite-direction candidate in the ranked pool.
+  // Phase 2 (N32): if no natural opposites exist (common in strong trends where flow dominates
+  // in one direction for every ticker), FORCE re-score the top candidates in the opposite
+  // direction using their dossier data. The flow component is discounted (flow is against the
+  // contrarian thesis), but tech/positioning/news/smart-money are honestly re-scored. The best
+  // forced contrarian above DIVERSITY_HEDGE_FLOOR gets the hedge slot.
   let finalPlays = merged.slice(0, target);
   if (finalPlays.length >= 4) {
     const dirs = new Set(finalPlays.map((p) => p.direction));
     if (dirs.size === 1) {
       const dominant = finalPlays[0]!.direction;
       const oppositeDir = dominant === "LONG" ? "short" : "long";
+      let diversitySwapped = false;
+
+      // Phase 1: natural opposite-direction candidates
       for (const scored of params.ranked) {
         if (scored.trading_halt) continue;
         if (scored.score < DIVERSITY_HEDGE_FLOOR) continue;
@@ -518,7 +595,60 @@ export function buildDeterministicEditionPlays(params: {
         hedgeWarnings.push(`Hedge/contrarian play (score ${scored.score}) — minority-view balance against ${dominant} book`);
         finalPlays[finalPlays.length - 1] = { ...p, gate_warnings: hedgeWarnings };
         console.info(`[nighthawk/edition] diversity swap: replaced #${finalPlays.length} with ${scored.ticker} ${oppositeDir} (score ${scored.score}) as hedge against all-${dominant} book`);
+        diversitySwapped = true;
         break;
+      }
+
+      // Phase 2 (PR-N32): forced contrarian re-score — no natural opposites found
+      if (!diversitySwapped) {
+        console.info(`[nighthawk/edition] no natural ${oppositeDir} candidates — trying forced contrarian re-score`);
+        let bestContrarian: { scored: ScoredCandidate; play: PlaybookPlay } | null = null;
+
+        // Use finalPlays families (not selectedFamilies) — a candidate ranked 6th that was
+        // built but didn't make the top-5 cut is a valid contrarian source. We only block
+        // tickers already appearing in the 5 plays the member sees.
+        const finalFamilies = new Set(finalPlays.map(p => canonicalTicker(p.ticker.toUpperCase())));
+        const contrarianCandidates = params.ranked
+          .filter(s => !s.trading_halt && !finalFamilies.has(canonicalTicker(s.ticker.toUpperCase())))
+          .slice(0, CONTRARIAN_POOL_SIZE);
+
+        for (const original of contrarianCandidates) {
+          const t = original.ticker.toUpperCase();
+          const dos = params.dossierMap[t] ?? params.dossierMap[original.ticker];
+          if (!dos) continue;
+          const ch = params.chains[t];
+          const sp = ch?.spot ?? dos?.tech?.price ?? null;
+          if (sp == null || !Number.isFinite(sp) || sp <= 0) continue;
+
+          const contrarian = scoreContrarianHedge(original, dos, oppositeDir as "long" | "short");
+          if (contrarian.score < DIVERSITY_HEDGE_FLOOR) continue;
+
+          const ctr = ch ? pickChainContract(ch, contrarian.direction) : null;
+          const lvl = resolveLevels(dos, contrarian.direction, sp);
+          const p = buildPlay(contrarian, dos, ctr, lvl, target);
+          if (!validatePlayGeometry(p).ok) continue;
+
+          if (!bestContrarian || contrarian.score > bestContrarian.scored.score) {
+            bestContrarian = { scored: contrarian, play: p };
+          }
+        }
+
+        if (bestContrarian) {
+          const { scored: cScored, play: cPlay } = bestContrarian;
+          const hedgeWarnings = cPlay.gate_warnings ? [...cPlay.gate_warnings] : [];
+          hedgeWarnings.push(
+            `Forced contrarian hedge (score ${cScored.score}) — re-scored in ${oppositeDir} direction as balance against all-${dominant} book`
+          );
+          finalPlays[finalPlays.length - 1] = { ...cPlay, gate_warnings: hedgeWarnings };
+          console.info(
+            `[nighthawk/edition] forced contrarian swap: replaced #${finalPlays.length} with ${cScored.ticker} ${oppositeDir} (contrarian score ${cScored.score}) as hedge against all-${dominant} book`
+          );
+          diversitySwapped = true;
+        }
+
+        if (!diversitySwapped) {
+          console.info(`[nighthawk/edition] forced contrarian: no candidates scored >= ${DIVERSITY_HEDGE_FLOOR} in ${oppositeDir} direction — all-${dominant} book accepted`);
+        }
       }
     }
   }
