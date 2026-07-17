@@ -24,12 +24,12 @@ export type InternalApiResult = {
   detail?: string;
 };
 
-/** Base URL for internal fetches — Railway internal, then app URL, then localhost dev. */
+/** Base URL for internal fetches — loopback on ECS (same task), then public app URL, then localhost dev. */
 function internalBase(): string {
   return (
     process.env.INTERNAL_API_BASE ||
-    process.env.RAILWAY_INTERNAL_CRON_BASE ||
     process.env.NEXT_PUBLIC_APP_URL ||
+    process.env.NEXT_PUBLIC_SITE_URL ||
     "http://127.0.0.1:3000"
   );
 }

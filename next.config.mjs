@@ -1,13 +1,12 @@
 /** @type {import('next').NextConfig} */
 
-// FIX 2: Resolve the specific Railway hostname at config-load time from the
-// RAILWAY_STATIC_URL env var (set automatically by Railway).  Fall back to
-// an explicit RAILWAY_HOSTNAME override for local / staging overrides.
-// Do NOT use the "**.railway.app" wildcard — that accepts every Railway app.
-const railwayHostname = (() => {
-  if (process.env.RAILWAY_HOSTNAME) return process.env.RAILWAY_HOSTNAME;
-  if (process.env.RAILWAY_STATIC_URL) {
-    try { return new URL(process.env.RAILWAY_STATIC_URL).hostname; } catch { /* malformed URL — ignore */ }
+// Optional image remote host — derived from NEXT_PUBLIC_SITE_URL or NEXT_IMAGE_REMOTE_HOST.
+const siteImageHostname = (() => {
+  const explicit = process.env.NEXT_IMAGE_REMOTE_HOST?.trim();
+  if (explicit) return explicit;
+  const site = process.env.NEXT_PUBLIC_SITE_URL?.trim();
+  if (site) {
+    try { return new URL(site).hostname; } catch { /* malformed URL — ignore */ }
   }
   return null;
 })();
@@ -59,11 +58,8 @@ const remotePatterns = [
   { protocol: "https", hostname: "images.unsplash.com" },
 ];
 
-// FIX 2: Only add Railway hostname when the env var is present so the wildcard
-// "**.railway.app" is never used.  Set RAILWAY_HOSTNAME or RAILWAY_STATIC_URL
-// in your Railway service variables to enable image proxying from that host.
-if (railwayHostname) {
-  remotePatterns.push({ protocol: "https", hostname: railwayHostname });
+if (siteImageHostname) {
+  remotePatterns.push({ protocol: "https", hostname: siteImageHostname });
 }
 
 import os from "os";

@@ -7,9 +7,9 @@
 // trading day, idempotent). fetchGexHeatmap then surfaces a `history_context` block on the payload
 // computed by diffing the live matrix vs the most recent prior-day snapshot.
 //
-// SCHEDULE (infra-owned — DO NOT edit railway config from here): this should fire ~4:10pm ET on
+// SCHEDULE (infra-owned — DO NOT edit EventBridge schedule in blackout-infra from here): this should fire ~4:10pm ET on
 // trading days, AFTER the close so the matrices reflect the settled book. Per the project's cron
-// convention the schedule REGISTRATION needs a per-service `railway.gex-eod-snapshot.toml` + a
+// convention the schedule REGISTRATION needs a per-service `EventBridge rule (blackout-infra/cron-jobs.json)` + a
 // `scripts/hit-cron.mjs` entry hitting `/api/cron/gex-eod-snapshot` with `Authorization: Bearer
 // ${CRON_SECRET}` (the same Bearer pattern this route authenticates with). Registering that
 // schedule is infra-owned and intentionally NOT done in this PR. The route also works on-demand —

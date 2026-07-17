@@ -1,12 +1,12 @@
 /**
- * Signal Observer cron — runs every 5 minutes during RTH (Railway schedule).
+ * Signal Observer cron — runs every 5 minutes during RTH (EventBridge schedule).
  * Captures a complete snapshot of all confluence signals at the current moment:
  * factor weights, raw market values, engine action, session window.
  * Also fills in 30-minute outcomes for earlier observations (did SPX move in
  * the predicted direction?) so we can measure per-signal predictive accuracy.
  *
  * Zero side effects on the play engine — computeSpxConfluence is purely functional.
- * Railway service: railway.spx-signal-observe.toml
+ * EventBridge rule: EventBridge rule (blackout-infra/cron-jobs.json)
  */
 import { NextRequest, NextResponse } from "next/server";
 import { requireDatabaseInProduction } from "@/lib/db";
