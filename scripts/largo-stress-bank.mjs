@@ -153,17 +153,4 @@ export function intentMatches(actual, hint) {
   return hint.test(actual ?? "");
 }
 
-export function scoreAnswer(entry, route, answer, status) {
-  const issues = [];
-  if (status !== 200) issues.push(`http-${status}`);
-  if (!answer || answer.length < 15) issues.push("too-short");
-  if (entry.avoidDump && entry.avoidDump.test(answer)) issues.push("platform-dump");
-  if (answer && answer.length > 3500 && !/compound_lookup|platform_read|spx_desk_read/.test(String(route?.intent))) {
-    issues.push("bloated");
-  }
-  if (entry.intent && route && !intentMatches(route.intent, entry.intent)) {
-    issues.push(`intent-want-${entry.intent}-got-${route.intent}`);
-  }
-  const verdict = issues.length === 0 ? "OK" : issues.some((i) => i.startsWith("intent") || i === "platform-dump") ? "BAD" : "WARN";
-  return { verdict, issues };
-}
+export { scoreAnswer } from "./largo-stress-scoring.mjs";

@@ -14,7 +14,6 @@ import { formatEcosystemNarrative } from "@/lib/bie/ecosystem-narrative";
 import { synthesizeTickerVerdict, formatTickerVerdictMarkdown } from "@/lib/bie/ticker-verdict";
 import { composeTickerCompare } from "@/lib/bie/ticker-compare";
 import { composeSpxInvalidationLines } from "@/lib/bie/spx-invalidation";
-import { composeFlowTapeAnswer, composeQuietFlowBrief } from "@/lib/bie/flow-tape-brief";
 import { synthesizeSpxDeskIntel } from "@/lib/bie/spx-desk-synthesis";
 import { buildPlayTechnicals } from "@/features/spx/lib/spx-play-technicals";
 import { buildPlaybookShadowPanel } from "@/features/spx/lib/playbook-shadow-panel";
@@ -534,7 +533,7 @@ async function composeSpxStructure(question?: string): Promise<BieComposed | nul
       }
     }
   }
-  parts.push("", "_Mini structure read — ask **What's the SPX setup right now?** for full THESIS/ALIGNMENT._");
+  parts.push("", "_Mini structure read — ask **What's the SPX setup right now?** for the full Live Desk brief._");
   return { answer: stripGroundingTokens(parts.join("\n")), context: { raw, desk: platform.desk } };
 }
 
@@ -695,11 +694,11 @@ async function composeTickerAdvice(ticker: string, question: string): Promise<Bi
 }
 
 async function composeFlowTape(ticker: string | null): Promise<BieComposed | null> {
-  const platform = await getCachedBiePlatformContext({ scope: "market", flowLimit: 40 });
-  return {
-    answer: composeFlowTapeAnswer(platform, ticker),
-    context: platform,
-  };
+  const { composeHelixRead } = await import("@/lib/bie/helix-read");
+  const q = ticker
+    ? `unusual flow and top prints on ${ticker}`
+    : "any unusual flow right now — top prints by premium";
+  return composeHelixRead(ticker, q);
 }
 
 /** Per-sub-question deadline — a slow friend must never stall the whole compound answer. */
@@ -811,7 +810,20 @@ export async function composeBieAnswer(route: BieRoute, opts?: ComposeBieOpts): 
   }
   if (composed) {
     const { applyDynamicFormat } = await import("@/lib/bie/dynamic-format");
-    return applyDynamicFormat(route, opts?.question, composed);
+    const { toProfessionalMarkdown } = await import("@/lib/bie/professional-tone");
+    const formatted = applyDynamicFormat(route, opts?.question, composed);
+    formatted.answer = toProfessionalMarkdown(formatted.answer);
+    if (formatted.envelope) {
+      formatted.envelope = {
+        ...formatted.envelope,
+        markdown: toProfessionalMarkdown(formatted.envelope.markdown),
+        sections: formatted.envelope.sections.map((s) => ({
+          ...s,
+          body: toProfessionalMarkdown(s.body),
+        })),
+      };
+    }
+    return formatted;
   }
   return composed;
 }
@@ -845,6 +857,9 @@ function headlineForRoute(route: BieRoute): string {
     grid_rejections_read: "0DTE rejections",
     play_engine_read: "Play engine",
     clarify_read: "Clarify",
+    wall_dynamics_read: "Wall dynamics",
+    technical_read: "Technicals",
+    play_suggest_read: "Play suggestion",
   };
   return map[route.intent] ?? "BIE read";
 }
@@ -949,6 +964,18 @@ async function composeBieAnswerUncached(route: BieRoute, opts?: ComposeBieOpts):
       case "clarify_read": {
         const { composeClarifyRead } = await import("@/lib/bie/clarify-read");
         return composeClarifyRead(opts?.question ?? "");
+      }
+      case "wall_dynamics_read": {
+        const { composeWallDynamicsRead } = await import("@/lib/bie/wall-dynamics-read");
+        return await composeWallDynamicsRead(route.ticker ?? "SPX");
+      }
+      case "technical_read": {
+        const { composeTechnicalsRead } = await import("@/lib/bie/technicals-read");
+        return await composeTechnicalsRead(route.ticker ?? "SPX", opts?.question);
+      }
+      case "play_suggest_read": {
+        const { composePlaySuggestRead } = await import("@/lib/bie/play-suggest-read");
+        return await composePlaySuggestRead(route.ticker);
       }
       default:
         return null;

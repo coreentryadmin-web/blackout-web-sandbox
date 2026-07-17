@@ -3,23 +3,54 @@
 import { lookupGlossary } from "./glossary";
 
 export function wantsBrevity(question: string): boolean {
-  return /\b(one sentence|in one line|briefly|tldr|short answer|just tell me)\b/i.test(question);
+  return /\b(one sentence|one line|one-liner|in one line|briefly|tldr|short answer|just tell me)\b/i.test(
+    question
+  );
 }
 
+const GLOSSARY_ASK = /\b(what is a|what is an|define|explain the concept)\b/i;
+const HYPOTHETICAL =
+  /\b(what if|if we lose|scenario|suppose|imagine|breaks?|breaking|lose|loses)\b/i;
+const COMPARE_CUE = /\b(closer|closest|versus|vs\.?|compare|which)\b/i;
+const FULL_DESK = /\b(full|setup read|full read|everything)\b/i;
+
 export function wantsPutWallOnly(question: string): boolean {
-  return /\bput wall\b/i.test(question) && !/\b(call wall|full|setup|read)\b/i.test(question);
+  return (
+    /\bput wall\b/i.test(question) &&
+    !GLOSSARY_ASK.test(question) &&
+    !FULL_DESK.test(question) &&
+    !HYPOTHETICAL.test(question)
+  );
 }
 
 export function wantsCallWallOnly(question: string): boolean {
-  return /\bcall wall\b/i.test(question) && !/\b(put wall|full|setup|read)\b/i.test(question);
+  return (
+    /\bcall wall\b/i.test(question) &&
+    !/\bput wall\b/i.test(question) &&
+    !GLOSSARY_ASK.test(question) &&
+    !FULL_DESK.test(question) &&
+    !HYPOTHETICAL.test(question)
+  );
 }
 
 export function wantsKingNodeOnly(question: string): boolean {
-  return /\bking node\b/i.test(question) && !/\b(full|setup|read|everything)\b/i.test(question);
+  return (
+    /\bking node\b/i.test(question) &&
+    !GLOSSARY_ASK.test(question) &&
+    !FULL_DESK.test(question) &&
+    !HYPOTHETICAL.test(question)
+  );
 }
 
 export function wantsGammaFlipOnly(question: string): boolean {
-  return /\bgamma flip\b/i.test(question) && !/\b(call wall|put wall|setup|read)\b/i.test(question);
+  return (
+    /\bgamma flip\b/i.test(question) &&
+    /\b(only|just)\b/i.test(question) &&
+    !/\b(call wall|put wall|setup|read)\b/i.test(question) &&
+    !HYPOTHETICAL.test(question) &&
+    !COMPARE_CUE.test(question) &&
+    !/\b(weekly|monthly)\b/i.test(question)
+  );
 }
 
 export function wantsCharmLens(question: string): boolean {
@@ -68,6 +99,28 @@ export function wantsPowerHour(question: string): boolean {
   return /\bpower hour\b/i.test(question) && /\b(phase|state|engine|spx)\b/i.test(question);
 }
 
+export function wantsWallDynamics(question: string): boolean {
+  return (
+    /\b(walls? (are )?(building|fading|forming|holding|breaking)|building vs fading|wall dynamics|which walls|dealer walls?|gamma walls?|gex walls?|wall ladder|restack)\b/i.test(
+      question
+    ) && !GLOSSARY_ASK.test(question)
+  );
+}
+
+export function wantsTechnicals(question: string): boolean {
+  return (
+    /\b(rsi|macd|atr|ema\s*(20|50|200)|technical(s)?|chart setup|chart read|support and resistance|moving average|trend line|overbought|oversold)\b/i.test(
+      question
+    ) && !GLOSSARY_ASK.test(question)
+  );
+}
+
+export function wantsPlaySuggest(question: string): boolean {
+  return /\b(what should i trade|best play|trade idea|suggest a (trade|play)|play suggestion|give me a (trade|play)|recommended (strike|play)|actionable (play|trade)|desk lean)\b/i.test(
+    question
+  );
+}
+
 export function shouldAvoidSpxDeskDump(question: string): boolean {
   return (
     wantsBrevity(question) ||
@@ -82,7 +135,10 @@ export function shouldAvoidSpxDeskDump(question: string): boolean {
     wantsGexVexCompare(question) ||
     wantsThermalDeskCompare(question) ||
     wantsMatrixDelta(question) ||
-    wantsVixOnly(question)
+    wantsVixOnly(question) ||
+    wantsWallDynamics(question) ||
+    wantsTechnicals(question) ||
+    wantsPlaySuggest(question)
   );
 }
 
