@@ -300,10 +300,12 @@ export function buildDeterministicThesis(
     if (dossier.iv_rank > 70) parts.push(`IV rank elevated (${Math.round(dossier.iv_rank)}).`);
   }
 
-  // --- Risk flags ---
+  // --- Risk flags (deduplicated) ---
   const flags = [
-    ...(scored.catalyst_flags ?? []),
-    ...(scored.fundamental_block ? scored.fundamental_flags ?? [] : []),
+    ...new Set([
+      ...(scored.catalyst_flags ?? []),
+      ...(scored.fundamental_block ? scored.fundamental_flags ?? [] : []),
+    ]),
   ];
   if (scored.earnings_risk) flags.push("earnings proximity");
   if (flags.length) parts.push(`Watch: ${flags.join("; ")}.`);
