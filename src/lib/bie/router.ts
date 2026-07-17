@@ -551,14 +551,17 @@ export function classifyBieIntent(question: string, ledgerTickers: Set<string>):
   }
   const narrowThermal = narrowThermalRoute(q);
   if (narrowThermal) return narrowThermal;
-  if (VECTOR_PULSE_RE.test(q)) {
+  // Diagnostic "why isn't X forming" must not be stolen by the pulse regex's "beads forming" match.
+  if (VECTOR_PULSE_RE.test(q) && !isDiagnosticQuestion(q)) {
     return {
       intent: "vector_pulse_read",
       ticker: extractKnownTicker(q) ?? "SPX",
       horizon: extractHorizon(q),
     };
   }
-  if (wantsWallDynamics(q) || WALL_DYNAMICS_RE.test(q)) {
+  // Concept asks ("tell me about wall integrity") and hypotheticals ("if SPX drops … which walls")
+  // must not be stolen — concept_read and scenario own those shapes.
+  if ((wantsWallDynamics(q) || WALL_DYNAMICS_RE.test(q)) && !isConceptQuestion(q) && !SCENARIO_TRIGGER_RE.test(q) && !isDiagnosticQuestion(q)) {
     return { intent: "wall_dynamics_read", ticker: extractKnownTicker(q) ?? "SPX" };
   }
   if (wantsPlaySuggest(q) || PLAY_SUGGEST_RE.test(q)) {
@@ -799,14 +802,14 @@ export function classifyBieStagingFallback(question: string): BieRoute {
   }
   const narrowThermal = narrowThermalRoute(q);
   if (narrowThermal) return narrowThermal;
-  if (VECTOR_PULSE_RE.test(q)) {
+  if (VECTOR_PULSE_RE.test(q) && !isDiagnosticQuestion(q)) {
     return {
       intent: "vector_pulse_read",
       ticker: extractKnownTicker(q) ?? "SPX",
       horizon: extractHorizon(q),
     };
   }
-  if (wantsWallDynamics(q) || WALL_DYNAMICS_RE.test(q)) {
+  if ((wantsWallDynamics(q) || WALL_DYNAMICS_RE.test(q)) && !isConceptQuestion(q) && !SCENARIO_TRIGGER_RE.test(q) && !isDiagnosticQuestion(q)) {
     return { intent: "wall_dynamics_read", ticker: extractKnownTicker(q) ?? "SPX" };
   }
   if (wantsPlaySuggest(q) || PLAY_SUGGEST_RE.test(q)) {
