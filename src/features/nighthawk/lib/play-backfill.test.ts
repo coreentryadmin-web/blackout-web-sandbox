@@ -117,9 +117,10 @@ test("buildDirectionalStockLevels: LONG with spot anchors entry near spot, not s
   assert.equal(validatePlayGeometry(play).ok, true);
   // Entry band should contain values near 212
   assert.match(levels.entry_range, /\$21[0-3]/);
-  // Stop should be at support level, not a synthetic value
-  assert.equal(levels.stop, "174.00");
-  // Target at resistance
+  // Stop clamped: support is 18% below spot, MAX_STOP_DISTANCE_PCT caps at 8%
+  // 212 - min(212-174, 212*0.08) = 212 - 16.96 = 195.04
+  assert.equal(levels.stop, "195.04");
+  // Target at resistance (8.5% away, within 12% cap)
   assert.equal(levels.target, "230.00");
 });
 
@@ -139,9 +140,10 @@ test("buildDirectionalStockLevels: SHORT with spot anchors entry near spot, not 
   assert.equal(validatePlayGeometry(play).ok, true);
   // Entry band near spot ($354)
   assert.match(levels.entry_range, /\$35[2-6]/);
-  // Target at support
-  assert.equal(levels.target, "280.00");
-  // Stop at resistance
+  // Target clamped: support is 21% below spot, MAX_TARGET_DISTANCE_PCT caps at 12%
+  // 354 - min(354-280, 354*0.12) = 354 - 42.48 = 311.52
+  assert.equal(levels.target, "311.52");
+  // Stop at resistance (1.7% away, within 8% cap)
   assert.equal(levels.stop, "360.00");
 });
 

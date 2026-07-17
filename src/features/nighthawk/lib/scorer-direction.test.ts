@@ -11,7 +11,10 @@ import {
   scoreWallProximity,
   scoreVexAlignment,
   computeRegimeMultiplier,
+  rankingScore,
+  rankCandidates,
 } from "./scorer";
+import type { ScoredCandidate } from "./scorer";
 import type { PositioningSummary } from "./positioning";
 import type { TechnicalCard } from "./technicals";
 
@@ -465,5 +468,58 @@ test("computeRegimeMultiplier: trending composite regime adds 0.05", () => {
 test("computeRegimeMultiplier: cap at 1.30", () => {
   const m = computeRegimeMultiplier({ vix_iv_rank: 15, tide_bias: "BULLISH" as const, advance_pct: 80, composite_regime: "breakout" });
   assert.ok(m <= 1.30, `should be <= 1.30, got ${m}`);
+});
+
+// ── rankingScore ────────────────────────────────────────────────────────────────
+
+function makeCandidate(overrides: Partial<ScoredCandidate>): ScoredCandidate {
+  return {
+    ticker: "TEST",
+    score: 50,
+    direction: "long",
+    flow_score: 20,
+    tech_score: 10,
+    pos_score: 8,
+    news_score: 4,
+    smart_money_score: 3,
+    conviction: "B",
+    ...overrides,
+  };
+}
+
+test("rankingScore: clean candidate returns base score when < 3 confirming signals", () => {
+  const c = makeCandidate({ score: 60, confirming_signals: 2 });
+  assert.equal(rankingScore(c), 60);
+});
+
+test("rankingScore: confluence bonus adds +2 per signal above floor", () => {
+  const c = makeCandidate({ score: 50, confirming_signals: 5 });
+  // 5 signals: (5 - 3 + 1) * 2 = 6 bonus
+  assert.equal(rankingScore(c), 56);
+});
+
+test("rankingScore: fundamental_block applies -10 penalty", () => {
+  const c = makeCandidate({ score: 70, fundamental_block: true, confirming_signals: 2 });
+  assert.equal(rankingScore(c), 60);
+});
+
+test("rankingScore: penalty + bonus combine correctly", () => {
+  const c = makeCandidate({ score: 70, fundamental_block: true, confirming_signals: 5 });
+  // -10 penalty + (5-3+1)*2 = -10 + 6 = -4 net
+  assert.equal(rankingScore(c), 66);
+});
+
+test("rankCandidates: high-scoring flagged candidate outranks low-scoring clean one", () => {
+  const flagged = makeCandidate({ ticker: "FLAG", score: 85, fundamental_block: true, confirming_signals: 5 });
+  const clean = makeCandidate({ ticker: "CLEAN", score: 40, fundamental_block: false, confirming_signals: 2 });
+  const { ranked } = rankCandidates([clean, flagged], 5);
+  assert.equal(ranked[0]!.ticker, "FLAG", "high-scoring flagged should rank first");
+});
+
+test("rankCandidates: close scores favor clean over flagged", () => {
+  const flagged = makeCandidate({ ticker: "FLAG", score: 55, fundamental_block: true, confirming_signals: 2 });
+  const clean = makeCandidate({ ticker: "CLEAN", score: 50, fundamental_block: false, confirming_signals: 2 });
+  const { ranked } = rankCandidates([flagged, clean], 5);
+  assert.equal(ranked[0]!.ticker, "CLEAN", "clean should outrank when scores are close (penalty -10)");
 });
 
