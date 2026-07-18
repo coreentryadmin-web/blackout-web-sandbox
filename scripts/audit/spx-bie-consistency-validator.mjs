@@ -92,7 +92,7 @@
  *     (confirmed elsewhere in this audit — no SYN-ACK to the DB host), so
  *     Layer B SKIPs (not FAILs) with an explicit reason in this environment.
  *     It is written to run for real in a CI/ops context with normal network
- *     egress and the same env vars the Railway deployment itself uses
+ *     egress and the same env vars the ECS deployment itself uses
  *     (DATABASE_URL, REDIS_URL, POLYGON_API_KEY, POLYGON_API_BASE, UW_API_KEY).
  *   - There is NO existing HTTP endpoint that returns BIE's raw
  *     fetchEcosystemContext()/spx_full_state or Largo's raw get_spx_play tool
@@ -383,7 +383,7 @@ async function callGetSpxPlayStateDirect() {
   } catch (e) {
     return {
       skip: true,
-      reason: `${e.message} — this call needs the same DATABASE_URL/REDIS_URL/POLYGON_API_KEY/POLYGON_API_BASE/UW_API_KEY network access the live Railway deployment has; see SANDBOX LIMITATIONS in this script's module doc.`,
+      reason: `${e.message} — this call needs the same DATABASE_URL/REDIS_URL/POLYGON_API_KEY/POLYGON_API_BASE/UW_API_KEY network access the live ECS deployment has; see SANDBOX LIMITATIONS in this script's module doc.`,
     };
   }
 }

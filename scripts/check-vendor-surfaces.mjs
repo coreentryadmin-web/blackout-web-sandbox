@@ -15,7 +15,7 @@ const ROOTS = [
 ];
 const EXTS = new Set([".tsx", ".ts", ".jsx", ".js", ".mdx"]);
 const VENDORS =
-  /\b(?:Polygon|Massive|Unusual Whales|Anthropic|Claude|Clerk|Whop|Redis|Postgres|Sentry|Railway|Voyage|Vercel)\b/;
+  /\b(?:Polygon|Massive|Unusual Whales|Anthropic|Claude|Clerk|Whop|Redis|Postgres|Sentry|Voyage|Vercel)\b/;
 
 const hits = [];
 

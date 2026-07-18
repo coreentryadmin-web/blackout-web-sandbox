@@ -222,7 +222,7 @@ async function main() {
           "spx:data-correctness",
           isTimeout ? "WARN" : "FAIL",
           isTimeout
-            ? `edge timeout (mode=${dc.mode}) — full sweep runs on Railway cron; rth-open pg check is authoritative`
+            ? `edge timeout (mode=${dc.mode}) — full sweep runs on ECS cron; rth-open pg check is authoritative`
             : dc.err || `HTTP ${dc.status} mode=${dc.mode}`
         );
       } else if (spxFlags.length) {
@@ -233,7 +233,7 @@ async function main() {
       } else if (flags > 0 && PHASE === "verify") {
         rec("spx:data-correctness", "WARN", `${flags} non-SPX flags (mode=${dc.mode})`);
       } else {
-        const suffix = dc.fullSweepSkipped ? " (heatmap surface; full sweep via Railway cron)" : "";
+        const suffix = dc.fullSweepSkipped ? " (heatmap surface; full sweep via ECS cron)" : "";
         rec("spx:data-correctness", "PASS", `flags=${flags} mode=${dc.mode}${suffix}`);
       }
     } catch (e) {

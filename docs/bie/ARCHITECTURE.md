@@ -87,7 +87,7 @@ the top of this doc for why that's generated rather than typed here.
 ## Platform self-awareness — Stages 2 through 6
 
 Full rollout history and evidence: `docs/bie/FULL-SYSTEM-AWARENESS.md`. In short: Stage 2
-(logs, errors, cron/worker health, duplicate/missed-alert detection) and Stage 3 (Railway,
+(logs, errors, cron/worker health, duplicate/missed-alert detection) and Stage 3 (AWS ECS,
 Postgres, Redis, Clerk-auth infra access) are both fully shipped, using zero or
 newly-provisioned credentials respectively. Stage 4 (one unified audit-trail schema every
 alert type writes to) is shipped end to end across all three write-paths. Stage 5 step 1

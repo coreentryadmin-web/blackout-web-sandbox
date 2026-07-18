@@ -18,7 +18,7 @@ export const dynamic = "force-dynamic";
 
 /**
  * Cron-accessible WebSocket health probe — boots lazy sockets and returns live
- * cluster-local status. Used by RTH validation instead of brittle Railway log grep.
+ * cluster-local status. Used by RTH validation instead of brittle container log grep.
  *
  * Multi-replica note: only one task holds each WS leader lock. Followers report
  * CLOSED locally but are healthy when the Redis cluster heartbeat is fresh.

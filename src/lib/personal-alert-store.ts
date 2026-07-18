@@ -21,7 +21,7 @@ export const PERSONAL_WEBHOOK_META_KEY = "personal_discord_webhook";
 // route's distinguishing call is the extra `users.getUser`, and it was awaited UNBOUNDED: if Clerk
 // stalls, the request hangs until Cloudflare's edge timeout. Racing a timeout turns a hang into a
 // fast throw that the route's existing try/catch converts to a clean JSON 502 — the origin always
-// responds. (If 502s persist after this, the cause is the Railway origin itself — infra, not code.)
+// responds. (If 502s persist after this, the cause is the ECS origin itself — infra, not code.)
 const CLERK_CALL_TIMEOUT_MS = 8_000;
 function withClerkTimeout<T>(p: Promise<T>): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined;

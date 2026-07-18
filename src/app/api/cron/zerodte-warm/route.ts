@@ -1,6 +1,6 @@
 // Cron: warm 0DTE Command's earnings-match cache + run its always-on scanner tick.
 // Schedule: ~every 1-5 min during market hours (registered in cron-registry.ts as
-// "zerodte-warm"; Railway wires the actual fire via railway.zerodte-warm.toml).
+// "zerodte-warm"; ECS task definition wires the actual fire).
 //
 // HISTORY (renamed 2026-07-07 when classic Grid was deleted): this route used to be
 // "grid-warm" and pre-warmed 8 classic-Grid market-wide panel snapshots (Analyst Actions,

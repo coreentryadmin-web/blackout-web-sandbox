@@ -1,5 +1,5 @@
 # Post-push deploy smoke — runs after every merge to main.
-# Waits for Railway to settle, then hits public prod endpoints (+ optional CRON desk probe).
+# Waits for ECS deploy to settle, then hits public prod endpoints (+ optional CRON desk probe).
 
 name: Deploy smoke
 
@@ -7,7 +7,7 @@ on:
   push:
     branches: [main]
 
-# Rapid merges deploy the latest commit on Railway, so an in-flight smoke for an
+# Rapid merges deploy the latest commit on ECS, so an in-flight smoke for an
 # older commit is stale — cancel it and smoke the newest deploy.
 concurrency:
   group: deploy-smoke
@@ -27,7 +27,7 @@ jobs:
 
       - run: npm ci
 
-      - name: Wait for Railway deploy
+      - name: Wait for ECS deploy
         env:
           CRON_TARGET_BASE_URL: https://blackouttrades.com
           DEPLOY_WAIT_MS: "90000"

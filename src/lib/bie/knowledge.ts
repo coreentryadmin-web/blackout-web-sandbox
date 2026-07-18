@@ -150,7 +150,7 @@ const ROOT_DOCS = ["AGENTS.md", "CLAUDE.md"];
 const BIE_STAGE_STATUS: { stage: string; status: string }[] = [
   { stage: "Stage 1 — docs/knowledge ingestion, API usage telemetry", status: "SHIPPED" },
   { stage: "Stage 2 — logs, errors, cron/worker health, duplicate/missed-alert detection", status: "SHIPPED (zero new credentials — reads tables the app already writes)" },
-  { stage: "Stage 3 — Railway/Postgres/Redis/Clerk-auth infra access", status: "SHIPPED" },
+  { stage: "Stage 3 — ECS/Postgres/Redis/Clerk-auth infra access", status: "SHIPPED" },
   { stage: "Stage 4 — unified alert_audit_log across 0DTE + Night Hawk (published + rejected)", status: "SHIPPED" },
   { stage: "Stage 5 step 1 — dry-run orphaned-component text proposals", status: "SHIPPED, deliberately narrow: never writes a file, never runs git, never opens a PR. Stage 5's actual end state (BIE opening its own PRs) is NOT built and NOT authorized." },
   { stage: "Stage 6 — using outcome data to calibrate live scoring", status: "NOT STARTED, NOT AUTHORIZED. Every precursor measurement (e.g. confluence outcomes) is read-only and reports numbers; none of it acts on them." },

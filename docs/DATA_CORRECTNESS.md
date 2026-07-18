@@ -25,7 +25,7 @@ number *right*?" — not just "do two surfaces agree?".
   - Track record — `src/lib/correctness/track-record-verifier.ts`
   - Largo (scaffold) — `src/lib/correctness/largo-verifier.ts`
   - Data layer + pipeline integrity — `src/lib/correctness/data-integrity-verifier.ts`
-- Schedule: `railway.data-correctness.toml` + registry entry `data-correctness`
+- Schedule: ECS scheduled task + registry entry `data-correctness`
 - Scorecard output: `docs/auto/data-correctness-<date>.md` (best-effort; structured result also in the cron run log)
 
 ---

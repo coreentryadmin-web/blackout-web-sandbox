@@ -16,8 +16,6 @@ on:
       - RTH open check
       - RTH post-close smoke
       - Off-hours health
-      - Railway audit apply
-      - Railway cron config check
     types:
       - completed
 

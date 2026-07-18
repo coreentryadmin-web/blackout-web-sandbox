@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * GitHub Actions RTH audit — no Railway CLI required.
+ * GitHub Actions RTH audit.
  *
  * Env (GitHub Actions secrets):
  *   CRON_SECRET          — required (premium API + cron routes)

@@ -103,7 +103,7 @@ let memoryWriteFailures: PlayWriteFailureState = {
 /**
  * Record a play-outcome write failure loudly + durably. Never throws (best-effort
  * persistence so a meta-write blip can't cascade into the engine). Always logs a
- * structured console.error so Railway/Vercel logs surface the failure immediately.
+ * structured console.error so container/Vercel logs surface the failure immediately.
  */
 export async function recordPlayWriteFailure(
   phase: "entry" | "close",

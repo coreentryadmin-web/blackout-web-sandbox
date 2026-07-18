@@ -61,4 +61,4 @@ node scripts/gha-rth-audit.mjs   # full GHA audit (needs CRON_SECRET)
 
 ## Do not duplicate on GitHub
 
-Railway writer crons (`flow-ingest`, `heatmap-warm`, etc.) — already on Railway via `railway.*.toml`.
+Writer crons (`flow-ingest`, `heatmap-warm`, etc.) — already provisioned as ECS scheduled tasks.

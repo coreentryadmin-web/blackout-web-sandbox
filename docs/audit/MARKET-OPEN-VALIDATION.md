@@ -16,7 +16,7 @@ Tool: [`scripts/audit/data-validator.mjs`](../../scripts/audit/data-validator.mj
 Exit code is **non-zero if any check FAILs** (usable as a CI/trigger gate). Reports land in `audit-output/` (gitignored) as timestamped `.json` + `.md`.
 
 ## What it does NOT cover (environment limits)
-- **WebSocket feeds** — agent/CI proxies block WS upgrades. Members receive WS data via the REST endpoints above, which *are* validated. True WS-stream validation must run server-side (inside Railway).
+- **WebSocket feeds** — agent/CI proxies block WS upgrades. Members receive WS data via the REST endpoints above, which *are* validated. True WS-stream validation must run server-side (inside ECS).
 - **Rendered UI / visual / client console errors** — needs a real browser reaching the network (blocked in sandboxed/proxied envs).
 - UW-sourced numbers are only cross-checked where an independent Polygon equivalent exists; pure-UW figures are checked for internal consistency + UW self-agreement.
 

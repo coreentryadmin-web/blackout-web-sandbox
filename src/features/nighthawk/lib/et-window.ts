@@ -1,4 +1,4 @@
-// Pure, DST-aware ET-window check for the fixed-UTC Railway cron guards. Lives in
+// Pure, DST-aware ET-window check for the fixed-UTC cron guards. Lives in
 // its own alias-free file (uses only the global Intl API) so it is unit-testable
 // under `npx tsx --test` without dragging in the @/lib/* import chain that
 // session.ts pulls. `now` is injectable so the window can be asserted at fixed

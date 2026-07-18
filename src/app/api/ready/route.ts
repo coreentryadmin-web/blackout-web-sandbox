@@ -4,7 +4,7 @@ import { redisStatus } from "@/lib/redis-health";
 
 export const dynamic = "force-dynamic";
 
-/** Railway deploy gate — connectivity only (no migration lock). Retries cold PgBouncer boot. */
+/** ECS deploy gate — connectivity only (no migration lock). Retries cold PgBouncer boot. */
 const READY_ATTEMPTS = 6;
 const READY_RETRY_MS = 4_000;
 
@@ -12,7 +12,7 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-/** Readiness probe — checks DB connectivity. Use for Railway deploy gates, not liveness. */
+/** Readiness probe — checks DB connectivity. Use for ECS deploy gates, not liveness. */
 export async function GET() {
   if (!dbConfigured()) {
     return NextResponse.json({ ok: true, db: "skipped" });
@@ -39,7 +39,7 @@ export async function GET() {
 
   // Log the real diagnostic server-side only -- this route is public/unauthenticated
   // (scripts/verify-api-auth-guards.mjs's allowlist), and the raw driver error can embed
-  // internal hostnames or credential text (e.g. ".railway.internal", "password authentication
+  // internal hostnames or credential text (e.g. internal container hostnames, "password authentication
   // failed for user ..."). Never forward it verbatim to an unauthenticated caller.
   console.error("[ready] database ping failed after retries:", lastError, lastMode);
   return NextResponse.json({ ok: false, db: "unreachable", error: "db_unreachable" }, { status: 503 });

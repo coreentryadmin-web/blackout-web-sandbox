@@ -29,12 +29,6 @@ import { findStage5Proposals } from "@/lib/bie/stage5-proposals";
 import { computeConfluenceOutcomeStats } from "@/lib/bie/confluence-outcomes";
 import { fetchHotTickers } from "@/lib/bie/hot-tickers";
 import { probeRedisHealth } from "@/lib/redis-health";
-import {
-  probeRailwayEnvVars,
-  probeRailwayResourceUsage,
-  probeRailwayRuntimeErrors,
-  probeRailwayStatus,
-} from "@/lib/railway-status";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -70,13 +64,9 @@ export async function GET() {
     trail,
     dbPool,
     redis,
-    railway,
     incidents,
     correctness,
     auditTrail,
-    railwayResourceUsage,
-    railwayEnvVars,
-    railwayRuntimeErrors,
     missedAlerts,
     pgStatStatements,
     duplicateAlerts,
@@ -98,9 +88,6 @@ export async function GET() {
       // than in the historical discovery report text.
       getDatabasePoolStats().catch(() => null),
       probeRedisHealth().catch(() => ({ configured: false as const })),
-      // Same shape: read-only Railway deploy status, first automated (not manual,
-      // sandbox-only) use of the Railway API — Stage 3 of the roadmap.
-      probeRailwayStatus().catch(() => ({ configured: false as const })),
       // Structured (not just baked into discovery.text) so the admin UI can render
       // real ack/resolve buttons and colored status badges, not just prose.
       fetchDiscoveryIncidents().catch(() => []),
@@ -109,12 +96,6 @@ export async function GET() {
       // published, Night Hawk rejected). Read-only, same fail-open pattern as every
       // other probe here: a query failure shows as null, never breaks the report.
       fetchAlertAuditTrail(20).catch(() => null),
-      // Stage 3: Railway resource usage / env-var presence / runtime error count —
-      // the three items the roadmap doc flagged as "access confirmed, not yet
-      // queried/wired." Same fail-open pattern; a query failure never breaks the report.
-      probeRailwayResourceUsage().catch(() => ({ configured: false as const })),
-      probeRailwayEnvVars().catch(() => ({ configured: false as const })),
-      probeRailwayRuntimeErrors().catch(() => ({ configured: false as const })),
       // Stage 2: missed-alerts (cron-outage ground truth) — structured, not just
       // baked into discovery.text, so the admin UI can render it as its own signal.
       buildCronHealthSnapshot()
@@ -184,10 +165,6 @@ export async function GET() {
       knowledge,
       db_pool: dbPool,
       redis,
-      railway,
-      railway_resource_usage: railwayResourceUsage,
-      railway_env_vars: railwayEnvVars,
-      railway_runtime_errors: railwayRuntimeErrors,
       // The three live reports, both structured and human-readable.
       self_eval: selfEval ? { data: selfEval, text: formatBieReport(selfEval) } : null,
       calibration: calibration ? { data: calibration, text: formatCalibration(calibration) } : null,

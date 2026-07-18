@@ -49,7 +49,7 @@ export async function runFlowIngest(): Promise<FlowIngestResult> {
   }
 
   // Cluster-aware fallback (audit gap #10): the LOCAL socket above only sees THIS
-  // replica's WS. On multi-replica Railway a different replica may serve /flows and
+  // replica's WS. On multi-replica ECS a different container may serve /flows and
   // be the one delivering frames while this replica runs only the cron — its local
   // socket is CLOSED, so the check above would run REST redundantly. If ANY OTHER
   // replica delivered a flow frame recently (shared Redis heartbeat), skip REST too —
@@ -62,7 +62,7 @@ export async function runFlowIngest(): Promise<FlowIngestResult> {
     return { ok: false, ingested: 0, polled: 0, skipped: "DATABASE_URL not set" };
   }
 
-  // Cross-replica guard: only ONE Railway replica runs the actual UW fetch/persist at a
+  // Cross-replica guard: only ONE ECS container runs the actual UW fetch/persist at a
   // time. pg_try_advisory_lock is non-blocking (try-only) so contending replicas can never
   // deadlock — the loser returns immediately. NOTE: the cron route calls runFlowIngest()
   // DIRECTLY (bypassing the in-process ingestInFlight coalescer), so this lock is the gate

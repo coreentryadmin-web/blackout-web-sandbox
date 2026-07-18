@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-/** Wait for Railway deploy to settle after a main push, then verify /api/health. */
+/** Wait for ECS deploy to settle after a main push, then verify /api/health. */
 const BASE = (process.env.CRON_TARGET_BASE_URL ?? "https://blackouttrades.com").replace(/\/$/, "");
 const initialWaitMs = Number(process.env.DEPLOY_WAIT_MS ?? 90_000);
 const maxAttempts = Number(process.env.DEPLOY_WAIT_ATTEMPTS ?? 12);
@@ -12,7 +12,7 @@ async function healthOk() {
   return body.ok === true;
 }
 
-console.log(`Waiting ${initialWaitMs / 1000}s for Railway deploy to start…`);
+console.log(`Waiting ${initialWaitMs / 1000}s for ECS deploy to start…`);
 await new Promise((r) => setTimeout(r, initialWaitMs));
 
 for (let i = 1; i <= maxAttempts; i++) {

@@ -6,7 +6,7 @@
  * have real alpha and which are noise — informing manual or eventual automated
  * weight recalibration.
  *
- * Railway service: railway.spx-signal-weight-optimize.toml
+ * ECS scheduled task: spx-signal-weight-optimize
  */
 import { NextRequest, NextResponse } from "next/server";
 import { requireDatabaseInProduction, dbQuery } from "@/lib/db";
@@ -139,7 +139,7 @@ export async function GET(req: NextRequest) {
 
     await insertWeightReport(lookbackDays, baselineTotal, baselinePct, report);
 
-    // Log the top 5 and bottom 5 for visibility in Railway logs.
+    // Log the top 5 and bottom 5 for visibility in container logs.
     const top5 = report.slice(0, 5).map(
       (r) => `${r.signal_label}: edge=${r.edge_pct != null ? `+${r.edge_pct}%` : "n/a"} (${r.fire_count} fires, ${r.accuracy_pct}% acc)`
     );

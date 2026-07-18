@@ -3,7 +3,7 @@
 // estimateCostUsd is a pure function; SpendTracker is a tiny per-process accumulator
 // keyed by ET calendar day that reports whether a USD threshold was JUST crossed.
 //
-// CAVEAT (multi-replica): the running total is PER PROCESS. Under multiple Railway
+// CAVEAT (multi-replica): the running total is PER PROCESS. Under multiple ECS
 // replicas each tracks its own slice of spend, so the alert fires per-replica and the
 // true org-wide daily total is the SUM across replicas. Acceptable for a first-pass
 // tripwire; a durable cross-replica total would need Redis/Postgres.

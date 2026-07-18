@@ -19,7 +19,7 @@ export const maxDuration = 300;
  *
  * Per-run failure alerts (cron-run.ts) only fire when a route actually executes and
  * returns ok:false. They CANNOT catch the silent-death case: a cron that never fires
- * (401 from a rotated CRON_SECRET, a dropped/misconfigured Railway schedule, a deleted
+ * (401 from a rotated CRON_SECRET, a dropped/misconfigured ECS cron schedule, a deleted
  * service) writes no row at all — so nothing alerts. This watchdog closes that gap by
  * periodically reading the health snapshot and pinging Discord when any job is stale or
  * failed. It is deliberately a separate service so it can detect the others going dark.

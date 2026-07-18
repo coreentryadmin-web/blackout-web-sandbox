@@ -73,7 +73,7 @@ ${payload.items
 A Cursor Cloud Agent should be dispatched automatically to:
 
 1. Read \`docs/ops/OPS-AUTO-FIX.md\` and \`docs/ops/RTH-OPEN-RUNBOOK.md\`
-2. Fix every item above (code, Railway config, or infra as needed)
+2. Fix every item above (code, ECS config, or infra as needed)
 3. Commit, push, poll deploy, re-run \`npm run validate:cron\` and \`node scripts/ops-collect-action-items.mjs\` until **zero items**
 4. Comment on this issue with what was fixed; close when GREEN
 
@@ -136,8 +136,8 @@ Action items (${payload.count}, fingerprint ${fp}):
 ${itemList}
 
 Execute docs/ops/OPS-AUTO-FIX.md end-to-end:
-- Diagnose and fix each item (code, Railway cron config-as-code, secrets, etc.)
-- Commit, push to main (via PR if branch-protected), poll Railway deploy SUCCESS
+- Diagnose and fix each item (code, ECS cron config-as-code, secrets, etc.)
+- Commit, push to main (via PR if branch-protected), poll ECS deploy SUCCESS
 - Re-run: node scripts/ops-collect-action-items.mjs (must exit 0)
 - Re-run: npm run validate:deploy and npm run validate:cron
 - Comment on the GitHub issue with fixes; close the issue when all items are cleared

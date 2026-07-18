@@ -55,7 +55,6 @@ async function main() {
 
   const secret = loadSecret();
   const env = {
-    SKIP_RAILWAY: "1",
     CRON_TARGET_BASE_URL: BASE,
     CRON_SECRET: secret.CRON_SECRET,
     DATABASE_URL: secret.DATABASE_URL,

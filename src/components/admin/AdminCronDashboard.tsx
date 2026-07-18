@@ -184,7 +184,7 @@ function CronJobCard({
         <div className="admin-cron-card-titles">
           <h3 className="admin-cron-card-name">{job.name}</h3>
           <p className="admin-cron-card-path">
-            {job.kind === "http" ? job.path : "Railway worker"}
+            {job.kind === "http" ? job.path : "ECS worker"}
           </p>
         </div>
         <span className={clsx("admin-cron-card-badge", `admin-cron-card-badge-${tone}`)}>

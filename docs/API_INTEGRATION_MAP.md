@@ -158,10 +158,10 @@ assert `event.company_id === WHOP_COMPANY_ID` (defense-in-depth, ack-drop on def
 
 ---
 
-## Infra — Redis (ioredis 5.11.1) · Postgres (pg 8.21.0) · Railway
+## Infra — Redis (ioredis 5.11.1) · Postgres (pg 8.21.0) · AWS ECS
 **🛡️ Prior CRITICAL RESOLVED:** pg Pool `'error'` handler present (`db.ts:106-111`) — no replica-crash.
 
-**✅ USED:** Redis `family:0` (Railway IPv6 internal DNS — load-bearing, do not remove) + mandatory
+**✅ USED:** Redis `family:0` (AWS internal DNS — load-bearing, do not remove) + mandatory
 `'error'` listener on all 8 clients; pg Pool (`max` default 5, `idleTimeout`, `connectionTimeout`,
 context-aware SSL); fully parameterized queries (`$n`, identifier interpolation allow-listed); atomic
 Lua rate-limiters; advisory-lock-serialized migrations. 🛡️
@@ -176,7 +176,7 @@ extraction (indexed, but unbounded projection time — now bounded by statement_
 **✅ Fixed this pass:** added `statement_timeout` + `query_timeout` to the live PG Pool
 (`PG_STATEMENT_TIMEOUT_MS`, default 30s) — a blocked/slow query can no longer pin a connection and
 exhaust the 5-slot pool. Added Redis `reconnectOnError` READONLY guard (free managed-tier failover
-insurance, no-op on single-node Railway Redis). `49cb17d`.
+insurance, no-op on single-node AWS ElastiCache Redis). `49cb17d`.
 
 ---
 

@@ -355,7 +355,7 @@ type HelixHealthPayload = {
 const ROADMAP: Stage[] = [
   { n: 1, name: "Repo, docs, API usage, schemas", status: "SHIPPED", blurb: "Knowledge corpus ingested + embedded (Voyage); platform telemetry monitoring is real, not aspirational." },
   { n: 2, name: "Logs, errors, cron/worker health", status: "SHIPPED", blurb: "Backend + frontend error capture, cron health, Postgres pool, Redis internals, data-integrity/data-correctness validators, missed-alert detection (cron-outage ground truth), and duplicate-alert detection (verifies alert_audit_log's own xmax=0 / unique-index dedup actually holds) all wired into discovery. Fixed a real double-counting bug found in the process: an admin-route catch-all was independently re-capturing every dbQuery failure the dbQuery layer had already recorded, inflating this dashboard's own error count. Every item from the original ask is now shipped." },
-  { n: 3, name: "Infra access (Railway)", status: "SHIPPED", blurb: "Deploy status, resource usage (CPU/memory), env-var presence audit, and recent runtime error counts are all wired live (see the Railway chips above). Postgres slow-query log (pg_stat_statements) is checked, not enabled, per explicit instruction. Clerk auth-failure monitoring: Clerk has no webhook/Backend API for a failed sign-in (confirmed against their docs) — rather than rewrite the sign-in UI, a DOM observer sits alongside the untouched prebuilt <SignIn>/<SignUp> component and reports the error text Clerk already renders on a failed attempt, never a credential. See the \"Auth failures (24h)\" chip above." },
+  { n: 3, name: "Infra access (ECS)", status: "SHIPPED", blurb: "Deploy status, resource usage (CPU/memory), env-var presence audit, and recent runtime error counts are all wired live (see the ECS chips above). Postgres slow-query log (pg_stat_statements) is checked, not enabled, per explicit instruction. Clerk auth-failure monitoring: Clerk has no webhook/Backend API for a failed sign-in (confirmed against their docs) — rather than rewrite the sign-in UI, a DOM observer sits alongside the untouched prebuilt <SignIn>/<SignUp> component and reports the error text Clerk already renders on a failed attempt, never a credential. See the \"Auth failures (24h)\" chip above." },
   { n: 4, name: "Unified per-alert audit trail", status: "SHIPPED", blurb: "alert_audit_log schema, all three write-paths (0DTE, Night Hawk published, Night Hawk rejected — all fixture-tested), and the query surface (Audit trail panel below) are all live. Source-API attribution (source_apis column) is still unpopulated by any write-path — reported honestly as 0% until a future PR threads it through." },
   { n: 5, name: "BIE opens PRs autonomously", status: "IN PROGRESS", blurb: "The end-state goal — explicitly NOT started as \"BIE writes code\" yet. Step 1 shipped 2026-07-03, dry-run only: for one narrow, 100% mechanical finding (an exported component with zero references anywhere else in src/), BIE drafts a plain-text proposal in the report below — never a diff, never a git action, never an LLM judgment call. A human decides what (if anything) to do about each one. Going further (real draft PRs, broader/LLM-judged finding types) needs its own explicit go-ahead, not assumed from this." },
   { n: 6, name: "Outcome-driven calibration for plays", status: "NOT YET", blurb: "Outcome grading exists (0DTE, Night Hawk); nothing yet closes the loop by adjusting scoring logic from it. A first measurement step shipped 2026-07-03 (Confluence outcomes panel below) — whether 0DTE Command's graded hit rate differs when it agrees/disagrees with a ticker's prior Night Hawk take — but it is read-only and does not feed back into scoring. Explicitly secondary to data integrity per the charter. (Renumbered from a stale \"Stage 5\" label that collided with the real Stage 5 above — found via the same doc-drift pattern this session kept fixing elsewhere.)" },
@@ -609,7 +609,7 @@ export function AdminBieDashboard() {
               tone={data?.redis?.configured && !data.redis.connected ? "amber" : "bull"}
             />
             <MetricChip
-              label="Railway deploy"
+              label="ECS deploy"
               value={
                 !data?.railway?.configured
                   ? "OFF"
@@ -1345,7 +1345,7 @@ export function AdminBieDashboard() {
         )}
       </GlassPanel>
 
-      {/* Stage 3 infra probes — Railway resource usage / env-var presence audit /
+      {/* Stage 3 infra probes — ECS resource usage / env-var presence audit /
           runtime error count, plus a Postgres pg_stat_statements presence check
           (never enables it). All read-only, all fail-open (a probe failure shows
           as "—", never breaks the rest of this panel). */}
