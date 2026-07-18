@@ -2,6 +2,9 @@
 .env.production
 .env.local
 .env*.local
+production.env
+staging.env
+railway-*.env
 node_modules/
 .next/
 out/
