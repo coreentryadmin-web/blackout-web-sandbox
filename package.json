@@ -87,6 +87,8 @@
     "audit:deep-security:all": "node scripts/audit/deep-security-audit.mjs && node scripts/audit/deep-security-audit-phase2.mjs",
     "audit:premium-security": "node scripts/audit/premium-security-audit.mjs",
     "validate:railway-cron-schedules": "node scripts/railway-cron-schedule-audit.mjs",
+    "secrets:merge": "node scripts/merge-app-secret.mjs",
+    "secrets:sync": "node scripts/sync-secrets-staging-to-prod.mjs",
     "ops:collect": "node scripts/ops-collect-action-items.mjs",
     "ops:collect:staging": "node scripts/ops-collect-staging.mjs",
     "ops:dispatch": "node scripts/ops-dispatch-agent.mjs",
