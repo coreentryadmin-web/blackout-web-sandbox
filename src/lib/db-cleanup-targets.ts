@@ -11,28 +11,24 @@ export const CLEANUP_TARGETS: Readonly<Record<string, readonly string[]>> = {
   nighthawk_dossiers_staging: ["created_at"],
   nighthawk_job_log: ["created_at"],
   admin_audit_log: ["created_at"],
-  // Signal intelligence tables — long-lived analytics data, generous retention.
   spx_signal_observations: ["observed_at"],
   spx_signal_weight_reports: ["computed_at"],
   spx_confluence_shadow_observations: ["observed_at"],
   spx_engine_snapshots: ["observed_at"],
   lotto_plays: ["created_at"],
-  // High-write outcome tables — prune CLOSED/RESOLVED rows only (see route.ts guards).
-  // Age column for spx is closed_at (NULL while open => open rows never match).
   spx_play_outcomes: ["closed_at"],
   spx_playbook_shadow_observations: ["observed_at"],
   spx_playbook_instance_events: ["observed_at"],
   spx_playbook_instances: ["updated_at"],
-  // Age column for nighthawk is created_at; pending/open rows excluded via status guard.
   nighthawk_play_outcomes: ["created_at"],
-  // Operational snapshot tables — written frequently during RTH with no prior retention
-  // (unbounded growth). Only the most recent row(s) are ever read, so old rows are dead weight.
   market_regime: ["captured_at"],
   flow_anomalies: ["detected_at"],
   coaching_alerts: ["generated_at"],
-  // Vector wall-history durable mirror — one upsert per 15s bucket during RTH. Redis is the
-  // hot copy; Postgres keeps ~90 days for replay, pruned by updated_at.
   vector_wall_history: ["updated_at"],
+  gex_regime_events: ["observed_at"],
+  nighthawk_jobs: ["started_at"],
+  nighthawk_editions: ["created_at"],
+  bie_interactions: ["created_at"],
 };
 
 /**

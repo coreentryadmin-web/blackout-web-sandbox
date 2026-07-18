@@ -136,99 +136,77 @@ async function runCleanup(): Promise<CleanupRunResult> {
   );
 
   const tasks: { key: string; run: () => Promise<number> }[] = [
-    // api_telemetry_events: very high volume (~30k rows/day) — keep 7 days
-    // NOTE: this table's timestamp column is "at", not "created_at"
     { key: "api_telemetry_events", run: () => deleteOlderThan("api_telemetry_events", "at", 7) },
-
-    // flow_alerts: keep 60 days
-    // Hard floor is 30d (Night Hawk avg-premium scorer uses 30-day rolling window).
-    // 60d gives safety margin + covers user lookback and Largo historical queries.
-    { key: "flow_alerts", run: () => deleteOlderThan("flow_alerts", "inserted_at", 60) },
-
-    // cron_job_runs: keep 30 days of run history
-    { key: "cron_job_runs", run: () => deleteOlderThan("cron_job_runs", "started_at", 30) },
-
-    // spx_signal_log: evaluator fires every 30-60s during RTH — keep 90 days
-    { key: "spx_signal_log", run: () => deleteOlderThan("spx_signal_log", "created_at", 90) },
-
-    // nighthawk_dossiers_staging: temp staging — never queried after nightly build completes
+    // Night Hawk avg-premium scorer uses 30-day rolling window — hard floor.
+    { key: "flow_alerts", run: () => deleteOlderThan("flow_alerts", "inserted_at", 30) },
+    { key: "cron_job_runs", run: () => deleteOlderThan("cron_job_runs", "started_at", 7) },
+    { key: "spx_signal_log", run: () => deleteOlderThan("spx_signal_log", "created_at", 14) },
     {
       key: "nighthawk_dossiers_staging",
       run: () => deleteOlderThan("nighthawk_dossiers_staging", "created_at", 2),
     },
-
-    // nighthawk_job_log: nightly runs — keep 60 days
-    { key: "nighthawk_job_log", run: () => deleteOlderThan("nighthawk_job_log", "created_at", 60) },
-
-    // admin_audit_log: compliance — keep 90 days
+    { key: "nighthawk_job_log", run: () => deleteOlderThan("nighthawk_job_log", "created_at", 14) },
     { key: "admin_audit_log", run: () => deleteOlderThan("admin_audit_log", "created_at", 90) },
-
-    // spx_play_outcomes: high-write trade-outcome ledger. Prune CLOSED rows only
-    // (open rows have closed_at IS NULL + 'outcome <> open' guard). Default 365d, >=90d floor.
     {
       key: "spx_play_outcomes",
       run: () => deleteOlderThan("spx_play_outcomes", "closed_at", spxOutcomeDays),
     },
-
-    // nighthawk_play_outcomes: high-write outcome ledger. Prune RESOLVED rows only
-    // (pending/open excluded by status guard). Default 365d, >=90d floor.
     {
       key: "nighthawk_play_outcomes",
       run: () => deleteOlderThan("nighthawk_play_outcomes", "created_at", nighthawkOutcomeDays),
     },
-
-    // spx_signal_observations: every-5-min RTH snapshots — keep 180 days for analytics
     {
       key: "spx_signal_observations",
-      run: () => deleteOlderThan("spx_signal_observations", "observed_at", 180),
+      run: () => deleteOlderThan("spx_signal_observations", "observed_at", 30),
     },
-
-    // spx_signal_weight_reports: one row per nightly run — keep 365 days
     {
       key: "spx_signal_weight_reports",
       run: () => deleteOlderThan("spx_signal_weight_reports", "computed_at", 365),
     },
-
-    // market_regime: every-few-min RTH snapshots; only the latest row is read for "current
-    // regime". Previously unbounded — keep 90 days for trend analytics.
-    { key: "market_regime", run: () => deleteOlderThan("market_regime", "captured_at", 90) },
-
-    // flow_anomalies: every-5-min RTH detections (recent ones surfaced in UI). Previously
-    // unbounded — keep 90 days.
-    { key: "flow_anomalies", run: () => deleteOlderThan("flow_anomalies", "detected_at", 90) },
-
-    // coaching_alerts: every-10-min RTH rows (UI reads only the last ~30 min). Previously
-    // unbounded — keep 90 days.
-    { key: "coaching_alerts", run: () => deleteOlderThan("coaching_alerts", "generated_at", 90) },
-
-    // SPX shadow + engine telemetry — high write volume during RTH.
+    { key: "market_regime", run: () => deleteOlderThan("market_regime", "captured_at", 7) },
+    { key: "flow_anomalies", run: () => deleteOlderThan("flow_anomalies", "detected_at", 14) },
+    { key: "coaching_alerts", run: () => deleteOlderThan("coaching_alerts", "generated_at", 14) },
     {
       key: "spx_confluence_shadow_observations",
-      run: () => deleteOlderThan("spx_confluence_shadow_observations", "observed_at", 180),
+      run: () => deleteOlderThan("spx_confluence_shadow_observations", "observed_at", 30),
     },
     {
       key: "spx_engine_snapshots",
-      run: () => deleteOlderThan("spx_engine_snapshots", "observed_at", 90),
+      run: () => deleteOlderThan("spx_engine_snapshots", "observed_at", 14),
     },
     {
       key: "spx_playbook_shadow_observations",
-      run: () => deleteOlderThan("spx_playbook_shadow_observations", "observed_at", 180),
+      run: () => deleteOlderThan("spx_playbook_shadow_observations", "observed_at", 30),
     },
     {
       key: "spx_playbook_instance_events",
-      run: () => deleteOlderThan("spx_playbook_instance_events", "observed_at", 180),
+      run: () => deleteOlderThan("spx_playbook_instance_events", "observed_at", 30),
     },
     {
       key: "spx_playbook_instances",
-      run: () => deleteOlderThan("spx_playbook_instances", "updated_at", 365),
+      run: () => deleteOlderThan("spx_playbook_instances", "updated_at", 90),
     },
     { key: "lotto_plays", run: () => deleteOlderThan("lotto_plays", "created_at", 365) },
-
-    // vector_wall_history: durable mirror of the Redis wall rail — one upsert per 15s bucket
-    // during RTH. Only ~90 days are ever replayed, so prune older sessions by updated_at.
     {
       key: "vector_wall_history",
-      run: () => deleteOlderThan("vector_wall_history", "updated_at", 90),
+      run: () => deleteOlderThan("vector_wall_history", "updated_at", 14),
+    },
+    // Previously unbounded tables — now covered.
+    {
+      key: "gex_regime_events",
+      run: () => deleteOlderThan("gex_regime_events", "observed_at", 30),
+    },
+    {
+      key: "nighthawk_jobs",
+      run: () => deleteOlderThan("nighthawk_jobs", "started_at", 90),
+    },
+    {
+      key: "nighthawk_editions",
+      run: () => deleteOlderThan("nighthawk_editions", "created_at", 365),
+    },
+    {
+      key: "bie_interactions",
+      run: () => deleteOlderThan("bie_interactions", "created_at", 90),
     },
   ];
 
