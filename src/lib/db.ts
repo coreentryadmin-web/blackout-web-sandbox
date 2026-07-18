@@ -130,7 +130,7 @@ async function createPool(): Promise<Pool> {
       if (candidate.mode === "public") {
         console.warn(
           "[db] Private Postgres DNS failed — using DATABASE_PUBLIC_URL. " +
-            "Switch blackout-web to RDS private networking."
+            "Switch blackout-web to ECS VPC networking for free private connectivity."
         );
       }
 
@@ -175,7 +175,7 @@ async function createPool(): Promise<Pool> {
         query_timeout:
           statementTimeoutMs > 0 ? statementTimeoutMs + 5_000 : undefined,
       });
-      // CRITICAL: ALB/ECS drops idle private-network connections; node-postgres surfaces that
+      // CRITICAL: the load balancer drops idle private-network connections; node-postgres surfaces that
       // as an 'error' event on the pool's idle clients. With NO listener, Node escalates it to
       // an unhandled 'error' and CRASHES the entire replica. Swallow + log — the pool
       // transparently re-establishes on the next query. Mirrors the Redis fix in make-redis.ts.

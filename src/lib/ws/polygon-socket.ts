@@ -30,7 +30,7 @@ const POLYGON_API_KEY = process.env.POLYGON_API_KEY ?? process.env.MASSIVE_API_K
 /**
  * `open_source` is the PROVENANCE of `session_open` (FIX-A):
  *  - "rest": anchored to the authoritative REST prevClose-derived true-session open (correct day
- *     change% on a mid-session cold start, e.g. a ECS deploy at 1pm).
+ *     change% on a mid-session cold start, e.g. an ECS deploy at 1pm).
  *  - "ws-bar": anchored to the first WS A-bar open we observed. Correct ONLY when the socket was
  *     up at/near 09:30; on a cold start mid-session it's the price AT BOOT, so change% is wrong.
  *  - "": never anchored yet.

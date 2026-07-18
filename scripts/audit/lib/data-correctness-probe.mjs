@@ -1,6 +1,6 @@
 /**
  * Probe data-correctness from external HTTP (Cloudflare ~100s cap).
- * Full-platform `?force=1` often 524s through the edge; production cron runs internally.
+ * Full-platform `?force=1` often 524s through the edge; ECS cron runs internally.
  * This runs the heatmap surface (GEX oracle + cross-tool) under the timeout, then
  * optionally records that the full sweep was skipped.
  */

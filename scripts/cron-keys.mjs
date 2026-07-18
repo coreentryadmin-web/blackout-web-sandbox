@@ -1,0 +1,36 @@
+/**
+ * Registry of all cron job keys — the canonical list used by audit scripts
+ * (cron-audit, ops-collect, validate-deploy) to check cron_job_runs coverage.
+ */
+export const ALL_CRON_KEYS = [
+  "alert-outcome-sync",
+  "cron-staleness-watchdog",
+  "db-cleanup",
+  "data-correctness",
+  "data-integrity",
+  "flow-ingest",
+  "gex-alerts",
+  "gex-eod-snapshot",
+  "zerodte-warm",
+  "heatmap-warm",
+  "desk-warm",
+  "largo-cleanup",
+  "market-regime-detector",
+  "membership-reconcile",
+  "nighthawk-morning-confirm",
+  "nighthawk-outcomes",
+  "nighthawk-playbook",
+  "provider-health-reconcile",
+  "socket-health",
+  "spx-evaluate",
+  "spx-issues-sync",
+  "spx-signal-observe",
+  "spx-signal-weight-optimize",
+  "uw-cache-refresh",
+  "vector-universe-snapshot",
+  "vector-full-state-snapshot",
+  "vector-dark-pool-warm",
+  "bie-full-state-snapshot",
+  "coaching-alerts",
+  "platform-warm",
+];

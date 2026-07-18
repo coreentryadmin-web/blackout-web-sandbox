@@ -38,8 +38,8 @@ export function AdminLaunchStatusPanel() {
             What paying <strong className="font-semibold text-sky-200">non-admin</strong> users see.
             Admins bypass all gates. Five tools ship live by default; add{" "}
             <code className="rounded bg-white/5 px-1 text-sky-200">largo</code> to{" "}
-            <code className="rounded bg-white/5 px-1 text-sky-200">LAUNCHED_TOOLS</code> in the ECS task definition{" "}
-            <span className="text-white/40">blackout-web → Environment</span> to unlock Largo — no deploy.
+            <code className="rounded bg-white/5 px-1 text-sky-200">LAUNCHED_TOOLS</code> in ECS{" "}
+            <span className="text-white/40">blackout-web → Variables</span> to unlock Largo — no deploy.
           </p>
         </div>
         <div className="text-right">

@@ -20,7 +20,7 @@ export const maxDuration = 120;
 
 function inOutcomeWindow(force: boolean): boolean {
   if (force) return true;
-  // DST-aware window (America/New_York). The EventBridge cron now fires at both 20:30 and
+  // DST-aware window (America/New_York). The ECS cron now fires at both 20:30 and
   // 21:30 UTC so 16:30 ET is hit in EDT and EST; this guard self-skips the off-band fire.
   return inEtWindow({
     targetHour: Number(process.env.NIGHTHAWK_OUTCOMES_HOUR_ET ?? "16"),

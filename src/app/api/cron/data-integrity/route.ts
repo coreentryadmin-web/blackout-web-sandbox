@@ -14,8 +14,8 @@ export const dynamic = "force-dynamic";
  * each other (desk vs heatmap vs quote, SPY/SPX tracking, max-pain scaling, desk
  * internal math, GEX freshness) and AUTO-OPENS admin incidents on any discrepancy.
  *
- * Hit every ~5 min during market hours from the EventBridge scheduled rule
- * (railway.data-integrity.toml) with CRON_SECRET. Self-skips outside the RTH window
+ * Hit every ~5 min during market hours from the ECS cron service
+ * (ECS scheduled task) with CRON_SECRET. Self-skips outside the RTH window
  * and when the market is closed (numbers are legitimately stale then).
  *
  * Incident creation is ON by default (set DATA_INTEGRITY_INCIDENTS=0 to disable the

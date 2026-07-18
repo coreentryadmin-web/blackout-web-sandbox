@@ -162,7 +162,7 @@ IREN, ALAB, HOOD, etc.):
 ## 10. Environment realities (carry-over, must respect)
 
 - WebSockets + raw Postgres TCP are blocked from the sandbox; use HTTPS egress only. DB checks go
-  through an app endpoint / `railway`-side, or via the cron read-back (`spxRailLen`), not a raw `pg`
+  through an app endpoint / ECS-side, or via the cron read-back (`spxRailLen`), not a raw `pg`
   socket. (`vector_wall_history` direct reads may not be possible from here — prefer the read-back /
   an HTTP debug path; note if a DB check is SKIPPED for this reason.)
 - Bead rail bucket = **15s** (`DEFAULT_WALL_TRAIL_SAMPLE_SEC`). Recorder cron baseline = 5 min

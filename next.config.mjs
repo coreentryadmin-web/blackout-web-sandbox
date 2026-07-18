@@ -1,5 +1,13 @@
 /** @type {import('next').NextConfig} */
 
+// Derive the app hostname from NEXT_PUBLIC_SITE_URL for Next.js image remote
+// patterns (e.g. "blackouttrades.com" or "staging.blackouttrades.com").
+const siteHostname = (() => {
+  const url = process.env.NEXT_PUBLIC_SITE_URL?.trim();
+  if (!url) return null;
+  try { return new URL(url).hostname; } catch { return null; }
+})();
+
 // Base CSP for the whole app. `frame-ancestors 'self'` (plus X-Frame-Options
 // SAMEORIGIN below) denies cross-origin framing everywhere — which is correct
 // for every route EXCEPT the public /embed/* social-proof cards, which are
@@ -47,6 +55,10 @@ const remotePatterns = [
   { protocol: "https", hostname: "images.unsplash.com" },
 ];
 
+if (siteHostname) {
+  remotePatterns.push({ protocol: "https", hostname: siteHostname });
+}
+
 import os from "os";
 import path from "path";
 import { fileURLToPath } from "url";
@@ -85,7 +97,7 @@ const nextConfig = {
   // (the former experimental.instrumentationHook is now the default — flag removed).
   // ESLint runs during builds (ignoreDuringBuilds: false). All current findings are
   // Warning-level so they do not block deploys. An Error-level finding will fail the
-  // CI/Docker build — the desired gate: catch regressions at build time, not in prod.
+  // build — the desired gate: catch regressions at build time, not in prod.
   eslint: { ignoreDuringBuilds: false },
   async redirects() {
     return [

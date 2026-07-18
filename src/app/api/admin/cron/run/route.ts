@@ -15,7 +15,7 @@ export const maxDuration = 300;
 const SUPPORTED = DISPATCHABLE_CRONS;
 
 /**
- * Admin-triggered manual cron run/warm. Operational stopgap for when EventBridge's per-cron
+ * Admin-triggered manual cron run/warm. Operational stopgap for when ECS per-cron
  * trigger services are down: an admin can warm the stale crons from the browser. Auth is
  * the SAME admin gate as the rest of /api/admin (requireAdminApi → 401/403); CRON_SECRET is
  * never required from the caller — we attach it server-side to the synthetic cron request.

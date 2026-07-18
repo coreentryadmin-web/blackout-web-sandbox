@@ -54,7 +54,7 @@ export async function makeRedis(
     family: 0,
     // READONLY failover: if Redis is ever moved to a replicated/managed tier (ElastiCache, a
     // promoted replica), a write hitting a read-only node returns a READONLY error. Returning 2
-    // forces a reconnect AND re-sends the failed command. No-op on single-node ElastiCache Redis
+    // forces a reconnect AND re-sends the failed command. No-op on single-node managed Redis
     // (which never returns READONLY), so it's free insurance with zero behavior change today.
     reconnectOnError: (err: Error) => (/READONLY/.test(err.message) ? 2 : false),
   });

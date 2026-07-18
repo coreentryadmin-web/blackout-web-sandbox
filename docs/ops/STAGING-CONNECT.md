@@ -5,7 +5,7 @@
 **App repo:** `coreentryadmin-web/blackout-web-sandbox` (branch `blackout-web-sandbox`)  
 **Infra repo:** `coreentryadmin-web/blackout-infra` (Terraform, Cognito, ECS, RDS)
 
-Staging is **not** Railway. It runs on **AWS ECS Fargate** behind an ALB, fronted by **Cloudflare**. Auth is **Amazon Cognito Hosted UI** (not Clerk satellite).
+Staging runs on **AWS ECS Fargate** behind an ALB, fronted by **Cloudflare**. Auth is **Amazon Cognito Hosted UI** (not Clerk satellite).
 
 ---
 

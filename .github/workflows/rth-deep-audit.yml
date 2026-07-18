@@ -1,7 +1,7 @@
 # RTH deep numeric audit — weekdays during market hours (GitHub-hosted).
 #
 # Secrets required (repo → Settings → Secrets → Actions):
-#   CRON_SECRET          — same as ECS blackout-web
+#   CRON_SECRET          — same as production app env
 #   POLYGON_API_KEY      — optional but recommended (SPX oracle)
 #   DATABASE_PUBLIC_URL  — optional (Postgres writer/cron freshness)
 #   SENTRY_AUTH_TOKEN    — optional (Sentry token smoke)

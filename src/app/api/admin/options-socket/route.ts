@@ -1,6 +1,6 @@
 // Admin status for the Night's Watch options WebSocket (live option marks).
 // Lets an operator verify the engine is enabled, connected, authenticated, and
-// streaming the union of held contracts — without digging through CloudWatch logs.
+// streaming the union of held contracts — without digging through container logs.
 
 import { NextResponse } from "next/server";
 import { requireAdminApi } from "@/lib/admin-access";

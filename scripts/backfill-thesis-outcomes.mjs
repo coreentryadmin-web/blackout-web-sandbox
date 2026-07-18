@@ -9,7 +9,7 @@
  *   node --import tsx scripts/backfill-thesis-outcomes.mjs           # dry-run (default)
  *   node --import tsx scripts/backfill-thesis-outcomes.mjs --apply   # write updates
  *
- * Requires DATABASE_URL or DATABASE_PUBLIC_URL env var.
+ * Requires DATABASE_URL or DATABASE_PUBLIC_URL.
  */
 import { createAuditClient, resolveAuditDbUrl } from "./pg-audit.mjs";
 
@@ -18,7 +18,7 @@ const apply = process.argv.includes("--apply");
 async function resolveDbUrl() {
   const url = resolveAuditDbUrl();
   if (!url) {
-    console.error("FATAL: no DATABASE_URL — set env var.");
+    console.error("FATAL: no DATABASE_URL — set DATABASE_URL or DATABASE_PUBLIC_URL env.");
     process.exit(2);
   }
   return url;

@@ -1,6 +1,6 @@
 // Cron: pre-warm the shared GEX heatmap matrix cache for the ~11 Heat Maps presets.
 // Schedule: ~every 30-45s during market hours (registered in cron-registry.ts as
-// "heatmap-warm"; EventBridge wires the actual fire via railway.heatmap-warm.toml).
+// "heatmap-warm"; ECS task definition wires the actual fire).
 //
 // THE POINT: the Heat Maps UI / Largo explain / gex-positioning all read fetchGexHeatmap(ticker),
 // which dedups per ticker through the in-memory + Redis matrix cache (and a single-flight guard).

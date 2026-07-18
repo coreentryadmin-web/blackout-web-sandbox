@@ -8,7 +8,7 @@
  *   node scripts/staging-prod-latency-watch.mjs --once
  *   node scripts/staging-prod-latency-watch.mjs --interval=180
  */
-import { execSync, spawnSync } from "node:child_process";
+import { execSync } from "node:child_process";
 import { appendFileSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { chromium } from "playwright";
@@ -64,24 +64,11 @@ function loadSecrets() {
   let prodCron = process.env.CRON_SECRET?.trim();
   if (!prodCron) {
     try {
-      unsetLegacyApiToken();
-      const out = spawnSync(
-        "railway",
-        [
-          "variables",
-          "--service",
-          "blackout-web",
-          "--environment",
-          "production",
-          "--project",
-          process.env.RAILWAY_PROJECT_ID ?? "9282f541-a288-4c8b-a174-ee22016f4b1a",
-          "--json",
-        ],
-        { encoding: "utf8", env: { ...process.env, RAILWAY_API_TOKEN: "" } }
+      const raw = execSync(
+        'aws secretsmanager get-secret-value --secret-id blackout-production/app/env --query SecretString --output text',
+        { encoding: "utf8" }
       );
-      if (out.status === 0) {
-        prodCron = JSON.parse(out.stdout).CRON_SECRET?.trim();
-      }
+      prodCron = JSON.parse(raw).CRON_SECRET?.trim();
     } catch {
       /* fall through */
     }
@@ -94,9 +81,6 @@ function loadSecrets() {
   };
 }
 
-function unsetLegacyApiToken() {
-  delete process.env.RAILWAY_API_TOKEN;
-}
 
 async function probeApi(base, cron, path) {
   const t0 = performance.now();

@@ -1,6 +1,6 @@
 # Playbook Evidence Base — mined from prod outcomes (2026-07-10)
 
-Source: Railway prod Postgres (`spx_play_outcomes` n=19, 2026-06-29 → 2026-07-06;
+Source: ECS prod Postgres (`spx_play_outcomes` n=19, 2026-06-29 → 2026-07-06;
 `market_regime` n=776; `spx_engine_snapshots` n=306). Small sample — directional
 evidence, not statistical proof. Re-run after each RTH week.
 

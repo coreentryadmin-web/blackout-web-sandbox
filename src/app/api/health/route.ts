@@ -3,7 +3,7 @@ import { dbConfigured } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
 
-/** Minimal deploy liveness — ALB/ECS healthcheck; no auth, no DB migrations. */
+/** Minimal deploy liveness — ECS healthcheck; no auth, no DB migrations. */
 export async function GET() {
   const as_of = new Date().toISOString();
 

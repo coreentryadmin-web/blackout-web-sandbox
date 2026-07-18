@@ -21,7 +21,7 @@ Complete step-by-step guide to put blackouttrades.com behind Cloudflare (CDN, DD
 
 | Type | Name | Value | Proxy |
 |------|------|-------|-------|
-| A | `@` | Railway public IP (or CNAME) | Proxied (orange cloud) |
+| A | `@` | AWS ALB DNS (or CNAME) | Proxied (orange cloud) |
 | CNAME | `www` | `blackouttrades.com` | Proxied |
 | CNAME | `clerk` | `accounts.clerk.com` | DNS-only (grey cloud) — Clerk requires this |
 
@@ -33,15 +33,15 @@ Complete step-by-step guide to put blackouttrades.com behind Cloudflare (CDN, DD
 
 1. In Cloudflare dashboard → **SSL/TLS** → **Overview**.
 2. Set encryption mode to **Full (strict)**.
-   - *Full* = Cloudflare encrypts between user ↔ CF and CF ↔ Railway, but accepts a self-signed cert on Railway.
-   - *Full (strict)* = also validates the Railway origin certificate. Railway's managed Postgres/Next.js services use a valid cert, so this is safe and recommended.
+   - *Full* = Cloudflare encrypts between user ↔ CF and CF ↔ ECS origin, but accepts a self-signed cert on the origin.
+   - *Full (strict)* = also validates the ECS origin certificate. AWS-managed services use a valid ACM cert, so this is safe and recommended.
 3. Under **SSL/TLS → Edge Certificates**:
    - Enable **Always Use HTTPS** → On
    - Enable **Automatic HTTPS Rewrites** → On
    - **Minimum TLS Version** → TLS 1.2
    - **TLS 1.3** → On
 4. Under **SSL/TLS → Origin Server** (optional but recommended):
-   - Create an **Origin CA Certificate** from Cloudflare, install it on Railway if you have a custom origin cert path (Railway handles this automatically for managed services — skip if using Railway's default).
+   - Create an **Origin CA Certificate** from Cloudflare, install it on the ALB if you have a custom origin cert path (AWS ACM handles this automatically for managed services — skip if using ACM's default).
 
 ---
 
@@ -171,7 +171,7 @@ As of Next.js 15, set `experimental.serverActions.trustProxies` or add to the to
 const nextConfig = {
   // ... existing config ...
 
-  // Trust Cloudflare + Railway reverse proxy so req.ip resolves to the real
+  // Trust Cloudflare + AWS ALB reverse proxy so req.ip resolves to the real
   // visitor IP from CF-Connecting-IP / X-Forwarded-For, not the proxy IP.
   // Next.js 15 reads this and marks these CIDR blocks as trusted.
   // Cloudflare IPv4 ranges: https://www.cloudflare.com/ips-v4/
@@ -188,7 +188,7 @@ const nextConfig = {
       // Cloudflare IPv6
       "2400:cb00::/32", "2606:4700::/32", "2803:f800::/32",
       "2405:b500::/32", "2405:8100::/32", "2a06:98c0::/29", "2c0f:f248::/32",
-      // Railway internal proxy
+      // AWS VPC internal proxy
       "100.64.0.0/10",
     ],
   },
@@ -220,7 +220,7 @@ const visitorIp =
 
 ## 7. Cache Purge on Deploy
 
-After each Railway deploy, purge the Cloudflare cache so old static chunks don't get served. Add this to your CI or Railway deploy hook:
+After each ECS deploy, purge the Cloudflare cache so old static chunks don't get served. Add this to your CI or ECS deploy hook:
 
 ```bash
 curl -X POST "https://api.cloudflare.com/client/v4/zones/${CF_ZONE_ID}/purge_cache" \
@@ -229,4 +229,4 @@ curl -X POST "https://api.cloudflare.com/client/v4/zones/${CF_ZONE_ID}/purge_cac
   --data '{"purge_everything":true}'
 ```
 
-Add `CF_ZONE_ID` and `CF_API_TOKEN` (with Cache Purge permission) to Railway env.
+Add `CF_ZONE_ID` and `CF_API_TOKEN` (with Cache Purge permission) to the ECS task definition env.

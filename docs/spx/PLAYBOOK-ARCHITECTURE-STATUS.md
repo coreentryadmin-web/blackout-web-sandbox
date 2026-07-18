@@ -2,7 +2,7 @@
 
 **Repo:** `coreentryadmin-web/blackout-web-sandbox` → `https://staging.blackouttrades.com`  
 **Last updated:** 2026-07-11  
-**Scope:** Staging playbook lab only — do **not** merge to Railway prod `blackout-web` `main` unless explicitly requested.
+**Scope:** Staging playbook lab only — do **not** merge to ECS prod `blackout-web` `main` unless explicitly requested.
 
 This document consolidates architecture, implementation status, per-playbook fidelity, four setup families, what is fixed, what remains, validation tiers, and code map. Older docs (`PLAYBOOK-ARCHITECTURE-DEEP-DIVE.md`, `PLAYBOOK-IMPLEMENTATION-ROADMAP.md`, etc.) remain as detail appendices; **start here** for current truth.
 
@@ -45,7 +45,7 @@ This document consolidates architecture, implementation status, per-playbook fid
 | **Staging deploy** | Playbook lab **hardwired** via `isStagingDeploy()` — live gate always on |
 | **Live allowlist** | PB-01, PB-02, PB-03 only (`PLAYBOOK_PAPER_EXECUTABLE_DEFAULT`) — PB-04 **shadow** (mvp matcher) |
 | **Execution modes** | `shadow` → `paper_executable` → `limited_live` → `production` per registry |
-| **Prod Railway** | Legacy confluence BUY unless `PLAYBOOK_LIVE_GATE=1` (off) |
+| **Prod ECS** | Legacy confluence BUY unless `PLAYBOOK_LIVE_GATE=1` (off) |
 | **Primary selection** | Evidence-aware composite score (#74); static priority tie-break only |
 | **State machine** | Matcher FSM `implemented`; trade FSM `implemented`; blocked-while-armed ordering `partial` |
 | **Evidence** | n=19 prod outcomes mined; autonomous prod BUY frozen until tier thresholds |

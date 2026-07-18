@@ -10,7 +10,7 @@
  * or within 30 minutes after 09:30 open. Do NOT wait for the user to ask.
  */
 
-import { execSync, spawnSync } from "node:child_process";
+import { spawnSync } from "node:child_process";
 import { createAuditClient, resolveAuditDbUrl } from "./pg-audit.mjs";
 import { isTradingDayEt, todayEtYmd } from "./gha-et-window.mjs";
 
@@ -175,21 +175,6 @@ async function main() {
       }
     } else {
       console.log("  ⚠ CRON_SECRET unset — skipping options-socket HTTP probe");
-    }
-
-    try {
-      const logs = execSync(
-        "railway logs --service blackout-web 2>/dev/null | rg 'uw-socket' | tail -20",
-        { encoding: "utf8" }
-      );
-      if (/uw-socket.*stall watchdog/i.test(logs)) fail("uw-socket stall reconnects in recent logs");
-      else ok("No uw-socket stall storms");
-    } catch {
-      if (process.env.GITHUB_ACTIONS === "true") {
-        console.log("  ⚠ CloudWatch uw-socket log check skipped in GitHub Actions");
-      } else {
-        console.log("  ⚠ Could not read CloudWatch logs for uw-socket");
-      }
     }
 
     if (failures.length) {

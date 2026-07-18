@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Staging RTH validation — AWS ECS staging only (no CloudWatch log grep).
+ * Staging RTH validation — AWS ECS staging only.
  *
  * Usage:
  *   npm run validate:staging-rth
@@ -79,7 +79,6 @@ async function main() {
     CRON_SECRET: cron,
     DATABASE_URL: secret.DATABASE_URL,
     DATABASE_PUBLIC_URL: secret.DATABASE_URL,
-    SKIP_RAILWAY: "1",
     REPLICA_COUNT: secret.REPLICA_COUNT ?? "3",
     STAGING_CRON_WARM: "1",
   };

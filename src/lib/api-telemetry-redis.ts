@@ -38,7 +38,7 @@ let _redisClientInit: Promise<import("ioredis").default | null> | null = null;
 
 function instanceId(): string {
   return (
-    process.env.RAILWAY_REPLICA_ID?.trim() ||
+    process.env.ECS_TASK_ID?.trim() ||
     process.env.HOSTNAME?.trim() ||
     `pid-${process.pid}`
   );

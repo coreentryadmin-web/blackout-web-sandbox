@@ -370,8 +370,8 @@ the same shared event list.
 - **Send:** each NEW (non-deduped) regime event → `sendWebPush({ title:`${ticker} ${label}`,
   body: event.message, url:`/heatmap?ticker=${ticker}` }, {})` — broadcast to all push subscribers.
   Best-effort per ticker (one failure never aborts the rest); never throws.
-- **Schedule:** ~every 5 min during market hours — infra-owned railway registration (per-service
-  `railway.gex-alerts.toml` + a `scripts/hit-cron.mjs` entry), like the EOD cron. Also works
+- **Schedule:** ~every 5 min during market hours — infra-owned ECS registration (per-service
+  ECS task definition + a `scripts/hit-cron.mjs` entry), like the EOD cron. Also works
   on-demand via a Bearer call.
 
 ### Platform follow-ups to make web-push LIVE (ALL platform/other-session-owned)
@@ -382,7 +382,7 @@ The heatmap side (the `events[]` contract + this evaluator) is complete. Going l
    `VAPID_PRIVATE_KEY` (and optionally `VAPID_SUBJECT`) and run `npm i web-push`. Until then both
    the scaffold and `sendWebPush` stay inert.
 2. **Activate the cron** — set `GEX_ALERTS_PUSH=1`. With VAPID also set, the cron leaves inert mode.
-3. **Register the cron schedule (railway)** — add `railway.gex-alerts.toml` + the `scripts/hit-cron.mjs`
+3. **Register the cron schedule (ECS)** — add an ECS task definition + the `scripts/hit-cron.mjs`
    entry hitting `/api/cron/gex-alerts` with `Authorization: Bearer ${CRON_SECRET}`, ~every 5 min
    during market hours.
 4. **Per-ticker per-user subscription model + a 🔔 opt-in toggle** in the heatmap UI, so alerts
@@ -397,5 +397,5 @@ The heatmap side (the `events[]` contract + this evaluator) is complete. Going l
 | `src/app/api/cron/gex-alerts/route.ts` (evaluator cron, inert-by-default) | **HEATMAP-OWNED — done** |
 | VAPID keys + `npm i web-push` | **PLATFORM-OWNED — activation** |
 | `GEX_ALERTS_PUSH=1` | **PLATFORM-OWNED — activation** |
-| `railway.gex-alerts.toml` + `scripts/hit-cron.mjs` schedule | **INFRA-OWNED — registration** |
+| ECS task definition + `scripts/hit-cron.mjs` schedule | **INFRA-OWNED — registration** |
 | Per-ticker per-user push subscription model + 🔔 opt-in toggle | **OTHER-SESSION-OWNED — follow-up** |

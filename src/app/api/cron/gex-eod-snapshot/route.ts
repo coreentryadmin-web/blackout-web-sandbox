@@ -9,7 +9,7 @@
 //
 // SCHEDULE (infra-owned — DO NOT edit cron config from here): this should fire ~4:10pm ET on
 // trading days, AFTER the close so the matrices reflect the settled book. Per the project's cron
-// convention the schedule REGISTRATION needs a per-service EventBridge scheduled rule + a
+// convention the schedule REGISTRATION needs an ECS task definition + a
 // `scripts/hit-cron.mjs` entry hitting `/api/cron/gex-eod-snapshot` with `Authorization: Bearer
 // ${CRON_SECRET}` (the same Bearer pattern this route authenticates with). Registering that
 // schedule is infra-owned and intentionally NOT done in this PR. The route also works on-demand —

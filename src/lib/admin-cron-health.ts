@@ -373,7 +373,7 @@ export async function buildCronHealthSnapshot(): Promise<CronHealthPayload> {
     return health;
   });
 
-  // Handshake lag during ECS redeploy gaps can mark warmers/flow-ingest stale even when
+  // Handshake lag during ECS rolling deploy gaps can mark warmers/flow-ingest stale even when
   // their PG/Redis targets are still fresh (organic traffic + TTL + WS paths keep data live).
   const TARGET_FRESH_OVERRIDE_KEYS = new Set([
     "flow-ingest",

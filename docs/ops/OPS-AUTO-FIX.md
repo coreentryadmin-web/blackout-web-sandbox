@@ -36,7 +36,7 @@ Also triggers when **RTH deep audit** or **cron audit query** workflows fail.
 1. Read this doc + `docs/ops/RTH-OPEN-RUNBOOK.md`
 2. Fix each action item (code, ECS task definition, secrets, etc.)
 3. Branch → PR → **auto-merge to `main` once CI is green** (see `CLAUDE.md` § Merge authorization)
-4. Wait for ECS deploy to stabilize (health check green)
+4. Poll ECS deploy **SUCCESS**
 5. Re-run:
    ```bash
    node scripts/ops-collect-action-items.mjs   # must exit 0

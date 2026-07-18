@@ -79,7 +79,7 @@ export function ensureDataSockets() {
   } catch (err) {
     console.warn("[init-data-sockets] stocks/LULD socket init failed (non-fatal):", err);
   }
-  // Backup RTH warmers when ECS scheduled tasks stall (#90 silent-death). Leader-elected;
+  // Backup RTH warmers when ECS cron triggers stall (#90 silent-death). Leader-elected;
   // dispatches idempotent cache warmers from in-process when cron_job_runs age exceeds cadence.
   void import("@/lib/rth-warm-leader")
     .then(({ ensureRthWarmLeader }) => ensureRthWarmLeader())

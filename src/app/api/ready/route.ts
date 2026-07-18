@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import { pingDatabaseConnectivity, dbConfigured } from "@/lib/db";
 import { redisStatus } from "@/lib/redis-health";
-import { ensureWebBootWarm } from "@/lib/web-boot-warm";
 
 export const dynamic = "force-dynamic";
 
@@ -15,8 +14,6 @@ function sleep(ms: number): Promise<void> {
 
 /** Readiness probe — checks DB connectivity. Use for ECS deploy gates, not liveness. */
 export async function GET() {
-  ensureWebBootWarm();
-
   if (!dbConfigured()) {
     return NextResponse.json({ ok: true, db: "skipped" });
   }
@@ -42,7 +39,7 @@ export async function GET() {
 
   // Log the real diagnostic server-side only -- this route is public/unauthenticated
   // (scripts/verify-api-auth-guards.mjs's allowlist), and the raw driver error can embed
-  // internal hostnames or credential text (e.g. RDS proxy host, "password authentication
+  // internal hostnames or credential text (e.g. internal container hostnames, "password authentication
   // failed for user ..."). Never forward it verbatim to an unauthenticated caller.
   console.error("[ready] database ping failed after retries:", lastError, lastMode);
   return NextResponse.json({ ok: false, db: "unreachable", error: "db_unreachable" }, { status: 503 });
