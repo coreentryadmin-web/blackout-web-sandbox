@@ -5,7 +5,7 @@ import { sharedCacheGet, sharedCacheSet } from "@/lib/shared-cache";
  * Cluster-wide "the UW flow WebSocket is delivering frames" heartbeat.
  *
  * Problem (audit gap #10): flow-ingest gates its REST skip/run decision on the
- * LOCAL in-process uwSocket.getStatus(). On a multi-replica Railway deployment a
+ * LOCAL in-process uwSocket.getStatus(). On a multi-replica ECS deployment a
  * replica that serves only /flows traffic boots the WS and delivers frames, while
  * a DIFFERENT replica runs the flow-ingest cron — that cron's local socket is
  * CLOSED, so it cannot tell the cluster already has a live WS and runs REST

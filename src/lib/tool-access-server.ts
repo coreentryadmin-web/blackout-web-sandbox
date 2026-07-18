@@ -3,7 +3,7 @@ import { getAdminStatus, resolveAdminApi } from "@/lib/admin-access";
 import { isToolLaunched, type ToolKey } from "@/lib/tool-access";
 
 // Server-side launch gate = the per-tool launch flag (tool-access.ts) + admin bypass (admin-access.ts,
-// the Railway ADMIN_EMAILS allowlist / publicMetadata.role==="admin"). Admins always get every tool
+// the ECS ADMIN_EMAILS allowlist / publicMetadata.role==="admin"). Admins always get every tool
 // exactly as today; everyone else only gets launched tools. A LAUNCHED tool short-circuits before any
 // Clerk call, so the common path adds zero overhead — the getUser only happens on a LOCKED tool.
 

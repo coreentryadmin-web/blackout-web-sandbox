@@ -15,7 +15,7 @@ import { getUserProfile } from "@/lib/user-directory";
  * per minute AND lets a page render reuse a tier already warmed by a recent panel poll
  * (so a premium user navigating between tools rarely hits a cold getUser at all).
  *
- * Per-replica Map is fine: each Railway replica caches independently and the TTL keeps
+ * Per-replica Map is fine: each ECS container caches independently and the TTL keeps
  * tier changes (Whop webhook + membership-reconcile cron) visible within a minute.
  * For immediate cross-replica invalidation (e.g. on membership.activated webhook), call
  * publishTierChanged(userId) which: (1) evicts locally and (2) fans the message to all

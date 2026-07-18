@@ -1,15 +1,15 @@
 /**
- * In-process RTH warm leader — backup when Railway cron trigger services stall.
+ * In-process RTH warm leader — backup when ECS cron trigger services stall.
  *
- * Railway cron triggers (hit-cron.mjs) can stop firing on schedule after redeploys
+ * ECS cron triggers (hit-cron.mjs) can stop firing on schedule after redeploys
  * (#90-class silent death). The staleness watchdog self-heals every 20m, but critical
- * warmers need sub-5m cadence — Railway's native cron floor is 5 minutes, not 1.
+ * warmers need sub-5m cadence — the native cron floor is 5 minutes, not 1.
  *
  * One cluster leader (Redis SETNX) polls cron_job_runs every 60s during the extended warm
  * window (4 AM–8 PM ET weekdays — isEtExtendedWarmHours, wider than cash RTH on purpose: this
- * loop runs inside the always-on web server process, not a Railway-scheduled trigger, so it's
+ * loop runs inside the always-on web server process, not a scheduled trigger, so it's
  * the one lever that can keep caches warm through pre-market/after-hours browsing without any
- * Railway config change — see FINDINGS.md 2026-07-06) and dispatches idempotent warmers via
+ * ECS config change — see FINDINGS.md 2026-07-06) and dispatches idempotent warmers via
  * dispatchCronWarm when a writer is overdue (desk-warm: 90s).
  */
 import { CRON_JOBS } from "@/lib/cron-registry";
@@ -118,7 +118,7 @@ async function tick(): Promise<void> {
     isLeader = await tryAcquireLead();
     if (!isLeader) return;
     startLeaderRefresh();
-    console.log("[rth-warm-leader] acquired cluster lead — backing up stalled Railway cron triggers");
+    console.log("[rth-warm-leader] acquired cluster lead — backing up stalled ECS cron triggers");
   }
 
   const jobByKey = Object.fromEntries(CRON_JOBS.map((j) => [j.key, j]));

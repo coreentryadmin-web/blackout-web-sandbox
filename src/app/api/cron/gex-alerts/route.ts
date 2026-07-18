@@ -16,9 +16,9 @@
 // DEDUP: a given regime cross alerts ONCE per ET-date (keyed `gex-alert-sent:{ticker}:{type}:{etDate}`,
 // and bucketed by level where a level is present), not on every 5-minute cron tick.
 //
-// SCHEDULE (infra-owned — DO NOT edit railway config from here): run ~every 5 minutes during market
-// hours on trading days. Per the project's cron convention the schedule REGISTRATION needs a
-// per-service `railway.gex-alerts.toml` + a `scripts/hit-cron.mjs` entry hitting `/api/cron/gex-alerts`
+// SCHEDULE (infra-owned — DO NOT edit cron config from here): run ~every 5 minutes during market
+// hours on trading days. Per the project's cron convention the schedule REGISTRATION needs an
+// ECS task definition + a `scripts/hit-cron.mjs` entry hitting `/api/cron/gex-alerts`
 // with `Authorization: Bearer ${CRON_SECRET}` (the Bearer pattern this route authenticates with).
 // Registering that schedule is infra-owned and intentionally NOT done here. The route also works
 // on-demand via a manual Bearer call, so it is useful before the schedule lands.

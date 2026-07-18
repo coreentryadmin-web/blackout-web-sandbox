@@ -9,12 +9,12 @@ import { logCronRun } from "@/lib/cron-run";
 import { isCronAuthorized } from "@/lib/market-api-auth";
 import { warnIfPlayTimingMisconfigured } from "@/features/spx/lib/spx-play-config";
 
-// Validate timing config on every cold start so Railway logs surface misconfiguration.
+// Validate timing config on every cold start so container logs surface misconfiguration.
 warnIfPlayTimingMisconfigured();
 
 export const dynamic = "force-dynamic";
 
-/** Optional market-hours evaluator — hit from Railway/Vercel cron with CRON_SECRET. */
+/** Optional market-hours evaluator — hit from ECS/Vercel cron with CRON_SECRET. */
 export async function GET(req: NextRequest) {
   const started = Date.now();
   if (!isCronAuthorized(req)) {

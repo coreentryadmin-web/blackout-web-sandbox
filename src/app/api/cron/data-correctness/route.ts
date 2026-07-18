@@ -78,7 +78,7 @@ export async function GET(req: NextRequest) {
       mdPath = path.join(dir, `data-correctness-${date}.md`);
       await fs.writeFile(mdPath, renderScorecardMarkdown(card), "utf8");
     } catch (fsErr) {
-      // Read-only FS in prod (Railway) → skip the file; the structured result is still in the run log.
+      // Read-only FS in prod (ECS container) → skip the file; the structured result is still in the run log.
       console.info(`[data-correctness] markdown emit skipped: ${fsErr instanceof Error ? fsErr.message : String(fsErr)}`);
       mdPath = null;
     }
