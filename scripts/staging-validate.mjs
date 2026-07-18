@@ -84,7 +84,6 @@ function runNode(script, extraEnv = {}) {
   const env = {
     ...process.env,
     CRON_TARGET_BASE_URL: BASE,
-    SKIP_RAILWAY: "1",
     ...extraEnv,
   };
   const res = spawnSync("node", [script], {

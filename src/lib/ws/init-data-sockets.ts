@@ -46,7 +46,7 @@ export function ensureDataSockets() {
   if (initialized) return;
   initialized = true;
   // Wire graceful shutdown the first time the sockets are booted, so the old
-  // Railway container releases its upstream slots on SIGTERM. Wrapped so a failure
+  // ECS container releases its upstream slots on SIGTERM. Wrapped so a failure
   // installing the handler can never block socket init.
   try {
     installShutdownHandlers();
@@ -79,7 +79,7 @@ export function ensureDataSockets() {
   } catch (err) {
     console.warn("[init-data-sockets] stocks/LULD socket init failed (non-fatal):", err);
   }
-  // Backup RTH warmers when Railway cron triggers stall (#90 silent-death). Leader-elected;
+  // Backup RTH warmers when ECS cron triggers stall (#90 silent-death). Leader-elected;
   // dispatches idempotent cache warmers from in-process when cron_job_runs age exceeds cadence.
   void import("@/lib/rth-warm-leader")
     .then(({ ensureRthWarmLeader }) => ensureRthWarmLeader())
@@ -90,7 +90,7 @@ export function ensureDataSockets() {
  * Graceful shutdown for all data sockets (UW + Polygon indices + options). Each
  * manager is shut down in its own try/catch so one failure can't block the
  * others. Closing the live sockets with a normal close (1000) makes the old
- * Railway container release its upstream slots immediately on SIGTERM, which
+ * ECS container release its upstream slots immediately on SIGTERM, which
  * avoids the code=1008 indices reconnect collision when the new container's
  * connection lands. Idempotent and never throws.
  */

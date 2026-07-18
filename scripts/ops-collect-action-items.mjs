@@ -13,7 +13,7 @@
  *   node scripts/ops-collect-action-items.mjs --pretty
  */
 import { createHash } from "node:crypto";
-import { ALL_CRON_KEYS } from "./railway-cron-services.mjs";
+import { ALL_CRON_KEYS } from "./cron-keys.mjs";
 import { createAuditClient, resolveAuditDbUrl } from "./pg-audit.mjs";
 
 const pretty = process.argv.includes("--pretty");
@@ -48,7 +48,7 @@ async function postgresItems() {
     )
   ).map((r) => r.job_key);
   for (const key of zeroRuns) {
-    add("P0", "cron", `cron:${key}:never-fired`, `Cron never fired: ${key}`, "Zero rows in cron_job_runs — Railway service or config-as-code likely missing.");
+    add("P0", "cron", `cron:${key}:never-fired`, `Cron never fired: ${key}`, "Zero rows in cron_job_runs — ECS cron task likely missing.");
   }
 
   const failedRecent = await q(

@@ -31,7 +31,7 @@ export const TOOLS: readonly ToolMeta[] = [
   { key: "heatmap", label: "BlackOut Thermal", href: "/heatmap", product: "heatmap", defaultLaunched: true },
   { key: "largo", label: "Largo", href: "/terminal", product: "largo", defaultLaunched: false },
   { key: "nighthawk", label: "Night Hawk", href: "/nighthawk", product: "nighthawk", defaultLaunched: true },
-  // Vector — admin-only until explicitly launched (LAUNCHED_TOOLS=vector on Railway).
+  // Vector — admin-only until explicitly launched (LAUNCHED_TOOLS=vector on ECS).
   { key: "vector", label: "Vector", href: "/vector", product: "vector", defaultLaunched: false },
 ] as const;
 

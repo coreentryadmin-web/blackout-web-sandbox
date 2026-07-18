@@ -5,12 +5,12 @@
  *
  * Usage: npm run validate:cron
  */
-import { ALL_CRON_KEYS } from "./railway-cron-services.mjs";
+import { ALL_CRON_KEYS } from "./cron-keys.mjs";
 import { createAuditClient, resolveAuditDbUrl } from "./pg-audit.mjs";
 
 const JOB_KEYS = [...ALL_CRON_KEYS];
 
-/** Registered in code + TOML but Railway trigger service not yet provisioned — warn, don't fail CI. */
+/** Registered in code but ECS cron task not yet provisioned — warn, don't fail CI. */
 const PROVISION_PENDING = new Set([]);
 
 const dbUrl = resolveAuditDbUrl();
@@ -59,7 +59,7 @@ const badLatest = latest.filter((r) => r.status !== "ok" && r.status !== "skippe
 console.log("\n=== CRON AUDIT: summary ===\n");
 console.log(`Jobs with zero runs ever: ${zeroRuns.length ? zeroRuns.join(", ") : "(none)"}`);
 if (pendingZero.length) {
-  console.log(`Provision pending (expected zero until Railway wired): ${pendingZero.join(", ")}`);
+  console.log(`Provision pending (expected zero until ECS provisioned): ${pendingZero.join(", ")}`);
 }
 console.log(`Jobs with latest status != ok/skipped: ${badLatest.length ? badLatest.map((r) => r.job_key).join(", ") : "(none)"}`);
 

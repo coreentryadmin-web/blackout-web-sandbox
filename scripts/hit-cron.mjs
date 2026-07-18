@@ -1,4 +1,4 @@
-// Cron trigger for Railway cron services.
+// Cron trigger for cron services.
 // Calls a /api/cron/* endpoint on the deployed web app with the Bearer secret,
 // then exits — exactly the run-to-completion behavior a cron service needs.
 //

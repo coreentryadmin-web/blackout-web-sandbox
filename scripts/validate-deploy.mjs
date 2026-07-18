@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Post-deploy validation — run after every push to main (Railway auto-deploy).
+ * Post-deploy validation — run after every push to main (auto-deploy).
  *
  * Usage:
  *   node scripts/validate-deploy.mjs
@@ -10,12 +10,11 @@
  *   DATABASE_PUBLIC_URL or DATABASE_URL — Postgres smoke (errors, cron, API telemetry)
  *   SENTRY_AUTH_TOKEN — Sentry dashboard check (ORG/PROJECT auto-discovered from token + DSN)
  *
- * Requires: railway CLI (logged in), curl, node 20+, pg (npm package)
+ * Requires: curl, node 20+, pg (npm package)
  */
 
 import { execSync } from "node:child_process";
-import { spawnSync } from "node:child_process";
-import { ALL_CRON_KEYS } from "./railway-cron-services.mjs";
+import { ALL_CRON_KEYS } from "./cron-keys.mjs";
 import { createAuditClient, resolveAuditDbUrl } from "./pg-audit.mjs";
 import { fetchRetry } from "./audit/lib/fetch-retry.mjs";
 
@@ -40,19 +39,12 @@ function sh(cmd) {
   return execSync(cmd, { encoding: "utf8", stdio: ["pipe", "pipe", "pipe"] }).trim();
 }
 
-function actionableRailwayDeployment(output) {
-  const rows = output
-    .split("\n")
-    .map((line) => line.trim())
-    .filter((line) => /^[0-9a-f-]+\s+\|/i.test(line));
-  const ignored = rows.filter((line) => /\|\s*(SKIPPED|REMOVED)\s*\|/i.test(line));
-  const actionable = rows.find((line) => !/\|\s*(SKIPPED|REMOVED)\s*\|/i.test(line));
-  return { actionable, ignored };
-}
-
-function loadRailwayVars() {
+function loadAwsSecrets(secretId) {
   try {
-    return JSON.parse(sh("railway variables --service blackout-web --json 2>/dev/null"));
+    const raw = sh(
+      `aws secretsmanager get-secret-value --secret-id ${secretId} --query SecretString --output text`
+    );
+    return JSON.parse(raw);
   } catch {
     return {};
   }
@@ -61,19 +53,9 @@ function loadRailwayVars() {
 function resolveCronSecret() {
   const fromEnv = process.env.CRON_SECRET?.trim();
   if (fromEnv) return fromEnv;
-  if (IS_STAGING) {
-    try {
-      const raw = sh(
-        'aws secretsmanager get-secret-value --secret-id blackout-staging/app/env --query SecretString --output text'
-      );
-      const secret = JSON.parse(raw);
-      return secret.CRON_SECRET?.trim() ?? "";
-    } catch {
-      return "";
-    }
-  }
-  const vars = loadRailwayVars();
-  return vars.CRON_SECRET?.trim() ?? "";
+  const secretId = IS_STAGING ? "blackout-staging/app/env" : "blackout-production/app/env";
+  const secrets = loadAwsSecrets(secretId);
+  return secrets.CRON_SECRET?.trim() ?? "";
 }
 
 /** Parse numeric project id from SENTRY_DSN (no secrets returned). */
@@ -103,8 +85,7 @@ async function resolveSentryFromToken(token) {
     );
     if (projRes.ok) {
       const projects = await projRes.json();
-      const rw = loadRailwayVars();
-      const dsnId = dsnProjectId(rw.SENTRY_DSN || rw.NEXT_PUBLIC_SENTRY_DSN);
+      const dsnId = dsnProjectId(appSecrets.SENTRY_DSN || appSecrets.NEXT_PUBLIC_SENTRY_DSN);
       if (dsnId && Array.isArray(projects)) {
         const hit = projects.find((p) => String(p.id) === dsnId);
         projectSlug = hit?.slug ?? null;
@@ -161,33 +142,24 @@ console.log("\n=== BlackOut post-deploy validation ===\n");
 console.log(`Target: ${BASE}`);
 console.log(`Time:   ${new Date().toISOString()}\n`);
 
-// ── 1. Railway deploy ───────────────────────────────────────────────────────
-console.log("1. Railway (blackout-web)");
-const skipRailway =
-  process.env.SKIP_RAILWAY === "1" ||
-  IS_STAGING ||
-  (process.env.GITHUB_ACTIONS === "true" && !process.env.RAILWAY_TOKEN?.trim());
-
-if (skipRailway) {
-  warn("Railway CLI checks skipped (GITHUB_ACTIONS or SKIP_RAILWAY=1)");
-} else {
+// ── 1. ECS deploy ──────────────────────────────────────────────────────────
+console.log("1. ECS service health");
 try {
-  const deployments = sh("railway deployment list --service blackout-web 2>/dev/null");
-  const { actionable: latest, ignored } = actionableRailwayDeployment(deployments);
-  if (ignored.length) warn(`Ignored ${ignored.length} skipped/removed Railway deployment row(s)`);
-  if (latest) console.log(`     ${latest}`);
-  else warn("No actionable Railway deployment row found");
-  if (/SUCCESS/i.test(latest)) ok("Latest deployment SUCCESS");
-  else if (/BUILDING|DEPLOYING|QUEUED/i.test(latest)) fail(`Deploy not finished: ${latest}`);
-  else if (latest) fail(`Deploy unhealthy: ${latest}`);
-
-  const status = sh("railway status 2>/dev/null | rg 'blackout-web' || true");
-  if (/Online/i.test(status) && !/Building|Queued|Failed/i.test(status)) ok("Service Online");
-  else if (/Building|Queued/i.test(status)) warn(`Service still rolling: ${status.trim()}`);
-  else warn(status.trim() || "Could not read service status");
+  const cluster = IS_STAGING ? "blackout-staging-cluster" : "blackout-production-cluster";
+  const service = IS_STAGING ? "blackout-staging-web" : "blackout-production-web";
+  const out = sh(
+    `aws ecs describe-services --cluster ${cluster} --services ${service} --query "services[0].{status:status,running:runningCount,desired:desiredCount,pending:pendingCount}" --output json 2>/dev/null`
+  );
+  const svc = JSON.parse(out);
+  if (svc.status === "ACTIVE" && svc.running >= svc.desired) {
+    ok(`ECS ${service}: ${svc.running}/${svc.desired} running`);
+  } else if (svc.pending > 0) {
+    warn(`ECS ${service}: ${svc.running}/${svc.desired} running, ${svc.pending} pending`);
+  } else {
+    fail(`ECS ${service}: status=${svc.status} running=${svc.running} desired=${svc.desired}`);
+  }
 } catch (e) {
-  fail(`Railway CLI: ${e.message}`);
-}
+  warn(`ECS service check skipped: ${e.message}`);
 }
 
 // ── 2. Live HTTP smoke ──────────────────────────────────────────────────────
@@ -307,7 +279,7 @@ if (IS_STAGING && dbUrl) {
       )
     ).map((r) => r.job_key);
     if (zeroRuns.length === 0) ok(`All ${cronKeys.length} registered crons have run history`);
-    else warn(`Cron jobs with zero runs ever (Railway service may be missing): ${zeroRuns.join(", ")}`);
+    else warn(`Cron jobs with zero runs ever (ECS cron task may be missing): ${zeroRuns.join(", ")}`);
 
     await client.end();
   } catch (e) {
@@ -323,12 +295,12 @@ if (IS_STAGING && dbUrl) {
 
 // ── 4. Sentry (token only — auto-discovers org/project) ─────────────────────
 console.log("\n4. Sentry");
-const rwVars = loadRailwayVars();
+const appSecrets = loadAwsSecrets(IS_STAGING ? "blackout-staging/app/env" : "blackout-production/app/env");
 const sentryToken =
-  process.env.SENTRY_AUTH_TOKEN?.trim() || rwVars.SENTRY_AUTH_TOKEN?.trim() || "";
-const sentryOrgOverride = process.env.SENTRY_ORG?.trim() || rwVars.SENTRY_ORG?.trim() || "";
+  process.env.SENTRY_AUTH_TOKEN?.trim() || appSecrets.SENTRY_AUTH_TOKEN?.trim() || "";
+const sentryOrgOverride = process.env.SENTRY_ORG?.trim() || appSecrets.SENTRY_ORG?.trim() || "";
 const sentryProjectOverride =
-  process.env.SENTRY_PROJECT?.trim() || rwVars.SENTRY_PROJECT?.trim() || "";
+  process.env.SENTRY_PROJECT?.trim() || appSecrets.SENTRY_PROJECT?.trim() || "";
 
 if (sentryToken) {
   try {
@@ -366,40 +338,28 @@ if (sentryToken) {
     else fail(`Sentry API: ${e.message} — verify token scopes (event:read, org:read, project:read)`);
   }
 } else {
-  warn("SENTRY_AUTH_TOKEN not found (env or Railway blackout-web) — using error_events mirror");
-  if (rwVars.SENTRY_DSN) ok("SENTRY_DSN configured on Railway (capture forwarding active)");
-  else warn("SENTRY_DSN not set on Railway");
+  warn("SENTRY_AUTH_TOKEN not found — using error_events mirror");
+  if (appSecrets.SENTRY_DSN) ok("SENTRY_DSN configured (capture forwarding active)");
+  else warn("SENTRY_DSN not set");
 }
 
 // ── 4b. REPLICA_COUNT (UW/Polygon cluster rate-limit math) ───────────────────
 console.log("\n4b. Cluster config");
 const replicaCount = Math.max(
   0,
-  Math.floor(
-    Number(
-      (IS_STAGING ? process.env.REPLICA_COUNT : null) ??
-        rwVars.REPLICA_COUNT ??
-        process.env.REPLICA_COUNT ??
-        0
-    )
-  )
+  Math.floor(Number(process.env.REPLICA_COUNT ?? appSecrets.REPLICA_COUNT ?? 0))
 );
 let runningReplicas = null;
-if (!skipRailway) {
-  const runningMatch = sh("railway status 2>/dev/null | rg 'blackout-web' || true").match(
-    /(\d+)\/(\d+)\s+running/
+try {
+  const cluster = IS_STAGING ? "blackout-staging-cluster" : "blackout-production-cluster";
+  const service = IS_STAGING ? "blackout-staging-web" : "blackout-production-web";
+  const out = sh(
+    `aws ecs describe-services --cluster ${cluster} --services ${service} --query "services[0].runningCount" --output text 2>/dev/null`
   );
-  runningReplicas = runningMatch ? Number(runningMatch[1]) : null;
-} else if (IS_STAGING) {
-  try {
-    const out = sh(
-      'aws ecs describe-services --cluster blackout-staging-cluster --services blackout-staging-web --query "services[0].runningCount" --output text 2>/dev/null'
-    );
-    const n = Number(out);
-    if (Number.isFinite(n)) runningReplicas = n;
-  } catch {
-    /* optional */
-  }
+  const n = Number(out);
+  if (Number.isFinite(n)) runningReplicas = n;
+} catch {
+  /* optional */
 }
 if (replicaCount >= 1 && runningReplicas != null && replicaCount === runningReplicas) {
   ok(`REPLICA_COUNT=${replicaCount} matches ${runningReplicas} running replicas`);
@@ -411,79 +371,22 @@ if (replicaCount >= 1 && runningReplicas != null && replicaCount === runningRepl
   ok("REPLICA_COUNT check skipped (single replica or unknown)");
 }
 
-// ── 5. Options / UW socket churn (socket-health primary; logs secondary) ─────
-console.log("\n5. Socket churn (socket-health + Railway logs)");
-if (skipRailway) {
-  if (IS_STAGING && cronSecret) {
-    try {
-      const { status, body } = await fetchJson("/api/cron/socket-health", {
-        headers: { Authorization: `Bearer ${cronSecret}` },
-      });
-      const opt = body?.websockets?.options;
-      if (status === 200 && opt?.ok) ok(`options-socket (socket-health): ${opt.detail ?? "ok"}`);
-      else if (status === 200 && opt) warn(`options-socket (socket-health): ${opt.detail ?? "not ok"}`);
-      else warn(`socket-health probe HTTP ${status}`);
-    } catch (e) {
-      warn(`socket-health probe failed: ${e.message}`);
-    }
-  } else {
-    warn("Railway log checks skipped (SKIP_RAILWAY / staging without CRON_SECRET)");
+// ── 5. Options / UW socket churn (socket-health HTTP probe) ─────────────────
+console.log("\n5. Socket churn (socket-health)");
+if (cronSecret) {
+  try {
+    const { status, body } = await fetchJson("/api/cron/socket-health", {
+      headers: { Authorization: `Bearer ${cronSecret}` },
+    });
+    const opt = body?.websockets?.options;
+    if (status === 200 && opt?.ok) ok(`options-socket (socket-health): ${opt.detail ?? "ok"}`);
+    else if (status === 200 && opt) warn(`options-socket (socket-health): ${opt.detail ?? "not ok"}`);
+    else warn(`socket-health probe HTTP ${status}`);
+  } catch (e) {
+    warn(`socket-health probe failed: ${e.message}`);
   }
 } else {
-  // Live probe beats log tail: multi-replica clusters + off-hours standdown leave stale
-  // 1006 lines in the last 30 log rows even when options.ok is true.
-  let socketHealthOk = false;
-  const cron = resolveCronSecret();
-  if (cron) {
-    try {
-      const { status, body } = await fetchJson("/api/cron/socket-health", {
-        headers: { Authorization: `Bearer ${cron}` },
-      });
-      const opt = body?.websockets?.options;
-      if (status === 200 && opt?.ok) {
-        socketHealthOk = true;
-        ok(`options-socket (socket-health): ${opt.detail ?? "ok"}`);
-      } else if (status === 200 && opt) {
-        fail(`options-socket (socket-health): ${opt.detail ?? "not ok"}`);
-      } else {
-        warn(`socket-health probe HTTP ${status}`);
-      }
-    } catch (e) {
-      warn(`socket-health probe failed: ${e.message}`);
-    }
-  } else {
-    warn("CRON_SECRET unset — socket-health probe skipped (log grep only)");
-  }
-
-  try {
-    const logs = sh("railway logs --service blackout-web 2>/dev/null | rg 'options-socket|uw-socket' | tail -30");
-    const opt1006 = logs.match(/options-socket.*1006.*failures=(\d+)/g) || [];
-    const lastFail = opt1006.length
-      ? Number(opt1006[opt1006.length - 1].match(/failures=(\d+)/)?.[1] ?? 0)
-      : 0;
-    const optAuth = /options-socket.*authenticated/.test(logs);
-
-    if (socketHealthOk) {
-      if (lastFail >= 10) {
-        warn(`options-socket log tail failures=${lastFail} (socket-health ok — stale pre-standdown)`);
-      } else if (lastFail > 0) {
-        warn(`options-socket recent 1006 failures=${lastFail} in logs (socket-health ok)`);
-      }
-    } else if (lastFail >= 10) {
-      fail(`options-socket 1006 loop — failures=${lastFail} (Night's Watch marks may degrade)`);
-    } else if (lastFail > 0) {
-      warn(`options-socket recent 1006 failures=${lastFail}`);
-    } else if (optAuth) {
-      ok("options-socket authenticated in recent logs");
-    } else {
-      warn("options-socket: no recent authenticated line (may be off-hours or disabled)");
-    }
-
-    if (/uw-socket.*stall watchdog/i.test(logs)) warn("uw-socket stall reconnects in recent logs");
-    else ok("No uw-socket stall storms in recent logs");
-  } catch {
-    warn("Could not read Railway logs");
-  }
+  warn("CRON_SECRET unset — socket-health probe skipped");
 }
 
 // ── Summary ─────────────────────────────────────────────────────────────────

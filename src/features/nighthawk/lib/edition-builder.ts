@@ -53,7 +53,7 @@ import type { NightHawkEdition, PlaybookPlay } from "./types";
  * Consolidated funnel counts for ONE edition build (#77 deliverable (a)). Every stage of the
  * candidate→play pipeline writes its count here, and `logFunnel` emits a single line at EVERY exit
  * (success and all five recap-only fallbacks) so the next run pinpoints the exact drop without a
- * Railway-log dig. Stages, left→right, mirror the pipeline order:
+ * container-log dig. Stages, left→right, mirror the pipeline order:
  *   candidates  — extractMultiSourceCandidates (6-lane multi-source → candidate tickers)
  *   ranked      — rankCandidates output (scored dossiers → ranked pool)
  *   dossiers    — dossiers actually sent to Claude synthesis (synthesisDossiers)

@@ -43,15 +43,10 @@ const MARKETING_PATHS = [
 ] as const;
 
 function deployId(): string | null {
-  // Railway exposes the commit SHA and a per-deployment id; either uniquely tags a
-  // deploy. Prefer the SHA (stable across the deploy's replicas), fall back to the
-  // deployment id. A manual override is supported for non-Railway hosts.
   return (
     process.env.CF_PURGE_DEPLOY_ID?.trim() ||
     process.env.GITHUB_SHA?.trim() ||
     process.env.CODEBUILD_RESOLVED_SOURCE_VERSION?.trim() ||
-    process.env.RAILWAY_GIT_COMMIT_SHA?.trim() ||
-    process.env.RAILWAY_DEPLOYMENT_ID?.trim() ||
     null
   );
 }
@@ -123,7 +118,7 @@ export async function maybePurgeCloudflareOnDeploy(): Promise<void> {
 
   const id = deployId();
   if (!id) {
-    console.warn("[cf-purge-on-deploy] no deploy id (CF_PURGE_DEPLOY_ID / RAILWAY_GIT_COMMIT_SHA) — skipping to avoid purging on every boot");
+    console.warn("[cf-purge-on-deploy] no deploy id (CF_PURGE_DEPLOY_ID / GITHUB_SHA / CODEBUILD_RESOLVED_SOURCE_VERSION) — skipping to avoid purging on every boot");
     return;
   }
 

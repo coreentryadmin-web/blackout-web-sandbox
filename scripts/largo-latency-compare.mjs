@@ -3,7 +3,7 @@
  * Largo response-time compare — staging vs production (Clerk premium session).
  * Usage: node scripts/largo-latency-compare.mjs [--rounds=3]
  */
-import { execSync, spawnSync } from "node:child_process";
+import { execSync } from "node:child_process";
 import { writeFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { fetchRetry } from "./audit/lib/fetch-retry.mjs";
@@ -15,7 +15,7 @@ mkdirSync(OUT, { recursive: true });
 
 const ENVS = [
   { label: "staging", base: "https://staging.blackouttrades.com", secretSource: "staging" },
-  { label: "prod", base: "https://blackouttrades.com", secretSource: "railway" },
+  { label: "prod", base: "https://blackouttrades.com", secretSource: "production" },
 ];
 
 const SESSION_ID = "latency-audit";
@@ -30,23 +30,12 @@ function loadStagingSecret() {
   return JSON.parse(raw);
 }
 
-function loadRailwayWebSecret() {
-  const res = spawnSync(
-    "railway",
-    [
-      "variables",
-      "--service",
-      "blackout-web",
-      "--environment",
-      "production",
-      "--project",
-      process.env.RAILWAY_PROJECT_ID ?? "9282f541-a288-4c8b-a174-ee22016f4b1a",
-      "--json",
-    ],
-    { encoding: "utf8", env: process.env }
+function loadProductionSecret() {
+  const raw = execSync(
+    'aws secretsmanager get-secret-value --secret-id blackout-production/app/env --query SecretString --output text',
+    { encoding: "utf8" }
   );
-  if (res.status !== 0) throw new Error(res.stderr || "railway variables failed");
-  return JSON.parse(res.stdout);
+  return JSON.parse(raw);
 }
 
 function percentile(sorted, p) {
@@ -213,11 +202,12 @@ async function runEnv(env, secret) {
 async function main() {
   console.log(`\n=== Largo latency compare (${ROUNDS} rounds) ===\n`);
   const stagingSecret = loadStagingSecret();
-  const prodSecret = loadRailwayWebSecret();
+  const prodSecret = loadProductionSecret();
   const results = [];
 
   for (const env of ENVS) {
     const secret = env.secretSource === "staging" ? stagingSecret : prodSecret;
+
     try {
       results.push(await runEnv(env, secret));
     } catch (e) {

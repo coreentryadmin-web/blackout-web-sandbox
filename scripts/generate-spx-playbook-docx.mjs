@@ -420,7 +420,7 @@ Status: Watching for open confirm`),
     ]
   ),
 
-  h2("Railway tuning reference"),
+  h2("ECS tuning reference"),
   mono(`# Main play gates
 SPX_PLAY_FULL_MIN_SCORE=58
 SPX_PLAY_STARTER_MIN_SCORE=48
