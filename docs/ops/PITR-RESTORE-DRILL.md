@@ -6,12 +6,12 @@
 
 Prove you can restore to a point in time and validate data before a real incident.
 
-## Steps (Railway dashboard)
+## Steps (AWS RDS console)
 
 1. Open **Postgres** → **Backups** tab.
 2. Confirm PITR range shows a non-empty restore window (starts after first post-enable base backup).
 3. Pick a timestamp **within the last hour** (test fork, not production cutover).
-4. Click **Restore to this moment** — Railway creates a sibling service `Postgres-restored-YYYYMMDD-HHMM`.
+4. Click **Restore to this moment** — AWS RDS creates a restored instance `Postgres-restored-YYYYMMDD-HHMM`.
 5. Wait for deploy **SUCCESS** on the fork.
 6. From the fork’s **Connect** tab, run:
    ```sql
@@ -31,5 +31,5 @@ Prove you can restore to a point in time and validate data before a real inciden
 
 ## Do not
 
-- Run `railway deploy -t postgres-pitr` on the existing DB (creates duplicate Postgres services).
+- Run a manual RDS restore to the existing DB (creates duplicate Postgres instances).
 - Point `blackout-web` `DATABASE_URL` at the fork without a formal cutover plan.

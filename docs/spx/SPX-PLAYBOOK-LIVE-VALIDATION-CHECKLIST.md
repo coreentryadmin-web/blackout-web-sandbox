@@ -41,7 +41,7 @@ with the reason, never `PASS`. One temp Cognito admin/user per run, always delet
       (VOYAGE boolean ~`:78`) or `npm run validate:staging-rth`. **If VOYAGE is unset, EVERY live
       check below reads as a playbook failure that is really a config gap — flag it P1 and stop.**
 - [ ] `spx-evaluate` cron ENABLED (the 5-min engine tick, `cron-registry.ts:34`; real schedule in
-      `railway.spx-evaluate.toml`). Also `alert-outcome-sync` (6h), `spx-signal-observe` (5m).
+      the ECS task definition). Also `alert-outcome-sync` (6h), `spx-signal-observe` (5m).
 - [ ] `SPX_CLAUDE_DAILY_MAX_CALLS` budget not already exhausted; `PLAYBOOK_LIVE_ALLOWLIST` unset or
       includes PB-01/02/03.
 

@@ -85,7 +85,7 @@ wrong** that would otherwise have sat silent — not just "added a metric" or
 - **Not BIE, worth being honest about:** BIE did *not* catch the GEX
   heatmap total-mismatch bug, the AAPL chain-truncation bug, or the
   Postgres-password-in-build-logs leak. A separate audit script caught the
-  first two; a human (screenshots) plus manually-pulled Railway logs caught
+  first two; a human (screenshots) plus manually-pulled ECS logs caught
   the third. If something goes wrong silently — no throw, no logged error,
   no telemetry BIE has access to — it won't see it. That's true of any
   monitoring system, not a BIE-specific flaw, but it means "BIE will catch

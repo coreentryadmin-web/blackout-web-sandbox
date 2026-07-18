@@ -13,14 +13,14 @@
 
 | Name | Type | Content | Proxied | Notes |
 |---|---|---|---|---|
-| blackouttrades.com | CNAME | jzwkg5uc.up.railway.app | ✅ YES | Main app → Railway blackout-web |
-| www.blackouttrades.com | CNAME | 8dkf6fp5.up.railway.app | ✅ YES | www → Railway (redirects to apex) |
+| blackouttrades.com | CNAME | (ALB DNS name) | ✅ YES | Main app → ECS blackout-web |
+| www.blackouttrades.com | CNAME | (ALB DNS name) | ✅ YES | www → ECS (redirects to apex) |
 | clk._domainkey | CNAME | dkim1.tzneys6rxyan.clerk.services | ❌ NO | Clerk DKIM — must stay DNS-only |
 | clk2._domainkey | CNAME | dkim2.tzneys6rxyan.clerk.services | ❌ NO | Clerk DKIM — must stay DNS-only |
 | mail (Clerk) | CNAME | mail.tzneys6rxyan.clerk.services | ❌ NO | Clerk mail — must stay DNS-only |
 | blackouttrades.com | MX | (Zoho) | ❌ NO | Email — must stay DNS-only |
 | blackouttrades.com | TXT | zoho-verification=... | ❌ NO | Zoho domain verify |
-| _railway-verify | TXT | railway-verify=... | ❌ NO | Railway verify |
+| _acm-verify | TXT | (ACM validation) | ❌ NO | AWS ACM certificate verify |
 
 **CRITICAL:** Clerk DNS records MUST remain DNS-only (grey cloud). Proxying them breaks auth.
 
@@ -67,7 +67,7 @@
 | HTTP/3 (QUIC) | `on` | Fastest protocol, especially on mobile |
 | Early Hints (103) | `on` | Browser starts loading assets before full response |
 | Browser cache TTL | `31536000` (1 year) | Static assets cached in browser for 1 year |
-| Always Online | `on` | Serves cached version if Railway is down |
+| Always Online | `on` | Serves cached version if ECS is down |
 | Challenge TTL | `3600` (1 hour) | How long a challenged IP stays trusted |
 | ECH (Encrypted Client Hello) | `on` | Hides SNI from network observers |
 | Opportunistic encryption | `on` | |
@@ -121,7 +121,7 @@ Canonical URL is the apex domain (no www).
 | WebSockets | `on` | Required for SSE streams + WS connections |
 | Rocket Loader | `off` | **Must stay off** — breaks Next.js RSC/async JS |
 | Response buffering | `off` | **Must stay off** — breaks SSE streaming |
-| Railway CDN | `off` | **Must stay off** — conflicts with Cloudflare (double CDN) |
+| CloudFront CDN | `off` | **Must stay off** — conflicts with Cloudflare (double CDN) |
 
 ---
 
@@ -150,8 +150,8 @@ After DNSSEC finishes propagating (~24h), go to:
 
 ## Maintenance Notes
 
-- **On every Railway deploy:** Cloudflare automatically purges HTML cache (set in Railway CDN settings — actually purge via CF API if needed)
+- **On every ECS deploy:** Cloudflare automatically purges HTML cache (purge via CF API if needed)
 - **If you change an API route from public → auth-gated:** Add it to the cache bypass rule immediately
 - **Never proxy Clerk DNS records** — breaks sign-in
-- **Never enable Railway CDN** while Cloudflare proxy is active
-- **If you upgrade to Vercel:** Update the Railway CNAME records to point to Vercel deployment URL instead
+- **Never enable CloudFront CDN** while Cloudflare proxy is active
+- **If you upgrade to Vercel:** Update the ALB CNAME records to point to Vercel deployment URL instead

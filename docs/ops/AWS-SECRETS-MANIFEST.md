@@ -1,6 +1,6 @@
 # AWS Secrets Manager manifest — blackout-web on ECS
 
-Copy Railway `blackout-web` service variables into the Terraform-managed app secret
+Copy ECS `blackout-web` service variables into the Terraform-managed app secret
 (`blackout-{staging|production}/app/env` JSON). **Never commit real values.**
 
 ## Minimum (staging smoke)
@@ -17,7 +17,7 @@ Copy Railway `blackout-web` service variables into the Terraform-managed app sec
 | `PGBOUNCER_DEFAULT_POOL_SIZE` | Terraform | `20` |
 | `PG_POOL_MAX` | Terraform | `5` (1 task staging) |
 
-## Required for live desk (copy from Railway)
+## Required for live desk (copy from ECS production)
 
 | Key | Purpose |
 |-----|---------|
@@ -38,13 +38,13 @@ Copy Railway `blackout-web` service variables into the Terraform-managed app sec
 
 Runtime-only secrets (DB, Redis, API keys) come from Secrets Manager via ECS task `secrets`.
 
-## Merge Railway export into Secrets Manager
+## Merge ECS export into Secrets Manager
 
 ```bash
-# Export from Railway dashboard → Variables → copy to railway-staging.env (gitignored)
+# Export from ECS task definition → Environment → copy to ecs-staging.env (gitignored)
 node scripts/merge-app-secret.mjs \
   --secret-name blackout-staging/app/env \
-  --env-file ./railway-staging.env
+  --env-file ./ecs-staging.env
 ```
 
 Then redeploy ECS:
@@ -66,5 +66,5 @@ origin cutover, set `cron_target_base_url` in tfvars to the staging hostname.
 
 ## Full variable list
 
-See Railway `blackout-web` production service variables and `docs/ONBOARDING.md` § secrets.
+See ECS `blackout-web` production service variables and `docs/ONBOARDING.md` § secrets.
 Run `npm run validate:deploy` — warnings for missing keys indicate gaps.
