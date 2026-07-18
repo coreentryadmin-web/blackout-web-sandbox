@@ -34,9 +34,9 @@ Also triggers when **RTH deep audit** or **cron audit query** workflows fail.
 ## Agent fix loop (until GREEN)
 
 1. Read this doc + `docs/ops/RTH-OPEN-RUNBOOK.md`
-2. Fix each action item (code, Railway `configFile`, secrets, etc.)
+2. Fix each action item (code, ECS task definition, secrets, etc.)
 3. Branch → PR → **auto-merge to `main` once CI is green** (see `CLAUDE.md` § Merge authorization)
-4. Poll Railway deploy **SUCCESS**
+4. Wait for ECS deploy to stabilize (health check green)
 5. Re-run:
    ```bash
    node scripts/ops-collect-action-items.mjs   # must exit 0
@@ -72,7 +72,7 @@ node scripts/ops-dispatch-agent.mjs --dry-run --file /tmp/items.json
 | `CURSOR_API_KEY` | Launch Cloud Agent |
 | `GITHUB_TOKEN` | Auto-provided — create/update issues |
 
-## Railway / Discord (existing)
+## ECS / Discord (existing)
 
 Crons still alert **Discord** on failure (`logCronRun`, watchdog). This pipeline adds the **agent** path so fixes are attempted automatically, not only announced.
 

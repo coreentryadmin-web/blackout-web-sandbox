@@ -91,7 +91,7 @@ export async function dispatchCronWarm(key: string): Promise<CronDispatchResult>
   }
 
   // Build a synthetic, authorized cron request: same Bearer auth + (for the warmers) ?force=1
-  // so the handler runs identically to a real Railway cron fire. The host is arbitrary; the
+  // so the handler runs identically to a real ECS scheduled task fire. The host is arbitrary; the
   // cron handlers only read the Authorization header and the `force` query param.
   const url = entry.force
     ? `https://internal.local/api/cron/${key}?force=1`

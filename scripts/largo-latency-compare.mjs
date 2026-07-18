@@ -15,7 +15,7 @@ mkdirSync(OUT, { recursive: true });
 
 const ENVS = [
   { label: "staging", base: "https://staging.blackouttrades.com", secretSource: "staging" },
-  { label: "prod", base: "https://blackouttrades.com", secretSource: "railway" },
+  { label: "prod", base: "https://blackouttrades.com", secretSource: "prod" },
 ];
 
 const SESSION_ID = "latency-audit";
@@ -30,7 +30,7 @@ function loadStagingSecret() {
   return JSON.parse(raw);
 }
 
-function loadRailwayWebSecret() {
+function loadProdWebSecret() {
   const res = spawnSync(
     "railway",
     [
@@ -213,7 +213,7 @@ async function runEnv(env, secret) {
 async function main() {
   console.log(`\n=== Largo latency compare (${ROUNDS} rounds) ===\n`);
   const stagingSecret = loadStagingSecret();
-  const prodSecret = loadRailwayWebSecret();
+  const prodSecret = loadProdWebSecret();
   const results = [];
 
   for (const env of ENVS) {

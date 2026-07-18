@@ -64,7 +64,7 @@ function loadSecrets() {
   let prodCron = process.env.CRON_SECRET?.trim();
   if (!prodCron) {
     try {
-      unsetRailwayApiToken();
+      unsetLegacyApiToken();
       const out = spawnSync(
         "railway",
         [
@@ -94,7 +94,7 @@ function loadSecrets() {
   };
 }
 
-function unsetRailwayApiToken() {
+function unsetLegacyApiToken() {
   delete process.env.RAILWAY_API_TOKEN;
 }
 

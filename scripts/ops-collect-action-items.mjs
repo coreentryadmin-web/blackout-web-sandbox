@@ -48,7 +48,7 @@ async function postgresItems() {
     )
   ).map((r) => r.job_key);
   for (const key of zeroRuns) {
-    add("P0", "cron", `cron:${key}:never-fired`, `Cron never fired: ${key}`, "Zero rows in cron_job_runs — Railway service or config-as-code likely missing.");
+    add("P0", "cron", `cron:${key}:never-fired`, `Cron never fired: ${key}`, "Zero rows in cron_job_runs — EventBridge rule or config-as-code likely missing.");
   }
 
   const failedRecent = await q(

@@ -61,4 +61,4 @@ node scripts/gha-rth-audit.mjs   # full GHA audit (needs CRON_SECRET)
 
 ## Do not duplicate on GitHub
 
-Railway writer crons (`flow-ingest`, `heatmap-warm`, etc.) — already on Railway via `railway.*.toml`.
+ECS scheduled tasks (`flow-ingest`, `heatmap-warm`, etc.) — schedules cataloged in railway.*.toml, synced to EventBridge.

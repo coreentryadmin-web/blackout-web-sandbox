@@ -27,7 +27,7 @@ export type RateLimitResult = {
 
 /**
  * Extract the real client IP from a proxied request.
- * Cloudflare sets CF-Connecting-IP; Railway/generic proxies use x-forwarded-for.
+ * Cloudflare sets CF-Connecting-IP; ALB/generic proxies use x-forwarded-for.
  * Falls back to a sentinel so the limiter still works (won't rate-limit by IP, but
  * won't crash either — keeps the fail-open contract).
  */
@@ -89,7 +89,7 @@ async function getRedis(): Promise<RedisLike | null> {
 // backoff after a recent failure) and the `client.eval(...)` call throwing.
 // The Redis-backed happy path above never touches this.
 //
-// Deliberate trade-off — PER PROCESS, not cluster-wide: Railway runs multiple
+// Deliberate trade-off — PER PROCESS, not cluster-wide: ECS runs multiple
 // replicas, and this Map lives in one replica's memory, not a shared store. So
 // during a real Redis outage, a client that gets load-balanced across R replicas
 // can get up to R * limit requests per window, not a true cluster-wide `limit`.

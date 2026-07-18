@@ -9,7 +9,7 @@ export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 // Cap concurrent SSE connections per instance. Each connection is cheap (one timer + one callback)
-// but Railway containers have fd limits. 500 per instance is safe; scale horizontally for more.
+// but ECS containers have fd limits. 500 per instance is safe; scale horizontally for more.
 // Override via SSE_MAX_STREAMS env var.
 let activeStreams = 0;
 const MAX_STREAMS = Number(process.env.SSE_MAX_STREAMS ?? 500);

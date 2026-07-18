@@ -43,9 +43,9 @@ const MARKETING_PATHS = [
 ] as const;
 
 function deployId(): string | null {
-  // Railway exposes the commit SHA and a per-deployment id; either uniquely tags a
+  // ECS exposes the commit SHA and a per-deployment id; either uniquely tags a
   // deploy. Prefer the SHA (stable across the deploy's replicas), fall back to the
-  // deployment id. A manual override is supported for non-Railway hosts.
+  // deployment id. A manual override is supported for non-ECS hosts.
   return (
     process.env.CF_PURGE_DEPLOY_ID?.trim() ||
     process.env.GITHUB_SHA?.trim() ||

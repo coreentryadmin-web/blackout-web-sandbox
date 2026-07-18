@@ -42,7 +42,7 @@ export async function GET() {
 
   // Log the real diagnostic server-side only -- this route is public/unauthenticated
   // (scripts/verify-api-auth-guards.mjs's allowlist), and the raw driver error can embed
-  // internal hostnames or credential text (e.g. ".railway.internal", "password authentication
+  // internal hostnames or credential text (e.g. RDS proxy host, "password authentication
   // failed for user ..."). Never forward it verbatim to an unauthenticated caller.
   console.error("[ready] database ping failed after retries:", lastError, lastMode);
   return NextResponse.json({ ok: false, db: "unreachable", error: "db_unreachable" }, { status: 503 });

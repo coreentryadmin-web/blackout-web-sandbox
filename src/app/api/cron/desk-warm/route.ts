@@ -1,8 +1,8 @@
 // Cron: pre-warm the shared SPX desk cache lanes (desk + flow + pulse) and the SPX
 // GEX heatmap matrix used by the dashboard left rail.
-// Schedule: ~every 5 min during RTH on Railway (5-minute floor); in-app rth-warm-leader
+// Schedule: ~every 5 min during RTH via EventBridge (5-minute floor); in-app rth-warm-leader
 // backs up at ~90s when cron stalls (registered in cron-registry.ts as "desk-warm";
-// Railway wires the fire via railway.desk-warm.toml).
+// EventBridge wires the fire via railway.desk-warm.toml).
 //
 // THE POINT: buildSpxDesk() is UW-bound (~2–5s cold). User polls hit loadSpxDesk() /
 // loadMergedSpxDesk(), which share a single Redis/in-process cache with SWR. Without a

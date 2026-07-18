@@ -1,10 +1,8 @@
-# NOT at repo root — Railway auto-detects a root Dockerfile and ignores railway.toml's
-# nixpacks builder + startCommand (next start). ECS/Fargate builds use this file.
-# Requires `output: "standalone"` in next.config.mjs.
+# ECS/Fargate production Dockerfile. Requires `output: "standalone"` in next.config.mjs.
 #
 # Build:  docker build -f deploy/Dockerfile -t blackout-web .
 # Run:    docker run --rm -p 3000:3000 -e PORT=3000 blackout-web
-# Health: GET /api/ready (same as Railway)
+# Health: GET /api/ready
 
 FROM node:20-bookworm-slim AS base
 WORKDIR /app
@@ -57,7 +55,7 @@ ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV GITHUB_SHA=$GITHUB_SHA
 ENV CF_PURGE_DEPLOY_ID=$GITHUB_SHA
-# Railway uses 8080 internally; ECS task def can set PORT to match ALB target.
+# ECS task def can set PORT to match ALB target group.
 ENV PORT=3000
 ENV HOSTNAME=0.0.0.0
 

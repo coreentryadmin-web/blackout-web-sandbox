@@ -1,61 +1,13 @@
-# Apply pending Railway ops: CRON_WATCHDOG_SELF_HEAL + provider-health-reconcile cron.
-#
-# Requires GitHub secret: RAILWAY_TOKEN (account token with project write access)
-# Create at https://railway.com/account/tokens
-#
-# Prefer the full checklist: Railway audit apply workflow (also runs on schedule).
+# [DEPRECATED] Railway has been decommissioned — all infra is on AWS ECS.
+# Kept for historical reference; triggers stripped to manual-only.
 
-name: Railway ops provision
+name: "[DEPRECATED] Railway ops provision"
 
 on:
   workflow_dispatch:
 
 jobs:
-  provision:
+  deprecated:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v7
-
-      - uses: actions/setup-node@v6
-        with:
-          node-version: 20
-          cache: npm
-
-      - name: Install Railway CLI
-        run: npm install -g @railway/cli@5.23.1
-
-      - name: Validate cron manifest
-        run: node scripts/validate-railway-cron-manifest.mjs
-
-      - name: Railway audit apply (full checklist)
-        env:
-          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
-          RAILWAY_PROJECT_ID: 9282f541-a288-4c8b-a174-ee22016f4b1a
-          RAILWAY_ENVIRONMENT: production
-          DISCORD_OPS_WEBHOOK_URL: ${{ secrets.DISCORD_OPS_WEBHOOK_URL }}
-          DISCORD_PLAY_WEBHOOK_URL: ${{ secrets.DISCORD_PLAY_WEBHOOK_URL }}
-        run: |
-          set -euo pipefail
-          if [ -z "${RAILWAY_TOKEN:-}" ]; then
-            echo "RAILWAY_TOKEN not set — running legacy ops-provision only"
-            exit 0
-          fi
-          unset RAILWAY_API_TOKEN || true
-          node scripts/railway-audit-apply.mjs
-
-      - name: Legacy ops provision (provider-health service bootstrap)
-        env:
-          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
-          RAILWAY_PROJECT_ID: 9282f541-a288-4c8b-a174-ee22016f4b1a
-          RAILWAY_ENVIRONMENT: production
-        run: |
-          if [ -z "${RAILWAY_TOKEN:-}" ]; then
-            echo "RAILWAY_TOKEN not set — skip"
-            exit 0
-          fi
-          unset RAILWAY_API_TOKEN || true
-          node scripts/railway-ops-provision.mjs
-
-      - name: Summary
-        run: echo "Railway ops provision finished at $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+      - run: echo "Railway has been decommissioned. All infra is on AWS ECS."

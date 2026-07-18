@@ -219,7 +219,7 @@ export async function GET(req: NextRequest) {
   }
 
   const today = todayEt();
-  // Holiday guard: the Railway schedule is weekday-based and inEtWindow only knows
+  // Holiday guard: the EventBridge schedule is weekday-based and inEtWindow only knows
   // Sat/Sun, so without this the cron fires on NYSE holidays (e.g. Fri 2026-07-03),
   // falls back to the NEXT session's edition (Monday's, published the prior evening),
   // computes an "overnight gap" from a closed market, and can spuriously INVALIDATE
@@ -493,7 +493,7 @@ export async function GET(req: NextRequest) {
       const mdPath = path.join(docsDir, `morning-confirm-${editionFor}.md`);
       await fs.writeFile(mdPath, renderMarkdown(result), "utf-8");
     } catch {
-      // Ephemeral FS on Railway — skip silently.
+      // Ephemeral FS on ECS — skip silently.
     }
 
     // ── Phase 6: Discord ops alert on invalidations ─────────────────────────

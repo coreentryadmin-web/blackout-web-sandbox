@@ -373,7 +373,7 @@ export async function buildCronHealthSnapshot(): Promise<CronHealthPayload> {
     return health;
   });
 
-  // Handshake lag during Railway redeploy gaps can mark warmers/flow-ingest stale even when
+  // Handshake lag during ECS redeploy gaps can mark warmers/flow-ingest stale even when
   // their PG/Redis targets are still fresh (organic traffic + TTL + WS paths keep data live).
   const TARGET_FRESH_OVERRIDE_KEYS = new Set([
     "flow-ingest",
@@ -422,7 +422,7 @@ export async function buildCronHealthSnapshot(): Promise<CronHealthPayload> {
         "CRON_SECRET is not set on blackout-web — HTTP cron routes return 401 and never log a run.";
     } else {
       diagnosticsNote =
-        "No runs in cron_job_runs yet. HTTP crons must call blackout-web with the header 'Authorization: Bearer $CRON_SECRET' after this deploy. Railway Ready/Running status is separate from this dashboard.";
+        "No runs in cron_job_runs yet. HTTP crons must call blackout-web with the header 'Authorization: Bearer $CRON_SECRET' after this deploy. ECS task status is separate from this dashboard.";
     }
   }
 

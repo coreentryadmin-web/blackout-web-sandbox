@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Staging ops action items — Postgres cron health + live HTTP probes (no Railway).
+ * Staging ops action items — Postgres cron health + live HTTP probes.
  *
  * Usage:
  *   npm run ops:collect:staging

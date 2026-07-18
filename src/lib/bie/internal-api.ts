@@ -24,7 +24,7 @@ export type InternalApiResult = {
   detail?: string;
 };
 
-/** Base URL for internal fetches — Railway internal, then app URL, then localhost dev. */
+/** Base URL for internal fetches — ECS internal, then app URL, then localhost dev. */
 function internalBase(): string {
   return (
     process.env.INTERNAL_API_BASE ||

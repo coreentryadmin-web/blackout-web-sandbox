@@ -1,61 +1,13 @@
-# Validate railway.*.toml cron definitions parse and match registry keys.
+# [DEPRECATED] Railway has been decommissioned — all infra is on AWS ECS.
+# Kept for historical reference; triggers stripped to manual-only.
 
-name: Railway cron config check
+name: "[DEPRECATED] Railway cron config check"
 
 on:
-  pull_request:
-    paths:
-      - "railway*.toml"
-      - "scripts/railway-apply-cron-config.mjs"
-      - "scripts/hit-cron.mjs"
-      - "scripts/validate-railway-cron-manifest.mjs"
-      - "scripts/railway-cron-services.mjs"
-  push:
-    branches: [main]
-    paths:
-      - "railway*.toml"
-      - "scripts/railway-apply-cron-config.mjs"
-      - "scripts/validate-railway-cron-manifest.mjs"
-      - "scripts/railway-cron-services.mjs"
-      - "src/lib/cron-registry.ts"
+  workflow_dispatch:
 
 jobs:
-  check:
+  deprecated:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v7
-
-      - uses: actions/setup-node@v6
-        with:
-          node-version: 20
-
-      - name: Registry ↔ TOML ↔ service map
-        run: node scripts/validate-railway-cron-manifest.mjs
-
-      - name: Parse all railway cron TOMLs
-        run: |
-          set -euo pipefail
-          for f in railway.*.toml; do
-            test -f "$f"
-            grep -q 'startCommand = .*scripts/hit-cron.mjs' "$f" || grep -q 'startCommand = "next start' "$f" || {
-              echo "Missing startCommand in $f"; exit 1;
-            }
-            if grep -q 'hit-cron.mjs' "$f"; then
-              grep -q 'cronSchedule = "' "$f" || { echo "Missing cronSchedule in $f"; exit 1; }
-            fi
-            echo "OK $f"
-          done
-
-      - name: Registry paths exist
-        run: |
-          node -e "
-          const fs = require('fs');
-          const reg = fs.readFileSync('src/lib/cron-registry.ts','utf8');
-          const paths = [...reg.matchAll(/path: \"(\\/api\\/cron\\/[^\"]+)\"/g)].map(m=>m[1]);
-          for (const p of paths) {
-            const file = 'src/app' + p + '/route.ts';
-            if (!fs.existsSync(file)) { console.error('Missing route for', p); process.exit(1); }
-          }
-          console.log('Registry routes OK:', paths.length);
-          "
+      - run: echo "Railway has been decommissioned. All infra is on AWS ECS."

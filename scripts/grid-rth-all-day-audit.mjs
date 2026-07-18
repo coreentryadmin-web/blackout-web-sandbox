@@ -189,14 +189,14 @@ async function main() {
           "grid:data-correctness",
           isTimeout ? "WARN" : "FAIL",
           isTimeout
-            ? `edge timeout (mode=${dc.mode}) — Railway cron authoritative`
+            ? `edge timeout (mode=${dc.mode}) — cron authoritative`
             : dc.err || `HTTP ${dc.status} mode=${dc.mode}`
         );
       } else if (zFlags.length) {
         rec("grid:data-correctness", "FAIL", `${zFlags.length} grid/zerodte flag(s)`);
         zFlags.slice(0, 3).forEach((f) => console.log(`    · [${f.layer}/${f.metric}] ${f.detail}`));
       } else {
-        const suffix = dc.fullSweepSkipped ? " (heatmap surface; full sweep via Railway cron)" : "";
+        const suffix = dc.fullSweepSkipped ? " (heatmap surface; full sweep via cron)" : "";
         rec("grid:data-correctness", "PASS", `flags=${dc.flags ?? 0} mode=${dc.mode}${suffix}`);
       }
     } catch (e) {

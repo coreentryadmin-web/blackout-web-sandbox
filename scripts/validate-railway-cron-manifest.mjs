@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Ensure cron registry, railway.*.toml files, and Railway service map stay aligned.
+ * Ensure cron registry, railway.*.toml files, and cron service map stay aligned.
  * Exit 1 on drift — used by CI and railway-cron-config-check workflow.
  */
 import { readFileSync, readdirSync, existsSync } from "node:fs";

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * One-shot Railway ops bootstrap:
+ * One-shot production ops bootstrap:
  *   1. CRON_WATCHDOG_SELF_HEAL=1 on blackout-web
  *   2. Ensure provider-health-reconcile + Market-Regime-Detector cron services exist + wired to TOMLs + CRON_SECRET
  *
@@ -37,7 +37,7 @@ function run(cmd, args, opts = {}) {
 function requireAuth() {
   try {
     JSON.parse(sh("railway service list --json 2>/dev/null"));
-    console.log("✓ Railway auth OK (project token)");
+    console.log("✓ CLI auth OK (project token)");
   } catch {
     console.error("✗ RAILWAY_TOKEN invalid or missing — create one at https://railway.com/account/tokens");
     process.exit(1);
@@ -60,7 +60,7 @@ function getVar(service, key) {
   }
 }
 
-console.log("\n=== Railway ops provision ===\n");
+console.log("\n=== Production ops provision ===\n");
 requireAuth();
 
 // 1) Self-heal on blackout-web
@@ -151,7 +151,7 @@ for (const { key, serviceName } of CRON_BOOTSTRAP) {
   ensureCronService(serviceName, key);
 }
 
-console.log("\nGREEN — Railway ops provision complete.\n");
+console.log("\nGREEN — production ops provision complete.\n");
 console.log("Verify after deploy:");
 console.log("  npm run validate:cron");
 console.log("  node scripts/hit-cron.mjs /api/cron/alert-outcome-sync");

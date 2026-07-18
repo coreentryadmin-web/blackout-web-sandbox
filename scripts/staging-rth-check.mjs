@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Staging RTH validation — AWS ECS staging only (no Railway log grep).
+ * Staging RTH validation — AWS ECS staging only (no CloudWatch log grep).
  *
  * Usage:
  *   npm run validate:staging-rth

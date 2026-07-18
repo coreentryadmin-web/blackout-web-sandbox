@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Wire a Railway cron trigger service to its per-job TOML via environment config JSON.
+ * Wire a cron trigger service to its per-job TOML via environment config JSON.
  * Uses `railway environment config` + stdin JSON apply (the reliable path — `--service-config`
  * flags often no-op; dashboard "Config-as-code" sets `configFile` on the service).
  *
@@ -58,7 +58,7 @@ for (const key of keys) {
   const serviceName = SERVICE_NAMES[key] ?? key;
   const sid = nameToId[serviceName];
   if (!sid) {
-    console.error(`[skip] No Railway service named "${serviceName}" for key ${key}`);
+    console.error(`[skip] No cron service named "${serviceName}" for key ${key}`);
     continue;
   }
   const toml = parseTomlCron(key);
@@ -101,4 +101,4 @@ process.stdout.write(r.stdout ?? "");
 process.stderr.write(r.stderr ?? "");
 if (r.status !== 0) process.exit(r.status ?? 1);
 
-console.log("\nDone. Railway will redeploy affected cron services automatically.\n");
+console.log("\nDone. Affected cron services will redeploy automatically.\n");

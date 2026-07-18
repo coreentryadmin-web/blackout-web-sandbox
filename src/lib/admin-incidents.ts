@@ -88,7 +88,7 @@ export async function syncAdminIncidents(
   // request, polled every 5s from the admin terminal tab (the default section) plus
   // two crons, the per-row loop held the small per-replica connection pool (max: 5,
   // see db.ts) open long enough under concurrent admin/audit load to starve unrelated
-  // reads into the generic 35s query_timeout ("Query read timeout" — traced via Railway
+  // reads into the generic 35s query_timeout ("Query read timeout" — traced via CloudWatch
   // runtime logs to a burst of ~111 of these across admin routes in one storm). One
   // round trip regardless of issue count fixes the contention without touching the
   // timeout/retry classification.

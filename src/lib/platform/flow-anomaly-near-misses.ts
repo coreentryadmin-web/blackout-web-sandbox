@@ -6,8 +6,8 @@
 // flow-anomaly-detection.ts's module doc for what gets captured and why (two
 // DIFFERENT discard reasons: BELOW_THRESHOLD vs DEDUP_SUPPRESSED).
 //
-// THROTTLING: cadence here is every 5 min during RTH (railway.market-regime-
-// detector.toml's cronSchedule, ~half of zerodte's 2-min grid-warm cadence, but
+// THROTTLING: cadence here is every 5 min during RTH (ECS market-regime-detector
+// cron's cronSchedule, ~half of zerodte's 2-min grid-warm cadence, but
 // still frequent enough that an idle-but-still-near-missing ticker would generate
 // a near-duplicate row every tick without a throttle) — see this PR's
 // docs/audit/FINDINGS.md entry for the full cadence/volume reasoning. Multiple

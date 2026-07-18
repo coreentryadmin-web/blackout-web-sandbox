@@ -125,7 +125,7 @@ async function main() {
     process.exit(1);
   }
   if (!prodCron) {
-    console.error("prod CRON_SECRET env missing — set from Railway for compare");
+    console.error("prod CRON_SECRET env missing — set from ECS env for compare");
     process.exit(1);
   }
 

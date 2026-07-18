@@ -1,6 +1,6 @@
 export type AuthProviderName = "clerk" | "cognito";
 
-/** Server + build-time provider selection. Defaults to Clerk for prod/Railway. */
+/** Server + build-time provider selection. Defaults to Clerk for prod/ECS. */
 export function getAuthProvider(): AuthProviderName {
   const v = (
     process.env.AUTH_PROVIDER ??

@@ -1,5 +1,8 @@
 # PgBouncer on Railway (production)
 
+> **DEPRECATED** — Railway decommissioned 2026-07. Database now runs on Amazon RDS
+> with RDS Proxy for connection pooling. Retained for historical reference.
+
 ## Why
 `blackout-web` runs long-lived Node (`next start`) with **5 replicas** and a small app-side pool
 (`PG_POOL_MAX`, default 15). PgBouncer multiplexes client connections to a bounded set of Postgres

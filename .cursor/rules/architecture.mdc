@@ -23,7 +23,7 @@ Canonical repo is `coreentryadmin-web/blackout-web` — `BO-AAI/` and any root
    `text-cyan-400`/`text-sky-300`/`text-white`.
 4. **Institutional UI bar** — Bloomberg/TradingView/Stripe/Linear, not Discord. See
    `DESIGN_BENCHMARK.md` + `institutional-design.mdc`. Use `FreshnessChip` for live state.
-5. **Default commit+push to `main`** via PR auto-merge once CI is green (Railway auto-deploys);
+5. **Default commit+push to `main`** via PR auto-merge once CI is green (ECS auto-deploys via ecr-push-production.yml);
    branch only for deploy-risky work — still auto-merge after verification, don't wait for review.
 
 ## The data pipeline (internalize this)
@@ -45,6 +45,6 @@ Providers (rate-limited; ONE WebSocket per key via Redis leader election) → **
 - Real shell is `src/app/(site)/layout.tsx` — `PlatformShell.tsx` is DEAD.
 - Real route paths are nested: `/api/market/spx/pulse`, `/api/market/flows`,
   `/api/market/nighthawk/edition`. UW key env is `UW_API_KEY` (not `UNUSUAL_WHALES_API_KEY`).
-- A cron `.toml` + route does NOT mean the cron runs — the Railway service must be provisioned.
-- Lockfile desync red-lines every Railway service; fix with `npm install`, not a revert.
+- A cron `.toml` + route does NOT mean the cron runs — the EventBridge rule must exist after infra sync.
+- Lockfile desync breaks CI + Docker build; fix with `npm install`, not a revert.
 - New data routes must be tier-gated via the `require*Api` helpers (`tool-access.ts`).

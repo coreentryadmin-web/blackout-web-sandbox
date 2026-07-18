@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Decommission Railway cron trigger services whose API routes were removed from the app.
+ * Decommission legacy cron trigger services whose API routes were removed from the app.
  *
  * Product restructure 2026-07-07:
  *   - grid-warm        → zerodte-warm (classic Grid deleted)
@@ -61,14 +61,14 @@ function getVar(service, key) {
   }
 }
 
-console.log("\n=== Railway legacy cron cleanup ===\n");
+console.log("\n=== Legacy cron cleanup ===\n");
 if (dryRun) console.log("(dry-run — no mutations)\n");
 
 try {
   JSON.parse(sh("railway service list --json"));
-  console.log("✓ Railway auth OK");
+  console.log("✓ CLI auth OK");
 } catch {
-  console.error("✗ Railway auth failed — set RAILWAY_TOKEN with write access.");
+  console.error("✗ CLI auth failed — set RAILWAY_TOKEN with write access.");
   process.exit(1);
 }
 

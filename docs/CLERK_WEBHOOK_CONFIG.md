@@ -40,9 +40,9 @@ Clerk fires webhook events (via Svix) to our endpoint whenever users are created
 
 | Variable | Where set | Notes |
 |---|---|---|
-| `CLERK_WEBHOOK_SECRET` | Railway → blackout-web → Production | `whsec_...` from Clerk dashboard Signing Secret |
+| `CLERK_WEBHOOK_SECRET` | ECS task definition (via AWS Secrets Manager) | `whsec_...` from Clerk dashboard Signing Secret |
 
-To rotate the secret: go to Clerk → Configure → Webhooks → endpoint → Signing Secret → Rotate. Then update Railway env var immediately.
+To rotate the secret: go to Clerk → Configure → Webhooks → endpoint → Signing Secret → Rotate. Then update the secret in AWS Secrets Manager and force a new ECS deployment.
 
 ---
 
@@ -93,28 +93,28 @@ CREATE INDEX IF NOT EXISTS users_email_idx ON users(email);
 ## Troubleshooting
 
 ### All deliveries failing
-1. Check Railway env var: `CLERK_WEBHOOK_SECRET` must be set and match the Clerk dashboard signing secret
+1. Check ECS task definition env: `CLERK_WEBHOOK_SECRET` must be set and match the Clerk dashboard signing secret
 2. Check the route is deployed: `curl -X POST https://blackouttrades.com/api/webhook/clerk` → should return `400 Missing svix headers` (not 404, not 500)
 3. Check Cloudflare WAF skip rule is active (see above)
-4. Check Railway logs: `railway logs --service "blackout-web" | grep clerk-webhook`
+4. Check CloudWatch logs for the ECS service, filter for `clerk-webhook`
 
 ### 500 errors
-- `CLERK_WEBHOOK_SECRET` is not set in Railway. Set it and redeploy.
+- `CLERK_WEBHOOK_SECRET` is not set in the ECS task definition. Set it via AWS Secrets Manager and redeploy.
 
 ### Succeeded but users not appearing in DB
 - Check `users` table migration ran: connect to Postgres and `SELECT * FROM users LIMIT 5`
-- Check for DB constraint errors in Railway logs
+- Check for DB constraint errors in CloudWatch logs
 
 ### Need to backfill missed events
 1. Go to Clerk → Configure → Developers → Webhooks → click the endpoint
 2. Click **Replay** (top right) → **"Recover failed messages since [date]"**
-3. Watch Railway logs: `railway logs --service "blackout-web" | grep clerk-webhook`
+3. Watch CloudWatch logs for the ECS service, filter for `clerk-webhook`
 4. Svix retries failed deliveries automatically for up to 5 days — no manual action needed for recent failures
 
 ### Rotating the signing secret
 1. Clerk dashboard → Webhooks → endpoint → Signing Secret → Rotate secret
-2. Immediately run: `railway variables set CLERK_WEBHOOK_SECRET="whsec_NEW_VALUE" --service "blackout-web" --environment "production"`
-3. Old secret stops working on next Railway redeploy (~80s)
+2. Update the secret in AWS Secrets Manager and force a new ECS deployment
+3. Old secret stops working once the new ECS tasks start (~2-3 min)
 
 ---
 

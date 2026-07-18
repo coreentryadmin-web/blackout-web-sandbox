@@ -8,7 +8,7 @@
 // tables/engines this app ALREADY has (api_telemetry_events, error_events,
 // and the admin cron-health engine's schedule-aware staleness logic) — no new
 // external access; see docs/bie/FULL-SYSTEM-AWARENESS.md for what's covered
-// here vs what still needs infrastructure-level access (Railway logs/metrics,
+// here vs what still needs infrastructure-level access (CloudWatch logs/metrics,
 // Redis internals) this codebase does not have today.
 
 import { dbConfigured, dbQuery } from "@/lib/db";

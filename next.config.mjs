@@ -1,17 +1,5 @@
 /** @type {import('next').NextConfig} */
 
-// FIX 2: Resolve the specific Railway hostname at config-load time from the
-// RAILWAY_STATIC_URL env var (set automatically by Railway).  Fall back to
-// an explicit RAILWAY_HOSTNAME override for local / staging overrides.
-// Do NOT use the "**.railway.app" wildcard — that accepts every Railway app.
-const railwayHostname = (() => {
-  if (process.env.RAILWAY_HOSTNAME) return process.env.RAILWAY_HOSTNAME;
-  if (process.env.RAILWAY_STATIC_URL) {
-    try { return new URL(process.env.RAILWAY_STATIC_URL).hostname; } catch { /* malformed URL — ignore */ }
-  }
-  return null;
-})();
-
 // Base CSP for the whole app. `frame-ancestors 'self'` (plus X-Frame-Options
 // SAMEORIGIN below) denies cross-origin framing everywhere — which is correct
 // for every route EXCEPT the public /embed/* social-proof cards, which are
@@ -59,13 +47,6 @@ const remotePatterns = [
   { protocol: "https", hostname: "images.unsplash.com" },
 ];
 
-// FIX 2: Only add Railway hostname when the env var is present so the wildcard
-// "**.railway.app" is never used.  Set RAILWAY_HOSTNAME or RAILWAY_STATIC_URL
-// in your Railway service variables to enable image proxying from that host.
-if (railwayHostname) {
-  remotePatterns.push({ protocol: "https", hostname: railwayHostname });
-}
-
 import os from "os";
 import path from "path";
 import { fileURLToPath } from "url";
@@ -104,7 +85,7 @@ const nextConfig = {
   // (the former experimental.instrumentationHook is now the default — flag removed).
   // ESLint runs during builds (ignoreDuringBuilds: false). All current findings are
   // Warning-level so they do not block deploys. An Error-level finding will fail the
-  // Railway build — the desired gate: catch regressions at build time, not in prod.
+  // CI/Docker build — the desired gate: catch regressions at build time, not in prod.
   eslint: { ignoreDuringBuilds: false },
   async redirects() {
     return [

@@ -879,7 +879,7 @@ async function evaluateFlatPlay(
   const watchRec = await loadWatchRecord();
   if (mutate && watchRec && direction != null && watchRec.direction !== direction) {
     // Direction flipped mid-session (e.g. long watch → market turns bearish).
-    // Log it so Railway/Vercel logs record the flip timestamp and the old setup key.
+    // Log it so CloudWatch/Vercel logs record the flip timestamp and the old setup key.
     spxPlayDebug(
       `[spx-play-engine] direction flip: ${watchRec.direction} → ${direction}` +
       ` — clearing watch ${watchRec.setup_key ?? "(no key)"} at ${new Date().toISOString()}`

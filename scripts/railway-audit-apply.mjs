@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Idempotent Railway production setup from the infra audit checklist.
+ * Idempotent production setup from the infra audit checklist.
  *
  * Applies:
  *   - blackout-web multi-region replicas (iad×3, us-west2×2)
@@ -52,10 +52,10 @@ function run(cmd, args, opts = {}) {
 function requireAuth() {
   try {
     JSON.parse(sh("railway service list --json 2>/dev/null"));
-    console.log("✓ Railway auth OK");
+    console.log("✓ CLI auth OK");
   } catch {
     console.error(
-      "✗ Railway auth failed — set RAILWAY_API_TOKEN (account) or RAILWAY_TOKEN (project) with write access."
+      "✗ CLI auth failed — set RAILWAY_API_TOKEN (account) or RAILWAY_TOKEN (project) with write access."
     );
     process.exit(1);
   }
@@ -186,7 +186,7 @@ function patchCronService(envJson, key, sid) {
   return true;
 }
 
-console.log("\n=== Railway audit apply (production) ===\n");
+console.log("\n=== Production audit apply ===\n");
 if (dryRun) console.log("(dry-run — no mutations)\n");
 
 requireAuth();
@@ -297,7 +297,7 @@ try {
   console.warn("  ⚠ could not read bucket list");
 }
 
-console.log("\nGREEN — Railway audit apply complete.");
+console.log("\nGREEN — production audit apply complete.");
 console.log("Verify:");
 console.log("  curl -sS https://blackouttrades.com/api/ready");
 console.log("  node scripts/validate-deploy.mjs");

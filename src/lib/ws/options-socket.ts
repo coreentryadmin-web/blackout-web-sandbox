@@ -35,7 +35,7 @@ import { newLockToken, releaseFencedLock, renewFencedLock, type FencedRedis } fr
 
 /**
  * RTH gate for the OPTIONS feed (live finding #75). Off-hours, no option quotes flow, so the
- * any-frame stall watchdog would trip on legitimate silence and churn the socket (Railway logs:
+ * any-frame stall watchdog would trip on legitimate silence and churn the socket (CloudWatch logs:
  * "stall watchdog OPEN but no data for 300s, reconnecting" → code=1006 loop). Mirror exactly how
  * polygon-socket.ts gates its index watchdog on inIndicesMarketHours: DST-aware via etMinutes,
  * weekdays only, upper bound honoring NYSE early-close half-days (13:00 ET). When the market is

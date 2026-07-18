@@ -1,5 +1,9 @@
 # Railway cron schedules (production)
 
+> **DEPRECATED** — Railway decommissioned 2026-07. Cron schedules now managed via
+> AWS EventBridge, synced from `railway.*.toml` catalog files by
+> `blackout-infra/scripts/sync-cron-schedules.mjs`. Retained as schedule reference.
+
 **Important:** Railway stores and displays cron times in **UTC**. The dashboard text
 “11:00 am – 9:59 pm” is **not Eastern Time** — it is UTC hours 11–21.
 

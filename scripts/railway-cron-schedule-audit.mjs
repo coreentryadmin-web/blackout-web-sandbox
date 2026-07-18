@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Human-readable audit of all Railway cron schedules (UTC → America/New_York).
+ * Human-readable audit of all cron schedules (UTC → America/New_York).
  * Usage: node scripts/railway-cron-schedule-audit.mjs
  */
 import { readFileSync, readdirSync } from "node:fs";
@@ -33,9 +33,9 @@ for (const f of readdirSync(ROOT).filter((x) => x.startsWith("railway.") && x.en
   rows.push({ key, svc, cron, band });
 }
 
-console.log("\n=== Railway cron schedule audit (all times UTC on Railway) ===\n");
+console.log("\n=== Cron schedule audit (all times UTC) ===\n");
 console.log(
-  "Railway UI shows UTC hours as plain '11:00 am–9:59 pm' without a timezone label.\n" +
+  "Cron schedules use UTC hours.\n" +
     "RTH crons use UTC band 11–21 + in-app ET gate (9:30 AM–4:00 PM ET) on the route.\n"
 );
 

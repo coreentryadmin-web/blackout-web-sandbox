@@ -4,7 +4,7 @@
 // parsing, the atomic Lua script, and the threshold/ceiling predicates.
 //
 // WHY this exists: the per-process SpendTracker (ai-spend.ts) only ever sees ONE
-// replica's slice of spend, so under N Railway replicas its alert fires at ~threshold/N
+// replica's slice of spend, so under N ECS replicas its alert fires at ~threshold/N
 // of true org spend and the real org-wide total is never observed (caveat documented
 // in ai-spend.ts:6-9). This ledger lives in SHARED Redis — every replica INCRBYFLOATs
 // one authoritative per-ET-day key — so the org total is exact and the single increment

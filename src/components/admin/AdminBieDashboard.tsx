@@ -60,30 +60,6 @@ type BieReportPayload = {
     | { configured: false }
     | { configured: true; connected: false; error: string }
     | { configured: true; connected: true; used_memory_mb: number; connected_clients: number; uptime_hours: number; keys: number };
-  railway?:
-    | { configured: false }
-    | { configured: true; ok: false; error: string }
-    | { configured: true; ok: true; deployments: Array<{ status: string; createdAt: string; commitHash: string | null; commitMessage: string | null }> };
-  railway_resource_usage?:
-    | { configured: false }
-    | { configured: true; ok: false; error: string }
-    | {
-        configured: true;
-        ok: true;
-        window_minutes: number;
-        cpu_avg_vcpu: number | null;
-        cpu_latest_vcpu: number | null;
-        memory_avg_gb: number | null;
-        memory_latest_gb: number | null;
-      };
-  railway_env_vars?:
-    | { configured: false }
-    | { configured: true; ok: false; error: string }
-    | { configured: true; ok: true; total_count: number; missing_critical: string[] };
-  railway_runtime_errors?:
-    | { configured: false }
-    | { configured: true; ok: false; error: string }
-    | { configured: true; ok: true; window_minutes: number; error_count: number; error_count_capped: boolean; sample_messages: string[] };
   missed_alerts?: { outage_count: number; windows: Array<{ job_key: string; status: string; status_label: string }> };
   pg_stat_statements?:
     | { configured: false }
@@ -355,7 +331,7 @@ type HelixHealthPayload = {
 const ROADMAP: Stage[] = [
   { n: 1, name: "Repo, docs, API usage, schemas", status: "SHIPPED", blurb: "Knowledge corpus ingested + embedded (Voyage); platform telemetry monitoring is real, not aspirational." },
   { n: 2, name: "Logs, errors, cron/worker health", status: "SHIPPED", blurb: "Backend + frontend error capture, cron health, Postgres pool, Redis internals, data-integrity/data-correctness validators, missed-alert detection (cron-outage ground truth), and duplicate-alert detection (verifies alert_audit_log's own xmax=0 / unique-index dedup actually holds) all wired into discovery. Fixed a real double-counting bug found in the process: an admin-route catch-all was independently re-capturing every dbQuery failure the dbQuery layer had already recorded, inflating this dashboard's own error count. Every item from the original ask is now shipped." },
-  { n: 3, name: "Infra access (Railway)", status: "SHIPPED", blurb: "Deploy status, resource usage (CPU/memory), env-var presence audit, and recent runtime error counts are all wired live (see the Railway chips above). Postgres slow-query log (pg_stat_statements) is checked, not enabled, per explicit instruction. Clerk auth-failure monitoring: Clerk has no webhook/Backend API for a failed sign-in (confirmed against their docs) — rather than rewrite the sign-in UI, a DOM observer sits alongside the untouched prebuilt <SignIn>/<SignUp> component and reports the error text Clerk already renders on a failed attempt, never a credential. See the \"Auth failures (24h)\" chip above." },
+  { n: 3, name: "Infra access (ECS)", status: "SHIPPED", blurb: "Postgres slow-query log (pg_stat_statements) is checked, not enabled, per explicit instruction. Clerk auth-failure monitoring: Clerk has no webhook/Backend API for a failed sign-in (confirmed against their docs) — rather than rewrite the sign-in UI, a DOM observer sits alongside the untouched prebuilt <SignIn>/<SignUp> component and reports the error text Clerk already renders on a failed attempt, never a credential. See the \"Auth failures (24h)\" chip above." },
   { n: 4, name: "Unified per-alert audit trail", status: "SHIPPED", blurb: "alert_audit_log schema, all three write-paths (0DTE, Night Hawk published, Night Hawk rejected — all fixture-tested), and the query surface (Audit trail panel below) are all live. Source-API attribution (source_apis column) is still unpopulated by any write-path — reported honestly as 0% until a future PR threads it through." },
   { n: 5, name: "BIE opens PRs autonomously", status: "IN PROGRESS", blurb: "The end-state goal — explicitly NOT started as \"BIE writes code\" yet. Step 1 shipped 2026-07-03, dry-run only: for one narrow, 100% mechanical finding (an exported component with zero references anywhere else in src/), BIE drafts a plain-text proposal in the report below — never a diff, never a git action, never an LLM judgment call. A human decides what (if anything) to do about each one. Going further (real draft PRs, broader/LLM-judged finding types) needs its own explicit go-ahead, not assumed from this." },
   { n: 6, name: "Outcome-driven calibration for plays", status: "NOT YET", blurb: "Outcome grading exists (0DTE, Night Hawk); nothing yet closes the loop by adjusting scoring logic from it. A first measurement step shipped 2026-07-03 (Confluence outcomes panel below) — whether 0DTE Command's graded hit rate differs when it agrees/disagrees with a ticker's prior Night Hawk take — but it is read-only and does not feed back into scoring. Explicitly secondary to data integrity per the charter. (Renumbered from a stale \"Stage 5\" label that collided with the real Stage 5 above — found via the same doc-drift pattern this session kept fixing elsewhere.)" },
@@ -607,24 +583,6 @@ export function AdminBieDashboard() {
               label="Redis"
               value={data?.redis?.configured ? (data.redis.connected ? "LIVE" : "DOWN") : "OFF"}
               tone={data?.redis?.configured && !data.redis.connected ? "amber" : "bull"}
-            />
-            <MetricChip
-              label="Railway deploy"
-              value={
-                !data?.railway?.configured
-                  ? "OFF"
-                  : data.railway.ok
-                    ? (data.railway.deployments[0]?.status ?? "—")
-                    : "DOWN"
-              }
-              tone={
-                data?.railway?.configured &&
-                (!data.railway.ok ||
-                  data.railway.deployments[0]?.status === "FAILED" ||
-                  data.railway.deployments[0]?.status === "CRASHED")
-                  ? "amber"
-                  : "bull"
-              }
             />
             <MetricChip
               label="Missed alerts"
@@ -1345,58 +1303,10 @@ export function AdminBieDashboard() {
         )}
       </GlassPanel>
 
-      {/* Stage 3 infra probes — Railway resource usage / env-var presence audit /
-          runtime error count, plus a Postgres pg_stat_statements presence check
-          (never enables it). All read-only, all fail-open (a probe failure shows
+      {/* Stage 3 infra probes — Postgres pg_stat_statements presence check
+          (never enables it). Read-only, fail-open (a probe failure shows
           as "—", never breaks the rest of this panel). */}
       <GlassPanel kicker="Stage 3 — infra access" title="Infra" accent="violet">
-        <div className="admin-bie-stat-row">
-          <MegaStat
-            label={`CPU (${data?.railway_resource_usage?.configured && data.railway_resource_usage.ok ? data.railway_resource_usage.window_minutes : 60}m avg)`}
-            value={
-              data?.railway_resource_usage?.configured && data.railway_resource_usage.ok && data.railway_resource_usage.cpu_avg_vcpu != null
-                ? `${data.railway_resource_usage.cpu_avg_vcpu} vCPU`
-                : "—"
-            }
-            tone="cyan"
-          />
-          <MegaStat
-            label="Memory (avg)"
-            value={
-              data?.railway_resource_usage?.configured && data.railway_resource_usage.ok && data.railway_resource_usage.memory_avg_gb != null
-                ? `${data.railway_resource_usage.memory_avg_gb} GB`
-                : "—"
-            }
-            tone="violet"
-          />
-          <MegaStat
-            label="Runtime errors (30m)"
-            value={
-              data?.railway_runtime_errors?.configured && data.railway_runtime_errors.ok
-                ? `${data.railway_runtime_errors.error_count}${data.railway_runtime_errors.error_count_capped ? "+" : ""}`
-                : "—"
-            }
-            tone={
-              data?.railway_runtime_errors?.configured && data.railway_runtime_errors.ok && data.railway_runtime_errors.error_count > 0
-                ? "bear"
-                : "bull"
-            }
-          />
-          <MegaStat
-            label="Env vars set"
-            value={data?.railway_env_vars?.configured && data.railway_env_vars.ok ? String(data.railway_env_vars.total_count) : "—"}
-            sub={
-              data?.railway_env_vars?.configured && data.railway_env_vars.ok && data.railway_env_vars.missing_critical.length > 0
-                ? `${data.railway_env_vars.missing_critical.length} critical missing`
-                : undefined
-            }
-            tone={
-              data?.railway_env_vars?.configured && data.railway_env_vars.ok && data.railway_env_vars.missing_critical.length > 0
-                ? "bear"
-                : "bull"
-            }
-          />
-        </div>
         <p className="admin-bie-coverage-note">
           pg_stat_statements:{" "}
           {!data?.pg_stat_statements?.configured
@@ -1404,10 +1314,6 @@ export function AdminBieDashboard() {
             : data.pg_stat_statements.enabled
               ? `enabled (${data.pg_stat_statements.tracked_statement_count} tracked statements)`
               : "not enabled (checked, not attempted — server-level config change needs explicit go-ahead)"}
-          {data?.railway_env_vars?.configured &&
-            data.railway_env_vars.ok &&
-            data.railway_env_vars.missing_critical.length > 0 &&
-            ` · Missing critical vars: ${data.railway_env_vars.missing_critical.join(", ")}`}
         </p>
       </GlassPanel>
 

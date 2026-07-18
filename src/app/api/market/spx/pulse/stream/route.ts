@@ -157,7 +157,7 @@ export async function GET(req: NextRequest) {
       send();
 
       // Periodic SSE comment heartbeat — keeps the connection alive through proxies and
-      // load balancers with idle-timeout defaults (Railway, nginx, etc.). Every 15s.
+      // load balancers with idle-timeout defaults (ALB, nginx, etc.). Every 15s.
       heartbeatInterval = setInterval(() => {
         if (closed) return;
         try {

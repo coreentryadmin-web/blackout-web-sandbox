@@ -16,7 +16,7 @@
  *   - gha-rth-audit.mjs         (pages + crons + Postgres)
  *
  * Every 12th cycle (~60 min):
- *   - validate:deploy           (Railway + Postgres + sockets)
+ *   - validate:deploy           (ECS + Postgres + sockets)
  *
  * Logs: audit-output/spot-check.log (JSON lines)
  */

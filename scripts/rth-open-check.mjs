@@ -186,9 +186,9 @@ async function main() {
       else ok("No uw-socket stall storms");
     } catch {
       if (process.env.GITHUB_ACTIONS === "true") {
-        console.log("  ⚠ Railway uw-socket log check skipped in GitHub Actions");
+        console.log("  ⚠ CloudWatch uw-socket log check skipped in GitHub Actions");
       } else {
-        console.log("  ⚠ Could not read Railway logs for uw-socket");
+        console.log("  ⚠ Could not read CloudWatch logs for uw-socket");
       }
     }
 
