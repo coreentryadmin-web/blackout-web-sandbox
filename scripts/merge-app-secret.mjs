@@ -16,7 +16,7 @@
  */
 
 import { readFileSync } from "node:fs";
-import { execSync } from "node:child_process";
+import { execFileSync } from "node:child_process";
 
 const args = process.argv.slice(2);
 function flag(name) {
@@ -69,8 +69,15 @@ if (newCount === 0) {
 
 let existing = {};
 try {
-  const raw = execSync(
-    `aws secretsmanager get-secret-value --secret-id "${secretName}" --region ${region} --query SecretString --output text`,
+  const raw = execFileSync(
+    "aws",
+    [
+      "secretsmanager", "get-secret-value",
+      "--secret-id", secretName,
+      "--region", region,
+      "--query", "SecretString",
+      "--output", "text",
+    ],
     { encoding: "utf-8", stdio: ["pipe", "pipe", "pipe"] }
   );
   existing = JSON.parse(raw);
@@ -116,8 +123,14 @@ if (dryRun) {
 
 const secretJson = JSON.stringify(merged);
 try {
-  execSync(
-    `aws secretsmanager put-secret-value --secret-id "${secretName}" --secret-string '${secretJson.replace(/'/g, "'\\''")}' --region ${region}`,
+  execFileSync(
+    "aws",
+    [
+      "secretsmanager", "put-secret-value",
+      "--secret-id", secretName,
+      "--secret-string", secretJson,
+      "--region", region,
+    ],
     { stdio: "inherit" }
   );
   console.log(`\nSecret "${secretName}" updated (${mergedCount} keys).`);
