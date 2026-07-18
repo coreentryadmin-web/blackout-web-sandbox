@@ -1,5 +1,9 @@
 # Cloudflare Setup — blackouttrades.com
 
+> **Note:** Railway references in this doc are stale — origin is now an AWS ALB
+> (ECS Fargate), not Railway. DNS CNAMEs, SSL, and origin config sections need
+> updating. General Cloudflare concepts still apply.
+
 Complete step-by-step guide to put blackouttrades.com behind Cloudflare (CDN, DDoS, cache, WAF).
 
 ---

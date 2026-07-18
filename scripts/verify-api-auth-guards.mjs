@@ -15,6 +15,10 @@ const ROOT = join(fileURLToPath(import.meta.url), "..", "..");
 const PUBLIC_ROUTE_ALLOWLIST = new Set([
   "src/app/api/health/route.ts",
   "src/app/api/ready/route.ts",
+  // Worker endpoints — ALB/ECS infrastructure, guarded by isIngestProcess() role check
+  "src/app/api/worker/boot/route.ts",
+  "src/app/api/worker/health/route.ts",
+  "src/app/api/worker/ready/route.ts",
   "src/app/api/webhook/whop/route.ts",
   "src/app/api/webhooks/clerk/route.ts",
   "src/app/api/webhook/clerk/route.ts",

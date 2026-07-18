@@ -1,5 +1,9 @@
 # Postgres PITR restore drill (quarterly)
 
+> **DEPRECATED** — Railway decommissioned 2026-07. PITR is now managed via RDS
+> automated snapshots. Retained for historical reference; update with RDS restore
+> procedures before the next quarterly drill.
+
 **Status:** PITR enabled on production Postgres (`Postgres-PITR` bucket, `WAL_ARCHIVE_*` vars).
 
 ## Goal
